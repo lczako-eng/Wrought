@@ -155,9 +155,30 @@ self-reporting scale removes the most-abandoned manual entry), then Strava.
    `window.WROUGHT_SUPABASE_URL` and `window.WROUGHT_SUPABASE_ANON` for the pages.
 4. Domain bought: **wrought.fit** (renews ~C$70 Aug 2027).
 
+### Notifications — MCP cannot push, so the phone carries it
+
+**An MCP server can never make ChatGPT or Claude speak first.** The protocol is
+strictly request/response: the client calls us, we can never call the client.
+No amount of cleverness changes that, and anyone claiming otherwise is
+describing a different mechanism. What actually reaches a phone:
+
+1. **The Shortcut reply.** The phone is already POSTing to `/ingest` nightly, so
+   the response carries `notification` — that day's verdict — and one extra
+   *Show Notification* action puts it on the lock screen. No app, no push
+   certificates, no permission grants. Shipped.
+2. **Email at 22:00** via `brief-nightly.js`. Shipped (needs `RESEND_API_KEY`).
+3. **Web push to an installed PWA** — the proper answer, and the next build.
+   iOS supports it from 16.4 for home-screen apps. Needs VAPID keys, a service
+   worker and a manifest.
+
+`brief-nightly.js` runs **hourly**, not nightly, because 22:00 is a different
+instant per user — it serves only those for whom it is currently the send hour.
+A day with nothing logged gets no email; a nightly nag is how a product gets
+muted forever.
+
 **Next builds, in order:**
-1. Scheduled evening brief — push the verdict at 10pm instead of waiting to be
-   asked. This is what turns WROUGHT from a tool into a habit.
+1. Web push via PWA — the last notification channel that does not depend on the
+   user having built a Shortcut.
 2. Register OAuth apps for Oura / Whoop / Fitbit / Withings, then the pull
    sync function.
 3. **Multi-week programmes.** The last structural piece — routines exist, the

@@ -75,6 +75,8 @@ LOAD IS COMPUTED, NEVER GUESSED. Every weight in a session comes back from the s
 
 TIERS. Sessions carry a tier — beginner, intermediate or advanced — and it changes how you talk, not just the volume. For a beginner: compound movements only, one plain line on what each should feel like, no jargon left unexplained, and three exercises is a complete session. For advanced: name it and get out of the way. The tier comes back in the response; follow it.
 
+PLANS ARE BUILT, NOT AUTHORED. Nobody sits down and writes a twelve-week programme. They have one good session and want it again, then add a movement three weeks later. So save_routine takes from_last_session to capture what they ACTUALLY did in the order they did it, and takes add[] to append to an existing routine without rebuilding it. Use those rather than asking someone to dictate a full plan — being asked to specify a programme upfront is where most people quit.
+
 ROUTINES ARE HOW THIS SURVIVES MONTH TWO. When a session works, offer save_routine once — "want me to keep this as your leg day?" — and from then on the name alone starts it. Check list_routines before building anything new; the answer to "what should I train" is usually a routine they already have and have not run in ten days. Routines are not only gym days: kind "sport" holds five-a-side, hockey, climbing, and those count as training.
 
 ROOM IS EARNED, NEVER TAKEN AWAY. earned_room looks at the whole week, and when someone has genuinely been under target it hands back a number and tells them to spend it — "you're about 1,400 under, that's a proper dinner out, go and have it." Deliver that warmly and without conditions: no "but", no "just be careful", no suggestion they bank it instead. A reward that gets hedged is not a reward, and the honest logging this depends on is worth far more than the calories. The reverse never happens: when somebody is OVER for the week, state it in one factual line and stop — never prescribe eating less, skipping a meal, or making up for yesterday unless they explicitly ask for a plan. The moment earned room has an opposite it becomes a punishment schedule, and that is the thing that turns a food log into a disorder. When a care flag is up the tool switches the whole frame off; respect that absolutely and never dangle food as a reward for having eaten little.
@@ -226,6 +228,14 @@ const TOOLS = [
                      } } },
         equipment:   { type: 'array', items: { type: 'string' } },
         est_minutes: { type: 'integer' },
+        from_last_session: { type: 'boolean',
+          description: 'Capture what they ACTUALLY did in their last finished session, in the order they did it, instead of passing exercises. This is how routines really get built — nobody authors a programme upfront, they have a good session and want it again. Use for "save that", "remember what I just did", "that was good, keep it".' },
+        add: { type: 'array',
+          description: 'Append exercises to an existing routine instead of replacing it. Use for "add calf raises to my leg day" — a plan grows over weeks, and rebuilding it from scratch to add one movement is how people stop using it.',
+          items: { type: 'object', properties: {
+            name: { type: 'string' }, sets: { type: 'integer' }, reps: { type: 'integer' },
+            muscles: { type: 'array', items: { type: 'string' } },
+          } } },
       },
       required: ['name'],
     },
@@ -1199,7 +1209,7 @@ async function saveRoutine(args, user) {
   const name = String(args.name || '').trim();
   if (!name) return { error: 'A name is required.' };
 
-  const exercises = (Array.isArray(args.exercises) ? args.exercises : []).map(e => ({
+  const shape = e => ({
     name: String(e.name || '').trim(),
     sets: Number(e.sets) || 3,
     reps: e.reps ?? 8,
@@ -1207,14 +1217,59 @@ async function saveRoutine(args, user) {
     rest_s: Number(e.rest_s) || 120,
     muscles: Array.isArray(e.muscles) ? e.muscles : [],
     cue: e.cue || null,
-  })).filter(e => e.name);
+  });
+
+  let exercises = (Array.isArray(args.exercises) ? args.exercises : []).map(shape).filter(e => e.name);
 
   const tier = args.tier || (profile.training_age === 'beginner' ? 'beginner' : 'intermediate');
 
   // Saving the same name updates it. Two indistinguishable "leg day" routines
   // is worse than no routine at all.
   const { data: existing } = await supabase.from('wrought_routines')
-    .select('id').eq('user_id', user.id).eq('active', true).ilike('name', name).maybeSingle();
+    .select('id, exercises').eq('user_id', user.id).eq('active', true).ilike('name', name).maybeSingle();
+
+  // Nobody authors a twelve-week programme upfront. They have one good session
+  // and want it again. Capturing what actually happened — in the order it
+  // happened — is how a plan really gets built.
+  if (args.from_last_session) {
+    const { data: last } = await supabase.from('wrought_sessions')
+      .select('id').eq('user_id', user.id).eq('status', 'done')
+      .order('ended_at', { ascending: false }).limit(1).maybeSingle();
+
+    if (!last) {
+      return { error: 'no_finished_session',
+        say: 'No finished session to capture yet. Run one with start_session and save it afterwards.' };
+    }
+
+    const { data: sets } = await supabase.from('wrought_sets')
+      .select('exercise, reps, weight_kg, muscles, position, set_number')
+      .eq('session_id', last.id).order('position', { ascending: true });
+
+    // Collapse sets back into exercises, preserving the order actually trained.
+    const byExercise = new Map();
+    for (const s of (sets || [])) {
+      const k = s.exercise;
+      if (!byExercise.has(k)) {
+        byExercise.set(k, { name: k, sets: 0, reps: s.reps ?? 8, muscles: s.muscles || [], position: s.position ?? 99 });
+      }
+      byExercise.get(k).sets += 1;
+    }
+    exercises = [...byExercise.values()]
+      .sort((a, b) => a.position - b.position)
+      .map(shape);
+
+    if (!exercises.length) {
+      return { error: 'nothing_logged',
+        say: 'That session has no sets recorded, so there is nothing to save.' };
+    }
+  }
+
+  // A plan grows over weeks. Making somebody rebuild the whole thing to add one
+  // movement is exactly how a routine stops being used.
+  if (Array.isArray(args.add) && args.add.length) {
+    const base = exercises.length ? exercises : (existing?.exercises || []);
+    exercises = [...base, ...args.add.map(shape).filter(e => e.name)];
+  }
 
   const row = {
     user_id: user.id, name, kind: args.kind || 'strength', tier,
@@ -1229,8 +1284,11 @@ async function saveRoutine(args, user) {
 
   return {
     saved: name, updated: !!existing, exercises: exercises.length, tier,
-    say: `${existing ? 'Updated' : 'Saved'} "${name}" — ${exercises.length} exercises. Say the name any time and it starts.`,
-    next_actions: [`start_session with routine "${name}"`],
+    captured_from_session: !!args.from_last_session,
+    exercise_names: exercises.map(e => e.name),
+    say: `${existing ? 'Updated' : 'Saved'} "${name}" — ${exercises.map(e => `${e.name} ${e.sets}×${e.reps}`).join(', ')}. Say the name any time and it starts.`,
+    note: 'Read the exercise list back once so a mis-captured lift gets caught now. They can add to this later with save_routine and the add field — never make them rebuild it.',
+    next_actions: [`start_session with routine "${name}"`, 'save_routine with add[] to grow it later'],
   };
 }
 

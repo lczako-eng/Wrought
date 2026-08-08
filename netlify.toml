@@ -5,6 +5,13 @@
   directory = "netlify/functions"
   node_bundler = "esbuild"
 
+# The verdict turns up rather than being asked for — that is the difference
+# between a tool and a habit. Hourly rather than nightly because 10pm is a
+# different instant for every user; the function serves only the people for
+# whom it is currently 22:00 where they are standing.
+[functions."brief-nightly"]
+  schedule = "0 * * * *"
+
 # The MCP endpoint — the whole product, as far as an AI client is concerned.
 [[redirects]]
   from = "/mcp"

@@ -351,6 +351,19 @@ export const handler = async (event) => {
       { onConflict: 'user_id,provider' }),
   ]);
 
+  // Hand the day's verdict back in the response.
+  //
+  // This is the whole notification story, and it costs nothing. MCP cannot push
+  // — the protocol is strictly request/response, so no server can ever make
+  // ChatGPT surface anything. But the user's phone is ALREADY calling us every
+  // night to deliver health data. So the reply carries the brief, and one extra
+  // "Show Notification" action in the Shortcut they have already built puts the
+  // verdict on their lock screen. No app, no push certificates, no permissions.
+  const { data: brief } = await supabase.from('wrought_briefs')
+    .select('verdict, local_date')
+    .eq('user_id', userId).eq('local_date', localDateFor(profile.timezone))
+    .order('created_at', { ascending: false }).limit(1).maybeSingle();
+
   return {
     statusCode: 200,
     headers: CORS,
@@ -361,6 +374,9 @@ export const handler = async (event) => {
       sessions_received: incomingEvents.length,
       events_written: eventsWritten,
       duplicates_ignored: rows.length - written,
+      // Put this straight into a Show Notification action.
+      notification: brief?.verdict || null,
+      notification_title: brief?.verdict ? `Wrought — ${brief.local_date}` : null,
       // Naming what was thrown away is the difference between a working
       // Shortcut and an hour of silent confusion.
       skipped_unknown: [...new Set(skipped)].slice(0, 20),

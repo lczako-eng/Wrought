@@ -206,6 +206,25 @@
   { "kind": "Ride", "duration_s": 3600, "distance_m": 32000 }
 ]</pre>
 
+  <h3>Get the verdict on your lock screen</h3>
+  <p class="muted">
+    One extra action in the same Shortcut. The reply to your nightly push contains that
+    day's verdict — so after <b>Get Contents of URL</b>, add <b>Show Notification</b> and
+    set the body to <code>notification</code> from the response. That is the whole thing:
+    no app, no push certificates, no permissions to grant.
+  </p>
+
+<pre>Get Contents of URL  →  https://wrought.fit/ingest
+Get Dictionary Value →  notification      (from Contents of URL)
+Show Notification    →  Wrought           (body: Dictionary Value)</pre>
+
+  <p class="muted">
+    You'll also get it by email at 10pm if you'd rather. Worth knowing why it works this
+    way: an MCP server can never push into ChatGPT or Claude — the protocol is strictly
+    request-and-reply, so nothing on our side can make your assistant speak first. But
+    your phone is already calling us every night. So it carries the message home.
+  </p>
+
   <h3>Rings, straps and scales</h3>
   <p class="muted">
     Oura, Whoop, Fitbit, Garmin, Polar, Strava and Withings all have real cloud APIs and
