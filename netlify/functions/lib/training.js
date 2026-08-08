@@ -223,6 +223,98 @@ export function energyBalance({ profile, weightKg, caloriesIn, activeCalories, f
   };
 }
 
+// ── Order ───────────────────────────────────────────────────────────────────
+// Whatever goes first gets the freshest nervous system. Everybody in a gym
+// knows this vaguely; almost nobody can tell you what it costs them, because
+// no app stores where in the session a lift happened.
+//
+// This one does, so the question becomes answerable with arithmetic: your bench
+// is not stalling, it is just always going third, and it costs you 5kg when it
+// does. That is a fix worth more than any programme change.
+
+const COMPOUND = /squat|deadlift|bench press|overhead press|row|pull-up|dip|lunge|leg press|hip thrust|clean|snatch|romanian/;
+const ISOLATION = /curl|extension|raise|fly|pushdown|pulldown|calf|shrug|abduction|kickback/;
+
+// A safety net over whatever assembled the session. Big compounds first, then
+// everything else, then isolation — the ordering that is correct often enough
+// that violating it should be deliberate rather than accidental.
+export function orderPlan(plan) {
+  const rank = e => {
+    const k = e.key || exerciseKey(e.name);
+    if (COMPOUND.test(k)) return 0;
+    if (ISOLATION.test(k)) return 2;
+    return 1;
+  };
+  // Stable within a rank, so a deliberate order inside the compounds survives.
+  return [...plan]
+    .map((e, i) => ({ e, i, r: rank(e) }))
+    .sort((a, b) => a.r - b.r || a.i - b.i)
+    .map(({ e }, i) => ({ ...e, index: i }));
+}
+
+// Two sessions at a position before anything is claimed. One heavy Monday
+// proves nothing, and a confident claim off a single data point is worse than
+// silence — it sends somebody rebuilding a programme around noise.
+const MIN_SESSIONS = 2;
+
+export function orderInsight(sets) {
+  const byExercise = new Map();
+
+  for (const s of sets) {
+    if (s.position == null || s.weight_kg == null) continue;
+    const key = s.exercise_key;
+    if (!byExercise.has(key)) byExercise.set(key, new Map());
+    const sessions = byExercise.get(key);
+    // One entry per session: the top set, since that is what "how strong was I
+    // on this lift today" actually means.
+    const id = s.session_id || s.local_date;
+    const prev = sessions.get(id);
+    if (!prev || Number(s.weight_kg) > Number(prev.weight_kg)) {
+      sessions.set(id, { weight_kg: Number(s.weight_kg), position: s.position, name: s.exercise });
+    }
+  }
+
+  const findings = [];
+
+  for (const [key, sessions] of byExercise) {
+    const rows = [...sessions.values()];
+    if (rows.length < MIN_SESSIONS * 2) continue;
+
+    const early = rows.filter(r => r.position <= 2);
+    const late  = rows.filter(r => r.position >= 3);
+    if (early.length < MIN_SESSIONS || late.length < MIN_SESSIONS) continue;
+
+    const avg = a => a.reduce((x, r) => x + r.weight_kg, 0) / a.length;
+    const e = avg(early), l = avg(late);
+    const diff = Math.round((e - l) * 10) / 10;
+    const pct  = Math.round(((e - l) / e) * 1000) / 10;
+
+    // Under 3% is inside the noise of sleep, food and the day itself.
+    if (pct < 3) continue;
+
+    findings.push({
+      exercise: rows[0].name,
+      key,
+      early_avg_kg: Math.round(e * 10) / 10,
+      late_avg_kg: Math.round(l * 10) / 10,
+      cost_kg: diff,
+      cost_pct: pct,
+      sessions_early: early.length,
+      sessions_late: late.length,
+      say: `${rows[0].name} averages ${Math.round(e * 10) / 10}kg when it goes first or second, and ${Math.round(l * 10) / 10}kg when it goes third or later — ${diff}kg, about ${pct}%. If it matters to you, move it up.`,
+    });
+  }
+
+  findings.sort((a, b) => b.cost_pct - a.cost_pct);
+
+  return {
+    findings,
+    say: findings.length
+      ? findings[0].say
+      : 'Not enough sessions at different positions yet to say whether order is costing you anything.',
+  };
+}
+
 // ── Earned room ─────────────────────────────────────────────────────────────
 // Every eating app is one of two things: punitive, or permissive. Punitive ones
 // get deleted in February. Permissive ones get ignored by March.

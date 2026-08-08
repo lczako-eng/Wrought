@@ -15,6 +15,7 @@ import { PROVIDERS, LIVE_PROVIDERS, providerSummary, recommendRoute } from '../n
 import {
   exerciseKey, loadStep, progressionCall, TIERS,
   restingBurn, energyBalance, planFromRoutine, sessionTotals, earnedRoom,
+  orderPlan, orderInsight,
 } from '../netlify/functions/lib/training.js';
 import {
   localDateFor, addDays, daysBetween, clockString, humanDuration,
@@ -554,6 +555,79 @@ await test('without the basics it says what it needs instead of inventing one', 
   const b = energyBalance({ profile: { height_cm: null }, weightKg: null, caloriesIn: 2000 });
   assert.equal(b.known, false);
   assert.ok(b.missing.length);
+});
+
+group('Exercise order — the question only stored positions can answer');
+
+const setAt = (exercise, position, weight_kg, session_id) =>
+  ({ exercise, exercise_key: exerciseKey(exercise), position, weight_kg, session_id, local_date: '2026-08-01' });
+
+await test('a lift that suffers when it goes late gets named, with the cost', () => {
+  const sets = [
+    setAt('Bench Press', 1, 100, 's1'), setAt('Bench Press', 1, 102, 's2'),
+    setAt('Bench Press', 4, 92,  's3'), setAt('Bench Press', 4, 90,  's4'),
+  ];
+  const o = orderInsight(sets);
+  assert.equal(o.findings.length, 1);
+  assert.equal(o.findings[0].exercise, 'Bench Press');
+  assert.ok(o.findings[0].cost_kg > 8, `expected a real cost, got ${o.findings[0].cost_kg}`);
+  assert.match(o.say, /move it up/);
+});
+
+await test('a difference inside daily noise is not reported', () => {
+  // Under 3% is sleep, salt and the day itself. Claiming it is a finding
+  // sends somebody rebuilding a programme around nothing.
+  const sets = [
+    setAt('Squat', 1, 100, 's1'), setAt('Squat', 1, 100, 's2'),
+    setAt('Squat', 4, 98,  's3'), setAt('Squat', 4, 99,  's4'),
+  ];
+  assert.equal(orderInsight(sets).findings.length, 0);
+});
+
+await test('one session at a position proves nothing and says nothing', () => {
+  const sets = [setAt('Squat', 1, 120, 's1'), setAt('Squat', 4, 90, 's2')];
+  assert.equal(orderInsight(sets).findings.length, 0);
+  assert.match(orderInsight(sets).say, /[Nn]ot enough/);
+});
+
+await test('only the top set of each session counts as that day\'s strength', () => {
+  const sets = [
+    setAt('Squat', 1, 100, 's1'), setAt('Squat', 1, 60, 's1'),   // warm-up must not drag it down
+    setAt('Squat', 1, 100, 's2'), setAt('Squat', 1, 60, 's2'),
+    setAt('Squat', 4, 85,  's3'), setAt('Squat', 4, 85, 's4'),
+  ];
+  const o = orderInsight(sets);
+  assert.equal(o.findings[0].early_avg_kg, 100, 'warm-up sets must not pull the average down');
+});
+
+await test('bodyweight work is skipped rather than counted as zero', () => {
+  const sets = [
+    setAt('Pull-up', 1, null, 's1'), setAt('Pull-up', 1, null, 's2'),
+    setAt('Pull-up', 4, null, 's3'), setAt('Pull-up', 4, null, 's4'),
+  ];
+  assert.equal(orderInsight(sets).findings.length, 0);
+});
+
+await test('compounds are ordered before isolation', () => {
+  const ordered = orderPlan([
+    { name: 'Bicep Curl', key: 'curl' },
+    { name: 'Back Squat', key: 'squat' },
+    { name: 'Lateral Raise', key: 'raise' },
+    { name: 'Bench Press', key: 'bench press' },
+  ]);
+  assert.equal(ordered[0].name, 'Back Squat');
+  assert.equal(ordered[1].name, 'Bench Press');
+  assert.ok(['Bicep Curl', 'Lateral Raise'].includes(ordered[3].name));
+  assert.deepEqual(ordered.map(e => e.index), [0, 1, 2, 3], 'indexes must be renumbered after sorting');
+});
+
+await test('deliberate order within the compounds survives', () => {
+  // Stable sort: someone who put deadlift before squat meant it.
+  const ordered = orderPlan([
+    { name: 'Deadlift', key: 'deadlift' },
+    { name: 'Back Squat', key: 'squat' },
+  ]);
+  assert.equal(ordered[0].name, 'Deadlift');
 });
 
 group('Earned room — the reward that must never invert');

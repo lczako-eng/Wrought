@@ -132,6 +132,7 @@ create table if not exists public.wrought_sets (
   exercise     text not null,
   exercise_key text not null,
   set_number   integer not null,
+  position     integer,
   reps         integer,
   weight_kg    numeric,
   rpe          numeric,
@@ -149,6 +150,8 @@ comment on column public.wrought_sets.exercise_key is
   'Normalised name for matching across time — "Barbell Bench Press", "bench press" and "bench" must all find last week''s number, or progression silently stops working and nobody notices for a month.';
 comment on column public.wrought_sets.rpe is
   'Rate of perceived exertion, 1-10. How close to failure. For a beginner with no idea what a working weight is, this is the only honest way to prescribe load.';
+comment on column public.wrought_sets.position is
+  'Where this exercise sat in the session — 1st, 2nd, 5th. Almost nobody stores this, which is why almost nobody can answer the question it unlocks: your bench is not stalling, it is just always going third. The lift that goes first gets the freshest nervous system, and over enough sessions the cost of going late is measurable per exercise rather than guessed at.';
 comment on column public.wrought_sets.note is
   'Whatever was said at the rack — "left shoulder pinched", "grip went before the legs", "felt light today". Attached to the set, not the session, because "the third set felt wrong" is information and "somewhere in that hour something felt wrong" is not. This is where the reason behind a number lives, and six weeks later it is the only thing that explains the plateau.';
 

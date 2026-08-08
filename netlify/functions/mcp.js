@@ -27,6 +27,7 @@ import { PROVIDERS, providerSummary, recommendRoute } from './lib/providers.js';
 import {
   exerciseKey, lastPerformance, progressionCall, TIERS,
   restingBurn, energyBalance, planFromRoutine, sessionTotals, earnedRoom,
+  orderPlan, orderInsight,
 } from './lib/training.js';
 
 const PROTOCOL_VERSION = '2025-06-18';
@@ -81,6 +82,10 @@ ROOM IS EARNED, NEVER TAKEN AWAY. earned_room looks at the whole week, and when 
 NOTES AT THE RACK. Whatever they say mid-set — "left shoulder pinched", "grip went before the legs", "felt light today" — goes into log_set's note field VERBATIM. Never treat it as chatter to be replied to and dropped. It attaches to that exact set, and six weeks later it is the only thing that explains a plateau. If they mention pain more than once for the same joint, call remember so every future session honours it without being asked again.
 
 CALORIES IN AND OUT. energy_balance gives the real picture — what they ate against resting burn from their own height, weight and age, plus what the watch says they moved. Both halves are estimates and the response says so; use "roughly" and "about", never state a net as a measurement, and point them at the weekly scale trend to correct it rather than at any single day. If something is missing to compute it, ask once, save it, and never ask again.
+
+ORDER IS A LEVER NOBODY ELSE CAN PULL. Because every set is stored with its position in the session, progress can tell them something no other app can: whether a lift is genuinely stalling or just always going third. If exercise_order comes back with a finding, say it — "your bench averages 5kg less when it goes third than when it goes first" is a better fix than any programme change, and it costs them nothing to act on. Compounds go before isolation in anything built here; if the user has deliberately ordered a saved routine, honour it and never silently rearrange their session.
+
+USE THE REST GAP. Between sets there are two or three dead minutes where they are holding a phone with nothing to do. log_set returns so_far — sets, volume and elapsed time. Offer it when the moment fits or when they ask, not after every single set. That gap is also the natural place to catch a note: if they mention how something felt, put it in log_set's note field.
 
 PROGRESSION IS THE POINT. progress returns chart-ready series and a muscle-by-week training matrix. Weight is reported as a rolling trend, never today-minus-yesterday — bodyweight swings two kilos on salt and sleep alone, and reacting to a single reading is the most common way people quit.
 
@@ -654,6 +659,14 @@ async function progress(args, user) {
   const summary = summariseRange(range, profile);
   const flags   = careFlags(range, profile);
 
+  // What position in the session is costing them. Nobody else can answer this,
+  // because nobody else stores where in the hour a lift happened.
+  const { data: setRows } = await supabase.from('wrought_sets')
+    .select('exercise, exercise_key, weight_kg, position, session_id, local_date')
+    .eq('user_id', user.id).gte('local_date', from).lte('local_date', to)
+    .limit(2000);
+  const order = orderInsight(setRows || []);
+
   // Chart-ready: sparse series with the gaps left in, because a missing day is
   // information and silently closing the gap draws a line that never happened.
   const series = {
@@ -687,6 +700,7 @@ async function progress(args, user) {
     },
     weight_trend: summary.weight,
     training_matrix: summary.matrix,
+    exercise_order: order,
     series,
     ...(flags.length ? { care_flags: flags } : {}),
     say: [
@@ -695,6 +709,7 @@ async function progress(args, user) {
       summary.training_days ? `${summary.training_days} sessions — about ${summary.sessions_per_week} a week.` : 'No training logged.',
       summary.weight.say,
       summary.matrix.neglected.length ? `Not touched in two weeks: ${summary.matrix.neglected.join(', ')}.` : null,
+      order.findings.length ? order.findings[0].say : null,
     ].filter(Boolean).join(' '),
     note: 'The series arrays are chart-ready with nulls for unlogged days — do not fill the gaps in. Charts render at ' + SITE_URL + '/app.html.',
     next_actions: ['suggest_workout to hit what has been neglected', 'brief for today', 'set_goal if nothing is being scored yet'],
@@ -902,6 +917,8 @@ async function startSession(args, user) {
   // rather than from a generic split that ignores the last month.
   let plan, name, kind, tier = routine?.tier || profile.training_age === 'beginner' ? 'beginner' : 'intermediate';
   if (routine) {
+    // Order is honoured as saved — the user built it deliberately and a routine
+    // that silently rearranges itself is not a routine.
     plan = planFromRoutine(routine);
     name = routine.name;
     kind = routine.kind;
@@ -972,8 +989,11 @@ ${TIERS[tier].doctrine}
 Sets ${TIERS[tier].sets}, reps ${TIERS[tier].reps}. Fit it to the time. Do NOT set loads — those are computed from their own history. Name the session something short and human.` }],
     });
     const out = JSON.parse(res.choices[0].message.content || '{}');
+    // Safety net over the model: compounds first, isolation last. Getting this
+    // backwards means the heaviest lift of the day happens on a fatigued
+    // nervous system, and the session is worth less for no reason.
     return {
-      plan: planFromRoutine({ exercises: out.exercises || [], tier }),
+      plan: orderPlan(planFromRoutine({ exercises: out.exercises || [], tier })),
       name: out.name || 'Session',
       tier,
     };
@@ -1030,6 +1050,9 @@ async function logSet(args, user) {
       user_id: user.id, session_id: session.id,
       exercise: name, exercise_key: key,
       set_number: setsDone + 1,
+      // Where this lift sat in the session. Cheap to store, and the only way
+      // to later answer "is my bench stalling, or is it just always third?"
+      position: session.cursor_index + 1,
       reps: args.reps != null ? Math.round(Number(args.reps)) : (parseInt(String(current.reps), 10) || null),
       weight_kg: args.weight_kg != null ? Number(args.weight_kg) : null,
       rpe: args.rpe != null ? Number(args.rpe) : null,
@@ -1068,6 +1091,15 @@ async function logSet(args, user) {
 
   const setNo = moreSetsHere ? setsDone + 1 : 1;
 
+  // The rest gap is dead time — two or three minutes, several times a session,
+  // where the user is holding a phone with nothing to do. Filling it with the
+  // running total costs nothing and is the only moment in a workout anybody
+  // actually wants a number.
+  const { data: sofar } = await supabase.from('wrought_sets')
+    .select('exercise, reps, weight_kg').eq('session_id', session.id);
+  const running = sessionTotals(sofar || []);
+  const elapsed = Math.round((Date.now() - new Date(session.started_at).getTime()) / 60000);
+
   return {
     recorded: !args.skip,
     rest_seconds: nextExercise.rest_s,
@@ -1078,9 +1110,12 @@ async function logSet(args, user) {
       load,
       cue: setNo === 1 ? nextExercise.cue : null,
     },
-    progress: `${cursor + (moreSetsHere ? 0 : 0) + 1} of ${plan.length}`,
+    so_far: {
+      sets: running.sets, volume_kg: running.volume_kg, minutes: elapsed,
+      exercise: `${cursor + 1} of ${plan.length}`,
+    },
     say: `${moreSetsHere ? 'Logged' : `${current.name} done`}. Rest ${nextExercise.rest_s}s, then ${nextExercise.name} set ${setNo} of ${nextExercise.sets}, ${nextExercise.reps} reps. ${load.say}`,
-    note: 'Keep it to one or two lines between sets — they are standing in a gym holding a phone, not reading a report.',
+    note: 'One or two lines only — they are standing in a gym holding a phone, not reading a report. The so_far numbers are there for the rest gap: offer them if they ask or if the moment fits, never after every single set.',
     next_actions: ['log_set for the next set', 'end_session if they stop early'],
   };
 }
