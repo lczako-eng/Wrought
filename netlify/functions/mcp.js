@@ -27,7 +27,7 @@ import { PROVIDERS, providerSummary, recommendRoute } from './lib/providers.js';
 import {
   exerciseKey, lastPerformance, progressionCall, TIERS,
   restingBurn, energyBalance, planFromRoutine, sessionTotals, earnedRoom,
-  orderPlan, orderInsight,
+  orderPlan, orderInsight, deviceMatrix, weekdayPattern,
 } from './lib/training.js';
 
 const PROTOCOL_VERSION = '2025-06-18';
@@ -84,6 +84,10 @@ ROOM IS EARNED, NEVER TAKEN AWAY. earned_room looks at the whole week, and when 
 NOTES AT THE RACK. Whatever they say mid-set — "left shoulder pinched", "grip went before the legs", "felt light today" — goes into log_set's note field VERBATIM. Never treat it as chatter to be replied to and dropped. It attaches to that exact set, and six weeks later it is the only thing that explains a plateau. If they mention pain more than once for the same joint, call remember so every future session honours it without being asked again.
 
 CALORIES IN AND OUT. energy_balance gives the real picture — what they ate against resting burn from their own height, weight and age, plus what the watch says they moved. Both halves are estimates and the response says so; use "roughly" and "about", never state a net as a measurement, and point them at the weekly scale trend to correct it rather than at any single day. If something is missing to compute it, ask once, save it, and never ask again.
+
+MATRICES, AND THE TWO SCALES. progress returns three grids. training_matrix is muscle by week. device_matrix is everything the watch collects, day by day. weekday_pattern is the shape of their actual week. Two colour meanings run through them and they are not interchangeable: EFFORT RUNS HOT (steps, active calories, training volume — more is more work) and RECOVERY RUNS COOL (sleep, HRV, resting heart rate — deeper is better recovered, and resting HR is inverted because lower is better). Never describe a high resting heart rate as a good week. Bands are computed against that person's own range, never a population — nobody needs to know how their HRV compares to a stranger's, only whether last night was good for them.
+
+THE SHAPE OF A WEEK BEATS AN AVERAGE. "You sleep 6h48m" is useless. "You sleep five and a half hours on Sunday nights and it wrecks every Monday" is something somebody can act on. weekday_pattern surfaces exactly that, and stays silent until there are enough weeks to mean it.
 
 ORDER IS A LEVER NOBODY ELSE CAN PULL. Because every set is stored with its position in the session, progress can tell them something no other app can: whether a lift is genuinely stalling or just always going third. If exercise_order comes back with a finding, say it — "your bench averages 5kg less when it goes third than when it goes first" is a better fix than any programme change, and it costs them nothing to act on. Compounds go before isolation in anything built here; if the user has deliberately ordered a saved routine, honour it and never silently rearrange their session.
 
@@ -710,6 +714,8 @@ async function progress(args, user) {
     },
     weight_trend: summary.weight,
     training_matrix: summary.matrix,
+    device_matrix: deviceMatrix(range.days),
+    weekday_pattern: weekdayPattern(range.days),
     exercise_order: order,
     series,
     ...(flags.length ? { care_flags: flags } : {}),
@@ -720,6 +726,7 @@ async function progress(args, user) {
       summary.weight.say,
       summary.matrix.neglected.length ? `Not touched in two weeks: ${summary.matrix.neglected.join(', ')}.` : null,
       order.findings.length ? order.findings[0].say : null,
+      weekdayPattern(range.days).findings[0]?.say || null,
     ].filter(Boolean).join(' '),
     note: 'The series arrays are chart-ready with nulls for unlogged days — do not fill the gaps in. Charts render at ' + SITE_URL + '/app.html.',
     next_actions: ['suggest_workout to hit what has been neglected', 'brief for today', 'set_goal if nothing is being scored yet'],

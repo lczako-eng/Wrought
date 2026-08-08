@@ -176,6 +176,11 @@ table.matrix td.rh.cold { color: var(--heat-3); }
 .cell { display: block; width: 30px; height: 23px; border-radius: 2px; }
 .h0{background:var(--heat-0)} .h1{background:var(--heat-1)} .h2{background:var(--heat-2)}
 .h3{background:var(--heat-3)} .h4{background:var(--heat-4)}
+/* Recovery runs cool. A day with no data is hatched, never shaded — a missing
+   night is not a bad night, and colouring it as one would be a lie. */
+.c0{background:var(--heat-0)} .c1{background:var(--temper-dk)} .c2{background:#3E6C87}
+.c3{background:var(--temper)} .c4{background:#8FBAD4}
+.x{background:repeating-linear-gradient(45deg,var(--scale-2),var(--scale-2) 2px,transparent 2px,transparent 4px)}
 .legend { display: flex; align-items: center; gap: 8px; font-family: var(--mono); font-size: 10px; letter-spacing: .1em; text-transform: uppercase; color: var(--ash-dim); }
 .legend .ramp { display: flex; gap: 2px; }
 .legend .ramp span { width: 18px; height: 7px; border-radius: 1px; }
@@ -417,8 +422,51 @@ function demoData() {
       local_date: series[N - 1].date, kind: 'evening',
       verdict: "Roughly 2,140 calories and 148g of protein — fourth day running you've hit protein, which is the longest you've held it. Squat moved again: 102.5 for 6 is up 10kg on where you started this block. But you've now gone five weeks without training legs properly outside that one session, and the volume shows it. Weight's coming down about 0.4kg a week, which is the right speed, so leave the food alone. Tomorrow is legs — and put the bench first for once, it's costing you six kilos going last.",
     },
+    device_matrix: {
+      days: series.map(d => d.date),
+      rows: [
+        devRow('sleep_minutes', 'Sleep', 'recovery', series.map(d => d.sleep), 'high'),
+        devRow('hrv', 'HRV', 'recovery', series.map((d, i) => Math.round(62 + wave(i, 5, 11))), 'high'),
+        devRow('resting_hr', 'Resting HR', 'recovery', series.map((d, i) => Math.round(56 + wave(i, 6, 5))), 'low'),
+        devRow('steps', 'Steps', 'effort', series.map((d, i) => Math.round(8600 + wave(i, 3.6, 3200))), 'high'),
+        devRow('volume_kg', 'Volume', 'effort', series.map(d => d.volume), 'high'),
+      ],
+      say: '5 metrics tracked.',
+    },
+    weekday: {
+      enough: true,
+      rows: ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'].map((day, i) => ({
+        day,
+        sleep_minutes: [420, 405, 415, 400, 430, 455, 335][i],
+        steps: [9200, 10400, 8800, 9600, 7400, 12100, 6200][i],
+        calories: [2100, 2050, 2140, 2080, 2380, 2620, 2010][i],
+        trained_pct: [100, 100, 0, 100, 0, 100, 0][i],
+        weeks: 4,
+      })),
+      findings: [
+        { kind: 'sleep', say: 'Sunday is your worst night — about 5.6h against 7.6h on Saturday.' },
+        { kind: 'training', say: 'You have never trained on Wed or Fri in this stretch.' },
+      ],
+      say: 'Sunday is your worst night.',
+    },
     care_flags: [],
   };
+
+  function devRow(metric, label, scale, values, better) {
+    const present = values.filter(v => v != null);
+    const min = Math.min(...present), max = Math.max(...present);
+    return {
+      metric, label, scale, better,
+      min: Math.round(min), max: Math.round(max),
+      avg: Math.round(present.reduce((a, b) => a + b, 0) / present.length),
+      coverage: Math.round(present.length / values.length * 100),
+      cells: values.map((v, i) => ({
+        date: series[i].date, value: v,
+        band: v == null ? null : Math.max(0, Math.min(4, Math.round(
+          ((better === 'low' ? 1 - (v - min) / (max - min || 1) : (v - min) / (max - min || 1))) * 4))),
+      })),
+    };
+  }
 }
 
 async function load(token) {
@@ -475,6 +523,8 @@ function render(d) {
 
   out.push(liftsPanel(d));
   out.push(matrixPanel(s.matrix));
+  out.push(devicePanel(d.device_matrix));
+  out.push(weekPanel(d.weekday));
 
   if (d.exercise_order?.findings?.length) {
     const f = d.exercise_order.findings[0];
@@ -661,6 +711,70 @@ function matrixPanel(m) {
       <span class="ramp"><span class="h0"></span><span class="h1"></span><span class="h2"></span><span class="h3"></span><span class="h4"></span></span>
       <span>Forging heat</span></div>
     ${m.neglected.length ? `<p class="sub" style="color:var(--heat-3)">Not touched in two weeks: ${esc(m.neglected.join(', '))}.</p>` : ''}
+  </section>`;
+}
+
+// Everything the watch collects, on the same grid as training — but on the
+// second scale. Effort runs hot, recovery runs cool. Using one ramp for both
+// would mean a red-hot resting heart rate row reading as a good week.
+function devicePanel(dm) {
+  if (!dm?.rows?.length) {
+    return `<section class="panel"><h2>From your devices</h2>
+      <p class="empty">${esc(dm?.say || 'No device data yet — connect a watch and this fills in overnight.')}</p></section>`;
+  }
+  const cols = dm.days.length;
+  const step = cols > 60 ? Math.ceil(cols / 60) : 1;   // keep it readable over a year
+  const idx = dm.days.map((_, i) => i).filter(i => i % step === 0);
+
+  const rows = dm.rows.map(r => `<tr>
+    <td class="rh">${esc(r.label)}<br><span style="color:var(--ash-dim);font-size:10.5px">${
+      r.metric === 'sleep_minutes' ? `${Math.round(r.avg / 60 * 10) / 10}h avg`
+      : `${n(r.avg)} avg`}</span></td>
+    ${idx.map(i => {
+      const c = r.cells[i];
+      const cls = c.band == null ? 'x' : (r.scale === 'recovery' ? 'c' : 'h') + c.band;
+      return `<td><span class="cell ${cls}" title="${esc(c.date)}${c.value == null ? ' · no data' : ` · ${n(Math.round(c.value))}`}"></span></td>`;
+    }).join('')}
+  </tr>`).join('');
+
+  return `<section class="panel"><h2>From your devices</h2>
+    <p class="sub">Effort runs hot, recovery runs cool — two scales, because a red-hot
+      resting heart rate would read as a good week when it means the opposite.
+      Shading is against your own range, never anybody else's.</p>
+    <div class="mshell"><table class="matrix">
+      <thead><tr><th class="rh">Metric</th>${idx.map(i =>
+        `<th>${esc(dm.days[i].slice(5))}</th>`).join('')}</tr></thead>
+      <tbody>${rows}</tbody>
+    </table></div>
+    <div class="legend" style="gap:16px">
+      <span style="display:flex;align-items:center;gap:7px">Recovery
+        <span class="ramp"><span class="c0"></span><span class="c1"></span><span class="c2"></span><span class="c3"></span><span class="c4"></span></span>
+        better</span>
+      <span style="display:flex;align-items:center;gap:7px">Effort
+        <span class="ramp"><span class="h0"></span><span class="h1"></span><span class="h2"></span><span class="h3"></span><span class="h4"></span></span>
+        harder</span>
+    </div>
+  </section>`;
+}
+
+// Averages hide the shape of a life. "You sleep 6h48m" is useless; "you sleep
+// five and a half hours on Sunday nights" is something somebody can act on.
+function weekPanel(wk) {
+  if (!wk?.rows?.length) return '';
+  const maxSleep = Math.max(...wk.rows.map(r => r.sleep_minutes || 0)) || 1;
+  const bars = wk.rows.map(r => `<div class="lrow" style="grid-template-columns:38px 1fr 66px">
+    <span class="lbl">${esc(r.day)}</span>
+    <span class="track"><span class="fill" style="width:${((r.sleep_minutes || 0) / maxSleep * 100).toFixed(1)}%;
+      background:${r.trained_pct > 0 ? 'linear-gradient(90deg,var(--temper-dk),var(--temper))' : 'var(--heat-1)'}"></span></span>
+    <span class="val">${r.sleep_minutes ? `${Math.floor(r.sleep_minutes / 60)}h${String(r.sleep_minutes % 60).padStart(2, '0')}` : '—'}</span>
+  </div>`).join('');
+
+  return `<section class="panel"><h2>The shape of your week</h2>
+    <p class="sub">Average sleep by day. Bars in blue are days you train on; amber are days you never do.</p>
+    <div class="ledger">${bars}</div>
+    ${wk.findings?.length
+      ? wk.findings.map(f => `<p class="sub" style="color:var(--bright)">${esc(f.say)}</p>`).join('')
+      : `<p class="sub">${esc(wk.say)}</p>`}
   </section>`;
 }
 

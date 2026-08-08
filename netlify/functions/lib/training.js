@@ -223,6 +223,163 @@ export function energyBalance({ profile, weightKg, caloriesIn, activeCalories, f
   };
 }
 
+// ── Device matrices ─────────────────────────────────────────────────────────
+// The training matrix works because a muscle group either got worked or it did
+// not, and the eye reads a gap instantly. Everything the watch collects wants
+// the same treatment — but it needs a second scale, because the two halves of
+// training mean opposite things.
+//
+//   EFFORT RUNS HOT.  Steps, active calories, volume. More is more work, so it
+//                     climbs the forge scale. Hotter = harder.
+//   RECOVERY RUNS COOL. Sleep, HRV, resting heart rate. These are temper blue —
+//                     the colour steel turns when it is drawn back from
+//                     hardness so it bends instead of snapping. Deeper = better
+//                     recovered.
+//
+// Using one scale for both would be a lie: a red-hot resting heart rate row
+// would read as a good week when it means the opposite. Two vocabularies,
+// because there are genuinely two things being said.
+//
+// Bands are computed against the person's own range, not a population. Nobody
+// needs to know how their HRV compares to a stranger's; they need to know
+// whether last night was good *for them*.
+
+const RECOVERY_METRICS = {
+  sleep_minutes: { label: 'Sleep',      better: 'high' },
+  hrv:           { label: 'HRV',        better: 'high' },
+  resting_hr:    { label: 'Resting HR', better: 'low'  },
+};
+
+const EFFORT_METRICS = {
+  steps:           { label: 'Steps',     better: 'high' },
+  active_calories: { label: 'Move',      better: 'high' },
+  volume_kg:       { label: 'Volume',    better: 'high' },
+};
+
+// Five bands, 0-4, against this person's own spread. A flat metric returns the
+// middle band throughout rather than inventing contrast that is not there.
+function band(value, min, max, better) {
+  if (value == null) return null;
+  if (max - min < 1e-9) return 2;
+  const t = (value - min) / (max - min);
+  const scaled = better === 'low' ? 1 - t : t;
+  return Math.max(0, Math.min(4, Math.round(scaled * 4)));
+}
+
+export function deviceMatrix(days, { metrics = null } = {}) {
+  const want = metrics || { ...RECOVERY_METRICS, ...EFFORT_METRICS };
+  const rows = [];
+
+  for (const [key, meta] of Object.entries(want)) {
+    const values = days.map(d => (d[key] == null ? null : Number(d[key])));
+    const present = values.filter(v => v != null);
+    if (present.length < 3) continue;                 // too sparse to read
+
+    const min = Math.min(...present), max = Math.max(...present);
+    const avg = present.reduce((a, b) => a + b, 0) / present.length;
+
+    rows.push({
+      metric: key,
+      label: meta.label,
+      scale: key in RECOVERY_METRICS ? 'recovery' : 'effort',
+      better: meta.better,
+      min: Math.round(min), max: Math.round(max), avg: Math.round(avg),
+      coverage: Math.round((present.length / days.length) * 100),
+      cells: days.map((d, i) => ({
+        date: d.date,
+        value: values[i],
+        band: band(values[i], min, max, meta.better),
+      })),
+    });
+  }
+
+  return {
+    days: days.map(d => d.date),
+    rows,
+    say: rows.length
+      ? `${rows.length} metric${rows.length === 1 ? '' : 's'} tracked across ${days.length} days.`
+      : 'No device data in this stretch — connect a watch and this fills in on its own.',
+  };
+}
+
+// ── The week you actually live ──────────────────────────────────────────────
+// Averages hide the shape of a life. "You sleep 6h48m" is useless; "you sleep
+// five and a half hours on Sunday nights and it wrecks every Monday" is a thing
+// somebody can act on. Only visible once there are enough weeks to average.
+
+const DOW = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+
+export function weekdayPattern(days, { minWeeks = 2 } = {}) {
+  const buckets = DOW.map(() => ({ sleep: [], steps: [], calories: [], sessions: 0, count: 0 }));
+
+  for (const d of days) {
+    const idx = (new Date(`${d.date}T00:00:00Z`).getUTCDay() + 6) % 7;   // Monday = 0
+    const b = buckets[idx];
+    b.count++;
+    if (d.sleep_minutes) b.sleep.push(d.sleep_minutes);
+    if (d.steps) b.steps.push(d.steps);
+    if (d.calories) b.calories.push(d.calories);
+    if (d.sessions) b.sessions++;
+  }
+
+  const enough = buckets.every(b => b.count >= minWeeks);
+  const mean = a => (a.length ? a.reduce((x, y) => x + y, 0) / a.length : null);
+
+  const rows = buckets.map((b, i) => ({
+    day: DOW[i],
+    sleep_minutes: b.sleep.length ? Math.round(mean(b.sleep)) : null,
+    steps: b.steps.length ? Math.round(mean(b.steps)) : null,
+    calories: b.calories.length ? Math.round(mean(b.calories)) : null,
+    trained_pct: b.count ? Math.round((b.sessions / b.count) * 100) : 0,
+    weeks: b.count,
+  }));
+
+  if (!enough) {
+    return { rows, enough: false, findings: [],
+      say: 'A few more weeks and the shape of your week starts showing.' };
+  }
+
+  const findings = [];
+
+  const slept = rows.filter(r => r.sleep_minutes != null);
+  if (slept.length >= 5) {
+    const worst = slept.reduce((a, r) => (r.sleep_minutes < a.sleep_minutes ? r : a));
+    const best  = slept.reduce((a, r) => (r.sleep_minutes > a.sleep_minutes ? r : a));
+    const gap = best.sleep_minutes - worst.sleep_minutes;
+    if (gap >= 45) {
+      findings.push({
+        kind: 'sleep',
+        say: `${worst.day} is your worst night — about ${Math.round(worst.sleep_minutes / 60 * 10) / 10}h against ${Math.round(best.sleep_minutes / 60 * 10) / 10}h on ${best.day}.`,
+      });
+    }
+  }
+
+  const never = rows.filter(r => r.trained_pct === 0);
+  if (never.length && never.length < 5) {
+    findings.push({
+      kind: 'training',
+      say: `You have never trained on ${never.map(r => r.day).join(' or ')} in this stretch.`,
+    });
+  }
+
+  const fed = rows.filter(r => r.calories != null);
+  if (fed.length >= 5) {
+    const heaviest = fed.reduce((a, r) => (r.calories > a.calories ? r : a));
+    const avg = fed.reduce((a, r) => a + r.calories, 0) / fed.length;
+    if (heaviest.calories - avg > 350) {
+      findings.push({
+        kind: 'food',
+        say: `${heaviest.day} runs about ${Math.round(heaviest.calories - avg)} calories above your other days.`,
+      });
+    }
+  }
+
+  return {
+    rows, enough: true, findings,
+    say: findings.length ? findings[0].say : 'Your week is fairly even, which is rarer than you would think.',
+  };
+}
+
 // ── Order ───────────────────────────────────────────────────────────────────
 // Whatever goes first gets the freshest nervous system. Everybody in a gym
 // knows this vaguely; almost nobody can tell you what it costs them, because

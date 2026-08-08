@@ -15,7 +15,7 @@ import { PROVIDERS, LIVE_PROVIDERS, providerSummary, recommendRoute } from '../n
 import {
   exerciseKey, loadStep, progressionCall, TIERS,
   restingBurn, energyBalance, planFromRoutine, sessionTotals, earnedRoom,
-  orderPlan, orderInsight,
+  orderPlan, orderInsight, deviceMatrix, weekdayPattern,
 } from '../netlify/functions/lib/training.js';
 import {
   localDateFor, addDays, daysBetween, clockString, humanDuration,
@@ -555,6 +555,103 @@ await test('without the basics it says what it needs instead of inventing one', 
   const b = energyBalance({ profile: { height_cm: null }, weightKg: null, caloriesIn: 2000 });
   assert.equal(b.known, false);
   assert.ok(b.missing.length);
+});
+
+group('Device matrices — two scales, because there are two meanings');
+
+const devDays = (n, fn) => Array.from({ length: n }, (_, i) => ({
+  date: addDays('2026-07-01', i), logged: true, sessions: 0, muscles: [],
+  sleep_minutes: null, steps: null, resting_hr: null, hrv: null,
+  calories: null, volume_kg: null, active_calories: null, ...fn(i),
+}));
+
+await test('recovery metrics are cool, effort metrics are hot', () => {
+  // Using one scale for both would be a lie — a red-hot resting heart rate row
+  // would read as a good week when it means the opposite.
+  const m = deviceMatrix(devDays(14, i => ({
+    sleep_minutes: 400 + i * 5, resting_hr: 60 - i, steps: 6000 + i * 300,
+  })));
+  assert.equal(m.rows.find(r => r.metric === 'sleep_minutes').scale, 'recovery');
+  assert.equal(m.rows.find(r => r.metric === 'resting_hr').scale, 'recovery');
+  assert.equal(m.rows.find(r => r.metric === 'steps').scale, 'effort');
+});
+
+await test('resting heart rate is inverted, because lower is better', () => {
+  const m = deviceMatrix(devDays(10, i => ({ resting_hr: 70 - i * 2 })));
+  const row = m.rows.find(r => r.metric === 'resting_hr');
+  assert.equal(row.better, 'low');
+  assert.equal(row.cells[0].band, 0, 'the highest resting HR must read as the worst');
+  assert.equal(row.cells[9].band, 4, 'the lowest resting HR must read as the best');
+});
+
+await test('more sleep reads as better recovered', () => {
+  const m = deviceMatrix(devDays(10, i => ({ sleep_minutes: 300 + i * 20 })));
+  const row = m.rows.find(r => r.metric === 'sleep_minutes');
+  assert.equal(row.cells[0].band, 0);
+  assert.equal(row.cells[9].band, 4);
+});
+
+await test('bands are against the person\'s own range, not a population', () => {
+  // Somebody who sleeps 7-8h and somebody who sleeps 5-6h should both see
+  // their own best nights at the top of their own scale.
+  const a = deviceMatrix(devDays(10, i => ({ sleep_minutes: 420 + i * 6 })));
+  const b = deviceMatrix(devDays(10, i => ({ sleep_minutes: 300 + i * 6 })));
+  const top = m => m.rows.find(r => r.metric === 'sleep_minutes').cells[9].band;
+  assert.equal(top(a), 4);
+  assert.equal(top(b), 4);
+});
+
+await test('a flat metric shows no invented contrast', () => {
+  const m = deviceMatrix(devDays(10, () => ({ hrv: 55 })));
+  const row = m.rows.find(r => r.metric === 'hrv');
+  assert.ok(row.cells.every(c => c.band === 2), 'a flat line must not be dramatised into a gradient');
+});
+
+await test('missing days stay missing rather than becoming zero', () => {
+  const m = deviceMatrix(devDays(10, i => ({ steps: i % 2 ? 8000 + i * 100 : null })));
+  const row = m.rows.find(r => r.metric === 'steps');
+  assert.equal(row.cells[0].band, null);
+  assert.ok(row.coverage < 100);
+});
+
+await test('a metric with almost no data is left out entirely', () => {
+  const m = deviceMatrix(devDays(10, i => ({ hrv: i === 0 ? 50 : null })));
+  assert.equal(m.rows.find(r => r.metric === 'hrv'), undefined);
+});
+
+group('The shape of a week');
+
+await test('the worst night of the week gets named', () => {
+  // Averages hide the shape of a life. "You sleep 6h48m" is useless.
+  const m = weekdayPattern(devDays(28, i => {
+    const dow = (new Date(addDays('2026-07-01', i) + 'T00:00:00Z').getUTCDay() + 6) % 7;
+    return { sleep_minutes: dow === 6 ? 320 : 430 };   // Sunday is the bad one
+  }));
+  assert.equal(m.enough, true);
+  const sleep = m.findings.find(f => f.kind === 'sleep');
+  assert.ok(sleep, 'a 110-minute gap between best and worst night must surface');
+  assert.match(sleep.say, /Sun/);
+});
+
+await test('days never trained are named', () => {
+  const m = weekdayPattern(devDays(28, i => {
+    const dow = (new Date(addDays('2026-07-01', i) + 'T00:00:00Z').getUTCDay() + 6) % 7;
+    return { sessions: dow === 4 ? 0 : 1 };            // never Friday
+  }));
+  assert.ok(m.findings.find(f => f.kind === 'training')?.say.includes('Fri'));
+});
+
+await test('it stays quiet until there are enough weeks to mean it', () => {
+  const m = weekdayPattern(devDays(7, () => ({ sleep_minutes: 400 })));
+  assert.equal(m.enough, false);
+  assert.equal(m.findings.length, 0);
+  assert.match(m.say, /few more weeks/);
+});
+
+await test('an even week is reported as even, not forced into a finding', () => {
+  const m = weekdayPattern(devDays(28, () => ({ sleep_minutes: 420, sessions: 1, calories: 2200 })));
+  assert.equal(m.enough, true);
+  assert.equal(m.findings.length, 0);
 });
 
 group('Exercise order — the question only stored positions can answer');

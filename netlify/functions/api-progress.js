@@ -12,7 +12,7 @@ import {
   localDateFor, addDays, humanDuration, kgToLb, daysBetween,
   rangeFacts, summariseRange, dayFacts, careFlags, scoreGoals, supabase,
 } from './lib/wrought.js';
-import { orderInsight, earnedRoom, energyBalance, exerciseKey } from './lib/training.js';
+import { orderInsight, earnedRoom, energyBalance, exerciseKey, deviceMatrix, weekdayPattern } from './lib/training.js';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -150,6 +150,8 @@ export const handler = async (event) => {
       eating_window: windowStatus(win, profile.timezone),
       lifts,
       exercise_order: orderInsight(setRows),
+      device_matrix: deviceMatrix(range.days),
+      weekday: weekdayPattern(range.days),
       notes,
       sessions: sessions.map(s => ({
         name: s.name, kind: s.kind, date: s.local_date,
