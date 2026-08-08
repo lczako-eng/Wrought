@@ -3,92 +3,218 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>WROUGHT — dashboard</title>
+<title>Wrought — your record</title>
+<meta name="theme-color" content="#14110F">
 <style>
-  :root{
-    --bg:#0b0b0d; --panel:#141417; --panel2:#1b1b1f; --line:#26262b;
-    --text:#ececed; --muted:#8a8a93; --dim:#5c5c66;
-    --ember:#ff5a1f; --ash:#b33d13; --steel:#5b9dd9; --moss:#4fb286; --warn:#e8b64c;
-  }
-  *{box-sizing:border-box}
-  html,body{margin:0;padding:0}
-  body{background:var(--bg);color:var(--text);
-    font:15px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Roboto,Helvetica,Arial,sans-serif;
-    -webkit-font-smoothing:antialiased}
-  .wrap{max-width:1080px;margin:0 auto;padding:0 20px}
+/* ═══════════════════════════════════════════════════════════════════════════
+   The record.
 
-  header{padding:28px 0 22px;border-bottom:1px solid var(--line);margin-bottom:28px}
-  .top{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap}
-  .mark{display:flex;align-items:center;gap:12px}
-  .mark .bar{width:38px;height:5px;border-radius:3px;
-    background:linear-gradient(90deg,#3a3a40,var(--ash) 55%,var(--ember));
-    box-shadow:0 0 18px rgba(255,90,31,.4)}
-  .mark .name{font-weight:700;letter-spacing:.3em;font-size:12.5px}
-  .ranges{display:flex;gap:6px}
-  .range{padding:6px 13px;border-radius:7px;border:1px solid var(--line);background:transparent;
-    color:var(--muted);font-size:13px;cursor:pointer;font-family:inherit}
-  .range:hover{border-color:#3d3d45;color:var(--text)}
-  .range.on{background:var(--ember);border-color:var(--ember);color:#120600;font-weight:600}
+   Same forge palette as the landing page, but this is a UI rather than a
+   document — it gets scanned and operated, not read top to bottom. So the
+   craft moves from typography to information design: the verdict and the day
+   sit above the fold, detail is below it, and state is encoded in form as well
+   as in number so what needs attention reads without being counted.
 
-  .tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:14px;margin-bottom:26px}
-  .tile{background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:16px 17px}
-  .tile .k{font-size:11px;letter-spacing:.13em;text-transform:uppercase;color:var(--dim);margin-bottom:8px}
-  .tile .v{font-size:26px;font-weight:660;letter-spacing:-.02em;font-variant-numeric:tabular-nums;line-height:1.1}
-  .tile .s{font-size:12.5px;color:var(--muted);margin-top:5px}
-  .tile .v.hot{color:var(--ember)}
+   The heat scale means intensity of work — matrix cells, nothing else.
+   Semantic colour is kept separate from it: temper blue for recovery and
+   anything neutral, moss for a target hit or a lift going up, amber for care.
+   Mixing those two vocabularies is how a dashboard stops being readable.
+   ═══════════════════════════════════════════════════════════════════════════ */
 
-  .panel{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:20px;margin-bottom:20px}
-  .panel h2{margin:0 0 3px;font-size:15px;font-weight:640;letter-spacing:-.01em}
-  .panel .sub{color:var(--muted);font-size:13px;margin:0 0 16px}
+:root {
+  --iron:      #14110F;
+  --scale:     #1E1917;
+  --scale-2:   #262020;
+  --edge:      #332B27;
+  --edge-lit:  #4A3E37;
 
-  .charts{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:20px}
-  svg{display:block;width:100%;height:auto;overflow:visible}
-  .gridline{stroke:var(--line);stroke-width:1}
-  .axis{fill:var(--dim);font-size:10.5px;font-family:inherit}
+  --bright:    #F4EFE9;
+  --ash:       #9A8D84;
+  --ash-dim:   #6B615A;
 
-  /* The verdict is the product's voice — it gets the ember rule, nothing else does. */
-  .verdict{border-left:3px solid var(--ember);padding:2px 0 2px 18px;font-size:15.5px;line-height:1.65}
-  .verdict .when{color:var(--dim);font-size:12px;letter-spacing:.1em;text-transform:uppercase;margin-bottom:9px}
+  --heat-0:    #2A2220;
+  --heat-1:    #7A1F0A;
+  --heat-2:    #C3350D;
+  --heat-3:    #F26419;
+  --heat-4:    #F5A623;
+  --heat-5:    #FFE3B8;
 
-  .flag{background:rgba(232,182,76,.09);border:1px solid rgba(232,182,76,.32);
-    border-radius:10px;padding:15px 17px;margin-bottom:20px}
-  .flag h3{margin:0 0 5px;font-size:14px;color:var(--warn);font-weight:640}
-  .flag p{margin:0;font-size:13.5px;color:var(--muted)}
+  --temper:    #5B90B0;
+  --temper-dk: #2E4B5C;
+  --moss:      #6FA672;
+  --amber:     #E8B64C;
 
-  table{width:100%;border-collapse:collapse;font-size:13.5px}
-  th{text-align:left;font-weight:600;color:var(--dim);font-size:11px;letter-spacing:.11em;
-    text-transform:uppercase;padding:0 10px 9px 0;border-bottom:1px solid var(--line)}
-  td{padding:9px 10px 9px 0;border-bottom:1px solid var(--line);vertical-align:top}
-  tr:last-child td{border-bottom:none}
-  .tag{display:inline-block;padding:2px 8px;border-radius:5px;font-size:11px;
-    background:var(--panel2);color:var(--muted);border:1px solid var(--line)}
-  .est{color:var(--dim);font-size:11.5px}
+  --gut: clamp(16px, 4vw, 28px);
+  --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  --serif: ui-serif, Georgia, "Iowan Old Style", "Palatino Linotype", serif;
+}
 
-  .matrix{overflow-x:auto}
-  .matrix table{min-width:460px}
-  .cell{width:32px;height:26px;border-radius:5px;display:inline-block}
-  .neglect{color:var(--warn)}
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0; background: var(--iron); color: var(--bright);
+  font-family: var(--sans); font-size: 15px; line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+}
+a { color: var(--heat-3); }
+:focus-visible { outline: 2px solid var(--heat-4); outline-offset: 2px; border-radius: 2px; }
 
-  .signin{max-width:400px;margin:80px auto;text-align:center}
-  .signin input{width:100%;padding:12px 14px;border-radius:8px;border:1px solid var(--line);
-    background:var(--panel);color:var(--text);font-size:15px;font-family:inherit;margin-bottom:11px}
-  .signin button{width:100%;padding:12px;border-radius:8px;border:none;background:var(--ember);
-    color:#120600;font-weight:640;font-size:15px;cursor:pointer;font-family:inherit}
-  .msg{color:var(--muted);font-size:13.5px;margin-top:14px;min-height:20px}
-  .empty{color:var(--muted);font-size:14px;padding:24px 0;text-align:center}
-  footer{color:var(--dim);font-size:12px;padding:30px 0 60px;text-align:center}
+.wrap { max-width: 1080px; margin: 0 auto; padding-inline: var(--gut); }
+
+/* ── Chrome ─────────────────────────────────────────────────────────────── */
+header {
+  border-bottom: 1px solid var(--edge); padding-block: 20px 16px;
+  position: sticky; top: 0; background: rgba(20,17,15,.94);
+  backdrop-filter: blur(12px); z-index: 20;
+}
+.bar { display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap; }
+.mark { display: flex; align-items: center; gap: 11px; }
+.mark .stock {
+  width: 38px; height: 5px; border-radius: 1px;
+  background: linear-gradient(90deg, var(--heat-0), var(--heat-1) 34%, var(--heat-2) 62%, var(--heat-3) 84%, var(--heat-4));
+  box-shadow: 0 0 16px -3px rgba(242,100,25,.55);
+}
+.mark .name { font-weight: 700; font-size: 12px; letter-spacing: .32em; text-transform: uppercase; }
+
+.ranges { display: flex; gap: 5px; }
+.range {
+  font: inherit; font-size: 12.5px; font-family: var(--mono);
+  padding: 6px 12px; border-radius: 3px; cursor: pointer;
+  background: transparent; border: 1px solid var(--edge); color: var(--ash);
+}
+.range:hover { border-color: var(--edge-lit); color: var(--bright); }
+.range[aria-pressed="true"] { background: var(--heat-3); border-color: var(--heat-3); color: #1A0A02; font-weight: 600; }
+
+main { padding-block: 26px 90px; display: flex; flex-direction: column; gap: 22px; }
+
+/* ── Panels ─────────────────────────────────────────────────────────────── */
+.panel {
+  background: var(--scale); border: 1px solid var(--edge); border-radius: 4px;
+  padding: 20px; display: flex; flex-direction: column; gap: 14px;
+}
+.panel > h2 {
+  margin: 0; font-size: 11px; font-family: var(--mono); font-weight: 500;
+  letter-spacing: .18em; text-transform: uppercase; color: var(--ash-dim);
+}
+.sub { color: var(--ash); font-size: 13.5px; margin: 0; }
+.grid-2 { display: grid; grid-template-columns: 1fr; gap: 22px; }
+@media (min-width: 800px) { .grid-2 { grid-template-columns: 1fr 1fr; } }
+
+/* ── The verdict — the one thing that isn't a number ────────────────────── */
+.verdict {
+  font-family: var(--serif); font-size: clamp(16px, 2.4vw, 19px); line-height: 1.6;
+  border-left: 2px solid var(--heat-2); padding-left: 18px; color: var(--bright);
+}
+.stamp {
+  font-family: var(--mono); font-size: 10.5px; letter-spacing: .16em;
+  text-transform: uppercase; color: var(--ash-dim);
+}
+
+/* ── Tiles ──────────────────────────────────────────────────────────────── */
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(136px, 1fr)); gap: 12px; }
+.tile {
+  background: var(--scale); border: 1px solid var(--edge); border-radius: 4px;
+  padding: 14px 15px; display: flex; flex-direction: column; gap: 5px;
+}
+.tile .k { font-family: var(--mono); font-size: 10px; letter-spacing: .14em; text-transform: uppercase; color: var(--ash-dim); }
+.tile .v { font-size: 25px; font-weight: 650; letter-spacing: -.02em; font-variant-numeric: tabular-nums; line-height: 1.05; }
+.tile .s { font-size: 12px; color: var(--ash); }
+.v.hot { color: var(--heat-4); } .v.cool { color: var(--temper); } .v.good { color: var(--moss); }
+
+/* ── The ledger ─────────────────────────────────────────────────────────── */
+.ledger { display: flex; flex-direction: column; gap: 11px; }
+.lrow { display: grid; grid-template-columns: 54px 1fr 76px; gap: 11px; align-items: center; }
+.lrow .lbl { font-family: var(--mono); font-size: 10.5px; letter-spacing: .12em; text-transform: uppercase; color: var(--ash-dim); }
+.lrow .val { font-family: var(--mono); font-variant-numeric: tabular-nums; font-size: 13.5px; text-align: right; }
+.track { height: 11px; background: var(--scale-2); border-radius: 2px; overflow: hidden; }
+.fill { height: 100%; border-radius: 2px; }
+.fill.in  { background: linear-gradient(90deg, var(--heat-2), var(--heat-3)); }
+.fill.out { background: linear-gradient(90deg, var(--temper-dk), var(--temper)); }
+.net { display: flex; align-items: baseline; gap: 11px; flex-wrap: wrap; border-top: 1px solid var(--edge); padding-top: 12px; }
+.net .big { font-family: var(--mono); font-size: 1.5rem; font-weight: 600; font-variant-numeric: tabular-nums; }
+
+/* ── Callouts — semantic, never the accent ──────────────────────────────── */
+.callout { border-radius: 4px; padding: 16px 18px; display: flex; flex-direction: column; gap: 7px; }
+.callout .tag { font-family: var(--mono); font-size: 10px; letter-spacing: .16em; text-transform: uppercase; }
+.callout p { margin: 0; font-size: 14.5px; }
+.callout.good { background: rgba(111,166,114,.08); border: 1px solid rgba(111,166,114,.3); }
+.callout.good .tag { color: var(--moss); }
+.callout.care { background: rgba(232,182,76,.08); border: 1px solid rgba(232,182,76,.32); }
+.callout.care .tag { color: var(--amber); }
+.callout.note { background: rgba(91,144,176,.07); border: 1px solid var(--temper-dk); }
+.callout.note .tag { color: var(--temper); }
+
+/* ── Charts ─────────────────────────────────────────────────────────────── */
+svg { display: block; width: 100%; height: auto; overflow: visible; }
+.gridline { stroke: var(--edge); stroke-width: 1; }
+.axis { fill: var(--ash-dim); font-size: 10px; font-family: var(--mono); }
+
+/* ── Lifts ──────────────────────────────────────────────────────────────── */
+.lifts { display: flex; flex-direction: column; }
+.lift {
+  display: grid; grid-template-columns: 1fr 84px 62px; gap: 12px; align-items: center;
+  padding: 13px 0; border-top: 1px solid var(--edge);
+}
+.lift:first-child { border-top: 0; }
+.lift .nm { font-size: 14.5px; display: flex; flex-direction: column; gap: 2px; }
+.lift .nm small { color: var(--ash-dim); font-size: 11.5px; font-family: var(--mono); }
+.lift .spark { width: 84px; }
+.lift .delta { font-family: var(--mono); font-size: 13px; text-align: right; font-variant-numeric: tabular-nums; }
+.delta.up { color: var(--moss); } .delta.down { color: var(--heat-3); } .delta.flat { color: var(--ash-dim); }
+
+/* ── Matrix ─────────────────────────────────────────────────────────────── */
+.mshell { overflow-x: auto; }
+table.matrix { border-collapse: separate; border-spacing: 3px; min-width: 420px; }
+table.matrix th {
+  font-family: var(--mono); font-size: 9.5px; letter-spacing: .08em; text-transform: uppercase;
+  color: var(--ash-dim); font-weight: 400; padding-bottom: 5px; text-align: center;
+}
+table.matrix th.rh, table.matrix td.rh { text-align: left; padding-right: 12px; white-space: nowrap; }
+table.matrix td.rh { font-size: 13px; color: var(--ash); }
+table.matrix td.rh.cold { color: var(--heat-3); }
+.cell { display: block; width: 30px; height: 23px; border-radius: 2px; }
+.h0{background:var(--heat-0)} .h1{background:var(--heat-1)} .h2{background:var(--heat-2)}
+.h3{background:var(--heat-3)} .h4{background:var(--heat-4)}
+.legend { display: flex; align-items: center; gap: 8px; font-family: var(--mono); font-size: 10px; letter-spacing: .1em; text-transform: uppercase; color: var(--ash-dim); }
+.legend .ramp { display: flex; gap: 2px; }
+.legend .ramp span { width: 18px; height: 7px; border-radius: 1px; }
+
+/* ── Lists ──────────────────────────────────────────────────────────────── */
+.rows { display: flex; flex-direction: column; }
+.row {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 12px;
+  padding: 11px 0; border-top: 1px solid var(--edge); font-size: 14px;
+}
+.row:first-child { border-top: 0; }
+.row .when { font-family: var(--mono); font-size: 11.5px; color: var(--ash-dim); white-space: nowrap; }
+.chip {
+  font-family: var(--mono); font-size: 10px; letter-spacing: .1em; text-transform: uppercase;
+  padding: 2px 7px; border-radius: 2px; border: 1px solid var(--edge); color: var(--ash-dim);
+}
+.chip.stale { border-color: var(--heat-1); color: var(--heat-3); }
+.quote { font-family: var(--serif); font-style: italic; color: var(--ash); }
+
+.empty { color: var(--ash-dim); font-size: 13.5px; padding: 14px 0; }
+
+/* ── Sign in ────────────────────────────────────────────────────────────── */
+.gate { max-width: 380px; margin: 90px auto; display: flex; flex-direction: column; gap: 12px; text-align: center; }
+.gate input, .gate button {
+  font: inherit; width: 100%; padding: 12px 14px; border-radius: 3px;
+}
+.gate input { background: var(--scale); border: 1px solid var(--edge); color: var(--bright); }
+.gate button { background: var(--heat-3); border: 0; color: #1A0A02; font-weight: 650; cursor: pointer; }
+.msg { color: var(--ash); font-size: 13px; min-height: 19px; }
+
+@media (prefers-reduced-motion: reduce) { * { transition-duration: .01ms !important; } }
 </style>
 </head>
 <body>
 
 <div id="gate" class="wrap" hidden>
-  <div class="signin">
-    <div class="mark" style="justify-content:center;margin-bottom:26px">
-      <span class="bar"></span><span class="name">WROUGHT</span>
-    </div>
-    <p style="color:var(--muted);font-size:14px;margin-bottom:22px">
-      Sign in to see the charts. Same account your AI uses.
-    </p>
+  <div class="gate">
+    <div class="mark" style="justify-content:center"><span class="stock"></span><span class="name">Wrought</span></div>
+    <p class="sub" style="margin-bottom:8px">Your record. Same account your AI uses.</p>
     <input id="email" type="email" placeholder="you@example.com" autocomplete="email">
     <button id="send">Email me a link</button>
     <p class="msg" id="msg"></p>
@@ -97,37 +223,41 @@
 
 <div id="app" hidden>
   <header>
-    <div class="wrap top">
-      <div class="mark"><span class="bar"></span><span class="name">WROUGHT</span></div>
-      <div class="ranges">
-        <button class="range" data-days="7">7d</button>
-        <button class="range on" data-days="30">30d</button>
-        <button class="range" data-days="90">90d</button>
-        <button class="range" data-days="365">1y</button>
+    <div class="wrap bar">
+      <div class="mark"><span class="stock"></span><span class="name">Wrought</span></div>
+      <div class="ranges" role="group" aria-label="Time range">
+        <button class="range" data-days="7"   aria-pressed="false">7d</button>
+        <button class="range" data-days="30"  aria-pressed="true">30d</button>
+        <button class="range" data-days="90"  aria-pressed="false">90d</button>
+        <button class="range" data-days="365" aria-pressed="false">1y</button>
       </div>
     </div>
   </header>
-  <div class="wrap" id="content"></div>
-  <footer>
-    WROUGHT is a training journal, not a medical device. Calories from described meals are estimates.
-  </footer>
+  <main class="wrap" id="content"></main>
 </div>
 
 <script type="module">
 import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm';
 
-// Injected at deploy time by a Netlify snippet, or set here for a local run.
-const SUPABASE_URL = window.WROUGHT_SUPABASE_URL || '';
+const SUPABASE_URL  = window.WROUGHT_SUPABASE_URL  || '';
 const SUPABASE_ANON = window.WROUGHT_SUPABASE_ANON || '';
-
 const sb = SUPABASE_URL ? createClient(SUPABASE_URL, SUPABASE_ANON) : null;
+
 const $ = id => document.getElementById(id);
-const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;' }[c]));
+const n = v => (v == null ? '—' : Number(v).toLocaleString());
 
 let days = 30;
 
+// ?demo=1 renders the whole dashboard from invented-but-plausible data.
+// A dashboard is impossible to judge empty, and nobody signs up for a product
+// whose main screen they have never seen. Same render path as the real thing,
+// so the demo can never drift from what people actually get.
+const DEMO = new URLSearchParams(location.search).has('demo');
+
 async function boot() {
-  if (!sb) { $('gate').hidden = false; $('msg').textContent = 'Supabase keys are not configured on this deploy.'; return; }
+  if (DEMO) { $('app').hidden = false; render(demoData()); return; }
+  if (!sb) { $('gate').hidden = false; $('msg').textContent = 'This deploy is missing its Supabase keys.'; return; }
   const { data } = await sb.auth.getSession();
   if (!data.session) { $('gate').hidden = false; return; }
   $('app').hidden = false;
@@ -139,113 +269,296 @@ $('send')?.addEventListener('click', async () => {
   if (!email) return;
   $('msg').textContent = 'Sending…';
   const { error } = await sb.auth.signInWithOtp({ email, options: { emailRedirectTo: location.href } });
-  $('msg').textContent = error ? error.message : 'Check your email — the link signs you straight in.';
+  $('msg').textContent = error ? error.message : 'Check your email — the link signs you in.';
 });
 
 document.querySelectorAll('.range').forEach(b => b.addEventListener('click', async () => {
-  document.querySelectorAll('.range').forEach(x => x.classList.remove('on'));
-  b.classList.add('on');
+  document.querySelectorAll('.range').forEach(x => x.setAttribute('aria-pressed', 'false'));
+  b.setAttribute('aria-pressed', 'true');
   days = +b.dataset.days;
+  if (DEMO) { render(demoData()); return; }
   const { data } = await sb.auth.getSession();
   if (data.session) load(data.session.access_token);
 }));
 
+// ── Demo data ─────────────────────────────────────────────────────────────
+// Deterministic, so the page looks the same every time somebody opens it, and
+// deliberately imperfect: missed days, a stalled lift, legs abandoned five
+// weeks ago. A demo where everything goes up is not a demo of an honest app.
+function demoData() {
+  const iso = t => new Date(t).toISOString().slice(0, 10);
+  const end = Date.now();
+  const N = days;
+  const wave = (i, p, a) => Math.sin(i / p) * a;
+
+  const series = Array.from({ length: N }, (_, i) => {
+    const date = iso(end - (N - 1 - i) * 86400000);
+    const dow = new Date(date).getUTCDay();
+    const missed = i % 11 === 5 || i % 17 === 9;        // real people miss days
+    const trained = !missed && (dow === 1 || dow === 2 || dow === 4 || dow === 6);
+    return {
+      date, missed, trained,
+      weight: Math.round((84 - (i / N) * 1.7 + wave(i, 3.2, 0.45)) * 10) / 10,
+      calories: missed ? null : Math.round(2080 + wave(i, 4, 260) + (dow === 6 ? 420 : 0)),
+      protein: missed ? null : Math.round(146 + wave(i, 5, 22)),
+      volume: trained ? Math.round(6400 + wave(i, 6, 1500) + i * 22) : null,
+      sleep: Math.round(408 + wave(i, 4.5, 46)),
+    };
+  });
+
+  const pt = (k) => series.map(d => ({ date: d.date, value: d[k] }));
+  const logged = series.filter(d => !d.missed).length;
+  const trainedDays = series.filter(d => d.trained).length;
+
+  // Weeks for the matrix, with legs going cold five weeks in.
+  const weeks = [...new Set(series.map(d => {
+    const dt = new Date(d.date); dt.setUTCDate(dt.getUTCDate() - ((dt.getUTCDay() + 6) % 7));
+    return dt.toISOString().slice(0, 10);
+  }))];
+  const muscles = ['chest', 'back', 'shoulders', 'arms', 'legs', 'core', 'full body'];
+  const grid = weeks.map((wk, wi) => ({
+    week: wk,
+    counts: Object.fromEntries(muscles.map(m => {
+      if (m === 'legs') return [m, wi < weeks.length - 5 ? 2 : 0];
+      if (m === 'full body') return [m, wi >= weeks.length - 4 ? 2 : 1];
+      if (m === 'core') return [m, 1];
+      return [m, 2 + (wi % 2)];
+    })),
+  }));
+
+  const lift = (name, from, to, sessions) => ({
+    name, sessions,
+    best: { weight: Math.max(from, to), reps: 6, date: series[series.length - 2].date },
+    latest: { weight: to, reps: 6, date: series[series.length - 1].date },
+    change: Math.round((to - from) * 10) / 10,
+    series: Array.from({ length: sessions }, (_, i) => ({
+      date: series[Math.floor(i * (N - 1) / (sessions - 1))].date,
+      value: Math.round((from + (to - from) * (i / (sessions - 1)) + wave(i, 2.5, 1.2)) * 4) / 4,
+    })),
+  });
+
+  return {
+    from: series[0].date, to: series[N - 1].date, span_days: N,
+    units: 'metric', weight_unit: 'kg',
+    today: {
+      date: series[N - 1].date,
+      food: { say: 'Roughly 2,140 kcal · 148g protein · 196g carbs · 71g fat (estimated from what you described)', estimated: true },
+      training: { say: '1 session, 44 min — legs, glutes, core' },
+      body: { weight_kg: series[N - 1].weight },
+      device: { steps: 9840, active_calories: 740, sleep_minutes: 402 },
+      entries: [
+        { at: '08:14', summary: 'two eggs and black coffee', estimated: true },
+        { at: '08:15', summary: '82.4 kg', estimated: false },
+        { at: '12:40', summary: 'chicken burrito bowl, no rice', estimated: true },
+        { at: '18:22', summary: 'Leg day — 19 sets, 44 min', estimated: false },
+        { at: '20:05', summary: 'greek yoghurt and berries', estimated: true },
+      ],
+      balance: {
+        known: true, calories_in: 2140, resting_burn: 1770, active_burn: 740,
+        calories_out: 2510, net: -370, direction: 'deficit',
+        projected_kg_per_week: -0.34, approximate: true,
+      },
+    },
+    earned_room: { available: true, room_kcal: 1420, logged_days: 6, worth: 'a proper meal out, whatever you actually want' },
+    summary: {
+      span_days: N, days_logged: logged,
+      adherence_pct: Math.round(logged / N * 100),
+      calories_avg: 2166, protein_avg: 147, carbs_avg: 201, fat_avg: 72,
+      training_days: trainedDays,
+      sessions_per_week: Math.round(trainedDays / N * 7 * 10) / 10,
+      steps_avg: 9120, sleep_avg_minutes: 408, sleep_avg_say: '6h 48m',
+      current_streak: 6, longest_streak: 14,
+      weight: {
+        direction: 'down', per_week_kg: -0.39,
+        first: 84, last: series[N - 1].weight, points: N,
+        say: `Trending down about 0.39 kg a week — averaging ${series[N - 1].weight} kg now vs 84 kg at the start.`,
+      },
+      matrix: { muscles, weeks, grid, neglected: ['legs'] },
+    },
+    goals: [
+      { goal: '150g protein a day', scored: true, hit: false },
+      { goal: 'Gym 4 times a week', scored: true, hit: true },
+    ],
+    lifts: [
+      lift('Back Squat', 92.5, 102.5, 9),
+      lift('Bench Press', 80, 85, 10),
+      lift('Deadlift', 130, 142.5, 7),
+      lift('Overhead Press', 52.5, 52.5, 8),
+      lift('Barbell Row', 70, 77.5, 8),
+    ],
+    exercise_order: {
+      findings: [{
+        exercise: 'Bench Press', early_avg_kg: 85, late_avg_kg: 78.5,
+        cost_kg: 6.5, cost_pct: 7.6, sessions_early: 5, sessions_late: 4,
+      }],
+    },
+    notes: [
+      { date: series[N - 1].date, exercise: 'Back Squat', note: 'left knee grumbled on the last set' },
+      { date: series[N - 4].date, exercise: 'Deadlift', note: 'grip went before the legs did' },
+      { date: series[N - 8].date, exercise: 'Bench Press', note: 'felt light today, bar speed was quick' },
+    ],
+    sessions: [
+      { name: 'Leg day', kind: 'strength', date: series[N - 1].date, minutes: 44, days_ago: 0 },
+      { name: 'Push A', kind: 'strength', date: series[N - 3].date, minutes: 51, days_ago: 2 },
+      { name: 'Tuesday five-a-side', kind: 'sport', date: series[N - 5].date, minutes: 70, days_ago: 4 },
+      { name: 'Pull A', kind: 'strength', date: series[N - 7].date, minutes: 47, days_ago: 6 },
+    ],
+    routines: [
+      { name: 'Leg day', kind: 'strength', exercises: 5, times_used: 11, days_since: 0 },
+      { name: 'Push A', kind: 'strength', exercises: 6, times_used: 14, days_since: 2 },
+      { name: 'Pull A', kind: 'strength', exercises: 6, times_used: 13, days_since: 6 },
+      { name: 'Tuesday five-a-side', kind: 'sport', exercises: 1, times_used: 8, days_since: 4 },
+    ],
+    series: {
+      weight: pt('weight'), calories: pt('calories'), protein: pt('protein'),
+      volume: pt('volume'), steps: pt('sleep'), sleep: pt('sleep'),
+    },
+    latest_verdict: {
+      local_date: series[N - 1].date, kind: 'evening',
+      verdict: "Roughly 2,140 calories and 148g of protein — fourth day running you've hit protein, which is the longest you've held it. Squat moved again: 102.5 for 6 is up 10kg on where you started this block. But you've now gone five weeks without training legs properly outside that one session, and the volume shows it. Weight's coming down about 0.4kg a week, which is the right speed, so leave the food alone. Tomorrow is legs — and put the bench first for once, it's costing you six kilos going last.",
+    },
+    care_flags: [],
+  };
+}
+
 async function load(token) {
   $('content').innerHTML = '<p class="empty">Loading…</p>';
-  const res = await fetch(`/.netlify/functions/api-progress?days=${days}`, {
-    headers: { Authorization: `Bearer ${token}` },
-  });
+  const res = await fetch(`/.netlify/functions/api-progress?days=${days}`, { headers: { Authorization: `Bearer ${token}` } });
   if (!res.ok) { $('content').innerHTML = '<p class="empty">Could not load. Try signing in again.</p>'; return; }
   render(await res.json());
 }
 
 function render(d) {
-  const s = d.summary, wu = d.weight_unit;
-  const parts = [];
+  const s = d.summary, wu = d.weight_unit, out = [];
 
   for (const f of (d.care_flags || [])) {
-    parts.push(`<div class="flag"><h3>Worth pausing on</h3><p>${esc(f.detail)}</p></div>`);
+    out.push(callout('care', 'Worth pausing on', esc(f.detail)));
   }
 
-  parts.push(`<div class="tiles">
-    ${tile('Weight', s.weight.last != null ? fmtWeight(s.weight, d) : '—', s.weight.say ? shortTrend(s.weight, wu) : 'no weigh-ins', s.weight.direction === 'down')}
-    ${tile('Logged', `${s.adherence_pct}%`, `${s.days_logged} of ${s.span_days} days`)}
-    ${tile('Streak', `${s.current_streak}`, `best ${s.longest_streak} days`, s.current_streak >= 7)}
-    ${tile('Protein avg', s.protein_avg ? `${s.protein_avg}g` : '—', 'per logged day')}
-    ${tile('Calories avg', s.calories_avg ? `${s.calories_avg}` : '—', 'estimated, per logged day')}
-    ${tile('Sessions', `${s.training_days}`, s.sessions_per_week ? `${s.sessions_per_week} a week` : 'none logged')}
-  </div>`);
-
+  // Summary before detail: the verdict and today, then everything else.
   if (d.latest_verdict?.verdict) {
-    parts.push(`<div class="panel"><div class="verdict">
-      <div class="when">${esc(d.latest_verdict.kind)} read · ${esc(d.latest_verdict.local_date)}</div>
-      ${esc(d.latest_verdict.verdict)}
-    </div></div>`);
+    out.push(`<section class="panel">
+      <span class="stamp">${esc(d.latest_verdict.kind)} read · ${esc(d.latest_verdict.local_date)}</span>
+      <p class="verdict">${esc(d.latest_verdict.verdict)}</p>
+    </section>`);
   }
 
-  parts.push(`<div class="charts">
-    ${chartPanel('Weight', `Rolling trend — ${esc(s.weight.say || 'not enough data yet')}`, lineChart(d.series.weight, 'var(--ember)', wu))}
-    ${chartPanel('Protein', 'Grams per day. Gaps are days you did not log.', lineChart(d.series.protein, 'var(--moss)', 'g'))}
-    ${chartPanel('Calories', 'Estimated from what you described.', lineChart(d.series.calories, 'var(--steel)', 'kcal'))}
-    ${chartPanel('Training volume', 'Sets × reps × load, per session.', barChart(d.series.volume, 'var(--ash)'))}
-  </div>`);
-
-  parts.push(matrixPanel(s.matrix));
-
-  if (d.goals?.length) {
-    parts.push(`<div class="panel"><h2>Goals</h2><p class="sub">Scored against today.</p>
-      <table><tbody>${d.goals.map(g => `<tr>
-        <td>${esc(g.goal)}</td>
-        <td style="text-align:right;color:${g.scored ? (g.hit ? 'var(--moss)' : 'var(--ember)') : 'var(--dim)'}">
-          ${g.scored ? (g.hit ? 'hit' : 'missed') : 'not measurable'}</td>
-      </tr>`).join('')}</tbody></table></div>`);
+  if (d.earned_room?.available) {
+    out.push(callout('good', 'Earned',
+      `You're about <strong>${n(d.earned_room.room_kcal)}</strong> calories under for the week across
+       ${d.earned_room.logged_days} logged days. That's ${esc(d.earned_room.worth)}. Spend it.`));
   }
 
-  const log = d.today?.entries || [];
-  parts.push(`<div class="panel"><h2>Today</h2><p class="sub">${esc(d.today.date)} — ${esc(d.today.food.say)}</p>
-    ${log.length ? `<table><thead><tr><th>Time</th><th>What</th><th>Type</th></tr></thead><tbody>
-      ${log.map(e => `<tr><td style="color:var(--dim);font-variant-numeric:tabular-nums">${esc(e.at)}</td>
-        <td>${esc(e.summary)}${e.estimated ? ' <span class="est">est.</span>' : ''}</td>
-        <td><span class="tag">${esc(e.type)}</span></td></tr>`).join('')}
-    </tbody></table>` : '<p class="empty">Nothing logged today yet.</p>'}
+  out.push(`<div class="tiles">
+    ${tile('Weight', s.weight.last != null ? `${s.weight.last}${wu}` : '—', trendWord(s.weight, wu), s.weight.direction === 'down' ? 'cool' : '')}
+    ${tile('Streak', s.current_streak, `best ${s.longest_streak}`, s.current_streak >= 7 ? 'hot' : '')}
+    ${tile('Logged', `${s.adherence_pct}%`, `${s.days_logged} of ${s.span_days} days`)}
+    ${tile('Sessions', s.training_days, s.sessions_per_week ? `${s.sessions_per_week}/week` : 'none logged')}
+    ${tile('Protein', s.protein_avg ? `${s.protein_avg}g` : '—', 'avg per logged day', 'good')}
+    ${tile('Sleep', s.sleep_avg_say || '—', 'nightly average', 'cool')}
   </div>`);
 
-  $('content').innerHTML = parts.join('');
+  out.push(`<div class="grid-2">
+    ${todayPanel(d)}
+    ${balancePanel(d)}
+  </div>`);
+
+  out.push(`<div class="grid-2">
+    ${chart('Weight', s.weight.say, d.series.weight, 'var(--heat-3)', wu)}
+    ${chart('Protein', 'Grams per day. Gaps are unlogged days.', d.series.protein, 'var(--moss)', 'g')}
+  </div>`);
+
+  out.push(`<div class="grid-2">
+    ${chart('Calories', 'Estimated from what you described.', d.series.calories, 'var(--temper)', 'kcal')}
+    ${bars('Training volume', 'Sets × reps × load, per session.', d.series.volume)}
+  </div>`);
+
+  out.push(liftsPanel(d));
+  out.push(matrixPanel(s.matrix));
+
+  if (d.exercise_order?.findings?.length) {
+    const f = d.exercise_order.findings[0];
+    out.push(callout('note', 'Order is costing you',
+      `<strong>${esc(f.exercise)}</strong> averages ${f.early_avg_kg}${wu} when it goes first or second,
+       and ${f.late_avg_kg}${wu} when it goes third or later — ${f.cost_kg}${wu}, about ${f.cost_pct}%. Move it up.`));
+  }
+
+  out.push(`<div class="grid-2">${sessionsPanel(d)}${routinesPanel(d)}</div>`);
+  if (d.notes?.length) out.push(notesPanel(d));
+
+  $('content').innerHTML = out.join('');
 }
 
-function tile(k, v, s, hot = false) {
-  return `<div class="tile"><div class="k">${esc(k)}</div>
-    <div class="v${hot ? ' hot' : ''}">${esc(v)}</div><div class="s">${esc(s)}</div></div>`;
-}
+const tile = (k, v, s, cls = '') =>
+  `<div class="tile"><span class="k">${esc(k)}</span><span class="v ${cls}">${esc(v)}</span><span class="s">${esc(s)}</span></div>`;
 
-function chartPanel(title, sub, svg) {
-  return `<div class="panel"><h2>${esc(title)}</h2><p class="sub">${sub}</p>${svg}</div>`;
-}
+const callout = (kind, tag, html) =>
+  `<div class="callout ${kind}"><span class="tag">${esc(tag)}</span><p>${html}</p></div>`;
 
-const fmtWeight = (w, d) => `${w.last}${d.weight_unit}`;
-const shortTrend = (w, u) => w.per_week_kg == null ? 'no trend yet'
+const trendWord = (w, u) =>
+  w.per_week_kg == null ? 'no trend yet'
   : w.direction === 'flat' ? 'holding steady'
   : `${w.direction} ${Math.abs(w.per_week_kg)}${u === 'lb' ? 'kg' : u}/wk`;
 
-// Charts are hand-drawn SVG rather than a library: no dependency, no CDN, and
-// total control over the one thing that matters here — gaps stay gaps. A day
-// you did not log is not a zero, and joining across it draws a line that never
-// happened.
-function lineChart(series, colour, unit) {
-  const W = 460, H = 170, P = { t: 12, r: 10, b: 22, l: 38 };
-  const pts = series.filter(p => p.value != null);
-  if (pts.length < 2) return `<p class="empty">Not enough data yet.</p>`;
+function todayPanel(d) {
+  const t = d.today;
+  const rows = (t.entries || []).map(e =>
+    `<div class="row"><span>${esc(e.summary)}${e.estimated ? ' <span class="chip">est</span>' : ''}</span>
+     <span class="when">${esc(e.at)}</span></div>`).join('');
+  return `<section class="panel">
+    <h2>Today · ${esc(t.date)}</h2>
+    <p class="sub">${esc(t.food.say)}</p>
+    <p class="sub">${esc(t.training.say)}</p>
+    <div class="rows">${rows || '<p class="empty">Nothing logged yet today.</p>'}</div>
+  </section>`;
+}
 
+function balancePanel(d) {
+  const b = d.today.balance;
+  if (!b?.known) {
+    return `<section class="panel"><h2>In vs out</h2>
+      <p class="empty">${esc(b?.say || 'Not enough profile detail to work this out yet.')}</p></section>`;
+  }
+  const max = Math.max(b.calories_in, b.calories_out) || 1;
+  const net = b.net;
+  const cls = net < -150 ? 'good' : net > 150 ? 'hot' : '';
+  return `<section class="panel">
+    <h2>In vs out · today</h2>
+    <div class="ledger">
+      <div class="lrow"><span class="lbl">In</span>
+        <span class="track"><span class="fill in" style="width:${(b.calories_in / max * 100).toFixed(1)}%"></span></span>
+        <span class="val">${n(b.calories_in)}</span></div>
+      <div class="lrow"><span class="lbl">Out</span>
+        <span class="track"><span class="fill out" style="width:${(b.calories_out / max * 100).toFixed(1)}%"></span></span>
+        <span class="val">${n(b.calories_out)}</span></div>
+      <p class="sub" style="font-family:var(--mono);font-size:11.5px">
+        ${n(b.resting_burn)} at rest · ${n(b.active_burn)} moved</p>
+      <div class="net">
+        <span class="big ${cls}">${net > 0 ? '+' : ''}${n(net)}</span>
+        <span class="sub">${b.direction}${b.projected_kg_per_week ? ` · about ${Math.abs(b.projected_kg_per_week)}kg a week` : ''}</span>
+      </div>
+    </div>
+    <p class="sub" style="font-size:12px">Both halves are estimates. Correct against the weekly scale trend, never one day.</p>
+  </section>`;
+}
+
+// Charts are hand-drawn SVG: no dependency, no CDN, and total control over the
+// one thing that matters — gaps stay gaps. A day you did not log is not a zero,
+// and joining across it draws a line that never happened.
+function chart(title, sub, series, colour, unit) {
+  const pts = series.filter(p => p.value != null);
+  if (pts.length < 2) return `<section class="panel"><h2>${esc(title)}</h2><p class="empty">Not enough data yet.</p></section>`;
+
+  const W = 460, H = 150, P = { t: 10, r: 8, b: 20, l: 38 };
   const vals = pts.map(p => p.value);
   let min = Math.min(...vals), max = Math.max(...vals);
   const pad = (max - min) * 0.15 || Math.abs(max * 0.05) || 1;
   min -= pad; max += pad;
 
-  const n = series.length - 1;
-  const x = i => P.l + (i / n) * (W - P.l - P.r);
+  const N = series.length - 1;
+  const x = i => P.l + (i / N) * (W - P.l - P.r);
   const y = v => P.t + (1 - (v - min) / (max - min)) * (H - P.t - P.b);
 
-  // Break the path wherever the data breaks.
   let path = '', pen = false;
   series.forEach((p, i) => {
     if (p.value == null) { pen = false; return; }
@@ -253,67 +566,129 @@ function lineChart(series, colour, unit) {
     pen = true;
   });
 
+  const last = series.reduce((a, p, i) => (p.value != null ? i : a), -1);
   const ticks = [min, (min + max) / 2, max];
-  return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(unit)} over time">
-    ${ticks.map(t => `<line class="gridline" x1="${P.l}" y1="${y(t).toFixed(1)}" x2="${W - P.r}" y2="${y(t).toFixed(1)}"/>
-      <text class="axis" x="${P.l - 7}" y="${(y(t) + 3.5).toFixed(1)}" text-anchor="end">${Math.round(t)}</text>`).join('')}
-    <path d="${path.trim()}" fill="none" stroke="${colour}" stroke-width="2"
-      stroke-linejoin="round" stroke-linecap="round"/>
-    ${pts.length <= 40 ? series.map((p, i) => p.value == null ? '' :
-      `<circle cx="${x(i).toFixed(1)}" cy="${y(p.value).toFixed(1)}" r="2.4" fill="${colour}"/>`).join('') : ''}
-    <text class="axis" x="${P.l}" y="${H - 5}">${esc(series[0].date.slice(5))}</text>
-    <text class="axis" x="${W - P.r}" y="${H - 5}" text-anchor="end">${esc(series[series.length - 1].date.slice(5))}</text>
-  </svg>`;
+
+  return `<section class="panel"><h2>${esc(title)}</h2><p class="sub">${esc(sub)}</p>
+    <svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(title)} over time">
+      ${ticks.map(t => `<line class="gridline" x1="${P.l}" y1="${y(t).toFixed(1)}" x2="${W - P.r}" y2="${y(t).toFixed(1)}"/>
+        <text class="axis" x="${P.l - 6}" y="${(y(t) + 3.5).toFixed(1)}" text-anchor="end">${Math.round(t)}</text>`).join('')}
+      <path d="${path.trim()}" fill="none" stroke="${colour}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+      ${last >= 0 ? `<circle cx="${x(last).toFixed(1)}" cy="${y(series[last].value).toFixed(1)}" r="3.5" fill="${colour}"/>` : ''}
+      <text class="axis" x="${P.l}" y="${H - 4}">${esc(series[0].date.slice(5))}</text>
+      <text class="axis" x="${W - P.r}" y="${H - 4}" text-anchor="end">${esc(series[series.length - 1].date.slice(5))}</text>
+    </svg></section>`;
 }
 
-function barChart(series, colour) {
-  const W = 460, H = 170, P = { t: 12, r: 10, b: 22, l: 38 };
+function bars(title, sub, series) {
   const vals = series.filter(p => p.value != null).map(p => p.value);
-  if (!vals.length) return `<p class="empty">No training logged in this stretch.</p>`;
-
-  const max = Math.max(...vals) * 1.1;
-  const n = series.length;
-  const bw = Math.max(1.5, (W - P.l - P.r) / n - 1.5);
+  if (!vals.length) return `<section class="panel"><h2>${esc(title)}</h2><p class="empty">No training logged in this stretch.</p></section>`;
+  const W = 460, H = 150, P = { t: 10, r: 8, b: 20, l: 38 };
+  const max = Math.max(...vals) * 1.12;
+  const N = series.length;
+  const bw = Math.max(1.5, (W - P.l - P.r) / N - 1.5);
   const y = v => P.t + (1 - v / max) * (H - P.t - P.b);
 
-  return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="training volume per day">
-    <line class="gridline" x1="${P.l}" y1="${H - P.b}" x2="${W - P.r}" y2="${H - P.b}"/>
-    <text class="axis" x="${P.l - 7}" y="${P.t + 4}" text-anchor="end">${Math.round(max)}</text>
-    ${series.map((p, i) => {
-      if (!p.value) return '';
-      const px = P.l + (i / n) * (W - P.l - P.r);
-      return `<rect x="${px.toFixed(1)}" y="${y(p.value).toFixed(1)}" width="${bw.toFixed(1)}"
-        height="${(H - P.b - y(p.value)).toFixed(1)}" fill="${colour}" rx="1.5"/>`;
-    }).join('')}
-    <text class="axis" x="${P.l}" y="${H - 5}">${esc(series[0].date.slice(5))}</text>
-    <text class="axis" x="${W - P.r}" y="${H - 5}" text-anchor="end">${esc(series[series.length - 1].date.slice(5))}</text>
+  return `<section class="panel"><h2>${esc(title)}</h2><p class="sub">${esc(sub)}</p>
+    <svg viewBox="0 0 ${W} ${H}" role="img" aria-label="training volume per day">
+      <line class="gridline" x1="${P.l}" y1="${H - P.b}" x2="${W - P.r}" y2="${H - P.b}"/>
+      <text class="axis" x="${P.l - 6}" y="${P.t + 4}" text-anchor="end">${Math.round(max)}</text>
+      ${series.map((p, i) => p.value ? `<rect x="${(P.l + (i / N) * (W - P.l - P.r)).toFixed(1)}"
+        y="${y(p.value).toFixed(1)}" width="${bw.toFixed(1)}" height="${(H - P.b - y(p.value)).toFixed(1)}"
+        fill="var(--heat-2)" rx="1"/>` : '').join('')}
+      <text class="axis" x="${P.l}" y="${H - 4}">${esc(series[0].date.slice(5))}</text>
+      <text class="axis" x="${W - P.r}" y="${H - 4}" text-anchor="end">${esc(series[series.length - 1].date.slice(5))}</text>
+    </svg></section>`;
+}
+
+// The question people actually open a training app to ask: is anything going up?
+function liftsPanel(d) {
+  if (!d.lifts?.length) {
+    return `<section class="panel"><h2>Lifts</h2>
+      <p class="empty">Run a couple of sessions and every lift shows its own curve here.</p></section>`;
+  }
+  const rows = d.lifts.slice(0, 12).map(l => {
+    const cls = l.change == null ? 'flat' : l.change > 0 ? 'up' : l.change < 0 ? 'down' : 'flat';
+    const sign = l.change > 0 ? '+' : '';
+    return `<div class="lift">
+      <span class="nm">${esc(l.name)}<small>best ${l.best.weight}${d.weight_unit} × ${l.best.reps ?? '—'} · ${l.sessions} sessions</small></span>
+      <span class="spark">${spark(l.series)}</span>
+      <span class="delta ${cls}">${l.change == null ? '—' : `${sign}${l.change}${d.weight_unit}`}</span>
+    </div>`;
+  }).join('');
+  return `<section class="panel"><h2>Lifts</h2>
+    <p class="sub">Top set each session, and how it has moved across this stretch.</p>
+    <div class="lifts">${rows}</div></section>`;
+}
+
+function spark(series) {
+  if (series.length < 2) return '';
+  const W = 84, H = 24;
+  const vals = series.map(p => p.value);
+  const min = Math.min(...vals), max = Math.max(...vals);
+  const rng = (max - min) || 1;
+  const x = i => (i / (series.length - 1)) * W;
+  const y = v => H - 2 - ((v - min) / rng) * (H - 6);
+  const line = series.map((p, i) => `${i ? 'L' : 'M'}${x(i).toFixed(1)},${y(p.value).toFixed(1)}`).join(' ');
+  const area = `${line} L${W},${H} L0,${H} Z`;
+  const up = vals[vals.length - 1] >= vals[0];
+  const c = up ? 'var(--moss)' : 'var(--heat-3)';
+  return `<svg viewBox="0 0 ${W} ${H}" aria-hidden="true">
+    <path d="${area}" fill="${c}" opacity=".13"/>
+    <path d="${line}" fill="none" stroke="${c}" stroke-width="1.6" stroke-linejoin="round"/>
+    <circle cx="${x(series.length - 1).toFixed(1)}" cy="${y(vals[vals.length - 1]).toFixed(1)}" r="2.2" fill="${c}"/>
   </svg>`;
 }
 
-// The matrix. This is the chart that says "you have not trained legs since
-// March" without anybody having to say it out loud.
 function matrixPanel(m) {
-  if (!m.muscles.length) {
-    return `<div class="panel"><h2>Training matrix</h2>
-      <p class="sub">Muscle groups by week.</p><p class="empty">Log a few sessions and this fills in.</p></div>`;
+  if (!m.muscles?.length) {
+    return `<section class="panel"><h2>Training matrix</h2>
+      <p class="empty">Log a few sessions and this fills in.</p></section>`;
   }
-  const maxCount = Math.max(1, ...m.grid.flatMap(w => Object.values(w.counts)));
-  const shade = c => c === 0 ? 'var(--panel2)'
-    : `rgba(255,90,31,${(0.22 + 0.78 * (c / maxCount)).toFixed(2)})`;
+  const max = Math.max(1, ...m.grid.flatMap(w => Object.values(w.counts)));
+  const band = c => c === 0 ? 'h0' : c / max <= .25 ? 'h1' : c / max <= .5 ? 'h2' : c / max <= .75 ? 'h3' : 'h4';
 
-  return `<div class="panel"><h2>Training matrix</h2>
-    <p class="sub">Sessions per muscle group, by week. Empty columns are the honest part.</p>
-    <div class="matrix"><table>
-      <thead><tr><th>Muscle</th>${m.weeks.map(w => `<th style="text-align:center">${esc(w.slice(5))}</th>`).join('')}</tr></thead>
-      <tbody>${m.muscles.map(mus => `<tr>
-        <td class="${m.neglected.includes(mus) ? 'neglect' : ''}">${esc(mus)}${m.neglected.includes(mus) ? ' ·' : ''}</td>
-        ${m.grid.map(w => `<td style="text-align:center"><span class="cell" style="background:${shade(w.counts[mus] || 0)}"
-          title="${w.counts[mus] || 0} session(s)"></span></td>`).join('')}
+  return `<section class="panel"><h2>Training matrix</h2>
+    <p class="sub">Sessions per muscle group, by week. The empty columns are the honest part.</p>
+    <div class="mshell"><table class="matrix">
+      <thead><tr><th class="rh">Muscle</th>${m.weeks.map(w => `<th>${esc(w.slice(5))}</th>`).join('')}</tr></thead>
+      <tbody>${m.muscles.map(mu => `<tr>
+        <td class="rh ${m.neglected.includes(mu) ? 'cold' : ''}">${esc(mu)}</td>
+        ${m.grid.map(w => `<td><span class="cell ${band(w.counts[mu] || 0)}" title="${w.counts[mu] || 0} session(s)"></span></td>`).join('')}
       </tr>`).join('')}</tbody>
     </table></div>
-    ${m.neglected.length ? `<p class="sub" style="margin:14px 0 0" class="neglect">
-      Not touched in two weeks: ${esc(m.neglected.join(', '))}.</p>` : ''}
-  </div>`;
+    <div class="legend"><span>Cold iron</span>
+      <span class="ramp"><span class="h0"></span><span class="h1"></span><span class="h2"></span><span class="h3"></span><span class="h4"></span></span>
+      <span>Forging heat</span></div>
+    ${m.neglected.length ? `<p class="sub" style="color:var(--heat-3)">Not touched in two weeks: ${esc(m.neglected.join(', '))}.</p>` : ''}
+  </section>`;
+}
+
+function sessionsPanel(d) {
+  const rows = (d.sessions || []).map(x =>
+    `<div class="row"><span>${esc(x.name)} <span class="chip">${esc(x.kind)}</span></span>
+     <span class="when">${x.days_ago === 0 ? 'today' : `${x.days_ago}d ago`}${x.minutes ? ` · ${x.minutes}m` : ''}</span></div>`).join('');
+  return `<section class="panel"><h2>Recent sessions</h2>
+    <div class="rows">${rows || '<p class="empty">No finished sessions yet.</p>'}</div></section>`;
+}
+
+function routinesPanel(d) {
+  const rows = (d.routines || []).map(r => {
+    const stale = r.days_since != null && r.days_since >= 7;
+    return `<div class="row"><span>${esc(r.name)} <span class="chip ${stale ? 'stale' : ''}">${r.exercises} lifts</span></span>
+      <span class="when">${r.days_since == null ? 'never run' : r.days_since === 0 ? 'today' : `${r.days_since}d ago`}</span></div>`;
+  }).join('');
+  return `<section class="panel"><h2>Routines</h2>
+    <div class="rows">${rows || '<p class="empty">Say "remember this as my leg day" after a good session.</p>'}</div></section>`;
+}
+
+function notesPanel(d) {
+  return `<section class="panel"><h2>From the rack</h2>
+    <p class="sub">What you said mid-set. Usually the thing that explains a number later.</p>
+    <div class="rows">${d.notes.map(x =>
+      `<div class="row"><span class="quote">“${esc(x.note)}”<br>
+        <span class="chip" style="margin-top:4px;display:inline-block">${esc(x.exercise)}</span></span>
+       <span class="when">${esc(x.date.slice(5))}</span></div>`).join('')}</div></section>`;
 }
 
 boot();
