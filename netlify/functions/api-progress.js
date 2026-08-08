@@ -13,6 +13,7 @@ import {
   rangeFacts, summariseRange, dayFacts, careFlags, scoreGoals, supabase,
 } from './lib/wrought.js';
 import { orderInsight, earnedRoom, energyBalance, exerciseKey, deviceMatrix, weekdayPattern } from './lib/training.js';
+import { nutritionTotals, composition, macroMatrix, yearOverYear } from './lib/nutrition.js';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -36,7 +37,7 @@ export const handler = async (event) => {
   const to   = params.to || localDateFor(profile.timezone);
   const from = addDays(to, -(span - 1));
 
-  const [range, today, goals, win, setRows, sessions, routines, brief] = await Promise.all([
+  const [range, today, goals, win, setRows, sessions, routines, foodRows, brief] = await Promise.all([
     rangeFacts(user.id, profile, from, to),
     dayFacts(user.id, profile, to),
     getGoals(user.id),
@@ -55,6 +56,11 @@ export const handler = async (event) => {
       .select('name, kind, exercises, times_used, last_used_on')
       .eq('user_id', user.id).eq('active', true)
       .order('last_used_on', { ascending: false, nullsFirst: false })
+      .then(r => r.data || []),
+    supabase.from('wrought_events')
+      .select('event_type, local_date, detail, estimated')
+      .eq('user_id', user.id).in('event_type', ['food', 'drink'])
+      .order('local_date', { ascending: false }).limit(8000)
       .then(r => r.data || []),
     supabase.from('wrought_briefs')
       .select('local_date, kind, verdict').eq('user_id', user.id)
@@ -150,6 +156,12 @@ export const handler = async (event) => {
       eating_window: windowStatus(win, profile.timezone),
       lifts,
       exercise_order: orderInsight(setRows),
+      nutrition: {
+        totals: nutritionTotals(foodRows, { today: to }),
+        composition: composition(foodRows, { since: addDays(to, -89) }),
+        macro_matrix: macroMatrix(foodRows, { weeks: 12, today: to }),
+        year_over_year: yearOverYear(foodRows, { today: to }),
+      },
       device_matrix: deviceMatrix(range.days),
       weekday: weekdayPattern(range.days),
       notes,

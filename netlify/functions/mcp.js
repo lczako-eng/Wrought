@@ -24,6 +24,7 @@ import {
   parseLog, insertEvents, writeVerdict, rememberFact,
 } from './lib/wrought.js';
 import { PROVIDERS, providerSummary, recommendRoute } from './lib/providers.js';
+import { nutritionTotals, composition, macroMatrix, yearOverYear } from './lib/nutrition.js';
 import {
   exerciseKey, lastPerformance, progressionCall, TIERS,
   restingBurn, energyBalance, planFromRoutine, sessionTotals, earnedRoom,
@@ -82,6 +83,8 @@ ROUTINES ARE HOW THIS SURVIVES MONTH TWO. When a session works, offer save_routi
 ROOM IS EARNED, NEVER TAKEN AWAY. earned_room looks at the whole week, and when someone has genuinely been under target it hands back a number and tells them to spend it — "you're about 1,400 under, that's a proper dinner out, go and have it." Deliver that warmly and without conditions: no "but", no "just be careful", no suggestion they bank it instead. A reward that gets hedged is not a reward, and the honest logging this depends on is worth far more than the calories. The reverse never happens: when somebody is OVER for the week, state it in one factual line and stop — never prescribe eating less, skipping a meal, or making up for yesterday unless they explicitly ask for a plan. The moment earned room has an opposite it becomes a punishment schedule, and that is the thing that turns a food log into a disorder. When a care flag is up the tool switches the whole frame off; respect that absolutely and never dangle food as a reward for having eaten little.
 
 NOTES AT THE RACK. Whatever they say mid-set — "left shoulder pinched", "grip went before the legs", "felt light today" — goes into log_set's note field VERBATIM. Never treat it as chatter to be replied to and dropped. It attaches to that exact set, and six weeks later it is the only thing that explains a plateau. If they mention pain more than once for the same joint, call remember so every future session honours it without being asked again.
+
+THE BIG PICTURE ON FOOD. nutrition answers the questions a daily total never can: how much sugar, how much meat, what a month looks like against a year. Three rules when relaying it. Composition is counted in MEALS and never in grams — "meat was in 71% of your meals" is honest, "you ate 4kg of meat" is a fabrication, because nobody described dinner precisely enough for a weight. Sugar is a subset of carbs, never additional to them. And never moralise a category: report the share and let them decide what it means. Year-over-year is the number nobody can get anywhere else, and it only exists because something has been quietly adding up — when it appears, lead with it.
 
 CALORIES IN AND OUT. energy_balance gives the real picture — what they ate against resting burn from their own height, weight and age, plus what the watch says they moved. Both halves are estimates and the response says so; use "roughly" and "about", never state a net as a measurement, and point them at the weekly scale trend to correct it rather than at any single day. If something is missing to compute it, ask once, save it, and never ask again.
 
@@ -269,6 +272,20 @@ const TOOLS = [
     inputSchema: {
       type: 'object',
       properties: { date: { type: 'string', description: 'YYYY-MM-DD. Defaults to today.' } },
+    },
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+  },
+  {
+    name: 'nutrition',
+    title: 'What you actually eat — day, week, month, year',
+    description: 'The big picture on food. Totals and per-day averages at every altitude (today, this week, this month, this year, all time), a week-by-week macro grid including sugar and fibre, what your meals are actually MADE of (how often meat, fish, veg, grain, sweets, alcohol appear), and a year-over-year comparison once there is a second year to compare. Use for "how much sugar am I eating", "how much meat do I actually eat", "what does my year look like", "am I eating better than last year", or any high-level food question. Composition is counted in MEALS, never grams — relay it that way.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        period: { type: 'string', enum: ['today','week','month','year','all'],
+                  description: 'Optional focus. Everything is returned regardless; this just says which one they asked about.' },
+        since:  { type: 'string', description: 'YYYY-MM-DD to limit the composition breakdown. Defaults to the last 90 days.' },
+      },
     },
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   },
@@ -1406,6 +1423,46 @@ async function earnedRoomTool(args, user) {
   };
 }
 
+async function nutrition(args, user) {
+  const profile = await getProfile(user.id);
+  const today = localDateFor(profile.timezone);
+
+  // Everything ever logged, because year-over-year is the whole point and it
+  // cannot be answered from a rolling window.
+  const { data: events } = await supabase.from('wrought_events')
+    .select('event_type, local_date, detail, estimated')
+    .eq('user_id', user.id).in('event_type', ['food', 'drink'])
+    .order('local_date', { ascending: false }).limit(8000);
+
+  const evs = events || [];
+  const since = args.since || addDays(today, -89);
+
+  const totals = nutritionTotals(evs, { today });
+  const comp   = composition(evs, { since });
+  const grid   = macroMatrix(evs, { weeks: 12, today });
+  const yoy    = yearOverYear(evs, { today });
+
+  const focus = args.period === 'today' ? totals.today
+              : args.period === 'week'  ? totals.this_week
+              : args.period === 'month' ? totals.this_month
+              : args.period === 'year'  ? totals.this_year
+              : args.period === 'all'   ? totals.all_time
+              : totals.this_week;
+
+  return {
+    totals, composition: comp, macro_matrix: grid, year_over_year: yoy,
+    composition_since: since,
+    say: [
+      `Roughly ${focus.calories_per_day} kcal a day across ${focus.days_logged} logged days` +
+        ` — ${focus.protein_g_per_day}g protein, ${focus.carbs_g_per_day}g carbs (${focus.sugar_g_per_day}g of it sugar), ${focus.fat_g_per_day}g fat.`,
+      comp.say,
+      yoy.comparison?.say || null,
+    ].filter(Boolean).join(' '),
+    note: 'Every macro is estimated from described meals — say "roughly". Composition is a count of MEALS, not weights: "meat in 71% of meals" is honest, "you ate 4kg of meat" is not. Never moralise about a category; report the share and let them decide what it means.',
+    next_actions: ['progress for the training side', 'set_goal if they want a number to be scored against'],
+  };
+}
+
 // ── Tools: setup ────────────────────────────────────────────────────────────
 
 async function getProfileTool(_args, user) {
@@ -1646,6 +1703,7 @@ const IMPL = {
   save_routine: saveRoutine,
   list_routines: listRoutines,
   energy_balance: energyBalanceTool,
+  nutrition,
   earned_room: earnedRoomTool,
   get_day: getDay,
   search_log: searchLog,

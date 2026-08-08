@@ -53,7 +53,7 @@ nothing else.
   MCP brief and the web dashboard cannot disagree. `api-progress.js` exists
   purely so the dashboard calls the same code rather than recomputing in JS.
 - **MCP server**: `netlify/functions/mcp.js` at `/mcp` — stateless Streamable
-  HTTP, JSON-RPC. 24 tools. Doctrines ship in `SERVER_INSTRUCTIONS`.
+  HTTP, JSON-RPC. 25 tools. Doctrines ship in `SERVER_INSTRUCTIONS`.
 - **Auth**: OAuth 2.1 (PKCE, dynamic client registration) so "Sign in with
   Wrought" appears in ChatGPT/Claude. Supabase session JWTs also accepted as a
   fallback. Everything secret is stored SHA-256 hashed.
@@ -102,6 +102,34 @@ quotes no number and explains nothing — explaining *why* would tell someone
 already under-eating that they had not qualified for a treat. There is a test
 for that exact failure, because the first version had it.
 
+### Nutrition — counted honestly, at every altitude
+
+`lib/nutrition.js`. A daily macro total is the least interesting number in
+nutrition; everybody has a bad Tuesday. The shape is what needs years of record:
+sugar climbing every December, meat in four meals out of five, this year running
+below last one.
+
+- **Macros are grams, summed and always labelled estimated.** Sugar is a subset
+  of carbs, never additional to them.
+- **Categories are counted in MEALS, never grams.** "Meat was in 71% of your
+  meals" is honest; "you ate 4kg of meat" is a fabrication, because no
+  description of dinner supports a weight. There is a test asserting no weight
+  language ever appears in a composition response.
+- **Calories are shaded `mid`**, not high-or-low — they are not good or bad in
+  themselves and must never be quietly moralised. Sugar is the one row shaded
+  lower-is-better.
+- **Year-over-year is the number nobody else can give you**, and it only exists
+  because something has been adding up. It stays silent until both years have
+  30+ logged days.
+
+### Brand — the word is the mark
+
+**No symbol.** The wave/bar mark was removed deliberately: a mark beside the
+name is a small apology for the name not being strong enough alone. WROUGHT set
+heavy (800) and wide (0.3em tracking) in capitals is harder to look at than any
+glyph drawn next to it, and it survives being a favicon, a lock-screen line and
+a connector entry without anything being redrawn. Do not reintroduce a symbol.
+
 ### Devices — two doors, not fifteen integrations
 
 The founder asked for "Apple Watch and Samsung watch and Oura and Nike Run —
@@ -130,7 +158,7 @@ self-reporting scale removes the most-abandoned manual entry), then Strava.
 
 ## Conventions
 
-- `npm test` runs `test/harness.mjs` — 85 offline tests, no network, no database.
+- `npm test` runs `test/harness.mjs` — 104 offline tests, no network, no database.
   Run it before every push. It covers the JSON-RPC envelope (which fails as an
   uninformative "could not connect" inside ChatGPT) and all the arithmetic
   (which fails as a confidently wrong number in somebody's verdict).

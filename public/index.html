@@ -128,21 +128,31 @@ strong { color: var(--bright); font-weight: 700; }
 .hot { color: var(--heat-4); }
 .cool { color: var(--temper); }
 
-/* ── Masthead ────────────────────────────────────────────────────────────── */
+/* ── Masthead ──────────────────────────────────────────────────────────────
+   No mark. The word is the mark.
+
+   A wave, a bar, a monogram — every one of them would be a small apology for
+   the name not being strong enough on its own. WROUGHT set heavy and wide in
+   capitals is a harder thing to look at than any symbol drawn beside it, and
+   it survives being a favicon, a lock-screen line and an app connector entry
+   without redrawing anything. */
 .masthead { padding-block: clamp(30px, 7vw, 58px) 26px; }
 .rule-row {
   display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
   font-size: 11px; letter-spacing: .2em; text-transform: uppercase; color: var(--ash-dim);
 }
-.stock {
-  width: 54px; height: 5px; border-radius: 1px; flex: none;
-  background: linear-gradient(90deg, var(--heat-0), var(--heat-1) 32%, var(--heat-2) 58%, var(--heat-3) 82%, var(--heat-4));
-  box-shadow: 0 0 20px -3px rgba(242,100,25,.6);
+.wordmark {
+  font-weight: 800; letter-spacing: .3em; text-transform: uppercase;
+  color: var(--bright); font-size: 12px;
 }
 h1 {
-  font-size: clamp(46px, 13vw, 128px);
-  line-height: .9; letter-spacing: -.045em;
-  margin-block: 26px 14px;
+  font-size: clamp(44px, 12.6vw, 132px);
+  line-height: .88;
+  /* Heavy, wide, and cut into the page. Positive tracking at display size is
+     unusual and it is the point — it reads as stamped rather than typed. */
+  letter-spacing: .04em; font-weight: 800;
+  margin-block: 26px 16px;
+  color: var(--bright);
 }
 .pron { color: var(--ash-dim); font-size: clamp(13px, 2.4vw, 17px); letter-spacing: .04em; }
 .pron b { color: var(--ash); font-weight: 400; }
@@ -282,8 +292,8 @@ footer a { color: var(--ash); }
   <!-- ═══ MASTHEAD ═══════════════════════════════════════════════════════ -->
   <header class="masthead">
     <div class="rule-row">
-      <span class="stock"></span>
-      <span>Record № 001</span>
+      <span class="wordmark">Wrought</span>
+      <span style="color:var(--ash-faint)">Record № 001</span>
       <span style="color:var(--ash-faint)">Tuesday</span>
     </div>
     <h1>WROUGHT</h1>
@@ -424,6 +434,114 @@ footer a { color: var(--ash); }
   </article>
 
   <article class="entry">
+    <div class="t">↑<small>a year</small></div>
+    <div class="e">
+      <h2>What you actually eat,<br>from every altitude.</h2>
+      <p class="dim">
+        A daily macro total is the least interesting number in nutrition — everybody has a
+        bad Tuesday. What nobody can see without years of record is the shape.
+      </p>
+
+      <div class="gridwrap">
+        <table class="heat" style="border-spacing:3px">
+          <thead><tr>
+            <th class="rh">per day</th>
+            <th>May</th><th>Jun</th><th>Jul</th><th>Aug</th><th>Sep</th><th>Oct</th>
+            <th>Nov</th><th>Dec</th><th>Jan</th><th>Feb</th><th>Mar</th><th>Apr</th>
+          </tr></thead>
+          <tbody>
+            <tr><td class="rh">calories</td>
+              <td><span class="cell h2"></span></td><td><span class="cell h2"></span></td>
+              <td><span class="cell h3"></span></td><td><span class="cell h2"></span></td>
+              <td><span class="cell h2"></span></td><td><span class="cell h3"></span></td>
+              <td><span class="cell h3"></span></td><td><span class="cell h4"></span></td>
+              <td><span class="cell h2"></span></td><td><span class="cell h1"></span></td>
+              <td><span class="cell h2"></span></td><td><span class="cell h2"></span></td></tr>
+            <tr><td class="rh">protein</td>
+              <td><span class="cell h1"></span></td><td><span class="cell h2"></span></td>
+              <td><span class="cell h2"></span></td><td><span class="cell h3"></span></td>
+              <td><span class="cell h3"></span></td><td><span class="cell h3"></span></td>
+              <td><span class="cell h2"></span></td><td><span class="cell h1"></span></td>
+              <td><span class="cell h3"></span></td><td><span class="cell h4"></span></td>
+              <td><span class="cell h4"></span></td><td><span class="cell h4"></span></td></tr>
+            <tr><td class="rh">carbs</td>
+              <td><span class="cell h2"></span></td><td><span class="cell h2"></span></td>
+              <td><span class="cell h3"></span></td><td><span class="cell h2"></span></td>
+              <td><span class="cell h2"></span></td><td><span class="cell h2"></span></td>
+              <td><span class="cell h3"></span></td><td><span class="cell h4"></span></td>
+              <td><span class="cell h2"></span></td><td><span class="cell h2"></span></td>
+              <td><span class="cell h2"></span></td><td><span class="cell h1"></span></td></tr>
+            <tr><td class="rh dead">sugar</td>
+              <td><span class="cell h1"></span></td><td><span class="cell h2"></span></td>
+              <td><span class="cell h2"></span></td><td><span class="cell h1"></span></td>
+              <td><span class="cell h2"></span></td><td><span class="cell h3"></span></td>
+              <td><span class="cell h4"></span></td><td><span class="cell h4"></span></td>
+              <td><span class="cell h3"></span></td><td><span class="cell h2"></span></td>
+              <td><span class="cell h1"></span></td><td><span class="cell h1"></span></td></tr>
+            <tr><td class="rh">fibre</td>
+              <td><span class="cell h1"></span></td><td><span class="cell h1"></span></td>
+              <td><span class="cell h2"></span></td><td><span class="cell h2"></span></td>
+              <td><span class="cell h2"></span></td><td><span class="cell h1"></span></td>
+              <td><span class="cell h1"></span></td><td><span class="cell h1"></span></td>
+              <td><span class="cell h2"></span></td><td><span class="cell h3"></span></td>
+              <td><span class="cell h3"></span></td><td><span class="cell h3"></span></td></tr>
+            <tr><td class="rh">fat</td>
+              <td><span class="cell h2"></span></td><td><span class="cell h2"></span></td>
+              <td><span class="cell h2"></span></td><td><span class="cell h2"></span></td>
+              <td><span class="cell h3"></span></td><td><span class="cell h3"></span></td>
+              <td><span class="cell h3"></span></td><td><span class="cell h4"></span></td>
+              <td><span class="cell h2"></span></td><td><span class="cell h2"></span></td>
+              <td><span class="cell h2"></span></td><td><span class="cell h2"></span></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="faint" style="margin-top:12px">
+        SUGAR CLIMBS EVERY NOVEMBER AND DECEMBER. YOU KNEW THAT. NOW YOU CAN SEE IT.
+      </p>
+
+      <table class="tab" style="margin-top:22px">
+        <thead><tr><th>Per day</th><th>Week</th><th>Month</th><th>Year</th></tr></thead>
+        <tbody>
+          <tr><td>Calories</td><td class="num">2,166</td><td class="num">2,240</td><td class="num">2,318</td></tr>
+          <tr><td>Protein</td><td class="num">147g</td><td class="num">141g</td><td class="num">128g</td></tr>
+          <tr><td>Carbs</td><td class="num">201g</td><td class="num">212g</td><td class="num">238g</td></tr>
+          <tr><td>Sugar</td><td class="num">44g</td><td class="num">51g</td><td class="num">68g</td></tr>
+          <tr><td>Fibre</td><td class="num">28g</td><td class="num">26g</td><td class="num">21g</td></tr>
+          <tr><td>Fat</td><td class="num">72g</td><td class="num">75g</td><td class="num">79g</td></tr>
+        </tbody>
+      </table>
+
+      <h2 style="margin-top:26px;font-size:clamp(17px,2.4vw,21px)">And what your meals are made of.</h2>
+      <p class="dim">
+        Counted in <strong>meals</strong>, never in grams — because "meat was in 71% of your
+        meals" is honest, and "you ate 4kg of meat" would be a number nobody's description
+        of dinner could possibly support.
+      </p>
+      <div class="bars">
+        <div class="brow"><span class="k">Meat</span><span class="track"><span class="fill in" style="width:71%"></span></span><span class="v">71%</span></div>
+        <div class="brow"><span class="k">Veg</span><span class="track"><span class="fill in" style="width:64%"></span></span><span class="v">64%</span></div>
+        <div class="brow"><span class="k">Grain</span><span class="track"><span class="fill in" style="width:58%"></span></span><span class="v">58%</span></div>
+        <div class="brow"><span class="k">Dairy</span><span class="track"><span class="fill in" style="width:41%"></span></span><span class="v">41%</span></div>
+        <div class="brow"><span class="k">Fruit</span><span class="track"><span class="fill in" style="width:33%"></span></span><span class="v">33%</span></div>
+        <div class="brow"><span class="k">Fish</span><span class="track"><span class="fill in" style="width:12%"></span></span><span class="v">12%</span></div>
+        <div class="brow"><span class="k">Sweets</span><span class="track"><span class="fill in" style="width:19%"></span></span><span class="v">19%</span></div>
+        <div class="brow"><span class="k">Booze</span><span class="track"><span class="fill in" style="width:9%"></span></span><span class="v">9%</span></div>
+      </div>
+
+      <div class="callout" style="margin-top:22px">
+        <span class="lab">The number nobody else can give you</span>
+        <p class="dim">
+          <strong>This year is averaging roughly 152 calories a day below last year, and 19g
+          of protein above it.</strong> That sentence needs two years of memory to exist. It
+          is the entire reason for keeping a record instead of an app — and it's also why
+          nothing here will ever moralise a category at you. It reports the share. What it
+          means is yours to decide.
+        </p>
+      </div>
+    </div>
+  </article>
+
+  <article class="entry">
     <div class="t">∞<small>kept</small></div>
     <div class="e">
       <h2>Everything above is still there tomorrow.</h2>
@@ -440,6 +558,8 @@ footer a { color: var(--ash); }
           <tr><td>What you said mid-set</td><td class="dim">"the knee — I'll keep you off deep flexion"</td></tr>
           <tr><td>Every meal, in your own words</td><td class="dim">"you're 1,420 under for the week"</td></tr>
           <tr><td>The shape of your week</td><td class="dim">"Sunday is your worst night, every week"</td></tr>
+          <tr><td>Every macro, for years</td><td class="dim">"sugar climbs every November — here it is"</td></tr>
+          <tr><td>What each meal was made of</td><td class="dim">"meat was in 71% of your meals"</td></tr>
           <tr><td>The things you only say once</td><td class="dim">"you don't run. I haven't forgotten."</td></tr>
         </tbody>
       </table>
@@ -462,7 +582,7 @@ footer a { color: var(--ash); }
   </section>
 
   <footer>
-    <div class="rule-row" style="margin-bottom:16px"><span class="stock"></span><span>Wrought</span></div>
+    <div class="rule-row" style="margin-bottom:16px"><span class="wordmark">Wrought</span></div>
     <a href="/connect.html">Connect</a> · <a href="/app.html?demo=1">Dashboard</a> ·
     <a href="https://github.com/lczako-eng/wrought">Source</a>
     <p style="margin-top:12px;max-width:70ch">

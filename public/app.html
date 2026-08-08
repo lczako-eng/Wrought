@@ -69,13 +69,8 @@ header {
   backdrop-filter: blur(12px); z-index: 20;
 }
 .bar { display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap; }
-.mark { display: flex; align-items: center; gap: 11px; }
-.mark .stock {
-  width: 38px; height: 5px; border-radius: 1px;
-  background: linear-gradient(90deg, var(--heat-0), var(--heat-1) 34%, var(--heat-2) 62%, var(--heat-3) 84%, var(--heat-4));
-  box-shadow: 0 0 16px -3px rgba(242,100,25,.55);
-}
-.mark .name { font-weight: 700; font-size: 12px; letter-spacing: .32em; text-transform: uppercase; }
+.mark { display: flex; align-items: center; }
+.mark .name { font-weight: 800; font-size: 13px; letter-spacing: .3em; text-transform: uppercase; color: var(--bright); }
 
 .ranges { display: flex; gap: 5px; }
 .range {
@@ -218,7 +213,7 @@ table.matrix td.rh.cold { color: var(--heat-3); }
 
 <div id="gate" class="wrap" hidden>
   <div class="gate">
-    <div class="mark" style="justify-content:center"><span class="stock"></span><span class="name">Wrought</span></div>
+    <div class="mark" style="justify-content:center"><span class="name">Wrought</span></div>
     <p class="sub" style="margin-bottom:8px">Your record. Same account your AI uses.</p>
     <input id="email" type="email" placeholder="you@example.com" autocomplete="email">
     <button id="send">Email me a link</button>
@@ -229,7 +224,7 @@ table.matrix td.rh.cold { color: var(--heat-3); }
 <div id="app" hidden>
   <header>
     <div class="wrap bar">
-      <div class="mark"><span class="stock"></span><span class="name">Wrought</span></div>
+      <div class="mark"><span class="name">Wrought</span></div>
       <div class="ranges" role="group" aria-label="Time range">
         <button class="range" data-days="7"   aria-pressed="false">7d</button>
         <button class="range" data-days="30"  aria-pressed="true">30d</button>
@@ -422,6 +417,46 @@ function demoData() {
       local_date: series[N - 1].date, kind: 'evening',
       verdict: "Roughly 2,140 calories and 148g of protein — fourth day running you've hit protein, which is the longest you've held it. Squat moved again: 102.5 for 6 is up 10kg on where you started this block. But you've now gone five weeks without training legs properly outside that one session, and the volume shows it. Weight's coming down about 0.4kg a week, which is the right speed, so leave the food alone. Tomorrow is legs — and put the bench first for once, it's costing you six kilos going last.",
     },
+    nutrition: {
+      totals: {
+        today:      macroSet(2140, 148, 196, 44, 28, 71, 5, 1),
+        this_week:  macroSet(2166, 147, 201, 46, 27, 72, 34, 6),
+        this_month: macroSet(2240, 141, 212, 51, 26, 75, 128, 24),
+        this_year:  macroSet(2318, 128, 238, 68, 21, 79, 940, 196),
+        all_time:   macroSet(2331, 124, 242, 71, 20, 80, 2410, 512),
+        note: 'Macros are estimated from described meals.',
+      },
+      composition: {
+        meals: 268, days_logged: 89,
+        rows: [
+          { category: 'meat', meals: 190, share_pct: 71, days: 82, days_pct: 92 },
+          { category: 'vegetable', meals: 171, share_pct: 64, days: 80, days_pct: 90 },
+          { category: 'grain', meals: 155, share_pct: 58, days: 78, days_pct: 88 },
+          { category: 'dairy', meals: 110, share_pct: 41, days: 66, days_pct: 74 },
+          { category: 'fruit', meals: 88, share_pct: 33, days: 54, days_pct: 61 },
+          { category: 'sweets', meals: 51, share_pct: 19, days: 38, days_pct: 43 },
+          { category: 'fish', meals: 32, share_pct: 12, days: 28, days_pct: 31 },
+          { category: 'alcohol', meals: 24, share_pct: 9, days: 21, days_pct: 24 },
+          { category: 'fried', meals: 19, share_pct: 7, days: 17, days_pct: 19 },
+        ],
+        say: 'Across 268 logged meals.',
+      },
+      macro_matrix: {
+        weeks: Array.from({ length: 12 }, (_, i) => iso(end - (11 - i) * 7 * 86400000)),
+        rows: [
+          macroRow('calories', 'Calories', 2166, [2,2,3,2,2,3,3,4,2,1,2,2]),
+          macroRow('protein_g', 'Protein', 147, [1,2,2,3,3,3,2,1,3,4,4,4]),
+          macroRow('carbs_g', 'Carbs', 201, [2,2,3,2,2,2,3,4,2,2,2,1]),
+          macroRow('sugar_g', 'Sugar', 46, [1,2,2,1,2,3,4,4,3,2,1,1]),
+          macroRow('fibre_g', 'Fibre', 27, [1,1,2,2,2,1,1,1,2,3,3,3]),
+          macroRow('fat_g', 'Fat', 72, [2,2,2,2,3,3,3,4,2,2,2,2]),
+        ],
+      },
+      year_over_year: {
+        comparison: { calories_per_day_change: -152, protein_per_day_change: 19,
+          say: 'This year is averaging roughly 152 calories a day below last year, and 19g of protein above.' },
+      },
+    },
     device_matrix: {
       days: series.map(d => d.date),
       rows: [
@@ -451,6 +486,28 @@ function demoData() {
     },
     care_flags: [],
   };
+
+  function macroSet(cal, pro, carb, sug, fib, fat, meals, dayz) {
+    return {
+      meals, days_logged: dayz, estimated: true,
+      calories: cal * (dayz || 1), calories_per_day: cal,
+      protein_g: pro * (dayz || 1), protein_g_per_day: pro,
+      carbs_g: carb * (dayz || 1), carbs_g_per_day: carb,
+      sugar_g: sug * (dayz || 1), sugar_g_per_day: sug,
+      fibre_g: fib * (dayz || 1), fibre_g_per_day: fib,
+      fat_g: fat * (dayz || 1), fat_g_per_day: fat,
+    };
+  }
+
+  function macroRow(key, label, avg, bands) {
+    return {
+      key, label, avg_per_day: avg,
+      cells: bands.map((b, i) => ({
+        week: iso(end - (11 - i) * 7 * 86400000),
+        value: Math.round(avg * (0.82 + b * 0.09)), band: b,
+      })),
+    };
+  }
 
   function devRow(metric, label, scale, values, better) {
     const present = values.filter(v => v != null);
@@ -523,6 +580,7 @@ function render(d) {
 
   out.push(liftsPanel(d));
   out.push(matrixPanel(s.matrix));
+  out.push(nutritionPanel(d.nutrition));
   out.push(devicePanel(d.device_matrix));
   out.push(weekPanel(d.weekday));
 
@@ -712,6 +770,72 @@ function matrixPanel(m) {
       <span>Forging heat</span></div>
     ${m.neglected.length ? `<p class="sub" style="color:var(--heat-3)">Not touched in two weeks: ${esc(m.neglected.join(', '))}.</p>` : ''}
   </section>`;
+}
+
+// Food at every altitude: the week against the month against the year, the
+// macro grid, and what the meals were actually made of. The last one is
+// counted in meals rather than grams, because that is the only honest unit a
+// described dinner supports.
+function nutritionPanel(nu) {
+  if (!nu?.totals) return '';
+  const t = nu.totals;
+  if (!t.all_time.meals) {
+    return `<section class="panel"><h2>What you eat</h2>
+      <p class="empty">Log a few meals and the whole picture builds itself from here.</p></section>`;
+  }
+
+  const row = (label, key, unit = '') => `<tr>
+    <td>${esc(label)}</td>
+    <td class="num" style="text-align:right">${n(t.today[key])}${unit}</td>
+    <td class="num" style="text-align:right">${n(t.this_week[`${key}_per_day`])}${unit}</td>
+    <td class="num" style="text-align:right">${n(t.this_month[`${key}_per_day`])}${unit}</td>
+    <td class="num" style="text-align:right">${n(t.this_year[`${key}_per_day`])}${unit}</td>
+  </tr>`;
+
+  const grid = nu.macro_matrix?.rows?.length ? `
+    <div class="mshell" style="margin-top:6px"><table class="matrix">
+      <thead><tr><th class="rh">Per day</th>${nu.macro_matrix.weeks.map(w =>
+        `<th>${esc(w.slice(5))}</th>`).join('')}</tr></thead>
+      <tbody>${nu.macro_matrix.rows.map(r => `<tr>
+        <td class="rh ${r.key === 'sugar_g' ? 'cold' : ''}">${esc(r.label)}
+          <br><span style="color:var(--ash-dim);font-size:10.5px">${n(r.avg_per_day)} avg</span></td>
+        ${r.cells.map(c => `<td><span class="cell ${c.band == null ? 'x' : 'h' + c.band}"
+          title="${esc(c.week)}${c.value == null ? '' : ` · ${n(c.value)}/day`}"></span></td>`).join('')}
+      </tr>`).join('')}</tbody>
+    </table></div>` : '';
+
+  const comp = nu.composition?.rows?.length ? `
+    <p class="sub" style="margin-top:14px"><strong style="color:var(--bright)">What your meals are made of</strong> —
+      counted in meals across the last 90 days, never in grams.</p>
+    <div class="ledger">${nu.composition.rows.slice(0, 9).map(r => `
+      <div class="lrow" style="grid-template-columns:78px 1fr 46px">
+        <span class="lbl">${esc(r.category.replace('_', ' '))}</span>
+        <span class="track"><span class="fill in" style="width:${r.share_pct}%"></span></span>
+        <span class="val">${r.share_pct}%</span>
+      </div>`).join('')}</div>` : '';
+
+  const yoy = nu.year_over_year?.comparison
+    ? callout('note', 'Against last year', esc(nu.year_over_year.comparison.say))
+    : '';
+
+  return `<section class="panel"><h2>What you eat</h2>
+    <p class="sub">Per day, at every altitude. All of it estimated from what you described —
+      read it as a direction, not a measurement.</p>
+    <div class="mshell"><table class="matrix" style="border-spacing:0;min-width:340px">
+      <thead><tr><th class="rh"></th>
+        <th style="text-align:right">Today</th><th style="text-align:right">Week</th>
+        <th style="text-align:right">Month</th><th style="text-align:right">Year</th></tr></thead>
+      <tbody>
+        ${row('Calories', 'calories')}
+        ${row('Protein', 'protein_g', 'g')}
+        ${row('Carbs', 'carbs_g', 'g')}
+        ${row('Sugar', 'sugar_g', 'g')}
+        ${row('Fibre', 'fibre_g', 'g')}
+        ${row('Fat', 'fat_g', 'g')}
+      </tbody>
+    </table></div>
+    ${grid}${comp}
+  </section>${yoy}`;
 }
 
 // Everything the watch collects, on the same grid as training — but on the

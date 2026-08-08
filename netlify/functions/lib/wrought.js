@@ -628,9 +628,21 @@ Return JSON: {"events": [ ... ]}. Each event:
   time_hint    "HH:MM" in 24h local time if the user indicated when, else null
 
 detail by type:
-  food / drink   {items: [string], calories: int, protein_g: int, carbs_g: int, fat_g: int}
+  food / drink   {items: [string], calories: int, protein_g: int, carbs_g: int,
+                  sugar_g: int, fibre_g: int, fat_g: int, sat_fat_g: int,
+                  categories: [string]}
                  Estimate macros from typical portions. ALWAYS set estimated true unless
                  the user gave the numbers themselves.
+                 sugar_g is ADDED + free sugars plus the sugar in fruit and juice — the
+                 number people actually want to see. It is a subset of carbs_g, never
+                 additional to it.
+                 categories describes what the meal WAS, chosen from exactly:
+                   meat, fish, egg, dairy, vegetable, fruit, grain, legume, nuts,
+                   fried, sweets, alcohol, ultra_processed
+                 Include every one that genuinely applies and none that does not — a
+                 chicken burrito bowl is [meat, grain, vegetable, dairy]. These are
+                 counted in meals, never weighed, so err toward what a person would say
+                 the meal contained rather than trace ingredients.
   workout        {kind: "strength"|"cardio"|"mobility"|"sport", minutes: int,
                   muscles: [string from: chest, back, shoulders, arms, legs, glutes, core, full body],
                   exercises: [{name, sets, reps, weight_kg}]}

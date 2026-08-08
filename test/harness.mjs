@@ -12,6 +12,7 @@ import assert from 'node:assert/strict';
 import { handler, TOOLS, handleRpc } from '../netlify/functions/mcp.js';
 import { canonicalMetric, normalise, normaliseWorkout } from '../netlify/functions/ingest.js';
 import { PROVIDERS, LIVE_PROVIDERS, providerSummary, recommendRoute } from '../netlify/functions/lib/providers.js';
+import { nutritionTotals, composition, macroMatrix, yearOverYear } from '../netlify/functions/lib/nutrition.js';
 import {
   exerciseKey, loadStep, progressionCall, TIERS,
   restingBurn, energyBalance, planFromRoutine, sessionTotals, earnedRoom,
@@ -555,6 +556,77 @@ await test('without the basics it says what it needs instead of inventing one', 
   const b = energyBalance({ profile: { height_cm: null }, weightKg: null, caloriesIn: 2000 });
   assert.equal(b.known, false);
   assert.ok(b.missing.length);
+});
+
+group('Nutrition — the big picture, honestly counted');
+
+const meal = (date, detail, estimated = true) =>
+  ({ event_type: 'food', local_date: date, detail, estimated });
+
+const week1 = ['2026-08-03','2026-08-04','2026-08-05','2026-08-06','2026-08-07'];
+const feed = week1.flatMap(d => [
+  meal(d, { calories: 700, protein_g: 45, carbs_g: 70, sugar_g: 12, fibre_g: 8, fat_g: 22, categories: ['meat','grain','vegetable'] }),
+  meal(d, { calories: 600, protein_g: 40, carbs_g: 55, sugar_g: 30, fibre_g: 4, fat_g: 20, categories: ['dairy','sweets'] }),
+]);
+
+await test('totals roll up at every altitude', () => {
+  const t = nutritionTotals(feed, { today: '2026-08-07' });
+  assert.equal(t.today.meals, 2);
+  assert.equal(t.today.calories, 1300);
+  assert.equal(t.this_week.meals, 10);
+  assert.equal(t.this_week.days_logged, 5);
+  assert.equal(t.this_week.calories_per_day, 1300, 'per-day must divide by days logged, not days elapsed');
+});
+
+await test('estimates stay flagged all the way up', () => {
+  const t = nutritionTotals(feed, { today: '2026-08-07' });
+  assert.equal(t.this_year.estimated, true);
+  assert.match(t.note, /estimated/i);
+});
+
+await test('composition is counted in meals, never grams', () => {
+  const c = composition(feed);
+  const meatRow = c.rows.find(r => r.category === 'meat');
+  assert.equal(meatRow.meals, 5);
+  assert.equal(meatRow.share_pct, 50, 'meat was in half the logged meals');
+  assert.match(c.note, /not weights/i);
+  assert.doesNotMatch(JSON.stringify(c), /\bkg\b|grams/i, 'never imply a weight of food eaten');
+});
+
+await test('a category never eaten simply is not listed', () => {
+  const c = composition(feed);
+  assert.equal(c.rows.find(r => r.category === 'alcohol'), undefined);
+});
+
+await test('sugar is tracked as its own row and shaded as lower-is-better', () => {
+  const g = macroMatrix(feed, { weeks: 12, today: '2026-08-07' });
+  const sugar = g.rows.find(r => r.key === 'sugar_g');
+  assert.ok(sugar, 'sugar must have its own row — it is the one people stare at');
+  assert.equal(sugar.better, 'low');
+  const cals = g.rows.find(r => r.key === 'calories');
+  assert.equal(cals.better, 'mid', 'calories are not good or bad in themselves and must not be moralised');
+});
+
+await test('year over year stays quiet until a second year exists', () => {
+  const y = yearOverYear(feed, { today: '2026-08-07' });
+  assert.equal(y.comparison, null);
+  assert.match(y.note, /second year/i);
+});
+
+await test('year over year compares once both years are properly logged', () => {
+  const many = (year, cals) => Array.from({ length: 40 }, (_, i) =>
+    meal(`${year}-0${1 + Math.floor(i / 20)}-${String((i % 20) + 1).padStart(2, '0')}`,
+      { calories: cals, protein_g: 140, carbs_g: 200, sugar_g: 40, fibre_g: 20, fat_g: 70, categories: ['grain'] }));
+  const y = yearOverYear([...many(2025, 2400), ...many(2026, 2100)], { today: '2026-08-07' });
+  assert.ok(y.comparison, 'two properly logged years must produce a comparison');
+  assert.equal(y.comparison.calories_per_day_change, -300);
+  assert.match(y.comparison.say, /below last year/);
+});
+
+await test('an empty log says nothing rather than reporting zeroes', () => {
+  const c = composition([]);
+  assert.equal(c.meals, 0);
+  assert.equal(c.rows.length, 0);
 });
 
 group('Device matrices — two scales, because there are two meanings');
