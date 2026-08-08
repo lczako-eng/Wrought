@@ -102,16 +102,38 @@
 
   <h2>2 · Let your watch do the boring half</h2>
   <p class="muted">
-    Sleep, steps, resting heart rate and weight should not be things you type. Connect a
-    device and they arrive on their own overnight.
+    Sleep, steps, resting heart rate, weight, and every run you have ever tracked should
+    not be things you type. Connect once and they arrive on their own overnight.
   </p>
 
   <div class="note">
-    <b>Why Apple works differently.</b> Apple Health has no cloud API — there is no
-    entitlement, no partner programme and no price at which any server can read an Apple
-    Watch. The data lives on your phone and leaves only if your phone sends it. So instead
-    of us reading your watch, your phone pushes to us once a night. Every "Apple Health
-    integration" you have ever used is this underneath; most of them just do not say so.
+    <b>You only need one connection.</b> Not eight. Apple Health and Health Connect are
+    already collecting everything else on your phone — Nike Run Club, Strava, Peloton,
+    Oura, Whoop, Samsung Health and Fitbit all write into whichever one you have. Connect
+    that, and the rest comes with it. So the only question is which phone you carry.
+  </div>
+
+  <div class="panel">
+    <table style="width:100%;border-collapse:collapse;font-size:14px">
+      <tr><td style="padding:9px 12px 9px 0;border-bottom:1px solid var(--line)"><b>iPhone / Apple Watch</b></td>
+          <td style="padding:9px 0;border-bottom:1px solid var(--line);color:var(--muted)">Apple Health — set up below</td></tr>
+      <tr><td style="padding:9px 12px 9px 0;border-bottom:1px solid var(--line)"><b>Samsung / Android / Pixel</b></td>
+          <td style="padding:9px 0;border-bottom:1px solid var(--line);color:var(--muted)">Health Connect — set up below</td></tr>
+      <tr><td style="padding:9px 12px 9px 0;border-bottom:1px solid var(--line)">Nike Run Club, Peloton, Samsung Health</td>
+          <td style="padding:9px 0;border-bottom:1px solid var(--line);color:var(--muted)">Nothing to do — they already write to the above</td></tr>
+      <tr><td style="padding:9px 12px 9px 0">Oura, Whoop, Strava, Withings, Garmin</td>
+          <td style="padding:9px 0;color:var(--muted)">Arrive via your phone today; direct links coming</td></tr>
+    </table>
+  </div>
+
+  <div class="note">
+    <b>Why it works by push, not pull.</b> Neither Apple Health nor Health Connect has a
+    cloud API — no entitlement, no partner programme, no price at which any server can
+    read your watch directly. The data lives on your phone and leaves only if your phone
+    sends it. Every "Apple Health integration" you have ever used is this underneath;
+    most of them just do not say so. Nike Run Club is stronger still: it has had no public
+    API for anyone since 2018, so going through your phone is not a compromise — it is
+    the only route that exists.
   </div>
 
   <div class="panel" id="keypanel">
@@ -163,12 +185,34 @@
     <code>Authorization: Bearer</code> header, and FORGE understands its format natively.
   </p>
 
+  <h3>Option C — Android</h3>
+  <p class="muted">
+    Health Connect is built into Android 14 and up, and is a free Play Store install
+    below that. Turn on writing to Health Connect inside Samsung Health, Fitbit and Nike
+    Run Club — that is the step that puts everything in one place. Then use
+    <b>Health Sync</b>, or a Tasker / Macrodroid job, to post to <code>/ingest</code> once
+    a night with the same bearer header and the same JSON body, with
+    <code>"source": "health_connect"</code>.
+  </p>
+
+  <h3>Runs and rides</h3>
+  <p class="muted">
+    Add a <code>workouts</code> array alongside <code>metrics</code> and every run, ride
+    or class lands in your training log next to the lifts — so a week of running does not
+    read as a week of doing nothing:
+  </p>
+<pre>"workouts": [
+  { "kind": "Run",  "minutes": 32, "distance_km": 5.4, "occurred_at": "2026-08-08T18:00:00Z" },
+  { "kind": "Ride", "duration_s": 3600, "distance_m": 32000 }
+]</pre>
+
   <h3>Rings, straps and scales</h3>
   <p class="muted">
-    Oura, Whoop, Fitbit, Garmin and Withings all have real cloud APIs and will connect
-    over OAuth — those are a build item here, not something waiting on you.
-    In the meantime, most of them write into Apple Health on the iPhone, which means the
-    Shortcut above already picks their data up today.
+    Oura, Whoop, Fitbit, Garmin, Polar, Strava and Withings all have real cloud APIs and
+    will connect directly over OAuth — those are a build item here, not something waiting
+    on you. Direct links buy extra depth (Oura's sleep staging, Strava's per-split pace,
+    Whoop's strain), but they are an upgrade rather than the entry price: all of them
+    already reach FORGE through your phone today.
   </p>
 
   <h2>Your data</h2>

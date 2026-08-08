@@ -23,6 +23,7 @@ import {
   dayFacts, rangeFacts, summariseRange, scoreGoals, careFlags,
   parseLog, insertEvents, writeVerdict, rememberFact,
 } from './lib/forge.js';
+import { PROVIDERS, providerSummary, recommendRoute } from './lib/providers.js';
 
 const PROTOCOL_VERSION = '2025-06-18';
 
@@ -61,7 +62,7 @@ SNACKING IS A TIME PROBLEM. Nobody eats 900 calories of crisps at 2pm; they do i
 
 LOGGING BY VOICE MISHEARS. "Burrito" comes back "burrata". Every log response echoes what was recorded; read it back in one short line, and offer undo_last the moment anything looks wrong. Never argue with a correction.
 
-DEVICES. Apple Health has no cloud API — an Apple Watch can only push, via a free iOS Shortcut that connect_device sets up in about two minutes. Oura, Whoop, Fitbit, Garmin and Withings pull over OAuth. If the user asks why their watch is not connected, explain the push/pull difference plainly rather than implying something is broken.
+DEVICES — ONE DOOR, NOT EIGHT. The user probably owns a watch, maybe a ring, and three fitness apps, and expects to connect them one at a time. They should not. Apple Health and Android's Health Connect are already aggregators: Nike Run Club, Strava, Peloton, Oura, Whoop, Samsung Health and Fitbit all write into whichever one is on their phone. So ask which phone they carry, set up that single connection, and everything else arrives with it. Never walk somebody through six separate setups. Apple Health and Health Connect are both push-only by platform design — there is no cloud API for either, so the phone sends to us rather than us reading it; say that plainly rather than implying something is broken. Some apps (Nike Run Club, Samsung Health, Peloton) have no public API for anyone at all, and going through the phone is the only route that exists — not a workaround, and not worth apologising for.
 
 PROGRESSION IS THE POINT. progress returns chart-ready series and a muscle-by-week training matrix. Weight is reported as a rolling trend, never today-minus-yesterday — bodyweight swings two kilos on salt and sleep alone, and reacting to a single reading is the most common way people quit.
 
@@ -267,13 +268,17 @@ const TOOLS = [
   },
   {
     name: 'connect_device',
-    title: 'Connect a watch, ring or scale',
-    description: 'Sets up automatic data. With no provider, returns what is already connected and what is available. For Apple Watch / iPhone this mints a personal ingest key and returns exact Shortcut setup steps — Apple Health has no cloud API, so an Apple Watch can only push to us, never be read by us. Oura, Whoop, Fitbit, Garmin and Withings pull over OAuth.',
+    title: 'Connect a watch, ring, scale or running app',
+    description: 'Sets up automatic data from wearables and fitness apps. IMPORTANT: almost nobody needs more than one connection. Apple Health (iPhone) and Health Connect (Android) are already aggregators — Nike Run Club, Strava, Peloton, Oura, Whoop, Samsung Health and Fitbit all write into whichever is on the user\'s phone, so connecting that one door picks up everything else automatically. Ask which phone they carry and set up that. Call with no provider to see what is connected and get the recommended route. Naming a specific provider returns its real status, including the ones that have no public API at all.',
     inputSchema: {
       type: 'object',
       properties: {
-        provider: { type: 'string', enum: ['apple_health','oura','whoop','fitbit','garmin','withings'],
-                    description: 'Omit to just list what is connected.' },
+        provider: { type: 'string',
+                    enum: ['apple_health','health_connect','strava','oura','whoop','fitbit',
+                           'garmin','withings','polar','nike_run_club','samsung_health','peloton'],
+                    description: 'Omit to list what is connected and get the recommended one-door route. "apple_health" and "health_connect" are the two that actually set anything up.' },
+        devices:  { type: 'array', items: { type: 'string' },
+                    description: 'Optional. What the user said they wear or use — "Apple Watch", "Galaxy Watch", "Oura ring", "Nike Run Club". Used to recommend the right door.' },
       },
     },
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
@@ -856,16 +861,6 @@ async function setEatingWindow(args, user) {
   };
 }
 
-// Apple is the one that surprises people, so the copy explains the constraint
-// rather than pretending it away: HealthKit has no cloud API and never has.
-const PULL_PROVIDERS = {
-  oura:     { name: 'Oura Ring',  note: 'Cloud API — connects over OAuth once a developer app is registered.' },
-  whoop:    { name: 'Whoop',      note: 'Cloud API — connects over OAuth once a developer app is registered.' },
-  fitbit:   { name: 'Fitbit',     note: 'Cloud API — connects over OAuth once a developer app is registered.' },
-  garmin:   { name: 'Garmin',     note: 'Cloud API — requires approval into the Garmin developer programme.' },
-  withings: { name: 'Withings',   note: 'Cloud API — smart scales, connects over OAuth once registered.' },
-};
-
 async function connectDevice(args, user) {
   const { data: conns } = await supabase.from('forge_connections')
     .select('provider, mode, status, last_sync_at').eq('user_id', user.id);
@@ -875,68 +870,90 @@ async function connectDevice(args, user) {
   }));
 
   if (!args.provider) {
+    const route = recommendRoute(args.devices || []);
     return {
       connected,
-      available: {
-        apple_health: 'Apple Watch / iPhone — ready now, via a free iOS Shortcut. Two minutes to set up.',
-        ...Object.fromEntries(Object.entries(PULL_PROVIDERS).map(([k, v]) => [k, `${v.name} — ${v.note}`])),
-      },
+      // The registry drives this so the assistant and the website can never
+      // drift into telling a user two different stories about the same device.
+      available: Object.fromEntries(
+        Object.keys(PROVIDERS).map(k => [k, providerSummary(k).say])),
+      recommended: route,
+      the_shortcut: 'Almost nobody needs more than one connection. Apple Health and Health Connect are already aggregators — Nike Run Club, Strava, Peloton, Oura, Whoop and Samsung Health all write into whichever one is on their phone. Connect the phone and the rest arrives with it.',
       say: connected.length
         ? `Connected: ${connected.map(c => c.provider).join(', ')}.`
-        : 'Nothing connected yet. Apple Watch is the quickest — it takes about two minutes with a free Shortcut.',
-      next_actions: ['connect_device with provider "apple_health" to set the watch up'],
+        : route.say,
+      note: 'Do not walk them through connecting six services one at a time. Ask what phone they carry, then set up that one door.',
+      next_actions: [`connect_device with provider "${route.door}"`],
     };
   }
 
-  if (args.provider === 'apple_health') {
+  const p = providerSummary(args.provider);
+  if (!p) return { error: `Unknown provider: ${args.provider}` };
+
+  // ── The two doors: mint a key and hand over the setup ─────────────────────
+  if (p.status === 'live') {
     // A Shortcut cannot run a PKCE dance, so it gets one long random bearer,
     // stored hashed, scoped to writing this user's health data and nothing else.
     const token = newToken();
     await supabase.from('forge_ingest_keys')
-      .insert([{ user_id: user.id, token_hash: hashToken(token), label: 'Apple Health' }]);
+      .insert([{ user_id: user.id, token_hash: hashToken(token), label: p.name }]);
     await supabase.from('forge_connections')
-      .upsert({ user_id: user.id, provider: 'apple_health', mode: 'push', status: 'active' },
+      .upsert({ user_id: user.id, provider: args.provider, mode: 'push', status: 'active' },
               { onConflict: 'user_id,provider' });
 
+    const ios = args.provider === 'apple_health';
+
     return {
-      provider: 'apple_health',
+      provider: args.provider,
       mode: 'push',
-      why_push: 'Apple Health has no cloud API. There is no way for any server to read an Apple Watch — the data lives on the phone and only leaves if the phone sends it. So the phone pushes to FORGE on a schedule instead.',
+      why_push: p.why,
+      picks_up_automatically: p.aggregates,
       ingest_url: `${SITE_URL}/ingest`,
       ingest_key: token,
-      setup: [
+      setup: ios ? [
         'Open the Shortcuts app on the iPhone and make a new Personal Automation.',
         'Trigger: Time of Day → 11:00 pm → Run Immediately.',
-        'Add "Find Health Samples" — Steps, today. Repeat for Sleep Analysis, Resting Heart Rate, Heart Rate Variability, Active Energy and Body Mass.',
+        'Add "Find Health Samples" — Steps, today. Repeat for Sleep Analysis, Resting Heart Rate, Heart Rate Variability, Active Energy, Body Mass and Workouts.',
         `Add "Get Contents of URL" → ${SITE_URL}/ingest, Method POST.`,
         `Headers: Authorization = "Bearer ${token}", Content-Type = "application/json".`,
-        'Request Body → JSON: source "apple_health", and a "metrics" array of {metric, value, unit, measured_at} using the health samples.',
-        'Run it once to confirm, then leave it. It fills in overnight from then on.',
+        'Request Body → JSON: source "apple_health", a "metrics" array of {metric, value, unit, measured_at}, and optionally a "workouts" array of {kind, minutes, distance_km, occurred_at}.',
+        'Run it once to confirm, then leave it alone. It fills in overnight from then on.',
+      ] : [
+        'Install Health Connect from the Play Store if it is not already on the phone (it is built in on Android 14+).',
+        'In Samsung Health / Fitbit / Nike Run Club, turn on writing to Health Connect. That is what puts everything in one place.',
+        'Install Health Sync, or set up a Tasker/Macrodroid job, to post once a night.',
+        `Endpoint: ${SITE_URL}/ingest, Method POST.`,
+        `Headers: Authorization = "Bearer ${token}", Content-Type = "application/json".`,
+        'Body → JSON: source "health_connect", a "metrics" array of {metric, value, unit, measured_at}, and optionally a "workouts" array.',
       ],
-      easier_option: `The "Health Auto Export" app on the App Store posts the same JSON on a schedule with no Shortcut building at all — point its REST endpoint at ${SITE_URL}/ingest with the same bearer header.`,
+      ...(ios ? { easier_option: `The "Health Auto Export" app posts the same JSON on a schedule with no Shortcut building at all — point its REST endpoint at ${SITE_URL}/ingest with the same bearer header.` } : {}),
       web_setup: `${SITE_URL}/connect.html — the same steps with screenshots, and where to revoke this key.`,
-      security: 'This key can only write health data for this account. It cannot read anything and cannot touch the login. Revoke it any time from the connect page.',
-      say: 'Apple Watch set up. The key below goes into a Shortcut on the iPhone — Apple Health has no cloud API, so the phone has to push to us rather than us reading it. Takes about two minutes.',
-      note: 'Show the key ONCE and tell them it is not recoverable. Point at the web setup page if they would rather follow screenshots.',
+      security: 'This key can only write health data for this account. It cannot read anything back and cannot touch the login. Revoke it any time from the connect page.',
+      say: `${p.name} set up. The key below goes into the automation on their phone. Because it is an aggregator, this one connection also picks up ${p.aggregates.slice(0, 4).join(', ')} and anything else already writing to it — they do not need to connect those separately.`,
+      note: 'Show the key ONCE and say plainly it cannot be recovered. Point at the web setup page if they would rather follow screenshots than build a Shortcut in a chat window.',
       next_actions: ['brief tomorrow morning, once the first push has landed'],
     };
   }
 
-  const p = PULL_PROVIDERS[args.provider];
-  if (!p) return { error: `Unknown provider: ${args.provider}` };
-
-  // Honest status. Nothing here fakes an OAuth flow that does not exist yet.
+  // ── Everything else: say what is actually true ────────────────────────────
+  // Nothing here fakes an OAuth flow that does not exist yet, and nothing
+  // implies the user is waiting on something they are not.
   await supabase.from('forge_connections')
-    .upsert({ user_id: user.id, provider: args.provider, mode: 'pull', status: 'requested' },
+    .upsert({ user_id: user.id, provider: args.provider, mode: p.mode, status: 'requested' },
             { onConflict: 'user_id,provider' });
+
+  const door = PROVIDERS[p.aggregated_via];
 
   return {
     provider: args.provider,
-    mode: 'pull',
-    status: 'not_yet_available',
-    say: `${p.name} pulls over a real cloud API, but FORGE's developer app for it is not registered yet — so it cannot connect today. Noted as requested. In the meantime, if ${p.name} writes into Apple Health on the iPhone, the Apple Shortcut route picks that data up already.`,
-    note: 'Do not imply this is connected or pending approval on their side. It is a build item on ours. The Apple Health workaround is genuine — most of these write into Apple Health.',
-    next_actions: ['connect_device with provider "apple_health" as the working route today'],
+    mode: p.mode,
+    status: p.status,
+    works_today_via: p.aggregated_via || null,
+    say: p.say + (door ? ` Connecting ${door.name} gets you their data today.` : ''),
+    note: p.status === 'aggregated'
+      ? 'This one has no API for anybody — going through the phone is the only route that exists, not a compromise. Say that plainly rather than apologising for it.'
+      : 'Do not imply this is connected or pending on their side. It is a build item on ours, and the aggregator route is a genuine answer in the meantime.',
+    next_actions: [`connect_device with provider "${p.aggregated_via || 'apple_health'}"`],
   };
 }
 

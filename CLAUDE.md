@@ -60,14 +60,31 @@ nothing else.
 - **Ingest**: `/ingest`, bearer key from `forge_ingest_keys`, idempotent via
   unique indexes. Accepts native shape and Health Auto Export's shape.
 
-### Apple Watch — the constraint everyone rediscovers painfully
+### Devices — two doors, not fifteen integrations
 
-**HealthKit has no cloud API.** No entitlement, no partner programme, no price.
-An Apple Watch can only *push* (iOS Shortcut → `/ingest`). Oura, Whoop, Fitbit,
-Garmin and Withings have real cloud APIs and *pull* over OAuth. Never imply to a
-user that their Apple Watch is "connecting" or "syncing" from our side — explain
-the push model plainly. Most rings and straps write into Apple Health anyway, so
-the Shortcut route already picks their data up today.
+The founder asked for "Apple Watch and Samsung watch and Oura and Nike Run —
+anything to take the stats." The answer is **not** fifteen integrations.
+
+**Apple Health and Health Connect are already aggregators.** Nike Run Club,
+Strava, Peloton, Oura, Whoop, Samsung Health and Fitbit all write into whichever
+one is on the user's phone. Supporting those two doors picks up dozens of apps
+on day one with no partnerships or API keys. The setup conversation is one
+question — *what phone do you carry?* — and one connection.
+
+**Both doors are push-only, permanently.** HealthKit and Health Connect have no
+cloud API: no entitlement, no partner programme, no price. The data lives on the
+device and leaves only if the device sends it. Never imply an Apple Watch is
+"syncing" from our side. Nike Run Club has had no public API for *anybody* since
+2018 and Samsung's is partner-gated — for those, the phone is the only route
+that exists, so say it plainly rather than apologising.
+
+`lib/providers.js` is the single source of truth and drives both the
+`connect_device` tool and `connect.html`, so the assistant and the website can
+never tell a user two different stories. Full map in `docs/INTEGRATIONS.md`.
+
+Direct pull APIs (Strava, Oura, Whoop, Withings, Fitbit, Garmin, Polar) are a
+fidelity **upgrade**, never the entry price. Priority order: Withings first (a
+self-reporting scale removes the most-abandoned manual entry), then Strava.
 
 ## Conventions
 

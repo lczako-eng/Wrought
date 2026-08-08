@@ -27,49 +27,96 @@ const CORS = {
   'Content-Type': 'application/json',
 };
 
-// Apple, Health Auto Export and every wearable vendor name the same quantity
-// differently. One vocabulary, translated at the door, so nothing downstream
-// ever has to know that "HKQuantityTypeIdentifierStepCount" means steps.
+// Apple, Health Connect, Samsung, Strava, Health Auto Export and every wearable
+// vendor name the same quantity differently — and each of them is certain their
+// name is the obvious one. One vocabulary, translated at the door, so nothing
+// downstream ever has to know that "HKQuantityTypeIdentifierStepCount",
+// "StepsRecord" and "step_count" are all just steps.
+//
+// This map is the actual integration work. Adding a new device is usually a few
+// lines here, not a new service — because whatever the device is, it is already
+// writing into Apple Health or Health Connect, and this is where those land.
 const METRIC_ALIASES = {
+  // steps
   steps: 'steps',
   step_count: 'steps',
-  hkquantitytypeidentifierstepcount: 'steps',
+  stepsrecord: 'steps',                                   // Health Connect
+  hkquantitytypeidentifierstepcount: 'steps',             // Apple
+  com_samsung_health_step_count: 'steps',                 // Samsung Health
+  total_steps: 'steps',
 
+  // heart
   heart_rate: 'heart_rate',
+  heartraterecord: 'heart_rate',
   hkquantitytypeidentifierheartrate: 'heart_rate',
 
   resting_heart_rate: 'resting_hr',
   resting_hr: 'resting_hr',
+  restingheartraterecord: 'resting_hr',
   hkquantitytypeidentifierrestingheartrate: 'resting_hr',
 
   heart_rate_variability: 'hrv',
   heart_rate_variability_sdnn: 'hrv',
+  heartratevariabilityrmssdrecord: 'hrv',
   hrv: 'hrv',
+  hrv_sdnn: 'hrv',
   hkquantitytypeidentifierheartratevariabilitysdnn: 'hrv',
 
+  // sleep
   sleep_analysis: 'sleep_minutes',
   sleep_minutes: 'sleep_minutes',
+  sleepsessionrecord: 'sleep_minutes',
+  sleep_session: 'sleep_minutes',
   asleep: 'sleep_minutes',
   time_asleep: 'sleep_minutes',
+  total_sleep: 'sleep_minutes',
 
+  // body
   weight_body_mass: 'weight_kg',
   body_mass: 'weight_kg',
   weight: 'weight_kg',
   weight_kg: 'weight_kg',
+  weightrecord: 'weight_kg',
   hkquantitytypeidentifierbodymass: 'weight_kg',
 
   body_fat_percentage: 'body_fat_pct',
   body_fat_pct: 'body_fat_pct',
+  bodyfatrecord: 'body_fat_pct',
+  hkquantitytypeidentifierbodyfatpercentage: 'body_fat_pct',
 
+  // energy
   active_energy: 'active_calories',
   active_energy_burned: 'active_calories',
   active_calories: 'active_calories',
+  activecaloriesburnedrecord: 'active_calories',
   hkquantitytypeidentifieractiveenergyburned: 'active_calories',
 
+  total_calories: 'total_calories',
+  totalcaloriesburnedrecord: 'total_calories',
+  basal_energy_burned: 'total_calories',
+
+  // movement — the metrics that matter for runners, which is most people who
+  // wear a watch at all
+  distance: 'distance_km',
+  distance_km: 'distance_km',
+  distance_walking_running: 'distance_km',
+  distancerecord: 'distance_km',
+  hkquantitytypeidentifierdistancewalkingrunning: 'distance_km',
+  hkquantitytypeidentifierdistancecycling: 'distance_km',
+
+  active_minutes: 'active_minutes',
+  exercise_time: 'active_minutes',
+  apple_exercise_time: 'active_minutes',
+  exercisesessionrecord: 'active_minutes',
+  moving_time: 'active_minutes',                          // Strava
+
+  // fitness markers
   vo2_max: 'vo2max',
   vo2max: 'vo2max',
+  vo2maxrecord: 'vo2max',
   blood_oxygen_saturation: 'spo2',
   oxygen_saturation: 'spo2',
+  oxygensaturationrecord: 'spo2',
   spo2: 'spo2',
 };
 
@@ -94,11 +141,78 @@ export function normalise(metric, value, unit) {
     if (u === 's' || u === 'sec' || u === 'seconds') v = v / 60;
     return { value: Math.round(v), unit: 'min' };
   }
-  if (metric === 'active_calories') {
+  if (metric === 'active_calories' || metric === 'total_calories') {
     if (u === 'kj') v = v / 4.184;
+    if (u === 'cal') v = v / 1000;
     return { value: Math.round(v), unit: 'kcal' };
   }
+  if (metric === 'distance_km') {
+    // Strava sends metres, Apple sends miles or km depending on the user's
+    // region, Health Connect sends metres. Getting this wrong turns a 5k into
+    // a 5000km run, which is at least an obvious failure — the mile/km mix-up
+    // is the quiet one that would just make everybody 60% faster.
+    if (u === 'm' || u === 'metres' || u === 'meters') v = v / 1000;
+    if (u === 'mi' || u === 'mile' || u === 'miles') v = v * 1.609344;
+    if (u === 'ft' || u === 'feet') v = v * 0.0003048;
+    return { value: Math.round(v * 100) / 100, unit: 'km' };
+  }
+  if (metric === 'active_minutes') {
+    if (u === 's' || u === 'sec' || u === 'seconds') v = v / 60;
+    if (u === 'h' || u === 'hr' || u === 'hours') v = v * 60;
+    return { value: Math.round(v), unit: 'min' };
+  }
   return { value: Math.round(v * 100) / 100, unit: unit || '' };
+}
+
+// A run from Nike Run Club, a ride from Strava, a class from Peloton — these
+// arrive as sessions, not samples, and belong in the training log next to the
+// lifts rather than in the metric series. Normalised here so the brief counts
+// a 10k the same way it counts a squat session.
+const CARDIO_HINTS = /run|jog|walk|hik|cycl|bike|ride|swim|row|elliptical|cardio|treadmill|peloton/i;
+const STRENGTH_HINTS = /strength|weight|lift|resistance|functional|crossfit/i;
+
+export function normaliseWorkout(w) {
+  const kindRaw = String(w.kind || w.type || w.activity || w.name || '').trim();
+  const kind = STRENGTH_HINTS.test(kindRaw) ? 'strength'
+             : CARDIO_HINTS.test(kindRaw)   ? 'cardio'
+             : /yoga|stretch|mobility/i.test(kindRaw) ? 'mobility'
+             : 'cardio';
+
+  // Number(null) is 0, not NaN, so a missing duration would sail through a
+  // plain Number.isFinite guard and file a zero-minute workout. Resolve the
+  // raw value first and check for absence explicitly.
+  const rawMinutes = w.minutes ?? w.duration_min ??
+                     (w.duration_s != null ? Number(w.duration_s) / 60 : null);
+  const rawDistance = w.distance_km != null ? Number(w.distance_km)
+                    : w.distance_m != null ? Number(w.distance_m) / 1000 : null;
+
+  const minutes  = rawMinutes  == null ? NaN : Number(rawMinutes);
+  const distance = rawDistance == null ? NaN : Number(rawDistance);
+
+  if (!Number.isFinite(minutes) && !Number.isFinite(distance)) return null;
+
+  const bits = [kindRaw || kind];
+  if (Number.isFinite(distance)) bits.push(`${Math.round(distance * 100) / 100} km`);
+  if (Number.isFinite(minutes))  bits.push(`${Math.round(minutes)} min`);
+
+  return {
+    event_type: 'workout',
+    summary: bits.join(' · '),
+    detail: {
+      kind,
+      minutes: Number.isFinite(minutes) ? Math.round(minutes) : null,
+      distance_km: Number.isFinite(distance) ? Math.round(distance * 100) / 100 : null,
+      calories: Number.isFinite(Number(w.calories)) ? Math.round(Number(w.calories)) : null,
+      // Cardio is whole-body as far as the training matrix is concerned. Without
+      // this a runner's matrix stays empty forever and the brief tells them
+      // they have not trained, which is both wrong and insulting.
+      muscles: kind === 'strength' ? (w.muscles || []) : ['full body'],
+      source_name: kindRaw || null,
+    },
+    occurred_at: w.occurred_at || w.start_date || w.startDate || null,
+    source_ref: w.source_ref || w.id || null,
+    estimated: false,
+  };
 }
 
 // Health Auto Export nests one row per sample under a named metric. Flatten it
@@ -198,11 +312,18 @@ export const handler = async (event) => {
     written = data?.length || 0;
   }
 
-  // A device can also push discrete events (a logged workout from the watch).
-  // Same door, same dedupe, via source_ref this time.
+  // Discrete sessions: a run from Nike Run Club, a ride from Strava, a lift the
+  // watch recorded. Same door, same dedupe, via source_ref this time.
+  // `workouts` is the friendly shape a Shortcut can build; `events` is the raw
+  // one. Both land in the same place.
+  const incomingEvents = [
+    ...(Array.isArray(body.events) ? body.events : []),
+    ...(Array.isArray(body.workouts) ? body.workouts.map(normaliseWorkout).filter(Boolean) : []),
+  ];
+
   let eventsWritten = 0;
-  if (Array.isArray(body.events) && body.events.length) {
-    const eventRows = body.events.slice(0, 200).map(e => {
+  if (incomingEvents.length) {
+    const eventRows = incomingEvents.slice(0, 200).map(e => {
       const when = e.occurred_at ? new Date(e.occurred_at) : new Date();
       const at = Number.isNaN(when.getTime()) ? new Date() : when;
       return {
@@ -237,6 +358,7 @@ export const handler = async (event) => {
       ok: true,
       received: incoming.length,
       metrics_written: written,
+      sessions_received: incomingEvents.length,
       events_written: eventsWritten,
       duplicates_ignored: rows.length - written,
       // Naming what was thrown away is the difference between a working

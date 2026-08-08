@@ -10,7 +10,8 @@
 
 import assert from 'node:assert/strict';
 import { handler, TOOLS, handleRpc } from '../netlify/functions/mcp.js';
-import { canonicalMetric, normalise } from '../netlify/functions/ingest.js';
+import { canonicalMetric, normalise, normaliseWorkout } from '../netlify/functions/ingest.js';
+import { PROVIDERS, LIVE_PROVIDERS, providerSummary, recommendRoute } from '../netlify/functions/lib/providers.js';
 import {
   localDateFor, addDays, daysBetween, clockString, humanDuration,
   kgToLb, lbToKg, cmToIn, inToCm, sayWeight,
@@ -332,6 +333,101 @@ await test('units normalise to metric and minutes on arrival', () => {
 
 await test('a non-numeric sample is dropped, not stored as NaN', () => {
   assert.equal(normalise('steps', 'lots', 'count'), null);
+});
+
+await test('Health Connect and Samsung naming lands on the same metrics as Apple', () => {
+  // Adding a device is meant to be a few lines in the alias map rather than a
+  // new service. That only holds if the map actually covers each platform's
+  // spelling of the same quantity.
+  assert.equal(canonicalMetric('StepsRecord'), 'steps');                    // Health Connect
+  assert.equal(canonicalMetric('com_samsung_health_step_count'), 'steps');  // Samsung
+  assert.equal(canonicalMetric('SleepSessionRecord'), 'sleep_minutes');
+  assert.equal(canonicalMetric('HeartRateVariabilityRmssdRecord'), 'hrv');
+  assert.equal(canonicalMetric('WeightRecord'), 'weight_kg');
+  assert.equal(canonicalMetric('ActiveCaloriesBurnedRecord'), 'active_calories');
+});
+
+await test('distance normalises from every unit a vendor might send', () => {
+  // Strava sends metres, Health Connect sends metres, Apple sends miles or km
+  // depending on region. The mile/km mix-up is the quiet one — it would make
+  // everybody silently 60% faster rather than failing visibly.
+  assert.equal(normalise('distance_km', 5000, 'm').value, 5);
+  assert.equal(normalise('distance_km', 5, 'km').value, 5);
+  assert.equal(normalise('distance_km', 3.10686, 'mi').value, 5);
+});
+
+await test('moving time normalises to minutes whatever the unit', () => {
+  assert.equal(normalise('active_minutes', 1800, 's').value, 30);
+  assert.equal(normalise('active_minutes', 1.5, 'hours').value, 90);
+  assert.equal(normalise('active_minutes', 45, 'min').value, 45);
+});
+
+group('Sessions from running and cycling apps');
+
+await test('a Nike Run Club run becomes a logged workout', () => {
+  const w = normaliseWorkout({ kind: 'Run', minutes: 32, distance_km: 5.4, occurred_at: '2026-08-08T18:00:00Z' });
+  assert.equal(w.event_type, 'workout');
+  assert.equal(w.detail.kind, 'cardio');
+  assert.equal(w.detail.distance_km, 5.4);
+  assert.match(w.summary, /5.4 km/);
+});
+
+await test('cardio counts as full body so a runner\'s matrix is not empty', () => {
+  // Without this a runner logs six sessions a week and the brief tells them
+  // they have not trained — wrong, and insulting.
+  assert.deepEqual(normaliseWorkout({ kind: 'Run', minutes: 30 }).detail.muscles, ['full body']);
+  assert.deepEqual(normaliseWorkout({ kind: 'Outdoor Cycle', minutes: 60 }).detail.muscles, ['full body']);
+});
+
+await test('a strength session keeps its own muscle groups', () => {
+  const w = normaliseWorkout({ kind: 'Strength training', minutes: 45, muscles: ['chest', 'arms'] });
+  assert.equal(w.detail.kind, 'strength');
+  assert.deepEqual(w.detail.muscles, ['chest', 'arms']);
+});
+
+await test('Strava seconds and metres convert on the way in', () => {
+  const w = normaliseWorkout({ type: 'Ride', duration_s: 3600, distance_m: 32000 });
+  assert.equal(w.detail.minutes, 60);
+  assert.equal(w.detail.distance_km, 32);
+});
+
+await test('a session with neither duration nor distance is dropped', () => {
+  assert.equal(normaliseWorkout({ kind: 'Run' }), null);
+});
+
+group('Provider registry — the one-door thesis');
+
+await test('exactly the two aggregators are connectable today', () => {
+  assert.deepEqual(LIVE_PROVIDERS.sort(), ['apple_health', 'health_connect']);
+});
+
+await test('every provider is honest about its status and route', () => {
+  for (const [key, p] of Object.entries(PROVIDERS)) {
+    assert.ok(['live', 'aggregated', 'planned'].includes(p.status), `${key} has a bogus status`);
+    assert.ok(providerSummary(key).say.length > 30, `${key} needs a plain-English explanation`);
+    if (p.status !== 'live') {
+      assert.ok(PROVIDERS[p.aggregated_via],
+        `${key} is not connectable directly, so it must name a door that works today`);
+    }
+  }
+});
+
+await test('the apps with no public API route through the phone', () => {
+  // Nike closed its API in 2018 and Samsung's is partner-gated. There is no
+  // direct route for anybody, so the registry must not pretend one is coming.
+  assert.equal(PROVIDERS.nike_run_club.status, 'aggregated');
+  assert.equal(PROVIDERS.nike_run_club.aggregated_via, 'apple_health');
+  assert.equal(PROVIDERS.samsung_health.aggregated_via, 'health_connect');
+});
+
+await test('the recommended door follows the phone, not the wearable', () => {
+  assert.equal(recommendRoute(['Apple Watch', 'Oura ring']).door, 'apple_health');
+  assert.equal(recommendRoute(['Samsung Galaxy Watch']).door, 'health_connect');
+  assert.equal(recommendRoute([]).door, 'apple_health');
+});
+
+await test('an unknown provider returns nothing rather than inventing a story', () => {
+  assert.equal(providerSummary('mood_ring'), null);
 });
 
 // ── Report ──────────────────────────────────────────────────────────────────
