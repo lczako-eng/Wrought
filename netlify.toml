@@ -18,6 +18,13 @@
   to = "/.netlify/functions/mcp"
   status = 200
 
+# The record itself, readable. Everything else is arithmetic about the log;
+# this is the log.
+[[redirects]]
+  from = "/api/log"
+  to = "/.netlify/functions/api-log"
+  status = 200
+
 # The device door. Apple Shortcuts and Health Auto Export post here.
 [[redirects]]
   from = "/ingest"

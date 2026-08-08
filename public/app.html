@@ -197,6 +197,60 @@ table.matrix td.rh.cold { color: var(--heat-3); }
 
 .empty { color: var(--ash-dim); font-size: 13.5px; padding: 14px 0; }
 
+/* ── The log ───────────────────────────────────────────────────────────────
+   Everything else on this page is arithmetic ABOUT the record. This is the
+   record. It matters more than it looks: a product whose promise is "it
+   remembers" has to let you go and look, or the memory is a claim rather than
+   a fact. It is also the only place somebody catches "burrito" filed three
+   weeks ago as "burrata" — invisible in an average, obvious in a log. */
+.day { border-top: 1px solid var(--edge); padding-block: 18px; }
+.day:first-child { border-top: 0; }
+.dayhead { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
+.dayhead .d { font-family: var(--mono); font-size: 13px; letter-spacing: .1em; color: var(--bright); }
+.dayhead .ago { font-family: var(--mono); font-size: 11px; color: var(--ash-dim); }
+.dayhead .tot { font-family: var(--mono); font-size: 11.5px; color: var(--ash); margin-left: auto; }
+
+.ent { display: grid; grid-template-columns: 46px 1fr; gap: 12px; padding-block: 7px; align-items: baseline; }
+.ent .tm { font-family: var(--mono); font-size: 11px; color: var(--ash-dim); font-variant-numeric: tabular-nums; }
+.ent .bd { min-width: 0; }
+.ent .macros { font-family: var(--mono); font-size: 11px; color: var(--ash-dim); margin-top: 2px; }
+.ent .cats { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 4px; }
+.cat {
+  font-family: var(--mono); font-size: 9.5px; letter-spacing: .08em; text-transform: uppercase;
+  padding: 1px 6px; border-radius: 2px; border: 1px solid var(--edge); color: var(--ash-dim);
+}
+
+/* A workout read back as forty flat rows is unreadable. Read back as exercises
+   with their sets underneath, it is the session you actually did. */
+.sesh { border: 1px solid var(--edge); border-radius: 3px; margin: 6px 0 2px; overflow: hidden; }
+.sesh > summary {
+  padding: 10px 13px; cursor: pointer; background: var(--scale-2);
+  font-size: 13.5px; display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap;
+  list-style: none;
+}
+.sesh > summary::-webkit-details-marker { display: none; }
+.sesh > summary::before { content: "▸"; color: var(--heat-3); font-size: 11px; }
+.sesh[open] > summary::before { content: "▾"; }
+.sesh > summary .meta { margin-left: auto; font-family: var(--mono); font-size: 11px; color: var(--ash-dim); }
+.exs { padding: 4px 13px 12px; }
+.ex { padding-block: 9px; border-top: 1px solid var(--edge); }
+.ex:first-child { border-top: 0; }
+.ex .nm { font-size: 13.5px; display: flex; gap: 10px; align-items: baseline; }
+.ex .nm .vol { margin-left: auto; font-family: var(--mono); font-size: 11px; color: var(--ash-dim); }
+.setlist { display: flex; gap: 5px; flex-wrap: wrap; margin-top: 6px; }
+.setpill {
+  font-family: var(--mono); font-size: 11.5px; font-variant-numeric: tabular-nums;
+  padding: 3px 8px; border-radius: 2px; background: var(--scale-2);
+  border: 1px solid var(--edge); color: var(--bright);
+}
+.setpill.best { border-color: var(--heat-2); color: var(--heat-4); }
+.setpill .rpe { color: var(--ash-dim); }
+.setnote {
+  font-family: var(--serif); font-style: italic; font-size: 13px; color: var(--ash);
+  margin-top: 6px; padding-left: 10px; border-left: 2px solid var(--edge-lit);
+}
+.more { display: flex; justify-content: center; padding: 22px 0 4px; }
+
 /* ── Sign in ────────────────────────────────────────────────────────────── */
 .gate { max-width: 380px; margin: 90px auto; display: flex; flex-direction: column; gap: 12px; text-align: center; }
 .gate input, .gate button {
@@ -225,7 +279,11 @@ table.matrix td.rh.cold { color: var(--heat-3); }
   <header>
     <div class="wrap bar">
       <div class="mark"><span class="name">Wrought</span></div>
-      <div class="ranges" role="group" aria-label="Time range">
+      <div class="ranges" role="group" aria-label="View">
+        <button class="range view" data-view="record" aria-pressed="true">Record</button>
+        <button class="range view" data-view="log" aria-pressed="false">Log</button>
+      </div>
+      <div class="ranges" id="rangebtns" role="group" aria-label="Time range">
         <button class="range" data-days="7"   aria-pressed="false">7d</button>
         <button class="range" data-days="30"  aria-pressed="true">30d</button>
         <button class="range" data-days="90"  aria-pressed="false">90d</button>
@@ -248,6 +306,9 @@ const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&':'&amp;','<':'&lt
 const n = v => (v == null ? '—' : Number(v).toLocaleString());
 
 let days = 30;
+let view = 'record';
+let logCursor = null;
+let logDays = [];
 
 // ?demo=1 renders the whole dashboard from invented-but-plausible data.
 // A dashboard is impossible to judge empty, and nobody signs up for a product
@@ -256,7 +317,7 @@ let days = 30;
 const DEMO = new URLSearchParams(location.search).has('demo');
 
 async function boot() {
-  if (DEMO) { $('app').hidden = false; render(demoData()); return; }
+  if (DEMO) { $('app').hidden = false; refresh(); return; }
   if (!sb) { $('gate').hidden = false; $('msg').textContent = 'This deploy is missing its Supabase keys.'; return; }
   const { data } = await sb.auth.getSession();
   if (!data.session) { $('gate').hidden = false; return; }
@@ -272,14 +333,240 @@ $('send')?.addEventListener('click', async () => {
   $('msg').textContent = error ? error.message : 'Check your email — the link signs you in.';
 });
 
-document.querySelectorAll('.range').forEach(b => b.addEventListener('click', async () => {
-  document.querySelectorAll('.range').forEach(x => x.setAttribute('aria-pressed', 'false'));
+document.querySelectorAll('.range[data-days]').forEach(b => b.addEventListener('click', async () => {
+  document.querySelectorAll('.range[data-days]').forEach(x => x.setAttribute('aria-pressed', 'false'));
   b.setAttribute('aria-pressed', 'true');
   days = +b.dataset.days;
+  refresh();
+}));
+
+document.querySelectorAll('.range.view').forEach(b => b.addEventListener('click', () => {
+  document.querySelectorAll('.range.view').forEach(x => x.setAttribute('aria-pressed', 'false'));
+  b.setAttribute('aria-pressed', 'true');
+  view = b.dataset.view;
+  // The range buttons only mean something on the record; the log paginates by
+  // day and loads more on demand.
+  $('rangebtns').style.display = view === 'log' ? 'none' : '';
+  logCursor = null; logDays = [];
+  refresh();
+}));
+
+async function refresh() {
+  if (view === 'log') return loadLog(true);
   if (DEMO) { render(demoData()); return; }
   const { data } = await sb.auth.getSession();
   if (data.session) load(data.session.access_token);
-}));
+}
+
+// ── The log ───────────────────────────────────────────────────────────────
+
+async function loadLog(reset) {
+  if (reset) { $('content').innerHTML = '<p class="empty">Loading…</p>'; logDays = []; logCursor = null; }
+
+  let page;
+  if (DEMO) {
+    page = demoLog(logCursor);
+  } else {
+    const { data } = await sb.auth.getSession();
+    if (!data.session) return;
+    const qs = `days=14${logCursor ? `&before=${logCursor}` : ''}`;
+    const res = await fetch(`/.netlify/functions/api-log?${qs}`, {
+      headers: { Authorization: `Bearer ${data.session.access_token}` },
+    });
+    if (!res.ok) { $('content').innerHTML = '<p class="empty">Could not load the log.</p>'; return; }
+    page = await res.json();
+  }
+
+  logDays = logDays.concat(page.days.filter(d => !d.empty));
+  logCursor = page.next_before;
+  renderLog(page);
+}
+
+function renderLog(page) {
+  if (!logDays.length) {
+    $('content').innerHTML = `<section class="panel"><h2>The log</h2>
+      <p class="empty">Nothing logged yet. Say one sentence to your AI and it starts here.</p></section>`;
+    return;
+  }
+
+  const out = [`<section class="panel"><h2>The log</h2>
+    <p class="sub">Every entry, exactly as it went in. This is where a mis-heard word from
+      three weeks ago gets caught — invisible in an average, obvious here.</p>
+    <div>${logDays.map(dayBlock).join('')}</div>
+    <div class="more"><button class="range" id="loadmore">Load earlier</button></div>
+  </section>`];
+
+  $('content').innerHTML = out.join('');
+  $('loadmore')?.addEventListener('click', () => loadLog(false));
+  // <details> keeps its own open state, so nothing to wire for the sessions.
+}
+
+function dayBlock(d) {
+  const t = d.totals;
+  const totals = t.calories
+    ? `${n(t.calories)} kcal · ${n(t.protein_g)}p · ${n(t.carbs_g)}c · ${n(t.sugar_g)} sugar · ${n(t.fat_g)}f`
+    : '';
+
+  const food = d.food.map(f => `<div class="ent">
+    <span class="tm">${esc(f.at)}</span>
+    <span class="bd">${esc(f.summary)}${f.estimated ? ' <span class="cat">est</span>' : ''}
+      ${f.calories ? `<div class="macros">${n(f.calories)} kcal · ${n(f.protein_g)}g protein · ${n(f.carbs_g)}g carbs · ${n(f.sugar_g)}g sugar · ${n(f.fat_g)}g fat</div>` : ''}
+      ${f.categories?.length ? `<div class="cats">${f.categories.map(c => `<span class="cat">${esc(c.replace('_', ' '))}</span>`).join('')}</div>` : ''}
+    </span></div>`).join('');
+
+  const work = d.workouts.map(w => sessionBlock(w)).join('');
+
+  const body = d.body.map(b => `<div class="ent">
+    <span class="tm">${esc(b.at)}</span>
+    <span class="bd">${esc(b.kind === 'measurement' ? `${b.site} — ${b.value}` : b.value)}</span>
+  </div>`).join('');
+
+  const other = d.other.map(o => `<div class="ent">
+    <span class="tm">${esc(o.at)}</span>
+    <span class="bd">${esc(o.summary)} <span class="cat">${esc(o.kind)}</span></span>
+  </div>`).join('');
+
+  const dev = [];
+  if (d.device.sleep_say) dev.push(`slept ${d.device.sleep_say}`);
+  if (d.device.steps) dev.push(`${n(Math.round(d.device.steps))} steps`);
+  if (d.device.resting_hr) dev.push(`${Math.round(d.device.resting_hr)} bpm resting`);
+  if (d.device.active_calories) dev.push(`${n(Math.round(d.device.active_calories))} kcal moved`);
+
+  return `<div class="day">
+    <div class="dayhead">
+      <span class="d">${esc(d.weekday)} ${esc(d.date)}</span>
+      <span class="ago">${d.days_ago === 0 ? 'today' : d.days_ago === 1 ? 'yesterday' : `${d.days_ago}d ago`}</span>
+      ${totals ? `<span class="tot">${esc(totals)}</span>` : ''}
+    </div>
+    ${dev.length ? `<div class="ent"><span class="tm">·</span><span class="bd" style="color:var(--temper)">${esc(dev.join(' · '))}</span></div>` : ''}
+    ${work}${food}${body}${other}
+  </div>`;
+}
+
+// A session read back as forty flat rows is unreadable. Grouped into exercises
+// with their sets underneath, it is the workout you actually did.
+function sessionBlock(w) {
+  if (!w.exercises?.length) {
+    return `<div class="ent"><span class="tm">${esc(w.at)}</span>
+      <span class="bd">${esc(w.summary)}${w.minutes ? ` <span class="cat">${w.minutes}m</span>` : ''}</span></div>`;
+  }
+  const exs = w.exercises.map(e => {
+    const best = e.top;
+    return `<div class="ex">
+      <div class="nm">${esc(e.exercise)}
+        ${e.volume ? `<span class="vol">${n(e.volume)}kg volume</span>` : ''}</div>
+      <div class="setlist">${e.sets.map(st => `<span class="setpill${
+        best && st.n === best.n && st.weight === best.weight ? ' best' : ''}">${
+        st.weight != null ? `${st.weight}×${st.reps ?? '?'}` : `${st.reps ?? '?'} reps`
+      }${st.rpe ? ` <span class="rpe">@${st.rpe}</span>` : ''}</span>`).join('')}</div>
+      ${e.sets.filter(st => st.note).map(st =>
+        `<div class="setnote">“${esc(st.note)}”</div>`).join('')}
+    </div>`;
+  }).join('');
+
+  return `<details class="sesh"${w.days_ago === 0 ? ' open' : ''}>
+    <summary>${esc(w.name || w.summary)}
+      ${w.incomplete ? '<span class="cat">unfinished</span>' : ''}
+      <span class="meta">${esc(w.at)}${w.minutes ? ` · ${w.minutes}m` : ''}${
+        w.volume_kg ? ` · ${n(w.volume_kg)}kg` : ''}</span></summary>
+    <div class="exs">${exs}${w.note ? `<div class="setnote">“${esc(w.note)}”</div>` : ''}</div>
+  </details>`;
+}
+
+// Demo log — the same shape api-log.js returns, so the render path is identical.
+function demoLog(cursor) {
+  const iso = t => new Date(t).toISOString().slice(0, 10);
+  const end = cursor ? new Date(cursor + 'T00:00:00Z').getTime() : Date.now();
+  const wave = (i, p, a) => Math.sin(i / p) * a;
+
+  const MEALS = [
+    ['08:14', 'two eggs and black coffee', 180, 13, 1, 0, 14, ['egg']],
+    ['12:40', 'chicken burrito bowl, no rice', 640, 52, 44, 6, 24, ['meat','vegetable','dairy','legume']],
+    ['16:05', 'greek yoghurt and berries', 210, 18, 22, 16, 5, ['dairy','fruit']],
+    ['20:10', 'salmon, potatoes, broccoli', 720, 48, 61, 5, 30, ['fish','vegetable']],
+  ];
+
+  const LIFTS = {
+    'Leg day': [
+      ['Back Squat', [[95,6],[95,6],[95,5],[95,4]], 'left knee grumbled on the last set'],
+      ['Romanian Deadlift', [[80,8],[80,8],[80,7]], null],
+      ['Leg Press', [[180,10],[180,10],[180,9]], null],
+      ['Calf Raise', [[60,15],[60,14]], null],
+    ],
+    'Push A': [
+      ['Bench Press', [[82.5,8],[82.5,7],[82.5,6]], 'felt light today, bar speed was quick'],
+      ['Overhead Press', [[52.5,6],[52.5,6],[52.5,5]], null],
+      ['Dip', [[null,12],[null,10]], null],
+      ['Tricep Extension', [[25,12],[25,12]], null],
+    ],
+    'Pull A': [
+      ['Deadlift', [[142.5,5],[142.5,5],[142.5,4]], 'grip went before the legs did'],
+      ['Barbell Row', [[77.5,8],[77.5,8],[77.5,7]], null],
+      ['Pull-up', [[null,9],[null,8],[null,7]], null],
+      ['Bicep Curl', [[17.5,12],[17.5,11]], null],
+    ],
+  };
+  const NAMES = Object.keys(LIFTS);
+
+  const days = Array.from({ length: 14 }, (_, k) => {
+    const i = 13 - k;
+    const date = iso(end - i * 86400000);
+    const dow = new Date(date + 'T00:00:00Z').getUTCDay();
+    const trains = [1, 2, 4, 6].includes(dow);
+    const missed = (i + (cursor ? 3 : 0)) % 11 === 5;
+    const name = NAMES[(i + dow) % NAMES.length];
+
+    const food = missed ? [] : MEALS.slice(0, dow === 6 ? 4 : 3).map(([at, sum, c, p, cb, sg, f, cats]) => ({
+      at, summary: sum, estimated: true, calories: c, protein_g: p,
+      carbs_g: cb, sugar_g: sg, fat_g: f, categories: cats,
+    }));
+
+    const totals = food.reduce((a, f) => ({
+      calories: a.calories + f.calories, protein_g: a.protein_g + f.protein_g,
+      carbs_g: a.carbs_g + f.carbs_g, sugar_g: a.sugar_g + f.sugar_g,
+      fat_g: a.fat_g + f.fat_g, estimated: true,
+    }), { calories: 0, protein_g: 0, carbs_g: 0, sugar_g: 0, fat_g: 0, estimated: false });
+
+    const exercises = trains ? LIFTS[name].map(([ex, sets, note], xi) => ({
+      exercise: ex, position: xi + 1,
+      sets: sets.map(([wt, reps], si) => ({
+        n: si + 1, reps, weight: wt,
+        rpe: si === sets.length - 1 ? 9 : 7 + si * 0.5,
+        note: si === sets.length - 1 ? note : null,
+      })),
+      volume: Math.round(sets.reduce((a, [wt, reps]) => a + (wt || 0) * reps, 0)),
+      top: { n: 1, weight: sets[0][0], reps: sets[0][1] },
+    })) : [];
+
+    return {
+      date,
+      weekday: new Date(date + 'T00:00:00Z').toLocaleDateString('en-GB', { weekday: 'short', timeZone: 'UTC' }),
+      days_ago: cursor ? i + 14 : i,
+      totals,
+      food,
+      workouts: trains ? [{
+        at: '18:22', name, kind: 'strength', summary: name,
+        minutes: 44 + (dow % 3) * 6,
+        volume_kg: exercises.reduce((a, e) => a + e.volume, 0),
+        muscles: [], exercises, note: null,
+      }] : [],
+      body: missed ? [] : [{ at: '08:15', kind: 'weight', value: `${Math.round((82.9 - (13 - i) * 0.03 + wave(i, 3, .4)) * 10) / 10} kg` }],
+      other: [],
+      device: {
+        sleep_minutes: Math.round(402 + wave(i, 4, 44)),
+        sleep_say: `${Math.floor((402 + wave(i, 4, 44)) / 60)}h ${Math.round((402 + wave(i, 4, 44)) % 60)}m`,
+        steps: Math.round(8800 + wave(i, 3.4, 3000)),
+        resting_hr: Math.round(55 + wave(i, 6, 4)),
+        active_calories: Math.round(690 + wave(i, 5, 220)),
+      },
+      empty: missed && !trains,
+    };
+  }).reverse();
+
+  return { from: days[days.length - 1].date, to: days[0].date, days,
+           units: 'metric', weight_unit: 'kg',
+           next_before: iso(end - 14 * 86400000), has_more: true };
+}
 
 // ── Demo data ─────────────────────────────────────────────────────────────
 // Deterministic, so the page looks the same every time somebody opens it, and

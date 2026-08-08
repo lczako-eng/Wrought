@@ -122,6 +122,22 @@ below last one.
   because something has been adding up. It stays silent until both years have
   30+ logged days.
 
+### The log must be readable
+
+`api-log.js` + the Log view in `app.html`. Everything else on the dashboard is
+arithmetic *about* the record — matrices, trends, averages. This is the record:
+day by day, newest first, every meal and every set exactly as it went in.
+
+It matters more than it looks. A product whose whole promise is "it remembers"
+has to let you go and look, or the memory is a claim rather than a fact. It is
+also the only place somebody catches a mis-heard entry from three weeks ago —
+"burrito" filed as "burrata" is invisible in an average and obvious in a log.
+
+Paginated by **date**, not by row, because a day is the unit a person thinks in.
+Sessions render as `<details>` grouped into exercises with their sets
+underneath — forty flat rows is unreadable; four exercises with their sets is
+the workout you actually did.
+
 ### Brand — the word is the mark
 
 **No symbol.** The wave/bar mark was removed deliberately: a mark beside the

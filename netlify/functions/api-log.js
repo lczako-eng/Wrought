@@ -1,0 +1,223 @@
+// netlify/functions/api-log.js
+// The record itself, readable.
+//
+// Everything else on the dashboard is arithmetic about the log — matrices,
+// trends, averages. This is the log. Day by day, newest first, with every meal
+// and every set exactly as it was put in.
+//
+// It matters more than it looks. A product whose whole promise is "it
+// remembers" has to let you go and look, or the memory is a claim rather than a
+// fact. It is also the only way somebody catches a mis-heard entry from three
+// weeks ago — "burrito" filed as "burrata" is invisible in an average and
+// obvious in a log.
+//
+// Paginated by date rather than by row, because a day is the unit a person
+// thinks in. Ask for 14 days before a cursor and you get 14 days, however many
+// entries that turns out to be.
+
+import {
+  getAuthUser, getProfile, localDateFor, localMinutesFor, clockString,
+  addDays, daysBetween, sayWeight, sayLength, kgToLb, humanDuration, supabase,
+} from './lib/wrought.js';
+
+const CORS = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'GET, OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+  'Content-Type': 'application/json',
+  'Cache-Control': 'no-store',
+};
+
+const num = v => (Number.isFinite(+v) ? +v : 0);
+
+export const handler = async (event) => {
+  if (event.httpMethod === 'OPTIONS') return { statusCode: 204, headers: CORS, body: '' };
+  if (!supabase) return { statusCode: 500, headers: CORS, body: JSON.stringify({ error: 'server_not_configured' }) };
+
+  const user = await getAuthUser(event);
+  if (!user) return { statusCode: 401, headers: CORS, body: JSON.stringify({ error: 'sign_in_required' }) };
+
+  const q = event.queryStringParameters || {};
+  const profile = await getProfile(user.id);
+
+  const span   = Math.min(Math.max(parseInt(q.days, 10) || 14, 1), 60);
+  const before = q.before || localDateFor(profile.timezone);
+  const from   = addDays(before, -(span - 1));
+
+  const [events, sets, sessions, metrics] = await Promise.all([
+    supabase.from('wrought_events')
+      .select('id, event_type, occurred_at, local_date, summary, detail, estimated, source, raw_input')
+      .eq('user_id', user.id).gte('local_date', from).lte('local_date', before)
+      .order('occurred_at', { ascending: true }).limit(2000)
+      .then(r => r.data || []),
+    supabase.from('wrought_sets')
+      .select('session_id, exercise, set_number, position, reps, weight_kg, rpe, note, local_date, logged_at')
+      .eq('user_id', user.id).gte('local_date', from).lte('local_date', before)
+      .order('logged_at', { ascending: true }).limit(4000)
+      .then(r => r.data || []),
+    supabase.from('wrought_sessions')
+      .select('id, name, kind, local_date, started_at, ended_at, status')
+      .eq('user_id', user.id).gte('local_date', from).lte('local_date', before)
+      .then(r => r.data || []),
+    supabase.from('wrought_metrics')
+      .select('metric, value, unit, local_date, source')
+      .eq('user_id', user.id).gte('local_date', from).lte('local_date', before)
+      .limit(4000)
+      .then(r => r.data || []),
+  ]);
+
+  const imperial = profile.units === 'imperial';
+  const at = ts => clockString(localMinutesFor(profile.timezone, new Date(ts)));
+
+  // Sets, grouped into the session they belong to. A workout read back as a
+  // flat list of forty rows is unreadable; read back as four exercises with
+  // their sets underneath, it is the session you actually did.
+  const setsBySession = new Map();
+  for (const s of sets) {
+    const key = s.session_id || `loose-${s.local_date}`;
+    if (!setsBySession.has(key)) setsBySession.set(key, []);
+    setsBySession.get(key).push(s);
+  }
+
+  const sessionById = new Map(sessions.map(s => [s.id, s]));
+
+  const groupSets = rows => {
+    const byExercise = new Map();
+    for (const s of rows) {
+      if (!byExercise.has(s.exercise)) {
+        byExercise.set(s.exercise, { exercise: s.exercise, position: s.position ?? 99, sets: [] });
+      }
+      byExercise.get(s.exercise).sets.push({
+        n: s.set_number,
+        reps: s.reps,
+        weight: s.weight_kg == null ? null : (imperial ? kgToLb(Number(s.weight_kg)) : Number(s.weight_kg)),
+        rpe: s.rpe == null ? null : Number(s.rpe),
+        note: s.note || null,
+      });
+    }
+    return [...byExercise.values()]
+      .sort((a, b) => a.position - b.position)
+      .map(e => ({
+        ...e,
+        volume: Math.round(e.sets.reduce((a, s) => a + num(s.reps) * num(s.weight), 0)),
+        top: e.sets.reduce((a, s) => ((s.weight ?? 0) > (a?.weight ?? -1) ? s : a), null),
+      }));
+  };
+
+  // ── Assemble, one day at a time ───────────────────────────────────────────
+  const byDay = new Map();
+  const dayOf = d => {
+    if (!byDay.has(d)) byDay.set(d, {
+      date: d,
+      weekday: new Date(`${d}T00:00:00Z`).toLocaleDateString('en-GB', { weekday: 'short', timeZone: 'UTC' }),
+      days_ago: daysBetween(d, localDateFor(profile.timezone)),
+      food: [], workouts: [], body: [], other: [],
+      totals: { calories: 0, protein_g: 0, carbs_g: 0, sugar_g: 0, fat_g: 0, estimated: false },
+      device: {},
+    });
+    return byDay.get(d);
+  };
+  for (let d = from; d <= before; d = addDays(d, 1)) dayOf(d);
+
+  for (const e of events) {
+    const day = dayOf(e.local_date);
+    const base = { id: e.id, at: at(e.occurred_at), summary: e.summary, estimated: e.estimated, source: e.source };
+
+    if (e.event_type === 'food' || e.event_type === 'drink') {
+      day.food.push({
+        ...base,
+        kind: e.event_type,
+        items: e.detail?.items || null,
+        calories: e.detail?.calories ?? null,
+        protein_g: e.detail?.protein_g ?? null,
+        carbs_g: e.detail?.carbs_g ?? null,
+        sugar_g: e.detail?.sugar_g ?? null,
+        fat_g: e.detail?.fat_g ?? null,
+        categories: e.detail?.categories || [],
+      });
+      for (const k of ['calories', 'protein_g', 'carbs_g', 'sugar_g', 'fat_g']) {
+        day.totals[k] += num(e.detail?.[k]);
+      }
+      if (e.estimated) day.totals.estimated = true;
+
+    } else if (e.event_type === 'workout') {
+      const sid = e.detail?.session_id;
+      const rows = sid ? (setsBySession.get(sid) || []) : [];
+      const session = sid ? sessionById.get(sid) : null;
+      day.workouts.push({
+        ...base,
+        kind: e.detail?.kind || 'workout',
+        minutes: e.detail?.minutes ?? null,
+        muscles: e.detail?.muscles || [],
+        volume_kg: e.detail?.volume_kg ?? null,
+        distance_km: e.detail?.distance_km ?? null,
+        note: e.detail?.note || null,
+        name: session?.name || e.summary,
+        // The whole point: the session, set by set, exactly as it happened.
+        exercises: groupSets(rows),
+      });
+
+    } else if (e.event_type === 'weight') {
+      day.body.push({ ...base, kind: 'weight',
+        value: sayWeight(num(e.detail?.value_kg), profile.units) });
+    } else if (e.event_type === 'measurement') {
+      day.body.push({ ...base, kind: 'measurement', site: e.detail?.metric,
+        value: sayLength(num(e.detail?.value_cm), profile.units) });
+    } else {
+      day.other.push({ ...base, kind: e.event_type });
+    }
+  }
+
+  // Sets logged without a matching workout event still belong to their day —
+  // an abandoned session is still a record of work that was actually done.
+  for (const [key, rows] of setsBySession) {
+    if (!key.startsWith('loose-')) {
+      const session = sessionById.get(key);
+      if (session && session.status !== 'done') {
+        const day = dayOf(session.local_date);
+        day.workouts.push({
+          id: key, at: at(session.started_at), name: session.name,
+          kind: session.kind, summary: `${session.name} (unfinished)`,
+          incomplete: true, minutes: null, muscles: [], exercises: groupSets(rows),
+        });
+      }
+    }
+  }
+
+  for (const m of metrics) {
+    const day = dayOf(m.local_date);
+    const k = m.metric;
+    day.device[k] = (day.device[k] || 0) + num(m.value);
+    if (k === 'resting_hr' || k === 'hrv') day.device[k] = num(m.value);   // not additive
+  }
+
+  const days = [...byDay.values()]
+    .sort((a, b) => b.date.localeCompare(a.date))
+    .map(d => ({
+      ...d,
+      totals: {
+        ...Object.fromEntries(Object.entries(d.totals)
+          .map(([k, v]) => [k, typeof v === 'number' ? Math.round(v) : v])),
+      },
+      device: {
+        ...d.device,
+        sleep_say: d.device.sleep_minutes ? humanDuration(Math.round(d.device.sleep_minutes)) : null,
+      },
+      empty: !d.food.length && !d.workouts.length && !d.body.length && !d.other.length
+             && !Object.keys(d.device).length,
+    }));
+
+  return {
+    statusCode: 200,
+    headers: CORS,
+    body: JSON.stringify({
+      from, to: before, days,
+      units: profile.units,
+      weight_unit: imperial ? 'lb' : 'kg',
+      // Cursor for the next page back. A day is the unit people think in, so
+      // pagination is by date rather than by row count.
+      next_before: addDays(from, -1),
+      has_more: days.some(d => !d.empty),
+    }),
+  };
+};
