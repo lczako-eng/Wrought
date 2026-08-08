@@ -420,13 +420,14 @@ const TOOLS = [
   {
     name: 'connect_device',
     title: 'Connect a watch, ring, scale or running app',
-    description: 'Sets up automatic data from wearables and fitness apps. IMPORTANT: almost nobody needs more than one connection. Apple Health (iPhone) and Health Connect (Android) are already aggregators — Nike Run Club, Strava, Peloton, Oura, Whoop, Samsung Health and Fitbit all write into whichever is on the user\'s phone, so connecting that one door picks up everything else automatically. Ask which phone they carry and set up that. Call with no provider to see what is connected and get the recommended route. Naming a specific provider returns its real status, including the ones that have no public API at all.',
+    description: 'Sets up automatic data from anything that measures you — watches, rings, scales, running apps, gym apps, continuous glucose monitors, blood pressure cuffs, and bloodwork. IMPORTANT: almost nobody needs more than one connection. Apple Health (iPhone) and Health Connect (Android) are already aggregators — Nike Run Club, Strava, Peloton, Oura, Whoop, Samsung Health and Fitbit all write into whichever is on the user\'s phone, so connecting that one door picks up everything else automatically. Ask which phone they carry and set up that. Call with no provider to see what is connected and get the recommended route. Naming a specific provider returns its real status, including the ones that have no public API at all.',
     inputSchema: {
       type: 'object',
       properties: {
         provider: { type: 'string',
                     enum: ['apple_health','health_connect','strava','oura','whoop','fitbit',
-                           'garmin','withings','polar','nike_run_club','samsung_health','peloton'],
+                           'garmin','withings','polar','nike_run_club','samsung_health','peloton',
+                           'strong','myfitnesspal','cgm','blood_pressure','bloodwork'],
                     description: 'Omit to list what is connected and get the recommended one-door route. "apple_health" and "health_connect" are the two that actually set anything up.' },
         devices:  { type: 'array', items: { type: 'string' },
                     description: 'Optional. What the user said they wear or use — "Apple Watch", "Galaxy Watch", "Oura ring", "Nike Run Club". Used to recommend the right door.' },

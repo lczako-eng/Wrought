@@ -25,6 +25,12 @@
   to = "/.netlify/functions/api-log"
   status = 200
 
+# Everything out, in one call. A hub you cannot leave is a trap.
+[[redirects]]
+  from = "/api/export"
+  to = "/.netlify/functions/api-export"
+  status = 200
+
 # The device door. Apple Shortcuts and Health Auto Export post here.
 [[redirects]]
   from = "/ingest"

@@ -138,6 +138,29 @@ Sessions render as `<details>` grouped into exercises with their sets
 underneath — forty flat rows is unreadable; four exercises with their sets is
 the workout you actually did.
 
+### A hub, which means a wide door and a way out
+
+The founder's own framing: *"it's a hub for all stuff. Connect all stuff."*
+Two things follow, and neither is optional.
+
+**The door has to be wider than fitness.** `/ingest` now speaks blood glucose
+(mmol/L, with mg/dL converted — an 18× mix-up turns a normal 5.5 into 99),
+blood pressure, body temperature, lean mass, and lab markers: cholesterol,
+HbA1c, ferritin, vitamin D, testosterone, TSH. A hub holding every step you
+took and nothing about your blood is a pedometer with ambitions. Bloodwork is
+`live` without being an aggregator — there is no third party to integrate with,
+you just send the numbers off the sheet.
+
+**And there has to be a way out.** `api-export.js` returns every event, set,
+metric, session, routine, goal and verdict as JSON or CSV. A hub you cannot
+leave is a trap, and the pitch — "give us years of your life" — is only
+reasonable if all of it comes back on demand. Credentials are the one thing
+deliberately excluded. Do not remove this endpoint to add a paid tier.
+
+**`/ingest` is a documented public endpoint, not a private protocol.** Anything
+that can POST JSON can feed this. That is what makes it a hub rather than an app
+with integrations.
+
 ### Brand — the word is the mark
 
 **No symbol.** The wave/bar mark was removed deliberately: a mark beside the
@@ -174,7 +197,7 @@ self-reporting scale removes the most-abandoned manual entry), then Strava.
 
 ## Conventions
 
-- `npm test` runs `test/harness.mjs` — 104 offline tests, no network, no database.
+- `npm test` runs `test/harness.mjs` — 108 offline tests, no network, no database.
   Run it before every push. It covers the JSON-RPC envelope (which fails as an
   uninformative "could not connect" inside ChatGPT) and all the arithmetic
   (which fails as a confidently wrong number in somebody's verdict).

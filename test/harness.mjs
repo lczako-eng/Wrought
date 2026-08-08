@@ -337,6 +337,28 @@ await test('units normalise to metric and minutes on arrival', () => {
   assert.equal(normalise('active_calories', 2000, 'kJ').value, 478);
 });
 
+await test('blood and lab markers come in through the same door', () => {
+  // A hub holding every step you took and nothing about your blood is a
+  // pedometer with ambitions.
+  assert.equal(canonicalMetric('Blood Glucose'), 'glucose');
+  assert.equal(canonicalMetric('HKQuantityTypeIdentifierBloodPressureSystolic'), 'systolic');
+  assert.equal(canonicalMetric('HbA1c'), 'hba1c');
+  assert.equal(canonicalMetric('ferritin'), 'ferritin');
+  assert.equal(canonicalMetric('LDL cholesterol'), 'ldl');
+});
+
+await test('glucose converts mg/dL to mmol/L — the one that must not be wrong', () => {
+  // Roughly 18x apart, so a mix-up turns a normal 5.5 into 99, or a 99 into
+  // 1783. One looks like a medical emergency, the other like a dead sensor.
+  assert.equal(normalise('glucose', 99, 'mg/dL').value, 5.5);
+  assert.equal(normalise('glucose', 5.5, 'mmol/L').value, 5.5);
+});
+
+await test('body temperature converts from Fahrenheit', () => {
+  assert.equal(normalise('body_temp', 98.6, 'F').value, 37);
+  assert.equal(normalise('body_temp', 37, 'C').value, 37);
+});
+
 await test('a non-numeric sample is dropped, not stored as NaN', () => {
   assert.equal(normalise('steps', 'lots', 'count'), null);
 });
@@ -403,8 +425,23 @@ await test('a session with neither duration nor distance is dropped', () => {
 
 group('Provider registry — the one-door thesis');
 
-await test('exactly the two aggregators are connectable today', () => {
-  assert.deepEqual(LIVE_PROVIDERS.sort(), ['apple_health', 'health_connect']);
+await test('both aggregator doors are live', () => {
+  // These two are the whole one-door thesis. If either ever stops being live,
+  // the setup story collapses into fifteen integrations again.
+  assert.ok(LIVE_PROVIDERS.includes('apple_health'));
+  assert.ok(LIVE_PROVIDERS.includes('health_connect'));
+});
+
+await test('anything live either IS a door or needs no third party at all', () => {
+  // Bloodwork is live without being an aggregator: there is nobody to
+  // integrate with, you just send the numbers off the sheet. Anything else
+  // claiming live status would be overstating what actually works today.
+  const doors = ['apple_health', 'health_connect'];
+  for (const key of LIVE_PROVIDERS) {
+    if (doors.includes(key)) continue;
+    assert.ok(!PROVIDERS[key].aggregated_via,
+      `${key} claims to work today but routes through another provider — that is not live`);
+  }
 });
 
 await test('every provider is honest about its status and route', () => {

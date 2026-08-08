@@ -6,8 +6,8 @@
 <title>WROUGHT — connect</title>
 <meta name="description" content="Connect WROUGHT to ChatGPT or Claude, and get your Apple Watch feeding it automatically.">
 <style>
-  :root{--bg:#0b0b0d;--panel:#141417;--panel2:#1b1b1f;--line:#26262b;
-    --text:#ececed;--muted:#8a8a93;--dim:#5c5c66;--ember:#ff5a1f;--ash:#b33d13;--warn:#e8b64c}
+  :root{--bg:#14110F;--panel:#1B1614;--panel2:#241D1A;--line:#2E2622;
+    --text:#F4EFE9;--muted:#9A8D84;--dim:#675D57;--ember:#F26419;--ash:#B8320C;--warn:#F5A623}
   *{box-sizing:border-box}
   html,body{margin:0;padding:0}
   body{background:var(--bg);color:var(--text);
@@ -16,10 +16,8 @@
   .wrap{max-width:760px;margin:0 auto;padding:0 22px}
   a{color:var(--ember)}
   header{padding:44px 0 34px}
-  .mark{display:flex;align-items:center;gap:12px;margin-bottom:34px}
-  .mark .bar{width:44px;height:5px;border-radius:3px;
-    background:linear-gradient(90deg,#3a3a40,var(--ash) 55%,var(--ember));box-shadow:0 0 20px rgba(255,90,31,.4)}
-  .mark .name{font-weight:700;letter-spacing:.3em;font-size:13px}
+  .mark{display:flex;align-items:center;margin-bottom:34px}
+  .mark .name{font-weight:800;letter-spacing:.3em;font-size:13px;text-transform:uppercase}
   h1{font-size:clamp(28px,5vw,40px);letter-spacing:-.025em;margin:0 0 12px;font-weight:700}
   .lede{color:var(--muted);margin:0 0 8px;font-size:17px}
   h2{font-size:20px;letter-spacing:-.015em;margin:52px 0 6px;font-weight:660}
@@ -54,7 +52,7 @@
 <body>
 
 <header class="wrap">
-  <div class="mark"><span class="bar"></span><span class="name">WROUGHT</span></div>
+  <div class="mark"><span class="name">WROUGHT</span></div>
   <h1>Connect it</h1>
   <p class="lede">Two things to set up. The AI takes a minute; the watch takes two.</p>
 </header>
@@ -115,15 +113,34 @@
 
   <div class="panel">
     <table style="width:100%;border-collapse:collapse;font-size:14px">
+      <tr><td colspan="2" style="padding:0 0 10px;color:var(--warn);font-size:11px;letter-spacing:.14em;text-transform:uppercase">The two doors</td></tr>
       <tr><td style="padding:9px 12px 9px 0;border-bottom:1px solid var(--line)"><b>iPhone / Apple Watch</b></td>
           <td style="padding:9px 0;border-bottom:1px solid var(--line);color:var(--muted)">Apple Health — set up below</td></tr>
       <tr><td style="padding:9px 12px 9px 0;border-bottom:1px solid var(--line)"><b>Samsung / Android / Pixel</b></td>
           <td style="padding:9px 0;border-bottom:1px solid var(--line);color:var(--muted)">Health Connect — set up below</td></tr>
-      <tr><td style="padding:9px 12px 9px 0;border-bottom:1px solid var(--line)">Nike Run Club, Peloton, Samsung Health</td>
-          <td style="padding:9px 0;border-bottom:1px solid var(--line);color:var(--muted)">Nothing to do — they already write to the above</td></tr>
-      <tr><td style="padding:9px 12px 9px 0">Oura, Whoop, Strava, Withings, Garmin</td>
-          <td style="padding:9px 0;color:var(--muted)">Arrive via your phone today; direct links coming</td></tr>
+
+      <tr><td colspan="2" style="padding:18px 0 10px;color:var(--warn);font-size:11px;letter-spacing:.14em;text-transform:uppercase">Rides through them, free</td></tr>
+      <tr><td style="padding:9px 12px 9px 0;border-bottom:1px solid var(--line)">Watches &amp; rings</td>
+          <td style="padding:9px 0;border-bottom:1px solid var(--line);color:var(--muted)">Oura, Whoop, Garmin, Polar, Fitbit, Samsung Health</td></tr>
+      <tr><td style="padding:9px 12px 9px 0;border-bottom:1px solid var(--line)">Running &amp; gym apps</td>
+          <td style="padding:9px 0;border-bottom:1px solid var(--line);color:var(--muted)">Strava, Nike Run Club, Peloton, Strong, Hevy</td></tr>
+      <tr><td style="padding:9px 12px 9px 0;border-bottom:1px solid var(--line)">Scales</td>
+          <td style="padding:9px 0;border-bottom:1px solid var(--line);color:var(--muted)">Withings, Renpho, Eufy — weight, body fat, lean mass</td></tr>
+      <tr><td style="padding:9px 12px 9px 0;border-bottom:1px solid var(--line)">Blood pressure</td>
+          <td style="padding:9px 0;border-bottom:1px solid var(--line);color:var(--muted)">Omron, Withings, Beurer</td></tr>
+      <tr><td style="padding:9px 12px 9px 0;border-bottom:1px solid var(--line)">Continuous glucose</td>
+          <td style="padding:9px 0;border-bottom:1px solid var(--line);color:var(--muted)">Libre, Dexcom, Levels, Lingo</td></tr>
+      <tr><td style="padding:9px 12px 9px 0">Bloodwork</td>
+          <td style="padding:9px 0;color:var(--muted)">Read the numbers off the sheet to your AI, or POST them</td></tr>
     </table>
+  </div>
+
+  <div class="note">
+    <b>Glucose against what you actually ate.</b> In one place, on one timeline. Almost
+    nobody can see that, and it's the fastest way to learn which of <em>your</em> meals
+    spike you — not which meals spike a stranger in a study. Same for bloodwork: labs land
+    as a PDF twice a year and vanish into an inbox. Kept here they become a line instead of
+    a snapshot, sitting next to the training and the food that produced them.
   </div>
 
   <div class="note">
@@ -234,12 +251,34 @@ Show Notification    →  Wrought           (body: Dictionary Value)</pre>
     already reach WROUGHT through your phone today.
   </p>
 
-  <h2>Your data</h2>
+  <h2>Your data, and the way out</h2>
   <p class="muted">
     Everything lives in one Supabase database with row-level security, so your rows are
     reachable only by you. A device key can write health data and nothing else — it cannot
     read anything back and cannot touch your login. Revoke a key here and the phone using
     it stops working immediately. Delete your account and the rows go with it.
+  </p>
+
+  <div class="panel">
+    <h3 style="margin-top:0">Take all of it, whenever you like</h3>
+    <p class="muted">
+      A hub you can't leave is a trap. The pitch here is "give us years of your life and
+      we'll remember it" — and the only thing that makes that a reasonable ask is being
+      able to take every row back, any day, without asking anyone.
+    </p>
+    <p class="muted" style="margin-bottom:0">
+      <code>GET /api/export</code> — every event, set, metric, session, routine, goal and
+      verdict as JSON. <code>?format=csv</code> for spreadsheets, <code>?table=sets</code>
+      for one slice. Credentials are the only thing deliberately left out.
+      <button class="ghost" id="dl" style="margin-left:8px">Download everything</button>
+    </p>
+  </div>
+
+  <h3>Anything else that measures you</h3>
+  <p class="muted">
+    <code>/ingest</code> is a plain documented endpoint, not a private protocol. Anything
+    that can POST JSON can feed this — a script, a sensor, a spreadsheet, a machine you
+    built yourself. That's what makes it a hub rather than an app with integrations.
   </p>
 </div>
 
@@ -304,6 +343,19 @@ $('mint').addEventListener('click', async () => {
     <p class="msg">Copy this now — it is stored hashed and will never be shown again.
     Paste it into the Shortcut's Authorization header as <code>Bearer ${esc(out.key.slice(0, 8))}…</code></p>`;
   $('msg').textContent = '';
+});
+
+$('dl')?.addEventListener('click', async () => {
+  if (!token) { $('msg').textContent = 'Sign in first.'; return; }
+  const res = await fetch('/.netlify/functions/api-export', { headers: { Authorization: `Bearer ${token}` } });
+  if (!res.ok) { $('msg').textContent = 'Export failed.'; return; }
+  // Blob rather than a plain link, because the endpoint needs an auth header
+  // and an <a download> cannot carry one.
+  const url = URL.createObjectURL(await res.blob());
+  const a = document.createElement('a');
+  a.href = url; a.download = `wrought-${new Date().toISOString().slice(0, 10)}.json`;
+  a.click(); URL.revokeObjectURL(url);
+  $('msg').textContent = 'Downloaded.';
 });
 
 $('list').addEventListener('click', async () => {

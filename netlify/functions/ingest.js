@@ -110,6 +110,56 @@ const METRIC_ALIASES = {
   exercisesessionrecord: 'active_minutes',
   moving_time: 'active_minutes',                          // Strava
 
+  // ── Blood: the half of "how am I doing" that no fitness app touches ──────
+  // A hub that holds every step you took and nothing about your blood is not a
+  // hub, it is a pedometer with ambitions.
+  blood_glucose: 'glucose',
+  glucose: 'glucose',
+  bloodglucoserecord: 'glucose',
+  blood_sugar: 'glucose',
+  hkquantitytypeidentifierbloodglucose: 'glucose',
+
+  blood_pressure_systolic: 'systolic',
+  systolic: 'systolic',
+  bloodpressuresystolic: 'systolic',
+  hkquantitytypeidentifierbloodpressuresystolic: 'systolic',
+
+  blood_pressure_diastolic: 'diastolic',
+  diastolic: 'diastolic',
+  bloodpressurediastolic: 'diastolic',
+  hkquantitytypeidentifierbloodpressurediastolic: 'diastolic',
+
+  body_temperature: 'body_temp',
+  body_temp: 'body_temp',
+  skin_temperature: 'body_temp',
+  respiratory_rate: 'respiratory_rate',
+  breathing_rate: 'respiratory_rate',
+
+  lean_body_mass: 'lean_mass_kg',
+  lean_mass: 'lean_mass_kg',
+  muscle_mass: 'lean_mass_kg',
+  body_water: 'body_water_pct',
+  bone_mass: 'bone_mass_kg',
+  waist_circumference: 'waist_cm',
+
+  // ── Bloodwork ────────────────────────────────────────────────────────────
+  // Nobody aggregates these with training and food, which is exactly why the
+  // combination is worth something: a ferritin result means one thing on its
+  // own and another next to four months of falling resting heart rate.
+  cholesterol_total: 'cholesterol_total',
+  total_cholesterol: 'cholesterol_total',
+  hdl: 'hdl', hdl_cholesterol: 'hdl',
+  ldl: 'ldl', ldl_cholesterol: 'ldl',
+  triglycerides: 'triglycerides',
+  hba1c: 'hba1c', a1c: 'hba1c',
+  ferritin: 'ferritin',
+  vitamin_d: 'vitamin_d',
+  testosterone: 'testosterone',
+  tsh: 'tsh',
+  crp: 'crp',
+  creatinine: 'creatinine',
+  alt: 'alt', ast: 'ast',
+
   // fitness markers
   vo2_max: 'vo2max',
   vo2max: 'vo2max',
@@ -155,6 +205,26 @@ export function normalise(metric, value, unit) {
     if (u === 'mi' || u === 'mile' || u === 'miles') v = v * 1.609344;
     if (u === 'ft' || u === 'feet') v = v * 0.0003048;
     return { value: Math.round(v * 100) / 100, unit: 'km' };
+  }
+  if (metric === 'glucose') {
+    // The one conversion that must not be got wrong. mg/dL is roughly 18×
+    // mmol/L, so a mix-up turns a normal 5.5 into 99 or a 99 into 1783 — the
+    // first looks like a medical emergency and the second like a broken sensor.
+    // Stored in mmol/L.
+    if (u === 'mg/dl' || u === 'mgdl' || u === 'mg_dl') v = v / 18.016;
+    return { value: Math.round(v * 100) / 100, unit: 'mmol/L' };
+  }
+  if (metric === 'body_temp') {
+    if (u === 'f' || u === '°f' || u === 'degf' || u === 'fahrenheit') v = (v - 32) * 5 / 9;
+    return { value: Math.round(v * 10) / 10, unit: '°C' };
+  }
+  if (metric === 'lean_mass_kg' || metric === 'bone_mass_kg') {
+    if (u === 'lb' || u === 'lbs') v = v / 2.2046226;
+    return { value: Math.round(v * 100) / 100, unit: 'kg' };
+  }
+  if (metric === 'waist_cm') {
+    if (u === 'in' || u === 'inch' || u === 'inches') v = v * 2.54;
+    return { value: Math.round(v * 10) / 10, unit: 'cm' };
   }
   if (metric === 'active_minutes') {
     if (u === 's' || u === 'sec' || u === 'seconds') v = v / 60;

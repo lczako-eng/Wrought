@@ -158,11 +158,73 @@ export const PROVIDERS = {
     how: 'Peloton writes to Apple Health and Health Connect. Nothing else to do.',
     aggregated_via: 'apple_health',
   },
+
+  // ── Gym and food apps ────────────────────────────────────────────────────
+  // Almost nobody realises these already write to the phone. They arrive for
+  // free the moment the phone is connected, which is most of what makes the
+  // one-door answer true rather than just convenient.
+  strong: {
+    name: 'Strong / Hevy / Jefit',
+    devices: 'Lifting apps',
+    mode: 'push', status: 'aggregated',
+    gives: ['workouts', 'active_minutes'],
+    how: 'They write completed workouts into Apple Health or Health Connect.',
+    why: 'If you already log lifts somewhere, keep doing it — those sessions land here on their own. Wrought only coaches the ones you run through it.',
+    aggregated_via: 'apple_health',
+  },
+  myfitnesspal: {
+    name: 'MyFitnessPal / Cronometer',
+    devices: 'Food logging apps',
+    mode: 'push', status: 'aggregated',
+    gives: ['total_calories'],
+    how: 'They push calories to Apple Health. Only the totals travel, not the meals.',
+    why: 'Worth knowing the limit: Apple Health carries a calorie number, not what you ate. For the composition breakdown — how much meat, how much sugar — say the meal to Wrought instead. One sentence beats a barcode scan anyway.',
+    aggregated_via: 'apple_health',
+  },
+
+  // ── Blood, and the things a doctor measures ──────────────────────────────
+  // The half of "how am I doing" that no training app touches. A ferritin
+  // result means one thing alone and another sitting next to four months of
+  // falling resting heart rate — which is the entire argument for one hub.
+  cgm: {
+    name: 'Continuous glucose (Libre, Dexcom, Levels, Lingo)',
+    devices: 'CGM sensors',
+    mode: 'push', status: 'aggregated',
+    gives: ['glucose'],
+    how: 'Most CGM apps write into Apple Health. Stored in mmol/L; mg/dL is converted at the door.',
+    why: 'Glucose against what you actually ate, in one place, is a thing almost nobody can see — and it is the fastest way to learn which of your own meals spike you.',
+    aggregated_via: 'apple_health',
+  },
+  blood_pressure: {
+    name: 'Blood pressure cuffs (Omron, Withings, Beurer)',
+    devices: 'Home BP monitors',
+    mode: 'push', status: 'aggregated',
+    gives: ['systolic', 'diastolic', 'resting_hr'],
+    how: 'They write to Apple Health and Health Connect.',
+    aggregated_via: 'apple_health',
+  },
+  bloodwork: {
+    name: 'Bloodwork',
+    devices: 'Lab results — cholesterol, HbA1c, ferritin, vitamin D, testosterone, TSH',
+    mode: 'push', status: 'live',
+    gives: ['cholesterol_total', 'hdl', 'ldl', 'triglycerides', 'hba1c', 'ferritin', 'vitamin_d', 'testosterone', 'tsh'],
+    how: 'POST them to /ingest yourself, or read the numbers off the sheet to your AI and it files them.',
+    why: 'Labs land as a PDF twice a year and then vanish into an inbox. Kept here they become a line rather than a snapshot — and they sit next to the training and the food that produced them.',
+  },
 };
 
 // What a user can actually connect right now, versus what merely rides along.
 export const LIVE_PROVIDERS = Object.entries(PROVIDERS)
   .filter(([, p]) => p.status === 'live').map(([k]) => k);
+
+// Grouped for the connect page. The order is the order somebody should read
+// them in: the doors first, then the things that ride through them.
+export const GROUPS = [
+  { id: 'doors',    label: 'The two doors',        keys: ['apple_health', 'health_connect'] },
+  { id: 'wearable', label: 'Watches, rings, straps', keys: ['oura', 'whoop', 'garmin', 'polar', 'fitbit', 'samsung_health'] },
+  { id: 'apps',     label: 'Running & gym apps',   keys: ['strava', 'nike_run_club', 'peloton', 'strong', 'myfitnesspal'] },
+  { id: 'body',     label: 'Scales & blood',       keys: ['withings', 'blood_pressure', 'cgm', 'bloodwork'] },
+];
 
 export const isPush = key => PROVIDERS[key]?.mode === 'push';
 
