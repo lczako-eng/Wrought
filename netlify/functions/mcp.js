@@ -26,7 +26,7 @@ import {
 import { PROVIDERS, providerSummary, recommendRoute } from './lib/providers.js';
 import {
   exerciseKey, lastPerformance, progressionCall, TIERS,
-  restingBurn, energyBalance, planFromRoutine, sessionTotals,
+  restingBurn, energyBalance, planFromRoutine, sessionTotals, earnedRoom,
 } from './lib/training.js';
 
 const PROTOCOL_VERSION = '2025-06-18';
@@ -75,6 +75,10 @@ LOAD IS COMPUTED, NEVER GUESSED. Every weight in a session comes back from the s
 TIERS. Sessions carry a tier — beginner, intermediate or advanced — and it changes how you talk, not just the volume. For a beginner: compound movements only, one plain line on what each should feel like, no jargon left unexplained, and three exercises is a complete session. For advanced: name it and get out of the way. The tier comes back in the response; follow it.
 
 ROUTINES ARE HOW THIS SURVIVES MONTH TWO. When a session works, offer save_routine once — "want me to keep this as your leg day?" — and from then on the name alone starts it. Check list_routines before building anything new; the answer to "what should I train" is usually a routine they already have and have not run in ten days. Routines are not only gym days: kind "sport" holds five-a-side, hockey, climbing, and those count as training.
+
+ROOM IS EARNED, NEVER TAKEN AWAY. earned_room looks at the whole week, and when someone has genuinely been under target it hands back a number and tells them to spend it — "you're about 1,400 under, that's a proper dinner out, go and have it." Deliver that warmly and without conditions: no "but", no "just be careful", no suggestion they bank it instead. A reward that gets hedged is not a reward, and the honest logging this depends on is worth far more than the calories. The reverse never happens: when somebody is OVER for the week, state it in one factual line and stop — never prescribe eating less, skipping a meal, or making up for yesterday unless they explicitly ask for a plan. The moment earned room has an opposite it becomes a punishment schedule, and that is the thing that turns a food log into a disorder. When a care flag is up the tool switches the whole frame off; respect that absolutely and never dangle food as a reward for having eaten little.
+
+NOTES AT THE RACK. Whatever they say mid-set — "left shoulder pinched", "grip went before the legs", "felt light today" — goes into log_set's note field VERBATIM. Never treat it as chatter to be replied to and dropped. It attaches to that exact set, and six weeks later it is the only thing that explains a plateau. If they mention pain more than once for the same joint, call remember so every future session honours it without being asked again.
 
 CALORIES IN AND OUT. energy_balance gives the real picture — what they ate against resting burn from their own height, weight and age, plus what the watch says they moved. Both halves are estimates and the response says so; use "roughly" and "about", never state a net as a measurement, and point them at the weekly scale trend to correct it rather than at any single day. If something is missing to compute it, ask once, save it, and never ask again.
 
@@ -178,6 +182,7 @@ const TOOLS = [
         weight_kg: { type: 'number',  description: 'Load used in kg. Convert from lb first. Omit for bodyweight work.' },
         rpe:       { type: 'number',  description: 'How close to failure, 1-10, if they indicated it ("that was easy" ≈ 6, "barely got it" ≈ 9.5). Drives the next load, so pass it whenever they hint at effort.' },
         exercise:  { type: 'string',  description: 'Only if they did something other than what was prescribed — a swap or an extra lift.' },
+        note:      { type: 'string',  description: 'Anything they said at the rack — "left shoulder pinched", "grip went before the legs", "felt light today", "bar speed was slow". Pass it VERBATIM and never discard it as chatter. It attaches to this exact set, so six weeks later it is the thing that explains a plateau.' },
         skip:      { type: 'boolean', description: 'True if they are skipping this exercise entirely and moving on.' },
       },
     },
@@ -232,6 +237,16 @@ const TOOLS = [
     name: 'energy_balance',
     title: 'Calories in versus calories out',
     description: 'The real energy picture for a day: what they ate, resting burn from their own height, weight and age, active calories from the watch, and the net. Also projects what that net means per week on the scale. Use for "am I in a deficit", "calories in calories out", "why is the weight not moving". Both halves are estimates and the response says so — relay that.',
+    inputSchema: {
+      type: 'object',
+      properties: { date: { type: 'string', description: 'YYYY-MM-DD. Defaults to today.' } },
+    },
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+  },
+  {
+    name: 'earned_room',
+    title: 'How much slack they have actually earned',
+    description: 'The honest reward. Looks at the whole week rather than today, and if they have genuinely been under target, says so with a number and tells them to spend it — "you are 1,400 under, that is a proper dinner out, go and have it." Use for "can I have a takeaway", "have I got room", "I fancy a pizza", or proactively at the end of a good week. IMPORTANT: this only ever ADDS permission. It never tells anyone to eat less or make up for a day, and it switches itself off entirely when a care flag is up. Relay the guidance field exactly — a reward that gets hedged is not a reward.',
     inputSchema: {
       type: 'object',
       properties: { date: { type: 'string', description: 'YYYY-MM-DD. Defaults to today.' } },
@@ -1019,6 +1034,9 @@ async function logSet(args, user) {
       weight_kg: args.weight_kg != null ? Number(args.weight_kg) : null,
       rpe: args.rpe != null ? Number(args.rpe) : null,
       muscles: current.muscles || [],
+      // Verbatim. "Left shoulder pinched on the third set" is the whole reason
+      // a number went the way it did, and it is worthless paraphrased.
+      note: args.note ? String(args.note).slice(0, 500) : null,
       local_date: today,
     }]);
     if (error) return { error: error.message };
@@ -1247,6 +1265,44 @@ async function energyBalanceTool(args, user) {
     next_actions: balance.known
       ? ['progress to check it against the actual weight trend']
       : ['set_profile with what is missing'],
+  };
+}
+
+async function earnedRoomTool(args, user) {
+  const { profile, goals } = await context(user.id);
+  const to   = args.date || localDateFor(profile.timezone);
+  const from = addDays(to, -6);
+
+  const range = await rangeFacts(user.id, profile, from, to);
+  const flags = careFlags(range, profile);
+
+  // A stated calorie goal wins. Failing that, derive maintenance from their own
+  // body and treat that as the line — better than refusing to answer, and it is
+  // the number they would have picked anyway.
+  const goal = goals.find(g => g.metric === 'calories' && g.cadence === 'daily');
+  let dailyTarget = goal?.target_value != null ? Number(goal.target_value) : null;
+  let derived = false;
+
+  if (dailyTarget == null) {
+    const today = await dayFacts(user.id, profile, to);
+    const balance = await balanceFor(user.id, profile, to, today);
+    if (balance.known) { dailyTarget = balance.calories_out; derived = true; }
+  }
+
+  const room = earnedRoom({
+    days: range.days, dailyTarget, flags,
+    honestyDays: range.days.filter(d => d.logged).length,
+  });
+
+  return {
+    week: { from, to },
+    ...room,
+    target_source: dailyTarget == null ? null : derived ? 'estimated maintenance' : 'their stated goal',
+    ...(flags.length ? { care_flags: flags } : {}),
+    note: room.guidance,
+    next_actions: room.available
+      ? ['log whatever they end up eating — spending it is not a failure']
+      : ['brief for the fuller picture'],
   };
 }
 
@@ -1490,6 +1546,7 @@ const IMPL = {
   save_routine: saveRoutine,
   list_routines: listRoutines,
   energy_balance: energyBalanceTool,
+  earned_room: earnedRoomTool,
   get_day: getDay,
   search_log: searchLog,
   log_weight: logWeight,

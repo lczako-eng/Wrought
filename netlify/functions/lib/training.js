@@ -223,6 +223,98 @@ export function energyBalance({ profile, weightKg, caloriesIn, activeCalories, f
   };
 }
 
+// ── Earned room ─────────────────────────────────────────────────────────────
+// Every eating app is one of two things: punitive, or permissive. Punitive ones
+// get deleted in February. Permissive ones get ignored by March.
+//
+// This is the third thing. Track the week rather than the day, and when someone
+// has genuinely been under, say so and tell them to spend it. Not "you may have
+// a small treat" — actual arithmetic: you are 1,400 under for the week, that is
+// a proper dinner out, go and have it.
+//
+// The reason it works is not motivational, it is structural: the room only
+// exists if the log is honest, so the reward reinforces the exact behaviour the
+// whole product depends on. Nobody games it, because gaming it means writing
+// down food you did not eat in order to be told you may not eat more.
+//
+// TWO RULES THAT DO NOT BEND:
+//
+//   1. This function only ever ADDS permission. It never tells anybody to eat
+//      less, skip a meal, or make up for yesterday. Being over is reported as
+//      a fact about the trend and nothing else — the moment "earned" has an
+//      opposite, it becomes a punishment schedule, and that is the pattern
+//      that turns a food log into a disorder.
+//
+//   2. A care flag switches the whole framing off. Dangling food as a reward
+//      for eating little is textbook, and a person in that pattern is the last
+//      person who should be handed a scoreboard.
+
+export function earnedRoom({ days, dailyTarget, flags = [], honestyDays = null }) {
+  const fed = days.filter(d => d.calories);
+
+  if (flags.some(f => f.flag === 'very_low_intake' || f.flag === 'rapid_loss')) {
+    return {
+      available: false, blocked: 'care',
+      // `say` is read aloud, so it cannot explain why the frame is off — doing
+      // that tells somebody who is already under-eating that they have not
+      // qualified for a treat, which is the precise harm this branch exists to
+      // prevent. The answer is unconditional permission and no scoreboard.
+      say: 'Yes — have it. Food is not something you need to earn.',
+      guidance: 'Grant it plainly and stop. Do not quote a calorie number, do not mention a weekly total, do not frame food as a reward or as something owed, and do not explain why. Follow the care flag guidance for anything further.',
+    };
+  }
+
+  if (!dailyTarget) {
+    return {
+      available: false, blocked: 'no_target',
+      say: 'No daily calorie target set, so there is nothing to measure room against.',
+      guidance: 'Offer set_goal with a daily calorie number once. If they decline, drop it.',
+    };
+  }
+
+  if (fed.length < 3) {
+    return {
+      available: false, blocked: 'not_enough_data',
+      logged_days: fed.length,
+      say: `Only ${fed.length} day${fed.length === 1 ? '' : 's'} of food logged this week — a few more and the weekly picture starts to mean something.`,
+      guidance: 'Say it once, plainly. Do not nag about logging.',
+    };
+  }
+
+  const target   = dailyTarget * fed.length;
+  const consumed = fed.reduce((a, d) => a + d.calories, 0);
+  const room     = Math.round(target - consumed);
+  const streak   = honestyDays ?? fed.length;
+
+  // Over for the week: state it and stop. No instruction, no making up for it.
+  if (room <= 0) {
+    return {
+      available: false, over_by: Math.abs(room), logged_days: fed.length, honesty_streak: streak,
+      say: `About ${Math.abs(room)} over target across ${fed.length} logged days — roughly ${Math.round(Math.abs(room) / fed.length)} a day.`,
+      guidance: 'Report it and move on. Do NOT prescribe eating less, skipping anything, or making up for it. One factual line, no correction plan unless they explicitly ask for one.',
+    };
+  }
+
+  const spend =
+      room >= 900 ? 'a proper meal out, whatever you actually want'
+    : room >= 600 ? 'a takeaway, or dessert and a couple of drinks'
+    : room >= 350 ? 'pudding, or a decent-sized snack'
+    : room >= 150 ? 'a bit of slack — a beer, a bag of crisps'
+    : 'not much, but you are on the right side of it';
+
+  return {
+    available: true,
+    room_kcal: room,
+    logged_days: fed.length,
+    honesty_streak: streak,
+    daily_target: dailyTarget,
+    avg_intake: Math.round(consumed / fed.length),
+    worth: spend,
+    say: `You are about ${room} calories under for the week across ${fed.length} logged days. That is ${spend}. You have earned it — spend it and do not log it as a failure.`,
+    guidance: 'Say this warmly and without conditions. No "but", no "just be careful", no suggestion they bank it instead. A reward hedged is not a reward, and the honesty this depends on is worth more than the calories.',
+  };
+}
+
 // ── Building a session ──────────────────────────────────────────────────────
 
 export function planFromRoutine(routine) {

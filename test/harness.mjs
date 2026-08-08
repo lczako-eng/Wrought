@@ -14,7 +14,7 @@ import { canonicalMetric, normalise, normaliseWorkout } from '../netlify/functio
 import { PROVIDERS, LIVE_PROVIDERS, providerSummary, recommendRoute } from '../netlify/functions/lib/providers.js';
 import {
   exerciseKey, loadStep, progressionCall, TIERS,
-  restingBurn, energyBalance, planFromRoutine, sessionTotals,
+  restingBurn, energyBalance, planFromRoutine, sessionTotals, earnedRoom,
 } from '../netlify/functions/lib/training.js';
 import {
   localDateFor, addDays, daysBetween, clockString, humanDuration,
@@ -554,6 +554,78 @@ await test('without the basics it says what it needs instead of inventing one', 
   const b = energyBalance({ profile: { height_cm: null }, weightKg: null, caloriesIn: 2000 });
   assert.equal(b.known, false);
   assert.ok(b.missing.length);
+});
+
+group('Earned room — the reward that must never invert');
+
+const week = (cals) => cals.map((c, i) => ({
+  date: addDays('2026-08-01', i), logged: true, calories: c, sessions: 0, minutes: 0,
+  weight_kg: null, steps: null, sleep_minutes: null, muscles: [], protein_g: null,
+}));
+
+await test('a genuinely under week hands back a number and says spend it', () => {
+  const r = earnedRoom({ days: week([1800, 1750, 1900, 1850, 1800, 1900, 1750]), dailyTarget: 2200 });
+  assert.equal(r.available, true);
+  assert.ok(r.room_kcal > 2000, `expected real room, got ${r.room_kcal}`);
+  assert.match(r.say, /earned it/);
+});
+
+await test('being over is stated once and never turned into a punishment', () => {
+  // The moment "earned" has an opposite it is a punishment schedule, and that
+  // is precisely what turns a food log into a disorder.
+  const r = earnedRoom({ days: week([2800, 2900, 3100, 2700, 2850, 3000, 2900]), dailyTarget: 2200 });
+  assert.equal(r.available, false);
+  assert.ok(r.over_by > 0);
+  assert.doesNotMatch(r.say, /eat less|cut back|make up|skip|deficit|tomorrow/i,
+    'reporting an overshoot must not carry an instruction');
+  assert.match(r.guidance, /Do NOT prescribe eating less/);
+});
+
+await test('a care flag switches the whole frame off', () => {
+  // Dangling food as a reward for having eaten little is textbook, and someone
+  // in that pattern is the last person who should be handed a scoreboard.
+  const r = earnedRoom({
+    days: week([900, 850, 950, 900, 880, 920, 870]),
+    dailyTarget: 2200,
+    flags: [{ flag: 'very_low_intake', detail: 'x', guidance: 'y' }],
+  });
+  assert.equal(r.available, false);
+  assert.equal(r.blocked, 'care');
+  // What actually matters is that nothing readable aloud carries a scoreboard
+  // or makes permission conditional. A number here would tell someone already
+  // under-eating exactly how much further under they are.
+  assert.doesNotMatch(r.say, /\d/, 'no calorie figure may be quoted in this state');
+  assert.doesNotMatch(r.say, /\bearn(ed|s)? it\b|deserve|balance (it )?out|make up for/i,
+    'permission must not be conditional');
+  assert.match(r.say, /^Yes/, 'the answer is permission, granted first and without preamble');
+  assert.match(r.guidance, /reward/i, 'the model must be told not to use the reward frame');
+});
+
+await test('rapid loss blocks it too, not just low intake', () => {
+  const r = earnedRoom({ days: week([1900,1900,1900,1900,1900,1900,1900]), dailyTarget: 2200,
+    flags: [{ flag: 'rapid_loss', detail: 'x', guidance: 'y' }] });
+  assert.equal(r.blocked, 'care');
+});
+
+await test('too little data says so instead of inventing a reward', () => {
+  const days = week([2000, 2100]).concat(
+    [3,4,5,6,7].map(i => ({ date: addDays('2026-08-01', i), logged: false, calories: null, sessions: 0, minutes: 0, muscles: [] })));
+  const r = earnedRoom({ days, dailyTarget: 2200 });
+  assert.equal(r.available, false);
+  assert.equal(r.blocked, 'not_enough_data');
+});
+
+await test('no target means no claim about room', () => {
+  const r = earnedRoom({ days: week([1800,1800,1800,1800,1800,1800,1800]), dailyTarget: null });
+  assert.equal(r.available, false);
+  assert.equal(r.blocked, 'no_target');
+});
+
+await test('the reward is never hedged', () => {
+  const r = earnedRoom({ days: week([1600,1700,1650,1700,1600,1650,1700]), dailyTarget: 2200 });
+  assert.doesNotMatch(r.say, /but |careful|moderation|make sure|try not/i,
+    'a hedged reward is not a reward');
+  assert.match(r.guidance, /without conditions/i);
 });
 
 group('Session assembly');

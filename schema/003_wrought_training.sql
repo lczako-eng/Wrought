@@ -138,6 +138,7 @@ create table if not exists public.wrought_sets (
   distance_km  numeric,
   seconds      integer,
   muscles      text[],
+  note         text,
   local_date   date not null,
   logged_at    timestamptz not null default now()
 );
@@ -148,6 +149,8 @@ comment on column public.wrought_sets.exercise_key is
   'Normalised name for matching across time — "Barbell Bench Press", "bench press" and "bench" must all find last week''s number, or progression silently stops working and nobody notices for a month.';
 comment on column public.wrought_sets.rpe is
   'Rate of perceived exertion, 1-10. How close to failure. For a beginner with no idea what a working weight is, this is the only honest way to prescribe load.';
+comment on column public.wrought_sets.note is
+  'Whatever was said at the rack — "left shoulder pinched", "grip went before the legs", "felt light today". Attached to the set, not the session, because "the third set felt wrong" is information and "somewhere in that hour something felt wrong" is not. This is where the reason behind a number lives, and six weeks later it is the only thing that explains the plateau.';
 
 create index if not exists wrought_sets_user_exercise_idx
   on public.wrought_sets (user_id, exercise_key, logged_at desc);
