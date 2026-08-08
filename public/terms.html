@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WROUGHT — terms</title>
+<meta name="description" content="The terms for using Wrought. Short, and written to be read.">
+<meta name="theme-color" content="#14110F">
+<style>
+  :root{--iron:#14110F;--scale:#1B1614;--line:#2E2622;--bright:#F4EFE9;
+        --ash:#9A8D84;--dim:#675D57;--heat:#F26419;--warn:#F5A623;--temper:#5B90B0}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--iron);color:var(--bright);
+    font:15.5px/1.7 ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;
+    -webkit-font-smoothing:antialiased}
+  .wrap{max-width:760px;margin:0 auto;padding:0 clamp(18px,5vw,32px)}
+  a{color:var(--heat)}
+  header{padding:44px 0 26px}
+  .wordmark{font-weight:800;letter-spacing:.3em;text-transform:uppercase;font-size:12px}
+  h1{font-size:clamp(30px,6vw,46px);letter-spacing:.02em;font-weight:800;margin:24px 0 10px}
+  h2{font-size:17px;margin:44px 0 10px;font-weight:700;letter-spacing:-.01em}
+  h3{font-size:14px;margin:24px 0 6px;font-weight:700;color:var(--warn)}
+  p,li{margin:0 0 13px;color:var(--ash);max-width:68ch}
+  strong{color:var(--bright)}
+  ul{padding-left:18px;margin:0 0 13px}
+  .stamp{color:var(--dim);font-size:12px;letter-spacing:.1em;text-transform:uppercase}
+  table{width:100%;border-collapse:collapse;font-size:13.5px;margin:14px 0 18px}
+  th,td{text-align:left;padding:9px 12px 9px 0;border-bottom:1px solid var(--line);
+    vertical-align:top;color:var(--ash)}
+  th{color:var(--dim);font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;font-weight:400}
+  td b{color:var(--bright);font-weight:700}
+  .box{border:1px solid var(--line);background:var(--scale);border-radius:3px;
+    padding:18px 20px;margin:20px 0}
+  .box.hot{border-color:#6E1C09}
+  .box .lab{color:var(--warn);font-size:10.5px;letter-spacing:.16em;text-transform:uppercase;
+    display:block;margin-bottom:8px}
+  code{background:#241D1A;border:1px solid var(--line);border-radius:2px;padding:1px 5px;font-size:13px}
+  footer{border-top:1px solid var(--line);margin-top:56px;padding:26px 0 70px;
+    color:var(--dim);font-size:12px}
+  footer a{color:var(--ash)}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <span class="wordmark">Wrought</span>
+  <h1>Terms</h1>
+  <p class="stamp">Last updated 8 August 2026</p>
+</header>
+
+<p>
+  Plain terms for a small product. Using Wrought means agreeing to these.
+</p>
+
+<div class="box hot">
+  <span class="lab">Read this one if you read nothing else</span>
+  <p style="color:var(--bright);margin:0">
+    <strong>Wrought is not a medical device and not a doctor.</strong> It is a training and
+    nutrition journal that does arithmetic and offers opinions about your training. It does
+    not diagnose, treat or manage any medical condition. If something about your health
+    worries you, talk to a professional — not to this.
+  </p>
+</div>
+
+<h2>What Wrought is</h2>
+<p>
+  A record of what you eat, what you train and what your devices measure, reachable from
+  any AI assistant that speaks MCP, plus a nightly read on what it all amounts to. Every
+  calorie estimated from a described meal is exactly that — an estimate — and is labelled
+  as one everywhere it appears.
+</p>
+
+<h2>Your account</h2>
+<ul>
+  <li>You need a working email address and to be at least 16.</li>
+  <li>One account per person. Keep your sign-in link and device keys to yourself.</li>
+  <li>What you log is yours. You keep every right to it; Wrought is granted only what it needs to store it, calculate on it, and show it back to you.</li>
+</ul>
+
+<h2>Training advice, honestly framed</h2>
+<p>
+  Wrought suggests loads, sessions and food. Those suggestions come from rules applied to
+  your own history — they are not supervision, and they cannot see your form, your joints
+  or your day. <strong>You are responsible for what you lift.</strong> If a prescribed
+  weight feels wrong, it is wrong; stop. If you have an injury or a medical condition,
+  clear your training with someone qualified first.
+</p>
+<p>
+  Nutrition figures are inferred from your own descriptions and are approximate by nature.
+  Do not use them to manage a medical condition that depends on precise intake — diabetes,
+  kidney disease, a clinical eating disorder — without a professional involved.
+</p>
+
+<h2>What is not allowed</h2>
+<ul>
+  <li>Using it to manage someone else's health without them knowing.</li>
+  <li>Scraping, hammering or attacking the API. Reasonable automation is fine and expected — that is what the ingest endpoint is for.</li>
+  <li>Uploading anyone else's health data.</li>
+</ul>
+
+<h2>Availability</h2>
+<p>
+  This is a small independent product. It aims to be up and is not promised to be. There is
+  no uptime guarantee, no support SLA, and occasionally something will break. What is
+  promised instead is that <strong>your data is always exportable</strong>, so a bad day
+  here never traps your record.
+</p>
+
+<h2>If it shuts down</h2>
+<p>
+  If Wrought is ever discontinued, you get <strong>at least 60 days' notice by email</strong>
+  and the export endpoint stays running for the whole of it. Nobody's years of history
+  disappear behind a shutdown notice.
+</p>
+
+<h2>Money</h2>
+<p>
+  Wrought is currently free. If paid plans arrive, existing data stays accessible and
+  <strong>the export endpoint is never put behind a paywall</strong>. Anything paid will be
+  new capability, not a ransom on what you already gave it.
+</p>
+
+<h2>Liability</h2>
+<p>
+  Wrought is provided as-is, without warranties of any kind. To the fullest extent the law
+  allows, its operator is not liable for injury, loss or damage arising from use of it —
+  including from following a suggestion it made. Nothing here limits liability for anything
+  that cannot lawfully be limited.
+</p>
+
+<h2>Ending it</h2>
+<p>
+  You can delete your account at any time, and everything goes with it. An account may be
+  closed here for breaking these terms; if that happens you will be told why and given the
+  chance to export first.
+</p>
+
+<h2>Law</h2>
+<p>
+  These terms are governed by the laws of Ontario, Canada. Consumer rights that apply where
+  you live are not affected by that.
+</p>
+
+<h2>Contact</h2>
+<p>
+  Laszlo Czako ·
+  <a href="mailto:laszlobrianczako@gmail.com">laszlobrianczako@gmail.com</a>
+</p>
+
+<footer>
+  <span class="wordmark">Wrought</span><br><br>
+  <a href="/">Home</a> · <a href="/connect.html">Connect</a> ·
+  <a href="/privacy.html">Privacy</a> ·
+  <a href="https://github.com/lczako-eng/wrought">Source</a>
+</footer>
+
+</div>
+</body>
+</html>

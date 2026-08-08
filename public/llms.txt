@@ -1,0 +1,71 @@
+# WROUGHT
+
+> The training and nutrition memory that lives inside your AI. One sentence a
+> day, it remembers the rest — and tells you the truth about the week you had.
+
+Wrought is an MCP server, not an app. It attaches to any assistant that speaks
+the Model Context Protocol and gives that assistant a persistent, personal
+record: what the user ate, what they lifted, what the scale said, and whatever
+their watch reported overnight.
+
+## The problem it solves
+
+People open a new chat every morning and re-explain themselves — yesterday's
+food, yesterday's training, this morning's weight — to a model with no memory of
+any of it. Wrought is the memory that survives the tab closing.
+
+## Connect
+
+MCP endpoint:      https://wrought.fit/mcp
+Transport:         Streamable HTTP, JSON-RPC 2.0, stateless
+Protocol version:  2025-06-18
+Auth:              OAuth 2.1 with PKCE and dynamic client registration (RFC 7591)
+Discovery:         https://wrought.fit/.well-known/oauth-authorization-server
+                   https://wrought.fit/.well-known/oauth-protected-resource
+
+A conforming MCP client needs nothing but the URL. It registers itself, the user
+signs in once, and it stays connected.
+
+## What an assistant can do with it
+
+Logging      log, log_weight, log_measurement, undo_last
+Reading      brief, get_day, progress, search_log, nutrition, energy_balance
+Coaching     whats_next, suggest_workout, earned_room
+Live session start_session, log_set, end_session
+Routines     save_routine, list_routines
+Setup        get_profile, set_profile, set_goal, set_eating_window, connect_device
+Memory       remember, recall
+
+Every response is pre-computed server-side and carries a `say` string written
+for reading aloud, plus a `next_actions` list. Weak and fast models work here
+without doing arithmetic of their own.
+
+## Doctrines the server ships to clients
+
+- One sentence is a complete log. Never present a form.
+- The server computes, the model relays. Never recompute a number.
+- Honest, never cruel. Hard on the behaviour, never on the person.
+- Estimates are labelled. Calories from a described meal are inferred.
+- Care flags outrank everything, including the honesty doctrine.
+- Not a medical device. No diagnosis, ever.
+
+## Data
+
+Ingest    POST https://wrought.fit/ingest  (bearer key, documented, public)
+          Accepts metrics, workouts and events from Apple Health, Health
+          Connect, CGMs, blood pressure cuffs, scales, lab results, or anything
+          else that can POST JSON.
+Export    GET  https://wrought.fit/api/export  (JSON or CSV, everything, always)
+
+## Pages
+
+Home      https://wrought.fit/
+Connect   https://wrought.fit/connect.html
+Dashboard https://wrought.fit/app.html
+Privacy   https://wrought.fit/privacy.html
+Terms     https://wrought.fit/terms.html
+Source    https://github.com/lczako-eng/wrought
+
+## Contact
+
+Laszlo Czako — laszlobrianczako@gmail.com

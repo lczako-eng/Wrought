@@ -1,0 +1,42 @@
+{
+  "name": "wrought",
+  "title": "Wrought",
+  "description": "The training and nutrition memory that lives inside your AI. Log what you ate and lifted in one sentence, get an honest read every night, and connect any watch, ring, scale or glucose monitor to the same record.",
+  "version": "1.0.0",
+  "vendor": {
+    "name": "Laszlo Czako",
+    "url": "https://wrought.fit",
+    "email": "laszlobrianczako@gmail.com"
+  },
+  "endpoint": "https://wrought.fit/mcp",
+  "transport": "streamable-http",
+  "protocolVersion": "2025-06-18",
+  "authentication": {
+    "type": "oauth2",
+    "flow": "authorization_code",
+    "pkce": "S256",
+    "dynamicClientRegistration": true,
+    "authorizationServerMetadata": "https://wrought.fit/.well-known/oauth-authorization-server",
+    "protectedResourceMetadata": "https://wrought.fit/.well-known/oauth-protected-resource",
+    "scopes": ["wrought"]
+  },
+  "categories": ["health", "fitness", "productivity"],
+  "documentation": "https://wrought.fit/connect.html",
+  "privacyPolicy": "https://wrought.fit/privacy.html",
+  "termsOfService": "https://wrought.fit/terms.html",
+  "support": "mailto:laszlobrianczako@gmail.com",
+  "repository": "https://github.com/lczako-eng/wrought",
+  "dataHandling": {
+    "collects": ["health", "fitness", "nutrition", "biometric"],
+    "sold": false,
+    "usedForTraining": false,
+    "usedForAdvertising": false,
+    "userExport": "https://wrought.fit/api/export",
+    "userDeletion": "mailto:laszlobrianczako@gmail.com",
+    "subprocessors": ["Supabase", "OpenAI", "Netlify", "Resend"]
+  },
+  "disclaimers": [
+    "Wrought is not a medical device. It does not diagnose, treat, or advise on any medical condition.",
+    "Nutrition figures inferred from described meals are estimates and are labelled as such."
+  ]
+}

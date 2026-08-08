@@ -1,0 +1,224 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WROUGHT — privacy</title>
+<meta name="description" content="What Wrought collects, who it goes to, and how to get all of it back or delete it.">
+<meta name="theme-color" content="#14110F">
+<style>
+  :root{--iron:#14110F;--scale:#1B1614;--line:#2E2622;--bright:#F4EFE9;
+        --ash:#9A8D84;--dim:#675D57;--heat:#F26419;--warn:#F5A623;--temper:#5B90B0}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--iron);color:var(--bright);
+    font:15.5px/1.7 ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;
+    -webkit-font-smoothing:antialiased}
+  .wrap{max-width:760px;margin:0 auto;padding:0 clamp(18px,5vw,32px)}
+  a{color:var(--heat)}
+  header{padding:44px 0 26px}
+  .wordmark{font-weight:800;letter-spacing:.3em;text-transform:uppercase;font-size:12px}
+  h1{font-size:clamp(30px,6vw,46px);letter-spacing:.02em;font-weight:800;margin:24px 0 10px}
+  h2{font-size:17px;margin:44px 0 10px;font-weight:700;letter-spacing:-.01em}
+  h3{font-size:14px;margin:24px 0 6px;font-weight:700;color:var(--warn)}
+  p,li{margin:0 0 13px;color:var(--ash);max-width:68ch}
+  strong{color:var(--bright)}
+  ul{padding-left:18px;margin:0 0 13px}
+  .stamp{color:var(--dim);font-size:12px;letter-spacing:.1em;text-transform:uppercase}
+  table{width:100%;border-collapse:collapse;font-size:13.5px;margin:14px 0 18px}
+  th,td{text-align:left;padding:9px 12px 9px 0;border-bottom:1px solid var(--line);
+    vertical-align:top;color:var(--ash)}
+  th{color:var(--dim);font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;font-weight:400}
+  td b{color:var(--bright);font-weight:700}
+  .box{border:1px solid var(--line);background:var(--scale);border-radius:3px;
+    padding:18px 20px;margin:20px 0}
+  .box.hot{border-color:#6E1C09}
+  .box .lab{color:var(--warn);font-size:10.5px;letter-spacing:.16em;text-transform:uppercase;
+    display:block;margin-bottom:8px}
+  code{background:#241D1A;border:1px solid var(--line);border-radius:2px;padding:1px 5px;font-size:13px}
+  footer{border-top:1px solid var(--line);margin-top:56px;padding:26px 0 70px;
+    color:var(--dim);font-size:12px}
+  footer a{color:var(--ash)}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <span class="wordmark">Wrought</span>
+  <h1>Privacy</h1>
+  <p class="stamp">Last updated 8 August 2026</p>
+</header>
+
+<p>
+  Wrought holds what you eat, what you lift, what you weigh, and whatever your watch
+  reports. That is about as personal as data gets, so this page is written to be read
+  rather than to be legally survivable. If anything here is unclear, ask and it gets
+  rewritten.
+</p>
+
+<div class="box hot">
+  <span class="lab">The short version</span>
+  <p style="color:var(--bright);margin:0">
+    Your data is never sold, never rented, never used to train anyone's model, and never
+    shared for advertising. It is stored in one database that only you can read. You can
+    export every row or delete the whole account at any time, without asking us.
+  </p>
+</div>
+
+<h2>What is collected</h2>
+
+<table>
+  <thead><tr><th>What</th><th>Where it comes from</th></tr></thead>
+  <tbody>
+    <tr><td><b>Your log</b></td><td>Meals, workouts, sets, weight, measurements, notes, moods — whatever you tell your AI assistant.</td></tr>
+    <tr><td><b>Device data</b></td><td>Steps, sleep, heart rate, HRV, glucose, blood pressure and similar, if you connect a phone or wearable. Only what you choose to send.</td></tr>
+    <tr><td><b>Bloodwork</b></td><td>Only if you enter it yourself.</td></tr>
+    <tr><td><b>Profile</b></td><td>Timezone, units, height, birth year, and optionally sex — used to calculate resting energy. All optional except timezone.</td></tr>
+    <tr><td><b>Account</b></td><td>Your email address, for signing in.</td></tr>
+    <tr><td><b>Connections</b></td><td>Which assistants and devices you have linked, and when each last synced.</td></tr>
+  </tbody>
+</table>
+
+<p>
+  There is no analytics script, no advertising pixel, no third-party tracker and no
+  session recording on any page of this site.
+</p>
+
+<h2>Who else sees it</h2>
+
+<p>
+  Four companies process data on Wrought's behalf. There are no others, and none of them
+  are advertising companies.
+</p>
+
+<table>
+  <thead><tr><th>Processor</th><th>What they handle</th></tr></thead>
+  <tbody>
+    <tr><td><b>Supabase</b></td><td>The database and sign-in. Every row lives here, protected by row-level security so your rows are reachable only by your account.</td></tr>
+    <tr><td><b>OpenAI</b></td><td><b>Reads your food and workout descriptions</b> to turn them into structured entries, and writes your nightly verdict. See below.</td></tr>
+    <tr><td><b>Netlify</b></td><td>Serves the site and runs the server functions.</td></tr>
+    <tr><td><b>Resend</b></td><td>Sends the nightly brief email, if you want it.</td></tr>
+  </tbody>
+</table>
+
+<div class="box">
+  <span class="lab">Worth being specific about</span>
+  <p>
+    When you say <em>"chicken burrito bowl, no rice"</em>, that sentence is sent to OpenAI
+    so it can be turned into calories, macros and categories. Your nightly verdict is
+    written the same way, from numbers already calculated here.
+  </p>
+  <p style="margin-bottom:0">
+    OpenAI's API terms state that data submitted through the API is
+    <strong>not used to train their models</strong>. Even so — this is a real third party
+    seeing real sentences about your life, and you should know that before you type
+    anything you would not want processed by a company that is not us.
+  </p>
+</div>
+
+<h2>What is never done</h2>
+<ul>
+  <li><strong>Never sold or rented.</strong> Not to insurers, employers, advertisers, data brokers or researchers. There is no version of this product where that changes.</li>
+  <li><strong>Never used to train a model</strong>, ours or anyone else's.</li>
+  <li><strong>Never shared with an assistant you have not connected.</strong> Connecting ChatGPT does not give Claude access, and neither of them can see another user's anything.</li>
+  <li><strong>Never used to profile you for advertising.</strong> There is no advertising.</li>
+</ul>
+
+<h2>Your control</h2>
+
+<h3>Take everything</h3>
+<p>
+  <code>GET /api/export</code> returns every row Wrought holds about you as JSON, or
+  <code>?format=csv</code> for spreadsheets. There is a button on the
+  <a href="/connect.html">connect page</a>. No request, no waiting period, no export fee.
+  A hub you cannot leave is a trap.
+</p>
+
+<h3>Delete everything</h3>
+<p>
+  Deleting your account removes every row — log, sets, metrics, routines, briefs, memory,
+  connections — by database cascade, not by a flag that hides it. Email
+  <a href="mailto:laszlobrianczako@gmail.com">laszlobrianczako@gmail.com</a> and it is done
+  within 7 days. Backups roll off within 30.
+</p>
+
+<h3>Revoke access</h3>
+<p>
+  Disconnect an assistant and its token stops working immediately. Revoke a device key on
+  the connect page and the phone using it stops being able to write. Neither affects your
+  data.
+</p>
+
+<h2>Where it lives, and how long</h2>
+<p>
+  Data is stored in Supabase's cloud infrastructure. Wrought is operated from Canada, so
+  <strong>PIPEDA</strong> applies; if you are in the EU or UK, <strong>GDPR</strong> and UK
+  GDPR give you rights of access, rectification, erasure, restriction, objection and
+  portability — all of which are satisfied by the export and delete above, and none of
+  which require a form.
+</p>
+<p>
+  Your log is kept until you delete it, because that is the entire product — a record that
+  forgets after ninety days is not a record. Server logs are kept 30 days. Nothing is
+  archived after account deletion.
+</p>
+
+<h2>Health data, specifically</h2>
+<p>
+  Health information is sensitive-category data under GDPR Article 9 and is treated as
+  such. The legal basis is your <strong>explicit consent</strong>, given by connecting an
+  assistant or a device, and withdrawable at any time by disconnecting or deleting.
+</p>
+<p>
+  <strong>Wrought is not a medical device.</strong> It does not diagnose, treat, or advise
+  on any condition, and it is not a substitute for a doctor or dietitian. It will not
+  interpret your heart rate, HRV or bloodwork as a clinical sign, and it is built to say so
+  and point you at a professional when a question crosses that line.
+</p>
+
+<h2>Security</h2>
+<ul>
+  <li>Every table has row-level security; your rows are readable only by your account.</li>
+  <li>Access tokens, refresh tokens and device keys are stored as SHA-256 hashes. A database dump yields no usable credential.</li>
+  <li>Device keys are <strong>write-only</strong> — a key on your phone can add health data and cannot read anything back or touch your login.</li>
+  <li>All traffic is HTTPS. OAuth uses PKCE, and refresh tokens rotate on every use.</li>
+</ul>
+<p>
+  No system is perfect. If something is breached that affects you, you will be told
+  directly and promptly — not buried in a status page.
+</p>
+
+<h2>Children</h2>
+<p>
+  Wrought is not for anyone under 16 and is not directed at children. If an account is
+  found to belong to someone younger, it is deleted.
+</p>
+
+<h2>Changes</h2>
+<p>
+  If this policy changes in a way that affects how your data is handled, you will be
+  emailed before it takes effect — not after, and not only on this page.
+</p>
+
+<h2>Contact</h2>
+<p>
+  Laszlo Czako ·
+  <a href="mailto:laszlobrianczako@gmail.com">laszlobrianczako@gmail.com</a><br>
+  Data requests, deletions and complaints all go to the same place and are answered by a
+  person.
+</p>
+
+<footer>
+  <span class="wordmark">Wrought</span><br><br>
+  <a href="/">Home</a> · <a href="/connect.html">Connect</a> ·
+  <a href="/terms.html">Terms</a> ·
+  <a href="https://github.com/lczako-eng/wrought">Source</a>
+  <p style="margin-top:12px;max-width:70ch">
+    The source is public. If you want to check that any of the above is true rather than
+    take our word for it, the code that does it is right there.
+  </p>
+</footer>
+
+</div>
+</body>
+</html>

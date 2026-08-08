@@ -252,7 +252,29 @@ muted forever.
    per-exercise progression already works, so a programme is an ordered
    schedule over them. Everything after this is polish.
 4. Progress photos with dated comparison.
-5. Connector directory submissions (ChatGPT / Claude) once the flow is proven.
+5. Connector directory submissions — full checklist in `docs/SUBMISSION.md`.
+
+### Getting listed — the connector connector
+
+The founder: *"I can't be a back door connector. I'll have to be a connector
+connector."* Right instinct. Everything a directory asks for that is code or
+copy is **done**: OAuth 2.1 with dynamic client registration, tool annotations,
+`/privacy.html` naming every subprocessor, `/terms.html`, `/llms.txt`,
+`/.well-known/mcp.json`, `/api/export`, medical disclaimers throughout.
+
+**The hard prerequisite is deployment.** Every directory calls the live
+endpoint, walks the OAuth flow and lists the tools as step one of review. Do not
+submit before it is up and has had a fortnight of real use — reviewers notice an
+unused server, and a week of your own usage finds the bugs that would sink a
+review.
+
+Order: community MCP registries first (free, instant, just a PR), then Claude,
+then ChatGPT. Being pasted into a settings box is not a failure state — it is
+how every connector starts.
+
+Health data draws the hardest review, which this product should welcome: the
+care flags, labelled estimates, refusal to invent a working weight and refusal
+to diagnose are exactly what a reviewer wants to find. Point at them.
 
 **Rejected, on purpose:** "health age" / "body age". It is a marketing number
 with no clinical standing and most apps invent the formula. The one defensible

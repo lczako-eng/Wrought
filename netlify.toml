@@ -87,6 +87,19 @@
   status = 200
   force = true
 
+# Agent-readable overview and connector manifest. Both need a correct
+# Content-Type or the crawlers and directories that read them give up quietly.
+[[headers]]
+  for = "/llms.txt"
+  [headers.values]
+    Content-Type = "text/plain; charset=utf-8"
+
+[[headers]]
+  for = "/.well-known/mcp.json"
+  [headers.values]
+    Content-Type = "application/json; charset=utf-8"
+    Access-Control-Allow-Origin = "*"
+
 [[headers]]
   for = "/*.html"
   [headers.values]
