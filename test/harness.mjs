@@ -13,6 +13,10 @@ import { handler, TOOLS, handleRpc } from '../netlify/functions/mcp.js';
 import { canonicalMetric, normalise, normaliseWorkout } from '../netlify/functions/ingest.js';
 import { PROVIDERS, LIVE_PROVIDERS, providerSummary, recommendRoute } from '../netlify/functions/lib/providers.js';
 import {
+  exerciseKey, loadStep, progressionCall, TIERS,
+  restingBurn, energyBalance, planFromRoutine, sessionTotals,
+} from '../netlify/functions/lib/training.js';
+import {
   localDateFor, addDays, daysBetween, clockString, humanDuration,
   kgToLb, lbToKg, cmToIn, inToCm, sayWeight,
   windowStatus, weightTrend, trainingMatrix, summariseRange, careFlags, scoreGoals,
@@ -428,6 +432,160 @@ await test('the recommended door follows the phone, not the wearable', () => {
 
 await test('an unknown provider returns nothing rather than inventing a story', () => {
   assert.equal(providerSummary('mood_ring'), null);
+});
+
+group('Matching an exercise across time');
+
+await test('the same lift under different names collapses to one key', () => {
+  // If these do not match, last week's number is invisible, progression
+  // silently stops, and nobody notices for a month because the app still
+  // looks like it is working.
+  for (const n of ['Bench', 'bench press', 'Barbell Bench Press', 'Incline DB bench press', 'benching']) {
+    assert.equal(exerciseKey(n), 'bench press', `"${n}" should key to bench press`);
+  }
+  assert.equal(exerciseKey('Back Squat'), 'squat');
+  assert.equal(exerciseKey('Smith machine squat'), 'squat');
+  assert.equal(exerciseKey('RDL'), 'romanian deadlift');
+  assert.equal(exerciseKey('Seated cable row'), 'row');
+});
+
+await test('genuinely different lifts stay different', () => {
+  assert.notEqual(exerciseKey('squat'), exerciseKey('deadlift'));
+  assert.notEqual(exerciseKey('curl'), exerciseKey('row'));
+});
+
+await test('lower body takes bigger jumps than upper', () => {
+  assert.ok(loadStep('squat', 'intermediate') > loadStep('bench press', 'intermediate'),
+    '2.5kg on a bench is a real step; on a squat it is rounding error');
+  assert.ok(loadStep('squat', 'advanced') < loadStep('squat', 'beginner'),
+    'a beginner adds weight faster than someone near their ceiling');
+});
+
+group('Progression — the rule that must never guess');
+
+await test('hit the reps with something left → add load', () => {
+  const c = progressionCall({ last: { top_weight_kg: 80, top_reps: 8, rpe: 7, date: '2026-08-01' },
+    targetReps: 8, tier: 'intermediate', key: 'bench press' });
+  assert.equal(c.verdict, 'add_load');
+  assert.equal(c.weight_kg, 82.5);
+});
+
+await test('hit the reps but nearly failed → hold, do not add', () => {
+  const c = progressionCall({ last: { top_weight_kg: 80, top_reps: 8, rpe: 9.5, date: '2026-08-01' },
+    targetReps: 8, tier: 'intermediate', key: 'bench press' });
+  assert.equal(c.verdict, 'hold');
+  assert.equal(c.weight_kg, 80, 'adding load to a grinder is how people get hurt');
+});
+
+await test('just short → repeat the same weight', () => {
+  const c = progressionCall({ last: { top_weight_kg: 100, top_reps: 6, rpe: 9, date: '2026-08-01' },
+    targetReps: 8, tier: 'intermediate', key: 'squat' });
+  assert.equal(c.verdict, 'repeat');
+  assert.equal(c.weight_kg, 100);
+});
+
+await test('badly short → deload 10%', () => {
+  const c = progressionCall({ last: { top_weight_kg: 100, top_reps: 4, rpe: 10, date: '2026-08-01' },
+    targetReps: 8, tier: 'intermediate', key: 'squat' });
+  assert.equal(c.verdict, 'deload');
+  assert.equal(c.weight_kg, 90);
+});
+
+await test('no history → prescribe effort, never invent a number', () => {
+  // Guessing a stranger's working weight is the fastest way this product
+  // injures somebody. It must decline, every time.
+  for (const tier of ['beginner', 'intermediate', 'advanced']) {
+    const c = progressionCall({ last: null, targetReps: 8, tier, key: 'squat' });
+    assert.equal(c.verdict, 'find_working_weight');
+    assert.equal(c.weight_kg, null, `${tier}: must not invent a load`);
+  }
+});
+
+await test('every tier carries coaching doctrine, not just numbers', () => {
+  for (const t of ['beginner', 'intermediate', 'advanced']) {
+    assert.ok(TIERS[t].doctrine.length > 80, `${t} needs real guidance on how to talk, not just volume`);
+  }
+  assert.match(TIERS.beginner.doctrine, /explain/i);
+});
+
+group('Calories in versus calories out');
+
+const lifter = { height_cm: 180, birth_year: 1990, sex: 'male' };
+
+await test('resting burn follows Mifflin-St Jeor', () => {
+  // 10(82) + 6.25(180) - 5(36) + 5 = 1770
+  assert.equal(restingBurn(lifter, 82).kcal, 1770);
+});
+
+await test('missing facts are named, never guessed around', () => {
+  const r = restingBurn({ height_cm: null, birth_year: 1990 }, 82);
+  assert.equal(r.kcal, null);
+  assert.ok(r.missing.includes('height'));
+});
+
+await test('unstated sex uses a midpoint and says so', () => {
+  const r = restingBurn({ height_cm: 180, birth_year: 1990 }, 82);
+  assert.ok(r.kcal > 0);
+  assert.equal(r.approximate, true, 'silently assuming a sex is worse than flagging the estimate');
+});
+
+await test('a deficit reads as a deficit, with the week projected', () => {
+  const b = energyBalance({ profile: lifter, weightKg: 82, caloriesIn: 2000, activeCalories: 600 });
+  assert.equal(b.known, true);
+  assert.equal(b.calories_out, 2370);
+  assert.equal(b.net, -370);
+  assert.equal(b.direction, 'deficit');
+  assert.ok(b.projected_kg_per_week < 0);
+});
+
+await test('level days are called level, not spun', () => {
+  const b = energyBalance({ profile: lifter, weightKg: 82, caloriesIn: 2400, activeCalories: 600 });
+  assert.equal(b.direction, 'maintenance');
+});
+
+await test('the balance always admits it is an estimate', () => {
+  const b = energyBalance({ profile: lifter, weightKg: 82, caloriesIn: 2000, activeCalories: 500 });
+  assert.equal(b.approximate, true);
+  assert.match(b.caveat, /estimate/i);
+  assert.match(b.say, /[Rr]oughly|about/);
+});
+
+await test('without the basics it says what it needs instead of inventing one', () => {
+  const b = energyBalance({ profile: { height_cm: null }, weightKg: null, caloriesIn: 2000 });
+  assert.equal(b.known, false);
+  assert.ok(b.missing.length);
+});
+
+group('Session assembly');
+
+await test('a routine becomes an ordered plan with keys and rest', () => {
+  const plan = planFromRoutine({ tier: 'intermediate', exercises: [
+    { name: 'Back Squat', sets: 4, reps: 6, muscles: ['legs'] },
+    { name: 'Bench', sets: 3, reps: 8 },
+  ]});
+  assert.equal(plan.length, 2);
+  assert.equal(plan[0].key, 'squat');
+  assert.equal(plan[1].key, 'bench press');
+  assert.equal(plan[0].index, 0);
+  assert.ok(plan[0].rest_s > 0, 'rest must default rather than come back undefined mid-session');
+});
+
+await test('totals add up volume and surface the top set per lift', () => {
+  const t = sessionTotals([
+    { exercise: 'Squat', reps: 6, weight_kg: 100 },
+    { exercise: 'Squat', reps: 6, weight_kg: 105 },
+    { exercise: 'Bench', reps: 8, weight_kg: 80 },
+  ]);
+  assert.equal(t.sets, 3);
+  assert.equal(t.reps, 20);
+  assert.equal(t.volume_kg, 100 * 6 + 105 * 6 + 80 * 8);
+  assert.equal(t.top_sets.find(s => s.exercise === 'Squat').weight_kg, 105);
+});
+
+await test('bodyweight work does not poison the volume total', () => {
+  const t = sessionTotals([{ exercise: 'Pull-up', reps: 10, weight_kg: null }]);
+  assert.equal(t.volume_kg, 0);
+  assert.equal(t.reps, 10);
 });
 
 // ── Report ──────────────────────────────────────────────────────────────────

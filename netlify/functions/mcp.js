@@ -24,6 +24,10 @@ import {
   parseLog, insertEvents, writeVerdict, rememberFact,
 } from './lib/wrought.js';
 import { PROVIDERS, providerSummary, recommendRoute } from './lib/providers.js';
+import {
+  exerciseKey, lastPerformance, progressionCall, TIERS,
+  restingBurn, energyBalance, planFromRoutine, sessionTotals,
+} from './lib/training.js';
 
 const PROTOCOL_VERSION = '2025-06-18';
 
@@ -63,6 +67,16 @@ SNACKING IS A TIME PROBLEM. Nobody eats 900 calories of crisps at 2pm; they do i
 LOGGING BY VOICE MISHEARS. "Burrito" comes back "burrata". Every log response echoes what was recorded; read it back in one short line, and offer undo_last the moment anything looks wrong. Never argue with a correction.
 
 DEVICES — ONE DOOR, NOT EIGHT. The user probably owns a watch, maybe a ring, and three fitness apps, and expects to connect them one at a time. They should not. Apple Health and Android's Health Connect are already aggregators: Nike Run Club, Strava, Peloton, Oura, Whoop, Samsung Health and Fitbit all write into whichever one is on their phone. So ask which phone they carry, set up that single connection, and everything else arrives with it. Never walk somebody through six separate setups. Apple Health and Health Connect are both push-only by platform design — there is no cloud API for either, so the phone sends to us rather than us reading it; say that plainly rather than implying something is broken. Some apps (Nike Run Club, Samsung Health, Peloton) have no public API for anyone at all, and going through the phone is the only route that exists — not a workaround, and not worth apologising for.
+
+COACH THE SESSION, DO NOT DESCRIBE IT. When the user says "leg day", "let's train" or "I've got 40 minutes", call start_session — do not print a workout as a list and leave them to it. A list is a document; a session is a conversation. Give them ONE exercise, the sets, the reps and the exact load, then stop talking and wait. Every time they report a set — including a bare "done" — call log_set and relay what comes back: the rest time and the next set. Keep it to one or two lines between sets; they are standing in a gym holding a phone, not reading a report. Never re-state the whole plan mid-session. The SERVER holds their position, not you — if you lose track, log_set tells you where they are, so never ask them which exercise they are on.
+
+LOAD IS COMPUTED, NEVER GUESSED. Every weight in a session comes back from the server, worked out from what that person actually lifted last time under a double-progression rule: hit the top of the rep range with something left in the tank, then add load. Read the number out; never adjust it, never round it "helpfully", and never invent a weight for a lift with no history — the server prescribes an RPE instead, on purpose. Guessing somebody's working weight is the fastest way this product injures a person.
+
+TIERS. Sessions carry a tier — beginner, intermediate or advanced — and it changes how you talk, not just the volume. For a beginner: compound movements only, one plain line on what each should feel like, no jargon left unexplained, and three exercises is a complete session. For advanced: name it and get out of the way. The tier comes back in the response; follow it.
+
+ROUTINES ARE HOW THIS SURVIVES MONTH TWO. When a session works, offer save_routine once — "want me to keep this as your leg day?" — and from then on the name alone starts it. Check list_routines before building anything new; the answer to "what should I train" is usually a routine they already have and have not run in ten days. Routines are not only gym days: kind "sport" holds five-a-side, hockey, climbing, and those count as training.
+
+CALORIES IN AND OUT. energy_balance gives the real picture — what they ate against resting burn from their own height, weight and age, plus what the watch says they moved. Both halves are estimates and the response says so; use "roughly" and "about", never state a net as a measurement, and point them at the weekly scale trend to correct it rather than at any single day. If something is missing to compute it, ask once, save it, and never ask again.
 
 PROGRESSION IS THE POINT. progress returns chart-ready series and a muscle-by-week training matrix. Weight is reported as a rolling trend, never today-minus-yesterday — bodyweight swings two kilos on salt and sleep alone, and reacting to a single reading is the most common way people quit.
 
@@ -137,6 +151,92 @@ const TOOLS = [
       },
     },
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+  },
+  {
+    name: 'start_session',
+    title: 'Start a live workout and coach it set by set',
+    description: 'Begins a guided session and returns the first exercise with the exact load to use, computed from what they actually lifted last time. Use for "leg day", "let\'s train", "start chest", "I\'ve got 40 minutes". Pass a saved routine name if they said one — otherwise pass focus and minutes and one is built from what is stale in their log. After this, call log_set after EVERY set they report; the server tracks their place, so never try to remember the position yourself.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        routine:   { type: 'string',  description: 'A saved routine name — "leg day", "push", "Tuesday soccer". Use their exact words; matching is case-insensitive.' },
+        focus:     { type: 'string',  description: 'If no saved routine: what they want to train — "legs", "upper", "conditioning", "full body".' },
+        minutes:   { type: 'integer', description: 'Time available. The session is cut to fit rather than being abandoned halfway.' },
+        equipment: { type: 'string',  description: 'Override for today — "hotel gym", "just dumbbells", "nothing, I am in a room".' },
+      },
+    },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+  },
+  {
+    name: 'log_set',
+    title: 'Record a set and get the next one',
+    description: 'Call this EVERY time the user reports a set — "done", "got 8", "8 at 80", "failed on 5". Records it, advances their place in the session, and returns what is next with the rest time and whether to change the load. This is the tool that makes the session conversational rather than a form. If they just say "done" with no numbers, pass what the plan prescribed.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        reps:      { type: 'integer', description: 'Reps completed. If they only said "done", use the prescribed target.' },
+        weight_kg: { type: 'number',  description: 'Load used in kg. Convert from lb first. Omit for bodyweight work.' },
+        rpe:       { type: 'number',  description: 'How close to failure, 1-10, if they indicated it ("that was easy" ≈ 6, "barely got it" ≈ 9.5). Drives the next load, so pass it whenever they hint at effort.' },
+        exercise:  { type: 'string',  description: 'Only if they did something other than what was prescribed — a swap or an extra lift.' },
+        skip:      { type: 'boolean', description: 'True if they are skipping this exercise entirely and moving on.' },
+      },
+    },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+  },
+  {
+    name: 'end_session',
+    title: 'Finish the workout',
+    description: 'Closes the live session, files it in the training log so it appears in the brief and the matrix, and returns totals — sets, reps, volume moved, anything that beat last time — plus where the day now stands on food. Call when they say they are done, or when the plan runs out.',
+    inputSchema: {
+      type: 'object',
+      properties: { note: { type: 'string', description: 'Anything they said about how it went — "shoulder felt off", "best session in months".' } },
+    },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+  },
+  {
+    name: 'save_routine',
+    title: 'Remember a workout by name',
+    description: 'Saves a named session they can call up forever — "remember this as my leg day". Also use after building a good session so they never rebuild it from scratch. Covers non-gym days too: kind "sport" holds five-a-side, hockey, climbing. Saving an existing name updates it rather than creating a duplicate.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        name:      { type: 'string', description: 'Their words — "leg day", "push A", "Tuesday football".' },
+        kind:      { type: 'string', enum: ['strength','cardio','sport','mobility','hybrid'] },
+        tier:      { type: 'string', enum: ['beginner','intermediate','advanced'],
+                     description: 'Difficulty. Defaults to their profile. Beginner sessions are shorter and every movement gets explained.' },
+        exercises: { type: 'array', description: 'Ordered list.',
+                     items: { type: 'object', properties: {
+                       name:    { type: 'string' },
+                       sets:    { type: 'integer' },
+                       reps:    { type: 'integer' },
+                       load_kg: { type: 'number', description: 'Omit for a beginner or a new lift — RPE is prescribed instead of a number nobody has earned yet.' },
+                       rest_s:  { type: 'integer' },
+                       muscles: { type: 'array', items: { type: 'string' } },
+                       cue:     { type: 'string', description: 'One plain line on what it should feel like. Matters most for beginners.' },
+                     } } },
+        equipment:   { type: 'array', items: { type: 'string' } },
+        est_minutes: { type: 'integer' },
+      },
+      required: ['name'],
+    },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+  },
+  {
+    name: 'list_routines',
+    title: 'What sessions they have saved',
+    description: 'Returns saved routines with how often each is used and when it was last run. Call this before building anything new — the answer to "what should I train" is usually a routine they already have and have not run in ten days.',
+    inputSchema: { type: 'object', properties: {} },
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+  },
+  {
+    name: 'energy_balance',
+    title: 'Calories in versus calories out',
+    description: 'The real energy picture for a day: what they ate, resting burn from their own height, weight and age, active calories from the watch, and the net. Also projects what that net means per week on the scale. Use for "am I in a deficit", "calories in calories out", "why is the weight not moving". Both halves are estimates and the response says so — relay that.',
+    inputSchema: {
+      type: 'object',
+      properties: { date: { type: 'string', description: 'YYYY-MM-DD. Defaults to today.' } },
+    },
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   },
   {
     name: 'get_day',
@@ -755,6 +855,401 @@ No preamble, no disclaimers, no warm-up boilerplate unless it matters for a name
   };
 }
 
+// ── Tools: the live session ─────────────────────────────────────────────────
+// The state lives here, on the server, and never in the conversation. A chat
+// gets cleared, a phone dies between sets, somebody talks to you at the rack —
+// any of those must not lose the workout. The model asks "what's next" and is
+// told; it is never responsible for remembering where anybody is.
+
+async function startSession(args, user) {
+  const { profile, memory } = await context(user.id);
+  const today = localDateFor(profile.timezone);
+
+  // One workout at a time. Starting another means the first was abandoned —
+  // said out loud rather than leaving two half-sessions fighting over which
+  // one the next set belongs to.
+  const { data: existing } = await supabase.from('wrought_sessions')
+    .select('id, name, started_at').eq('user_id', user.id).eq('status', 'active').maybeSingle();
+  if (existing) {
+    await supabase.from('wrought_sessions')
+      .update({ status: 'abandoned', ended_at: new Date().toISOString() }).eq('id', existing.id);
+  }
+
+  let routine = null;
+  if (args.routine) {
+    const { data } = await supabase.from('wrought_routines')
+      .select('*').eq('user_id', user.id).eq('active', true)
+      .ilike('name', args.routine).maybeSingle();
+    routine = data || null;
+  }
+
+  // No saved routine: build one from what the log says is actually stale,
+  // rather than from a generic split that ignores the last month.
+  let plan, name, kind, tier = routine?.tier || profile.training_age === 'beginner' ? 'beginner' : 'intermediate';
+  if (routine) {
+    plan = planFromRoutine(routine);
+    name = routine.name;
+    kind = routine.kind;
+    tier = routine.tier;
+  } else {
+    const built = await buildPlan(args, user, profile, memory, today);
+    plan = built.plan; name = built.name; kind = 'strength'; tier = built.tier;
+    if (!plan.length) {
+      return { error: 'could_not_build_session',
+        say: 'Could not put a session together automatically. Tell me what you want to train and roughly how long you have.' };
+    }
+  }
+
+  // Today's loads, computed per exercise from their own history.
+  const first = plan[0];
+  const opener = await loadCallFor(user.id, first, tier);
+
+  const { data: session, error } = await supabase.from('wrought_sessions').insert([{
+    user_id: user.id, routine_id: routine?.id || null,
+    name, kind, plan, cursor_index: 0, local_date: today,
+  }]).select('id').single();
+  if (error) return { error: error.message };
+
+  if (routine) {
+    await supabase.from('wrought_routines').update({
+      times_used: (routine.times_used || 0) + 1, last_used_on: today,
+    }).eq('id', routine.id);
+  }
+
+  return {
+    session_id: session.id,
+    name, tier,
+    exercises: plan.map(e => `${e.name} — ${e.sets}×${e.reps}`),
+    total_exercises: plan.length,
+    up_next: { ...first, set: 1, of: first.sets, load: opener },
+    coaching: TIERS[tier]?.doctrine,
+    say: `${name}. ${plan.length} exercises. First up: ${first.name}, ${first.sets} sets of ${first.reps}. ${opener.say}`,
+    note: 'Call log_set after EVERY set they report, even a bare "done". The server tracks their position — never try to hold it yourself, and never re-state the whole plan between sets.',
+    next_actions: ['log_set when they finish a set', 'end_session when they are done'],
+  };
+}
+
+// A session assembled from the log rather than a textbook split.
+async function buildPlan(args, user, profile, memory, today) {
+  const tier = profile.training_age === 'beginner' ? 'beginner'
+             : profile.training_age === 'advanced' ? 'advanced' : 'intermediate';
+
+  const range   = await rangeFacts(user.id, profile, addDays(today, -27), today);
+  const summary = summariseRange(range, profile);
+  const minutes = args.minutes || 45;
+
+  if (!openai) return { plan: [], name: 'Session', tier };
+
+  try {
+    const res = await openai.chat.completions.create({
+      model: MODEL, temperature: 0.4, max_tokens: 800,
+      response_format: { type: 'json_object' },
+      messages: [{ role: 'user', content:
+`Build one training session as JSON: {"name": "...", "exercises": [{"name","sets","reps","muscles":[],"rest_s","cue"}]}
+
+Person: ${tier}. ${minutes} minutes. Equipment: ${args.equipment || (profile.equipment || ['unknown']).join(', ')}.
+Requested focus: ${args.focus || 'whatever is most overdue'}.
+Not trained in the last two weeks: ${summary.matrix.neglected.join(', ') || 'nothing obvious'}.
+Sessions in the last four weeks: ${summary.training_days}.
+${memory.length ? `HARD CONSTRAINTS — injuries and refusals, honour every one:\n${memory.map(m => `- ${m.fact}`).join('\n')}` : ''}
+
+${TIERS[tier].doctrine}
+Sets ${TIERS[tier].sets}, reps ${TIERS[tier].reps}. Fit it to the time. Do NOT set loads — those are computed from their own history. Name the session something short and human.` }],
+    });
+    const out = JSON.parse(res.choices[0].message.content || '{}');
+    return {
+      plan: planFromRoutine({ exercises: out.exercises || [], tier }),
+      name: out.name || 'Session',
+      tier,
+    };
+  } catch {
+    return { plan: [], name: 'Session', tier };
+  }
+}
+
+async function loadCallFor(userId, exercise, tier) {
+  const key = exercise.key || exerciseKey(exercise.name);
+  const last = await lastPerformance(userId, key);
+  const target = parseInt(String(exercise.reps), 10) || 8;
+  // A load the routine states explicitly wins — the user set it deliberately.
+  if (exercise.load_kg != null) {
+    return { verdict: 'prescribed', weight_kg: exercise.load_kg,
+             say: `${exercise.load_kg}kg, as written.`, last };
+  }
+  return { ...progressionCall({ last, targetReps: target, tier, key }), last };
+}
+
+async function logSet(args, user) {
+  const profile = await getProfile(user.id);
+  const today = localDateFor(profile.timezone);
+
+  const { data: session } = await supabase.from('wrought_sessions')
+    .select('*').eq('user_id', user.id).eq('status', 'active').maybeSingle();
+
+  if (!session) {
+    return { error: 'no_active_session',
+      say: 'No workout is running right now. Start one with start_session, or log it afterwards with log.',
+      next_actions: ['start_session'] };
+  }
+
+  const plan = Array.isArray(session.plan) ? session.plan : [];
+  const current = plan[session.cursor_index] || null;
+  if (!current) {
+    return { done: true, say: 'That was the last exercise on the plan.', next_actions: ['end_session'] };
+  }
+
+  // How many sets of this exercise are already down, so the cursor advances on
+  // count rather than on the model's guess about where they are.
+  const { count: doneCount } = await supabase.from('wrought_sets')
+    .select('id', { count: 'exact', head: true })
+    .eq('session_id', session.id).eq('exercise_key', current.key);
+
+  let setsDone = doneCount || 0;
+
+  if (args.skip) {
+    setsDone = current.sets;                    // force the move on
+  } else {
+    const name = args.exercise || current.name;
+    const key  = args.exercise ? exerciseKey(args.exercise) : current.key;
+    const { error } = await supabase.from('wrought_sets').insert([{
+      user_id: user.id, session_id: session.id,
+      exercise: name, exercise_key: key,
+      set_number: setsDone + 1,
+      reps: args.reps != null ? Math.round(Number(args.reps)) : (parseInt(String(current.reps), 10) || null),
+      weight_kg: args.weight_kg != null ? Number(args.weight_kg) : null,
+      rpe: args.rpe != null ? Number(args.rpe) : null,
+      muscles: current.muscles || [],
+      local_date: today,
+    }]);
+    if (error) return { error: error.message };
+    setsDone += 1;
+  }
+
+  const moreSetsHere = setsDone < current.sets;
+  let cursor = session.cursor_index;
+  if (!moreSetsHere) cursor += 1;
+  if (cursor !== session.cursor_index) {
+    await supabase.from('wrought_sessions').update({ cursor_index: cursor }).eq('id', session.id);
+  }
+
+  const finished = cursor >= plan.length;
+  if (finished) {
+    return {
+      recorded: true, session_complete: true,
+      say: 'That is the plan finished.',
+      note: 'Call end_session now to file it and give them the totals.',
+      next_actions: ['end_session'],
+    };
+  }
+
+  const nextExercise = moreSetsHere ? current : plan[cursor];
+  const load = moreSetsHere
+    ? { verdict: 'same', weight_kg: args.weight_kg ?? null,
+        say: args.weight_kg != null ? `Same ${args.weight_kg}kg.` : 'Same weight.' }
+    : await loadCallFor(user.id, nextExercise, session.plan[0]?.tier || 'intermediate');
+
+  const setNo = moreSetsHere ? setsDone + 1 : 1;
+
+  return {
+    recorded: !args.skip,
+    rest_seconds: nextExercise.rest_s,
+    up_next: {
+      exercise: nextExercise.name,
+      set: setNo, of: nextExercise.sets,
+      reps: nextExercise.reps,
+      load,
+      cue: setNo === 1 ? nextExercise.cue : null,
+    },
+    progress: `${cursor + (moreSetsHere ? 0 : 0) + 1} of ${plan.length}`,
+    say: `${moreSetsHere ? 'Logged' : `${current.name} done`}. Rest ${nextExercise.rest_s}s, then ${nextExercise.name} set ${setNo} of ${nextExercise.sets}, ${nextExercise.reps} reps. ${load.say}`,
+    note: 'Keep it to one or two lines between sets — they are standing in a gym holding a phone, not reading a report.',
+    next_actions: ['log_set for the next set', 'end_session if they stop early'],
+  };
+}
+
+async function endSession(args, user) {
+  const profile = await getProfile(user.id);
+  const today = localDateFor(profile.timezone);
+
+  const { data: session } = await supabase.from('wrought_sessions')
+    .select('*').eq('user_id', user.id).eq('status', 'active').maybeSingle();
+  if (!session) return { error: 'no_active_session', say: 'No workout is running.' };
+
+  const { data: sets } = await supabase.from('wrought_sets')
+    .select('exercise, exercise_key, reps, weight_kg, rpe, muscles')
+    .eq('session_id', session.id).order('logged_at', { ascending: true });
+
+  const rows = sets || [];
+  const totals = sessionTotals(rows);
+  const minutes = Math.max(1, Math.round((Date.now() - new Date(session.started_at).getTime()) / 60000));
+  const muscles = [...new Set(rows.flatMap(s => s.muscles || []))];
+
+  // File it as an ordinary workout event so the brief, the matrix and the
+  // trends see it exactly like anything else. A session that lives only in its
+  // own table is invisible to everything that matters.
+  const [written] = await insertEvents(user.id, profile, [{
+    event_type: 'workout',
+    summary: `${session.name} — ${totals.sets} sets, ${minutes} min`,
+    detail: {
+      kind: session.kind, minutes, muscles,
+      exercises: totals.top_sets.map(t => ({
+        name: t.exercise, sets: rows.filter(r => r.exercise === t.exercise).length,
+        reps: t.reps, weight_kg: t.weight_kg,
+      })),
+      volume_kg: totals.volume_kg,
+      session_id: session.id,
+      note: args.note || null,
+    },
+    estimated: false,
+  }], { rawInput: args.note || null });
+
+  await supabase.from('wrought_sessions').update({
+    status: 'done', ended_at: new Date().toISOString(), event_id: written?.id || null,
+  }).eq('id', session.id);
+
+  // Anything that beat last time — the only part of a summary anybody reads.
+  const beats = [];
+  for (const t of totals.top_sets) {
+    if (t.weight_kg == null) continue;
+    const prior = await previousBest(user.id, exerciseKey(t.exercise), session.id);
+    if (prior != null && Number(t.weight_kg) > prior) {
+      beats.push(`${t.exercise} ${t.weight_kg}kg (was ${prior})`);
+    }
+  }
+
+  const day = await dayFacts(user.id, profile, today);
+  const balance = await balanceFor(user.id, profile, today, day);
+
+  return {
+    session: session.name,
+    minutes, ...totals, muscles,
+    beat_last_time: beats,
+    day_so_far: { food: day.food.say, energy: balance.say },
+    say: `${session.name} done — ${minutes} minutes, ${totals.sets} sets, ${totals.volume_kg}kg moved.` +
+         (beats.length ? ` Up on last time: ${beats.join('; ')}.` : '') +
+         ` ${balance.say}`,
+    note: 'Lead with anything in beat_last_time — that is the only part of a session summary anyone actually cares about.',
+    next_actions: ['log what they eat next', 'brief tonight for the full read'],
+  };
+}
+
+async function previousBest(userId, key, excludeSessionId) {
+  const { data } = await supabase.from('wrought_sets')
+    .select('weight_kg, session_id').eq('user_id', userId).eq('exercise_key', key)
+    .not('session_id', 'is', null).neq('session_id', excludeSessionId)
+    .order('weight_kg', { ascending: false }).limit(1);
+  return data?.[0]?.weight_kg != null ? Number(data[0].weight_kg) : null;
+}
+
+async function saveRoutine(args, user) {
+  const profile = await getProfile(user.id);
+  const name = String(args.name || '').trim();
+  if (!name) return { error: 'A name is required.' };
+
+  const exercises = (Array.isArray(args.exercises) ? args.exercises : []).map(e => ({
+    name: String(e.name || '').trim(),
+    sets: Number(e.sets) || 3,
+    reps: e.reps ?? 8,
+    load_kg: e.load_kg ?? null,
+    rest_s: Number(e.rest_s) || 120,
+    muscles: Array.isArray(e.muscles) ? e.muscles : [],
+    cue: e.cue || null,
+  })).filter(e => e.name);
+
+  const tier = args.tier || (profile.training_age === 'beginner' ? 'beginner' : 'intermediate');
+
+  // Saving the same name updates it. Two indistinguishable "leg day" routines
+  // is worse than no routine at all.
+  const { data: existing } = await supabase.from('wrought_routines')
+    .select('id').eq('user_id', user.id).eq('active', true).ilike('name', name).maybeSingle();
+
+  const row = {
+    user_id: user.id, name, kind: args.kind || 'strength', tier,
+    exercises, equipment: args.equipment || profile.equipment || null,
+    est_minutes: args.est_minutes || null, updated_at: new Date().toISOString(),
+  };
+
+  const { error } = existing
+    ? await supabase.from('wrought_routines').update(row).eq('id', existing.id)
+    : await supabase.from('wrought_routines').insert([row]);
+  if (error) return { error: error.message };
+
+  return {
+    saved: name, updated: !!existing, exercises: exercises.length, tier,
+    say: `${existing ? 'Updated' : 'Saved'} "${name}" — ${exercises.length} exercises. Say the name any time and it starts.`,
+    next_actions: [`start_session with routine "${name}"`],
+  };
+}
+
+async function listRoutines(_args, user) {
+  const profile = await getProfile(user.id);
+  const today = localDateFor(profile.timezone);
+
+  const { data } = await supabase.from('wrought_routines')
+    .select('name, kind, tier, exercises, est_minutes, times_used, last_used_on')
+    .eq('user_id', user.id).eq('active', true)
+    .order('last_used_on', { ascending: false, nullsFirst: false });
+
+  const routines = (data || []).map(r => ({
+    name: r.name, kind: r.kind, tier: r.tier,
+    exercises: (r.exercises || []).length,
+    minutes: r.est_minutes,
+    times_used: r.times_used,
+    last_used: r.last_used_on,
+    days_since: r.last_used_on ? daysBetween(r.last_used_on, today) : null,
+  }));
+
+  const stale = routines.filter(r => r.days_since != null && r.days_since >= 7);
+
+  return {
+    routines, count: routines.length,
+    overdue: stale.map(r => `${r.name} (${r.days_since} days)`),
+    say: routines.length
+      ? `${routines.length} saved: ${routines.map(r => r.name).join(', ')}.` +
+        (stale.length ? ` Not run in a while: ${stale.map(r => `${r.name}, ${r.days_since} days`).join('; ')}.` : '')
+      : 'Nothing saved yet. Build a session and save_routine keeps it for good.',
+    note: 'The answer to "what should I train" is usually a routine they already have and have not run in ten days. Check here before building anything new.',
+    next_actions: ['start_session with one of these'],
+  };
+}
+
+async function balanceFor(userId, profile, date, day) {
+  // Bodyweight for the burn calculation: today's if there is one, otherwise
+  // the most recent — nobody weighs in daily and the maths should not stop.
+  let weightKg = day.body.weight_kg;
+  if (weightKg == null) {
+    const { data } = await supabase.from('wrought_events')
+      .select('detail').eq('user_id', userId).eq('event_type', 'weight')
+      .order('occurred_at', { ascending: false }).limit(1);
+    weightKg = data?.[0]?.detail?.value_kg ?? null;
+  }
+  return energyBalance({
+    profile, weightKg,
+    caloriesIn: day.food.calories,
+    activeCalories: day.device.active_calories,
+    foodEstimated: day.food.estimated,
+  });
+}
+
+async function energyBalanceTool(args, user) {
+  const profile = await getProfile(user.id);
+  const date = args.date || localDateFor(profile.timezone);
+  const day = await dayFacts(user.id, profile, date);
+  const balance = await balanceFor(user.id, profile, date, day);
+
+  return {
+    date, ...balance,
+    logged: { food: day.food.say, training: day.training.say, steps: day.device.steps },
+    say: balance.say,
+    note: balance.known
+      ? 'Say "roughly" and "about" — both halves are estimates. Never present the net as a measurement, and steer them to the weekly scale trend to correct it rather than to a single day.'
+      : 'Ask once for whatever is missing, save it with set_profile, and do not ask again.',
+    next_actions: balance.known
+      ? ['progress to check it against the actual weight trend']
+      : ['set_profile with what is missing'],
+  };
+}
+
 // ── Tools: setup ────────────────────────────────────────────────────────────
 
 async function getProfileTool(_args, user) {
@@ -989,6 +1484,12 @@ const IMPL = {
   log, brief, progress,
   whats_next: whatsNext,
   suggest_workout: suggestWorkout,
+  start_session: startSession,
+  log_set: logSet,
+  end_session: endSession,
+  save_routine: saveRoutine,
+  list_routines: listRoutines,
+  energy_balance: energyBalanceTool,
   get_day: getDay,
   search_log: searchLog,
   log_weight: logWeight,
