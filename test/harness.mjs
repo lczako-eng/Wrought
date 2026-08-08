@@ -2,7 +2,7 @@
 // Local protocol + arithmetic harness. `npm test`.
 //
 // Runs with no environment set, which is the point: with no SUPABASE_URL and
-// no OPENAI_API_KEY, lib/forge.js builds no clients, so nothing here touches a
+// no OPENAI_API_KEY, lib/wrought.js builds no clients, so nothing here touches a
 // network or a database. What gets tested is the two halves that break
 // silently in production — the JSON-RPC envelope, which fails as an
 // uninformative "could not connect" inside ChatGPT, and the arithmetic, which
@@ -16,7 +16,7 @@ import {
   localDateFor, addDays, daysBetween, clockString, humanDuration,
   kgToLb, lbToKg, cmToIn, inToCm, sayWeight,
   windowStatus, weightTrend, trainingMatrix, summariseRange, careFlags, scoreGoals,
-} from '../netlify/functions/lib/forge.js';
+} from '../netlify/functions/lib/wrought.js';
 
 let passed = 0, failed = 0;
 const results = [];
@@ -39,7 +39,7 @@ await test('initialize returns serverInfo and the doctrines', async () => {
   assert.equal(res.statusCode, 200);
   const body = JSON.parse(res.body);
   assert.equal(body.jsonrpc, '2.0');
-  assert.equal(body.result.serverInfo.name, 'forge');
+  assert.equal(body.result.serverInfo.name, 'wrought');
   assert.ok(body.result.instructions.length > 2000, 'instructions should carry the doctrines');
   assert.ok(body.result.capabilities.tools);
 });

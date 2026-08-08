@@ -1,4 +1,4 @@
-# FORGE
+# WROUGHT
 
 **The honest personal trainer that lives inside your AI.**
 
@@ -7,14 +7,14 @@ yesterday. So every morning it is a blank page again — what you ate, what you
 lifted, what the scale said, typed out to something that will have forgotten all
 of it by lunchtime.
 
-FORGE is the memory that does not close with the tab, plus the one thing in your
+WROUGHT is the memory that does not close with the tab, plus the one thing in your
 life willing to tell you the truth about the week you just had.
 
 ```
 You,   8:14am   two eggs and black coffee, 182 on the scale
 You,   7:40pm   pushed 40 minutes upper body, bench 3x8 at 80
 
-FORGE, 10pm     Roughly 2,140 calories and 148g of protein — you hit protein for
+WROUGHT, 10pm     Roughly 2,140 calories and 148g of protein — you hit protein for
                 the fourth day running, which is the longest you've held it. Bench
                 moved: 80kg for three sets of eight is up from 77.5 a fortnight ago.
                 You haven't trained legs in 19 days and it's starting to show in the
@@ -54,7 +54,7 @@ body. And if the log starts to look like someone eating too little or losing
 weight too fast, `careFlags` fires server-side, the coaching stops, and the tone
 changes — regardless of what the user asks for or how the request is framed.
 
-FORGE is a journal that can do arithmetic. It is **not a medical device**, it
+WROUGHT is a journal that can do arithmetic. It is **not a medical device**, it
 diagnoses nothing, and calories inferred from a described meal are always
 labelled as estimates.
 
@@ -82,7 +82,7 @@ ChatGPT / Claude / any MCP client
         │  JSON-RPC over HTTPS, OAuth 2.1 + PKCE
         ▼
    /mcp  ── netlify/functions/mcp.js        protocol + 17 tools
-        └─ netlify/functions/lib/forge.js   ALL arithmetic lives here
+        └─ netlify/functions/lib/wrought.js   ALL arithmetic lives here
         ▼
    Supabase (Postgres, RLS)                 the memory
         ▲
@@ -91,7 +91,7 @@ ChatGPT / Claude / any MCP client
    iPhone / Apple Watch / Oura / Whoop
 ```
 
-Everything that counts, compares or judges lives in `lib/forge.js`, apart from
+Everything that counts, compares or judges lives in `lib/wrought.js`, apart from
 the protocol layer, for two reasons: the MCP brief and the web dashboard must
 never disagree about a number, and arithmetic should be testable without a
 network.
@@ -114,10 +114,10 @@ the push route underneath; most of them just do not say so.
 
 ```bash
 npm install
-npm test          # 39 offline tests — protocol envelope + all arithmetic
+npm test          # 52 offline tests — protocol envelope + all arithmetic
 ```
 
-1. Run `schema/001_forge_core.sql` then `schema/002_forge_oauth.sql` in the
+1. Run `schema/001_wrought_core.sql` then `schema/002_wrought_oauth.sql` in the
    Supabase SQL editor.
 2. Set the environment variables below in Netlify.
 3. Deploy. Add `https://<your-site>/mcp` to ChatGPT or Claude as a custom
@@ -128,11 +128,11 @@ npm test          # 39 offline tests — protocol envelope + all arithmetic
 | `SUPABASE_URL` | Project URL |
 | `SUPABASE_SERVICE_ROLE_KEY` | Server-side writes; never sent to a browser |
 | `OPENAI_API_KEY` | Parsing plain-English logs and writing verdicts |
-| `FORGE_SITE_URL` | Canonical origin, e.g. `https://forge.fit` |
-| `FORGE_MODEL` | Optional model override |
+| `WROUGHT_SITE_URL` | Canonical origin, e.g. `https://wrought.fit` |
+| `WROUGHT_MODEL` | Optional model override |
 
-The two web pages need `window.FORGE_SUPABASE_URL` and
-`window.FORGE_SUPABASE_ANON` injected at deploy time (Netlify snippet
+The two web pages need `window.WROUGHT_SUPABASE_URL` and
+`window.WROUGHT_SUPABASE_ANON` injected at deploy time (Netlify snippet
 injection) — the anon key only ever reaches rows RLS already permits.
 
 ## Status
@@ -146,5 +146,5 @@ waiting to be asked; verified progress photos.
 
 ---
 
-© 2026 Laszlo Czako. FORGE is a training and nutrition journal, not a medical
+© 2026 Laszlo Czako. WROUGHT is a training and nutrition journal, not a medical
 device, and not a substitute for a doctor or a dietitian.

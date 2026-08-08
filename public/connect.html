@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>FORGE — connect</title>
-<meta name="description" content="Connect FORGE to ChatGPT or Claude, and get your Apple Watch feeding it automatically.">
+<title>WROUGHT — connect</title>
+<meta name="description" content="Connect WROUGHT to ChatGPT or Claude, and get your Apple Watch feeding it automatically.">
 <style>
   :root{--bg:#0b0b0d;--panel:#141417;--panel2:#1b1b1f;--line:#26262b;
     --text:#ececed;--muted:#8a8a93;--dim:#5c5c66;--ember:#ff5a1f;--ash:#b33d13;--warn:#e8b64c}
@@ -54,29 +54,29 @@
 <body>
 
 <header class="wrap">
-  <div class="mark"><span class="bar"></span><span class="name">FORGE</span></div>
+  <div class="mark"><span class="bar"></span><span class="name">WROUGHT</span></div>
   <h1>Connect it</h1>
   <p class="lede">Two things to set up. The AI takes a minute; the watch takes two.</p>
 </header>
 
 <div class="wrap">
 
-  <h2>1 · Put FORGE inside your AI</h2>
+  <h2>1 · Put WROUGHT inside your AI</h2>
   <p class="muted">
-    FORGE is an MCP server, which means any assistant that speaks MCP can use it — you
+    WROUGHT is an MCP server, which means any assistant that speaks MCP can use it — you
     add one URL and sign in once. After that it is simply there, in every conversation,
     forever.
   </p>
 
   <div class="panel">
     <h3 style="margin-top:0">The URL</h3>
-    <p><code id="mcpurl">https://forge.fit/mcp</code></p>
+    <p><code id="mcpurl">https://wrought.fit/mcp</code></p>
 
     <h3>ChatGPT</h3>
     <ol>
       <li>Settings → Connectors → Add custom connector.</li>
       <li>Paste the URL above. Leave authentication as OAuth.</li>
-      <li>Sign in when the FORGE page appears. That is the only time you will see it.</li>
+      <li>Sign in when the WROUGHT page appears. That is the only time you will see it.</li>
     </ol>
 
     <h3>Claude</h3>
@@ -157,7 +157,7 @@
     <li>Trigger: <b>Time of Day</b> → 11:00 pm → <b>Run Immediately</b>.</li>
     <li>Add <b>Find Health Samples</b>. Set it to Steps, today. Repeat the action for
         Sleep Analysis, Resting Heart Rate, Heart Rate Variability, Active Energy and Body Mass.</li>
-    <li>Add <b>Get Contents of URL</b>, method <b>POST</b>, pointed at <code id="ingesturl">https://forge.fit/ingest</code>.</li>
+    <li>Add <b>Get Contents of URL</b>, method <b>POST</b>, pointed at <code id="ingesturl">https://wrought.fit/ingest</code>.</li>
     <li>Headers: <code>Authorization: Bearer YOUR_KEY</code> and <code>Content-Type: application/json</code>.</li>
     <li>Request body → JSON, in this shape:</li>
   </ol>
@@ -173,7 +173,7 @@
 }</pre>
 
   <p class="muted">
-    Run it once to check, then forget about it. Re-sending the same night twice is
+    Run it once to check, then wroughtt about it. Re-sending the same night twice is
     harmless — duplicates are dropped on arrival, so a Shortcut that fires twice never
     doubles your sleep.
   </p>
@@ -182,7 +182,7 @@
   <p class="muted">
     The <b>Health Auto Export</b> app on the App Store posts the same data on a schedule
     with nothing to assemble. Point its REST endpoint at <code>/ingest</code>, add the same
-    <code>Authorization: Bearer</code> header, and FORGE understands its format natively.
+    <code>Authorization: Bearer</code> header, and WROUGHT understands its format natively.
   </p>
 
   <h3>Option C — Android</h3>
@@ -212,7 +212,7 @@
     will connect directly over OAuth — those are a build item here, not something waiting
     on you. Direct links buy extra depth (Oura's sleep staging, Strava's per-split pace,
     Whoop's strain), but they are an upgrade rather than the entry price: all of them
-    already reach FORGE through your phone today.
+    already reach WROUGHT through your phone today.
   </p>
 
   <h2>Your data</h2>
@@ -226,16 +226,16 @@
 
 <footer class="wrap">
   <a href="/">Home</a> · <a href="/app.html">Dashboard</a> ·
-  <a href="https://github.com/lczako-eng/forge">Source</a><br><br>
-  FORGE is a training and nutrition journal. It is not a medical device and does not
+  <a href="https://github.com/lczako-eng/wrought">Source</a><br><br>
+  WROUGHT is a training and nutrition journal. It is not a medical device and does not
   diagnose anything.
 </footer>
 
 <script type="module">
 import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm';
 
-const SUPABASE_URL  = window.FORGE_SUPABASE_URL || '';
-const SUPABASE_ANON = window.FORGE_SUPABASE_ANON || '';
+const SUPABASE_URL  = window.WROUGHT_SUPABASE_URL || '';
+const SUPABASE_ANON = window.WROUGHT_SUPABASE_ANON || '';
 const sb = SUPABASE_URL ? createClient(SUPABASE_URL, SUPABASE_ANON) : null;
 
 const $ = id => document.getElementById(id);

@@ -17,7 +17,7 @@
   to = "/.netlify/functions/ingest"
   status = 200
 
-# OAuth 2.1 — what makes "Sign in with Forge" appear inside ChatGPT and Claude.
+# OAuth 2.1 — what makes "Sign in with Wrought" appear inside ChatGPT and Claude.
 [[redirects]]
   from = "/oauth/token"
   to = "/.netlify/functions/oauth-token"

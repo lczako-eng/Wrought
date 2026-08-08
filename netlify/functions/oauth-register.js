@@ -8,7 +8,7 @@
 // It issues no client secret. These are public clients (desktop apps, browser
 // extensions) which cannot keep one; PKCE does the binding instead.
 
-import { supabase } from './lib/forge.js';
+import { supabase } from './lib/wrought.js';
 import { randomBytes } from 'node:crypto';
 
 const CORS = {
@@ -37,14 +37,14 @@ export const handler = async (event) => {
       body: JSON.stringify({ error: 'invalid_redirect_uri', error_description: 'redirect_uris is required' }) };
   }
 
-  const clientId = `forge_${randomBytes(16).toString('hex')}`;
+  const clientId = `wrought_${randomBytes(16).toString('hex')}`;
 
-  const { error } = await supabase.from('forge_oauth_clients').insert([{
+  const { error } = await supabase.from('wrought_oauth_clients').insert([{
     client_id: clientId,
     client_name: String(body.client_name || 'MCP client').slice(0, 200),
     redirect_uris: redirectUris,
     grant_types: body.grant_types?.length ? body.grant_types : ['authorization_code', 'refresh_token'],
-    scope: 'forge',
+    scope: 'wrought',
   }]);
 
   if (error) {
@@ -62,7 +62,7 @@ export const handler = async (event) => {
       grant_types: ['authorization_code', 'refresh_token'],
       response_types: ['code'],
       token_endpoint_auth_method: 'none',
-      scope: 'forge',
+      scope: 'wrought',
     }),
   };
 };

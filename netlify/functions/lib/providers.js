@@ -4,7 +4,7 @@
 //
 // The strategic point, which took a while to see and should not be forgotten:
 //
-//   FORGE does not need fifteen integrations. It needs TWO DOORS.
+//   WROUGHT does not need fifteen integrations. It needs TWO DOORS.
 //
 // Apple Health and Android's Health Connect are already aggregators. Nike Run
 // Club, Strava, Peloton, Oura, Whoop, Samsung Health, Zwift and most of the
@@ -135,7 +135,7 @@ export const PROVIDERS = {
     mode: 'push',
     status: 'aggregated',
     gives: ['distance_km', 'active_minutes', 'workouts'],
-    how: 'Nothing to connect. NRC writes every run into Apple Health or Health Connect, and FORGE reads it from there.',
+    how: 'Nothing to connect. NRC writes every run into Apple Health or Health Connect, and WROUGHT reads it from there.',
     why: 'Nike closed its public API in 2018 and has shown no sign of reopening it. Going through the phone is not a workaround here — it is the only route that exists, for anybody.',
     aggregated_via: 'apple_health',
   },
@@ -145,7 +145,7 @@ export const PROVIDERS = {
     mode: 'push',
     status: 'aggregated',
     gives: ['steps', 'sleep_minutes', 'resting_hr', 'active_calories', 'weight_kg', 'workouts'],
-    how: 'Connect Health Connect on the phone. Samsung Health writes into it, and FORGE reads from there.',
+    how: 'Connect Health Connect on the phone. Samsung Health writes into it, and WROUGHT reads from there.',
     why: 'Samsung\'s own data API is partner-gated and has been closed to individual developers for years. Health Connect is the open door, and it carries the same data.',
     aggregated_via: 'health_connect',
   },
@@ -174,7 +174,7 @@ export function providerSummary(key) {
   const line =
     p.status === 'live'       ? `${p.name} — ready now. ${p.how}`
   : p.status === 'aggregated' ? `${p.name} — no direct connection exists, and none is needed: ${p.how}`
-  :                             `${p.name} — has a real cloud API, but FORGE's developer app for it is not registered yet. In the meantime it reaches us through ${PROVIDERS[p.aggregated_via]?.name || 'the phone'}.`;
+  :                             `${p.name} — has a real cloud API, but WROUGHT's developer app for it is not registered yet. In the meantime it reaches us through ${PROVIDERS[p.aggregated_via]?.name || 'the phone'}.`;
   return { key, ...p, say: line };
 }
 

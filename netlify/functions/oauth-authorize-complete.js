@@ -8,9 +8,9 @@
 //
 // The split exists because the sign-in must happen in a browser (that is where
 // the password manager and the existing session live) but the code must be
-// minted somewhere the client cannot forge one.
+// minted somewhere the client cannot wrought one.
 
-import { supabase, hashToken, newToken } from './lib/forge.js';
+import { supabase, hashToken, newToken } from './lib/wrought.js';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -55,7 +55,7 @@ export const handler = async (event) => {
 
   // An open redirect here would hand somebody else's authorization code to an
   // attacker's server, so the URI must match one the client registered.
-  const { data: client } = await supabase.from('forge_oauth_clients')
+  const { data: client } = await supabase.from('wrought_oauth_clients')
     .select('client_id, redirect_uris').eq('client_id', client_id).maybeSingle();
 
   if (!client) {
@@ -68,7 +68,7 @@ export const handler = async (event) => {
   }
 
   const code = newToken();
-  const { error } = await supabase.from('forge_oauth_codes').insert([{
+  const { error } = await supabase.from('wrought_oauth_codes').insert([{
     code_hash: hashToken(code),
     client_id,
     user_id: userData.user.id,

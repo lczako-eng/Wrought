@@ -6,7 +6,7 @@ the obvious plan (build fifteen integrations) is both enormous and unnecessary.
 
 ## The finding
 
-**FORGE does not need fifteen integrations. It needs two doors.**
+**WROUGHT does not need fifteen integrations. It needs two doors.**
 
 Apple Health and Android's Health Connect are *already aggregators*. Nike Run
 Club, Strava, Peloton, Oura, Whoop, Samsung Health, Fitbit, Zwift and most of the
@@ -22,7 +22,7 @@ Nike Run Club ─┐
 Strava ────────┤
 Peloton ───────┼──▶ Apple Health ──┐
 Oura ──────────┤    (iPhone)       │
-Whoop ─────────┘                   ├──▶ POST /ingest ──▶ FORGE
+Whoop ─────────┘                   ├──▶ POST /ingest ──▶ WROUGHT
                                    │
 Samsung Health ┐                   │
 Fitbit ────────┼──▶ Health Connect ┘
@@ -42,7 +42,7 @@ this underneath; most of them just do not say so.
 |---|---|---|
 | Platform | iPhone / Apple Watch | Android 14+ (built in), earlier via Play Store |
 | Sender | iOS Shortcut, or Health Auto Export app | Health Sync, Tasker, or Macrodroid |
-| Auth | Bearer key from `forge_ingest_keys` | same |
+| Auth | Bearer key from `wrought_ingest_keys` | same |
 | Endpoint | `POST /ingest` | same |
 
 Both accept the same body:

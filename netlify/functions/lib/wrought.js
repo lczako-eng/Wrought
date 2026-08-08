@@ -1,5 +1,5 @@
-// netlify/functions/lib/forge.js
-// FORGE — the engine.
+// netlify/functions/lib/wrought.js
+// WROUGHT — the engine.
 //
 // Everything that counts, compares or judges lives here, deliberately apart
 // from the protocol layer. Two reasons:
@@ -18,8 +18,8 @@ import OpenAI from 'openai';
 import { createClient } from '@supabase/supabase-js';
 import { createHash, randomBytes } from 'node:crypto';
 
-export const SITE_URL = process.env.FORGE_SITE_URL || 'https://forge.fit';
-export const MODEL    = process.env.FORGE_MODEL || 'gpt-5.4-mini';
+export const SITE_URL = process.env.WROUGHT_SITE_URL || 'https://wrought.fit';
+export const MODEL    = process.env.WROUGHT_MODEL || 'gpt-5.4-mini';
 
 export const supabase = process.env.SUPABASE_URL
   ? createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY)
@@ -113,7 +113,7 @@ export function sayLength(cm, units) {
 // ── Auth ────────────────────────────────────────────────────────────────────
 // Two ways in, both landing on a Supabase user:
 //   1. An OAuth access token we issued (stored hashed) — this is the path that
-//      makes "Sign in with Forge" appear inside ChatGPT and Claude.
+//      makes "Sign in with Wrought" appear inside ChatGPT and Claude.
 //   2. A raw Supabase session JWT, pasted from the web app. Unglamorous, works
 //      in every client on earth, and is the fallback when a connector's OAuth
 //      implementation is having a bad day.
@@ -126,7 +126,7 @@ export async function getAuthUser(event) {
 
   try {
     const hash = createHash('sha256').update(token).digest('base64url');
-    const { data: row } = await supabase.from('forge_oauth_tokens')
+    const { data: row } = await supabase.from('wrought_oauth_tokens')
       .select('user_id, expires_at').eq('token_hash', hash).maybeSingle();
     if (row && new Date(row.expires_at).getTime() > Date.now()) {
       const { data } = await supabase.auth.admin.getUserById(row.user_id);
@@ -152,12 +152,12 @@ const DEFAULT_PROFILE = {
 };
 
 export async function getProfile(userId) {
-  const { data } = await supabase.from('forge_profile').select('*').eq('user_id', userId).maybeSingle();
+  const { data } = await supabase.from('wrought_profile').select('*').eq('user_id', userId).maybeSingle();
   return { ...DEFAULT_PROFILE, ...(data || {}), user_id: userId, _exists: !!data };
 }
 
 export async function getMemory(userId, category) {
-  let q = supabase.from('forge_memory').select('fact, category, confidence, created_at')
+  let q = supabase.from('wrought_memory').select('fact, category, confidence, created_at')
     .eq('user_id', userId).eq('active', true).order('created_at', { ascending: false }).limit(40);
   if (category) q = q.eq('category', category);
   const { data } = await q;
@@ -165,13 +165,13 @@ export async function getMemory(userId, category) {
 }
 
 export async function getGoals(userId) {
-  const { data } = await supabase.from('forge_goals').select('*')
+  const { data } = await supabase.from('wrought_goals').select('*')
     .eq('user_id', userId).eq('active', true).order('created_at', { ascending: false });
   return data || [];
 }
 
 export async function getWindow(userId) {
-  const { data } = await supabase.from('forge_eating_window').select('*')
+  const { data } = await supabase.from('wrought_eating_window').select('*')
     .eq('user_id', userId).maybeSingle();
   return data || null;
 }
@@ -219,10 +219,10 @@ const num = v => (Number.isFinite(+v) ? +v : 0);
 
 export async function dayFacts(userId, profile, date) {
   const [{ data: events }, { data: metrics }] = await Promise.all([
-    supabase.from('forge_events')
+    supabase.from('wrought_events')
       .select('id, event_type, occurred_at, summary, detail, estimated, source')
       .eq('user_id', userId).eq('local_date', date).order('occurred_at', { ascending: true }),
-    supabase.from('forge_metrics')
+    supabase.from('wrought_metrics')
       .select('metric, value, unit, measured_at')
       .eq('user_id', userId).eq('local_date', date),
   ]);
@@ -337,11 +337,11 @@ function roundMacros(f) {
 
 export async function rangeFacts(userId, profile, fromDate, toDate) {
   const [{ data: events }, { data: metrics }] = await Promise.all([
-    supabase.from('forge_events')
+    supabase.from('wrought_events')
       .select('event_type, local_date, occurred_at, summary, detail, estimated')
       .eq('user_id', userId).gte('local_date', fromDate).lte('local_date', toDate)
       .order('local_date', { ascending: true }),
-    supabase.from('forge_metrics')
+    supabase.from('wrought_metrics')
       .select('metric, value, local_date')
       .eq('user_id', userId).gte('local_date', fromDate).lte('local_date', toDate),
   ]);
@@ -684,7 +684,7 @@ export async function parseLog(text, profile) {
 }
 
 // ── The verdict ─────────────────────────────────────────────────────────────
-// The only part of FORGE that is an opinion, and it is written from facts that
+// The only part of WROUGHT that is an opinion, and it is written from facts that
 // were already computed. The model never sees raw rows and never does sums —
 // it is handed the arithmetic and asked for a read.
 
@@ -705,7 +705,7 @@ export async function writeVerdict({ facts, profile, goals, memory, flags, kind 
       `\nDrop the coaching register entirely for this. Be kind, be plain, do not push performance.`
     : '';
 
-  const prompt = `You are FORGE, writing the ${kind} read for one person's training and eating.
+  const prompt = `You are WROUGHT, writing the ${kind} read for one person's training and eating.
 
 Tone: ${style}
 
@@ -762,7 +762,7 @@ export async function insertEvents(userId, profile, parsedEvents, { source = 'ag
     };
   });
 
-  const { data, error } = await supabase.from('forge_events').insert(rows).select('id, event_type, summary, local_date, estimated');
+  const { data, error } = await supabase.from('wrought_events').insert(rows).select('id, event_type, summary, local_date, estimated');
   if (error) throw new Error(error.message);
   return data || [];
 }
@@ -770,7 +770,7 @@ export async function insertEvents(userId, profile, parsedEvents, { source = 'ag
 const VALID_TYPES = new Set(['food','drink','workout','weight','measurement','sleep','symptom','mood','supplement','note']);
 
 export async function rememberFact(userId, fact, category = 'general') {
-  const { error } = await supabase.from('forge_memory')
+  const { error } = await supabase.from('wrought_memory')
     .insert([{ user_id: userId, fact: String(fact).slice(0, 500), category }]);
   if (error) throw new Error(error.message);
   return true;

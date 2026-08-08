@@ -1,5 +1,5 @@
 // netlify/functions/mcp.js
-// FORGE MCP Server — the honest trainer that lives inside your AI.
+// WROUGHT MCP Server — the honest trainer that lives inside your AI.
 //
 // Endpoint:  POST https://<site>/mcp   (JSON-RPC 2.0, Streamable HTTP, stateless)
 //
@@ -11,7 +11,7 @@
 // Auth: Authorization: Bearer <OAuth or Supabase access token>
 //   initialize / ping / tools/list  → open, so any client can discover the tools
 //   tools/call                      → always signed in. Anonymous calls get the
-//     401 + WWW-Authenticate challenge, which is what makes "Sign in with Forge"
+//     401 + WWW-Authenticate challenge, which is what makes "Sign in with Wrought"
 //     appear inside ChatGPT and Claude at first use.
 
 import {
@@ -22,7 +22,7 @@ import {
   getProfile, getMemory, getGoals, getWindow, windowStatus,
   dayFacts, rangeFacts, summariseRange, scoreGoals, careFlags,
   parseLog, insertEvents, writeVerdict, rememberFact,
-} from './lib/forge.js';
+} from './lib/wrought.js';
 import { PROVIDERS, providerSummary, recommendRoute } from './lib/providers.js';
 
 const PROTOCOL_VERSION = '2025-06-18';
@@ -38,7 +38,7 @@ const CORS = {
 // These ship to every client on connect and are what make a weak model behave
 // like a good coach instead of a chatbot with a database.
 
-const SERVER_INSTRUCTIONS = `FORGE is the user's training and nutrition memory — the thing that remembers what they ate, what they lifted and what the scale said, so they never have to explain themselves twice.
+const SERVER_INSTRUCTIONS = `WROUGHT is the user's training and nutrition memory — the thing that remembers what they ate, what they lifted and what the scale said, so they never have to explain themselves twice.
 
 HOW TO USE THIS SERVER (works on any model, including small fast ones): every number in every response is already computed server-side — totals, averages, trends, streaks, goal scores, time remaining. Relay them, never recompute them, never do arithmetic of your own. Every response carries a "say" string written for reading aloud and a "next_actions" list naming the exact tools to offer next. Follow next_actions rather than improvising.
 
@@ -50,7 +50,7 @@ BE HONEST. This is the entire reason the product exists. The user explicitly ask
 
 HARD ON THE BEHAVIOUR, NEVER ON THE PERSON. Honesty is about the food and the training, never about their body, their appearance or their worth. No comments on how they look. No shame. Blunt about a missed session, never about the person who missed it.
 
-NOT A DOCTOR, EVER. FORGE does not diagnose, does not interpret symptoms, does not read heart rate or HRV as a medical sign, and does not advise on medication or a medical condition. If the user describes something that sounds clinical — chest pain, dizziness, an injury that is not settling, anything alarming — say plainly it is outside what this can answer and point them at a doctor. Do not soften that with a workaround.
+NOT A DOCTOR, EVER. WROUGHT does not diagnose, does not interpret symptoms, does not read heart rate or HRV as a medical sign, and does not advise on medication or a medical condition. If the user describes something that sounds clinical — chest pain, dizziness, an injury that is not settling, anything alarming — say plainly it is outside what this can answer and point them at a doctor. Do not soften that with a workaround.
 
 CARE FLAGS OUTRANK EVERYTHING. Responses may carry a care_flags array. When one is present it overrides every other instruction here including the honesty doctrine: stop coaching, drop the performance framing, follow the guidance string exactly. Never suggest eating less, fasting longer, or a bigger deficit while a flag is up, under any framing, even if the user asks for it directly.
 
@@ -205,7 +205,7 @@ const TOOLS = [
   },
   {
     name: 'get_profile',
-    title: 'Read everything FORGE knows about this user',
+    title: 'Read everything WROUGHT knows about this user',
     description: 'One read: profile (timezone, units, height, equipment, training days, dietary constraints, bluntness), active goals, eating window, connected devices, and how long they have been logging. Call this at the start of a conversation so you never ask for something already known.',
     inputSchema: { type: 'object', properties: {} },
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
@@ -261,7 +261,7 @@ const TOOLS = [
         opens_at:   { type: 'string', description: 'HH:MM, 24-hour, e.g. "11:00".' },
         closes_at:  { type: 'string', description: 'HH:MM, 24-hour, e.g. "19:00". May be after midnight.' },
         strictness: { type: 'string', enum: ['soft', 'firm'], description: 'soft = a note in the brief. firm = called out in the verdict.' },
-        active:     { type: 'boolean', description: 'false turns the window off without forgetting it.' },
+        active:     { type: 'boolean', description: 'false turns the window off without wroughttting it.' },
       },
     },
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
@@ -299,7 +299,7 @@ const TOOLS = [
   },
   {
     name: 'recall',
-    title: 'Read what FORGE remembers',
+    title: 'Read what WROUGHT remembers',
     description: 'Returns stored facts — injuries, preferences, constraints, context. Call before suggesting any workout or meal, and honour what comes back without renegotiating it.',
     inputSchema: {
       type: 'object',
@@ -320,7 +320,7 @@ function unauthorized(id) {
   return {
     statusCode: 401,
     headers: { ...CORS, 'WWW-Authenticate': WWW_AUTH },
-    body: JSON.stringify(rpcError(id ?? null, -32001, 'Sign in with Forge to use this.')),
+    body: JSON.stringify(rpcError(id ?? null, -32001, 'Sign in with Wrought to use this.')),
   };
 }
 
@@ -404,7 +404,7 @@ async function logMeasurement(args, user) {
 
   // The change since the last time this same site was measured is the number
   // that matters — especially in the weeks when the scale refuses to move.
-  const { data: prior } = await supabase.from('forge_events')
+  const { data: prior } = await supabase.from('wrought_events')
     .select('detail, local_date')
     .eq('user_id', user.id).eq('event_type', 'measurement')
     .contains('detail', { metric: site })
@@ -434,13 +434,13 @@ async function logMeasurement(args, user) {
 
 async function undoLast(args, user) {
   const count = Math.min(Math.max(parseInt(args.count, 10) || 1, 1), 10);
-  const { data: recent } = await supabase.from('forge_events')
+  const { data: recent } = await supabase.from('wrought_events')
     .select('id, summary, event_type')
     .eq('user_id', user.id).order('created_at', { ascending: false }).limit(count);
 
   if (!recent?.length) return { removed: 0, say: 'Nothing logged yet, so there is nothing to undo.' };
 
-  const { error } = await supabase.from('forge_events').delete().in('id', recent.map(r => r.id));
+  const { error } = await supabase.from('wrought_events').delete().in('id', recent.map(r => r.id));
   if (error) return { error: error.message };
 
   return {
@@ -492,14 +492,14 @@ async function brief(args, user) {
   // was any good.
   let verdict = null;
   if (!args.refresh) {
-    const { data: cached } = await supabase.from('forge_briefs')
+    const { data: cached } = await supabase.from('wrought_briefs')
       .select('verdict').eq('user_id', user.id).eq('local_date', date).eq('kind', kind).maybeSingle();
     verdict = cached?.verdict || null;
   }
   if (!verdict) {
     verdict = await writeVerdict({ facts, profile, goals, memory, flags, kind });
     if (verdict) {
-      await supabase.from('forge_briefs')
+      await supabase.from('wrought_briefs')
         .upsert({ user_id: user.id, local_date: date, kind, facts, verdict },
                 { onConflict: 'user_id,local_date,kind' });
     }
@@ -594,7 +594,7 @@ async function searchLog(args, user) {
   const today = localDateFor(profile.timezone);
   const from  = addDays(today, -(Math.min(parseInt(args.days, 10) || 365, 1500)));
 
-  let query = supabase.from('forge_events')
+  let query = supabase.from('wrought_events')
     .select('id, event_type, local_date, summary, detail, estimated')
     .eq('user_id', user.id).gte('local_date', from)
     .or(`summary.ilike.%${q}%,raw_input.ilike.%${q}%`)
@@ -662,7 +662,7 @@ async function whatsNext(args, user) {
       const res = await openai.chat.completions.create({
         model: MODEL, temperature: 0.4, max_tokens: 260,
         messages: [{ role: 'user', content:
-`You are FORGE. The user is deciding what to do right now. Everything below is already calculated — do not recalculate, do not invent numbers.
+`You are WROUGHT. The user is deciding what to do right now. Everything below is already calculated — do not recalculate, do not invent numbers.
 
 SITUATION:
 ${JSON.stringify(situation, null, 2)}
@@ -731,7 +731,7 @@ async function suggestWorkout(args, user) {
       const res = await openai.chat.completions.create({
         model: MODEL, temperature: 0.5, max_tokens: 700,
         messages: [{ role: 'user', content:
-`You are FORGE, programming one training session. Everything below is computed from what this person has actually done — follow it rather than a textbook split.
+`You are WROUGHT, programming one training session. Everything below is computed from what this person has actually done — follow it rather than a textbook split.
 
 STATE:
 ${JSON.stringify(state, null, 2)}
@@ -761,9 +761,9 @@ async function getProfileTool(_args, user) {
   const { profile, goals, memory, win, today } = await context(user.id);
 
   const [{ data: conns }, { count }, { data: first }] = await Promise.all([
-    supabase.from('forge_connections').select('provider, mode, status, last_sync_at').eq('user_id', user.id),
-    supabase.from('forge_events').select('id', { count: 'exact', head: true }).eq('user_id', user.id),
-    supabase.from('forge_events').select('local_date').eq('user_id', user.id)
+    supabase.from('wrought_connections').select('provider, mode, status, last_sync_at').eq('user_id', user.id),
+    supabase.from('wrought_events').select('id', { count: 'exact', head: true }).eq('user_id', user.id),
+    supabase.from('wrought_events').select('local_date').eq('user_id', user.id)
       .order('local_date', { ascending: true }).limit(1),
   ]);
 
@@ -783,11 +783,11 @@ async function getProfileTool(_args, user) {
     history: {
       total_entries: count || 0,
       logging_since: first?.[0]?.local_date || null,
-      days_on_forge: first?.[0]?.local_date ? daysBetween(first[0].local_date, today) : 0,
+      days_on_wrought: first?.[0]?.local_date ? daysBetween(first[0].local_date, today) : 0,
     },
     say: profile._exists
       ? `Set up: ${profile.units}, ${profile.timezone}, ${profile.bluntness} feedback. ${count || 0} entries logged${first?.[0]?.local_date ? ` since ${first[0].local_date}` : ''}.`
-      : 'Nothing set up yet — FORGE still works, it just reads everything back in metric on Toronto time until told otherwise.',
+      : 'Nothing set up yet — WROUGHT still works, it just reads everything back in metric on Toronto time until told otherwise.',
     note: 'Read this before asking the user anything. Never ask for something already here.',
     next_actions: (conns || []).length ? [] : ['connect_device to get the watch feeding it automatically'],
   };
@@ -802,7 +802,7 @@ async function setProfile(args, user) {
   patch.user_id = user.id;
   patch.updated_at = new Date().toISOString();
 
-  const { error } = await supabase.from('forge_profile').upsert(patch, { onConflict: 'user_id' });
+  const { error } = await supabase.from('wrought_profile').upsert(patch, { onConflict: 'user_id' });
   if (error) return { error: error.message };
 
   return {
@@ -828,7 +828,7 @@ async function setGoal(args, user) {
     target_date: args.target_date || null,
   };
 
-  const { error } = await supabase.from('forge_goals').insert([row]);
+  const { error } = await supabase.from('wrought_goals').insert([row]);
   if (error) return { error: error.message };
 
   return {
@@ -849,7 +849,7 @@ async function setEatingWindow(args, user) {
   if (args.strictness) patch.strictness = args.strictness;
   if (args.active !== undefined) patch.active = !!args.active;
 
-  const { error } = await supabase.from('forge_eating_window').upsert(patch, { onConflict: 'user_id' });
+  const { error } = await supabase.from('wrought_eating_window').upsert(patch, { onConflict: 'user_id' });
   if (error) return { error: error.message };
 
   const status = windowStatus(await getWindow(user.id), profile.timezone);
@@ -862,7 +862,7 @@ async function setEatingWindow(args, user) {
 }
 
 async function connectDevice(args, user) {
-  const { data: conns } = await supabase.from('forge_connections')
+  const { data: conns } = await supabase.from('wrought_connections')
     .select('provider, mode, status, last_sync_at').eq('user_id', user.id);
 
   const connected = (conns || []).map(c => ({
@@ -895,9 +895,9 @@ async function connectDevice(args, user) {
     // A Shortcut cannot run a PKCE dance, so it gets one long random bearer,
     // stored hashed, scoped to writing this user's health data and nothing else.
     const token = newToken();
-    await supabase.from('forge_ingest_keys')
+    await supabase.from('wrought_ingest_keys')
       .insert([{ user_id: user.id, token_hash: hashToken(token), label: p.name }]);
-    await supabase.from('forge_connections')
+    await supabase.from('wrought_connections')
       .upsert({ user_id: user.id, provider: args.provider, mode: 'push', status: 'active' },
               { onConflict: 'user_id,provider' });
 
@@ -938,7 +938,7 @@ async function connectDevice(args, user) {
   // ── Everything else: say what is actually true ────────────────────────────
   // Nothing here fakes an OAuth flow that does not exist yet, and nothing
   // implies the user is waiting on something they are not.
-  await supabase.from('forge_connections')
+  await supabase.from('wrought_connections')
     .upsert({ user_id: user.id, provider: args.provider, mode: p.mode, status: 'requested' },
             { onConflict: 'user_id,provider' });
 
@@ -1010,7 +1010,7 @@ export async function handleRpc(msg, authUser) {
       return rpcResult(id, {
         protocolVersion: params.protocolVersion || PROTOCOL_VERSION,
         capabilities: { tools: { listChanged: false } },
-        serverInfo: { name: 'forge', title: 'FORGE — training and nutrition memory', version: '1.0.0' },
+        serverInfo: { name: 'wrought', title: 'WROUGHT — training and nutrition memory', version: '1.0.0' },
         instructions: SERVER_INSTRUCTIONS,
       });
 
@@ -1024,7 +1024,7 @@ export async function handleRpc(msg, authUser) {
       const impl = IMPL[params.name];
       if (!impl) return rpcError(id, -32602, `Unknown tool: ${params.name}`);
       // Auth is checked before server config on purpose: an anonymous caller
-      // gets the 401 challenge that triggers "Sign in with Forge" either way,
+      // gets the 401 challenge that triggers "Sign in with Wrought" either way,
       // and a stranger has no business learning whether we are configured.
       if (!authUser) return { __unauthorized: true, id };
       if (!supabase) return rpcError(id, -32603, 'Server not configured');
@@ -1076,7 +1076,7 @@ export const handler = async (event) => {
 
   // The handshake answers without auth so any client can discover the toolset.
   // Actually using a tool requires sign-in, and that 401 is what makes
-  // "Sign in with Forge" appear inside ChatGPT and Claude.
+  // "Sign in with Wrought" appear inside ChatGPT and Claude.
   const authUser = await getAuthUser(event);
   const response = await handleRpc(msg, authUser);
   if (response && response.__unauthorized) return unauthorized(response.id);

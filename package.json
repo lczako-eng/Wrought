@@ -1,9 +1,9 @@
 {
-  "name": "forge",
+  "name": "wrought",
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "description": "FORGE — the honest personal trainer that lives inside your AI. MCP server, Supabase memory, wearable ingest.",
+  "description": "WROUGHT — the honest personal trainer that lives inside your AI. MCP server, Supabase memory, wearable ingest.",
   "scripts": {
     "test": "node test/harness.mjs"
   },

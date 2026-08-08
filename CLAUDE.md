@@ -1,18 +1,18 @@
-# FORGE — Agent Context
+# WROUGHT — Agent Context
 
 *Read this first. It is the persistent memory of the project.*
 
 ## What this is
 
-**FORGE is the honest personal trainer that lives inside your AI.** Founder:
+**WROUGHT is the honest personal trainer that lives inside your AI.** Founder:
 Laszlo (Marcus) Czako (`lczako-eng`, laszlobrianczako@gmail.com).
 
 The origin is a real daily annoyance, and it should stay the north star: the
 founder opens a **new ChatGPT page every single morning** and re-explains what
-he ate versus what he did, because the model has no memory. FORGE is the memory
+he ate versus what he did, because the model has no memory. WROUGHT is the memory
 that survives the tab closing, plus a nightly read on what it all means.
 
-**This is a separate project from Revolv / SupplAi.** Do not put FORGE code in
+**This is a separate project from Revolv / SupplAi.** Do not put WROUGHT code in
 `SupplAi-Industrial` — that was an early error and was reverted. Different
 product, different repo, different domain. The two share a founder and an
 architectural instinct (memory is the moat, the AI is only the interface), and
@@ -26,7 +26,7 @@ nothing else.
 - **The brief is the product.** Logging is table stakes; a hundred apps log.
   Nobody has a thing that reads the week back to you honestly.
 - **The server computes, the model relays.** Every total, average, trend, streak
-  and countdown is calculated in `lib/forge.js` and handed over with a `say`
+  and countdown is calculated in `lib/wrought.js` and handed over with a `say`
   string. Never leave arithmetic to a language model.
 - **Honest, never cruel.** Hard on the behaviour, never on the person. No
   commentary on their body. Bluntness is the user's setting (`gentle` /
@@ -42,22 +42,22 @@ nothing else.
 
 ## Architecture (settled)
 
-- **Supabase = home.** All data, RLS on every table. `forge_events` (the human
-  log, one row per thing said) and `forge_metrics` (device time series) are
+- **Supabase = home.** All data, RLS on every table. `wrought_events` (the human
+  log, one row per thing said) and `wrought_metrics` (device time series) are
   deliberately separate — a person emits a sentence a day, a watch emits a row a
   minute, and one table makes both queries bad.
 - **`local_date` is stored, not derived.** A day is a day in the user's own
   timezone. Deriving from UTC at read time files a late-night snack under
   tomorrow and corrupts every brief. This has a test.
-- **`lib/forge.js` holds all arithmetic**, apart from the protocol layer, so the
+- **`lib/wrought.js` holds all arithmetic**, apart from the protocol layer, so the
   MCP brief and the web dashboard cannot disagree. `api-progress.js` exists
   purely so the dashboard calls the same code rather than recomputing in JS.
 - **MCP server**: `netlify/functions/mcp.js` at `/mcp` — stateless Streamable
   HTTP, JSON-RPC. 17 tools. Doctrines ship in `SERVER_INSTRUCTIONS`.
 - **Auth**: OAuth 2.1 (PKCE, dynamic client registration) so "Sign in with
-  Forge" appears in ChatGPT/Claude. Supabase session JWTs also accepted as a
+  Wrought" appears in ChatGPT/Claude. Supabase session JWTs also accepted as a
   fallback. Everything secret is stored SHA-256 hashed.
-- **Ingest**: `/ingest`, bearer key from `forge_ingest_keys`, idempotent via
+- **Ingest**: `/ingest`, bearer key from `wrought_ingest_keys`, idempotent via
   unique indexes. Accepts native shape and Health Auto Export's shape.
 
 ### Devices — two doors, not fifteen integrations
@@ -88,7 +88,7 @@ self-reporting scale removes the most-abandoned manual entry), then Strava.
 
 ## Conventions
 
-- `npm test` runs `test/harness.mjs` — 39 offline tests, no network, no database.
+- `npm test` runs `test/harness.mjs` — 52 offline tests, no network, no database.
   Run it before every push. It covers the JSON-RPC envelope (which fails as an
   uninformative "could not connect" inside ChatGPT) and all the arithmetic
   (which fails as a confidently wrong number in somebody's verdict).
@@ -101,17 +101,17 @@ self-reporting scale removes the most-abandoned manual entry), then Strava.
 ## Status & next steps
 
 **Blocked on founder:**
-1. Create the GitHub repo `lczako-eng/forge` — the agent integration cannot
+1. Create the GitHub repo `lczako-eng/wrought` — the agent integration cannot
    (403 from `create_repository`), so the first push needs an empty remote.
-2. Run `schema/001_forge_core.sql` then `002_forge_oauth.sql` in Supabase.
+2. Run `schema/001_wrought_core.sql` then `002_wrought_oauth.sql` in Supabase.
 3. Set env vars in Netlify: `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`,
-   `OPENAI_API_KEY`, `FORGE_SITE_URL`. Inject `window.FORGE_SUPABASE_URL` and
-   `window.FORGE_SUPABASE_ANON` for the web pages.
-4. Decide the domain. `forge.fit` is the placeholder in `FORGE_SITE_URL`.
+   `OPENAI_API_KEY`, `WROUGHT_SITE_URL`. Inject `window.WROUGHT_SUPABASE_URL` and
+   `window.WROUGHT_SUPABASE_ANON` for the web pages.
+4. Decide the domain. `wrought.fit` is the placeholder in `WROUGHT_SITE_URL`.
 
 **Next builds, in order:**
 1. Scheduled evening brief — push the verdict at 10pm instead of waiting to be
-   asked. This is what turns FORGE from a tool into a habit.
+   asked. This is what turns WROUGHT from a tool into a habit.
 2. Register OAuth apps for Oura / Whoop / Fitbit / Withings, then the pull
    sync function.
 3. Progress photos with dated comparison.

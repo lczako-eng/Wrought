@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>FORGE — dashboard</title>
+<title>WROUGHT — dashboard</title>
 <style>
   :root{
     --bg:#0b0b0d; --panel:#141417; --panel2:#1b1b1f; --line:#26262b;
@@ -84,7 +84,7 @@
 <div id="gate" class="wrap" hidden>
   <div class="signin">
     <div class="mark" style="justify-content:center;margin-bottom:26px">
-      <span class="bar"></span><span class="name">FORGE</span>
+      <span class="bar"></span><span class="name">WROUGHT</span>
     </div>
     <p style="color:var(--muted);font-size:14px;margin-bottom:22px">
       Sign in to see the charts. Same account your AI uses.
@@ -98,7 +98,7 @@
 <div id="app" hidden>
   <header>
     <div class="wrap top">
-      <div class="mark"><span class="bar"></span><span class="name">FORGE</span></div>
+      <div class="mark"><span class="bar"></span><span class="name">WROUGHT</span></div>
       <div class="ranges">
         <button class="range" data-days="7">7d</button>
         <button class="range on" data-days="30">30d</button>
@@ -109,7 +109,7 @@
   </header>
   <div class="wrap" id="content"></div>
   <footer>
-    FORGE is a training journal, not a medical device. Calories from described meals are estimates.
+    WROUGHT is a training journal, not a medical device. Calories from described meals are estimates.
   </footer>
 </div>
 
@@ -117,8 +117,8 @@
 import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm';
 
 // Injected at deploy time by a Netlify snippet, or set here for a local run.
-const SUPABASE_URL = window.FORGE_SUPABASE_URL || '';
-const SUPABASE_ANON = window.FORGE_SUPABASE_ANON || '';
+const SUPABASE_URL = window.WROUGHT_SUPABASE_URL || '';
+const SUPABASE_ANON = window.WROUGHT_SUPABASE_ANON || '';
 
 const sb = SUPABASE_URL ? createClient(SUPABASE_URL, SUPABASE_ANON) : null;
 const $ = id => document.getElementById(id);

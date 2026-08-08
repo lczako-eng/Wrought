@@ -5,7 +5,7 @@
 // Shortcut is already holding their phone and looking at a browser — making
 // them go back to a chat window to get the key is a small cruelty.
 
-import { supabase, getAuthUser, newToken, hashToken } from './lib/forge.js';
+import { supabase, getAuthUser, newToken, hashToken } from './lib/wrought.js';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -24,7 +24,7 @@ export const handler = async (event) => {
 
   // List — hashes only, never a plaintext key. There is no way to recover one.
   if (event.httpMethod === 'GET') {
-    const { data } = await supabase.from('forge_ingest_keys')
+    const { data } = await supabase.from('wrought_ingest_keys')
       .select('id, label, last_used_at, revoked, created_at')
       .eq('user_id', user.id).eq('revoked', false)
       .order('created_at', { ascending: false });
@@ -36,20 +36,20 @@ export const handler = async (event) => {
     try { body = JSON.parse(event.body || '{}'); } catch { /* defaults are fine */ }
 
     if (body.revoke_id) {
-      await supabase.from('forge_ingest_keys')
+      await supabase.from('wrought_ingest_keys')
         .update({ revoked: true }).eq('id', body.revoke_id).eq('user_id', user.id);
       return { statusCode: 200, headers: CORS, body: JSON.stringify({ revoked: true }) };
     }
 
     const token = newToken();
-    const { error } = await supabase.from('forge_ingest_keys').insert([{
+    const { error } = await supabase.from('wrought_ingest_keys').insert([{
       user_id: user.id,
       token_hash: hashToken(token),
       label: String(body.label || 'Apple Health').slice(0, 60),
     }]);
     if (error) return { statusCode: 500, headers: CORS, body: JSON.stringify({ error: error.message }) };
 
-    await supabase.from('forge_connections').upsert(
+    await supabase.from('wrought_connections').upsert(
       { user_id: user.id, provider: 'apple_health', mode: 'push', status: 'active' },
       { onConflict: 'user_id,provider' });
 

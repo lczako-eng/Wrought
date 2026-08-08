@@ -11,14 +11,14 @@
 // it. Every "Apple Health integration" you have ever seen is this, underneath.
 //
 // Accepts two body shapes, because the two realistic senders disagree:
-//   1. FORGE native  — {source, metrics: [{metric, value, unit, measured_at}], events: [...]}
+//   1. WROUGHT native  — {source, metrics: [{metric, value, unit, measured_at}], events: [...]}
 //   2. Health Auto Export — {data: {metrics: [{name, units, data: [{date, qty}]}]}}
 //
 // Writes are idempotent. A watch WILL re-send the same night's sleep four
 // times; the unique index plus ignoreDuplicates is what stops that becoming
 // four nights of sleep.
 
-import { supabase, hashToken, localDateFor, getProfile } from './lib/forge.js';
+import { supabase, hashToken, localDateFor, getProfile } from './lib/wrought.js';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -248,7 +248,7 @@ export const handler = async (event) => {
     return { statusCode: 401, headers: CORS, body: JSON.stringify({ error: 'missing_key' }) };
   }
 
-  const { data: key } = await supabase.from('forge_ingest_keys')
+  const { data: key } = await supabase.from('wrought_ingest_keys')
     .select('id, user_id, revoked').eq('token_hash', hashToken(auth.slice(7).trim())).maybeSingle();
 
   if (!key || key.revoked) {
@@ -303,7 +303,7 @@ export const handler = async (event) => {
     // ignoreDuplicates is the whole idempotency story — the unique index on
     // (user_id, source, metric, measured_at) does the deduping in the database
     // rather than in a read-then-write race up here.
-    const { data, error } = await supabase.from('forge_metrics')
+    const { data, error } = await supabase.from('wrought_metrics')
       .upsert(rows, { onConflict: 'user_id,source,metric,measured_at', ignoreDuplicates: true })
       .select('id');
     if (error) {
@@ -338,15 +338,15 @@ export const handler = async (event) => {
         estimated: !!e.estimated,
       };
     });
-    const { data, error } = await supabase.from('forge_events')
+    const { data, error } = await supabase.from('wrought_events')
       .upsert(eventRows, { onConflict: 'user_id,source,source_ref', ignoreDuplicates: true })
       .select('id');
     if (!error) eventsWritten = data?.length || 0;
   }
 
   await Promise.all([
-    supabase.from('forge_ingest_keys').update({ last_used_at: new Date().toISOString() }).eq('id', key.id),
-    supabase.from('forge_connections').upsert(
+    supabase.from('wrought_ingest_keys').update({ last_used_at: new Date().toISOString() }).eq('id', key.id),
+    supabase.from('wrought_connections').upsert(
       { user_id: userId, provider: source, mode: 'push', status: 'active', last_sync_at: new Date().toISOString() },
       { onConflict: 'user_id,provider' }),
   ]);

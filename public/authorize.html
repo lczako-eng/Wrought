@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Sign in with FORGE</title>
+<title>Sign in with WROUGHT</title>
 <style>
   :root{--bg:#0b0b0d;--panel:#141417;--line:#26262b;--text:#ececed;--muted:#8a8a93;--dim:#5c5c66;--ember:#ff5a1f;--ash:#b33d13}
   *{box-sizing:border-box}
@@ -33,10 +33,10 @@
 </head>
 <body>
 <div class="box">
-  <div class="mark"><span class="bar"></span><span class="name">FORGE</span></div>
+  <div class="mark"><span class="bar"></span><span class="name">WROUGHT</span></div>
   <div class="card">
     <h1>Connect your training memory</h1>
-    <p class="who"><b id="client">An AI assistant</b> wants to read and write your FORGE log.</p>
+    <p class="who"><b id="client">An AI assistant</b> wants to read and write your WROUGHT log.</p>
 
     <div id="form">
       <input id="email" type="email" placeholder="you@example.com" autocomplete="email">
@@ -56,8 +56,8 @@
 <script type="module">
 import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm';
 
-const SUPABASE_URL  = window.FORGE_SUPABASE_URL || '';
-const SUPABASE_ANON = window.FORGE_SUPABASE_ANON || '';
+const SUPABASE_URL  = window.WROUGHT_SUPABASE_URL || '';
+const SUPABASE_ANON = window.WROUGHT_SUPABASE_ANON || '';
 const sb = SUPABASE_URL ? createClient(SUPABASE_URL, SUPABASE_ANON) : null;
 
 const $ = id => document.getElementById(id);
@@ -74,7 +74,7 @@ const params = {
   state:                 q.get('state'),
 };
 
-const STASH = 'forge_oauth_request';
+const STASH = 'wrought_oauth_request';
 if (params.client_id) sessionStorage.setItem(STASH, JSON.stringify(params));
 
 function request() {

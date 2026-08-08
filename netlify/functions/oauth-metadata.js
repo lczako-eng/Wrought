@@ -7,7 +7,7 @@
 // generic "could not connect" that tells you nothing. A function guarantees
 // the header and the CORS.
 
-import { SITE_URL } from './lib/forge.js';
+import { SITE_URL } from './lib/wrought.js';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -31,9 +31,9 @@ export const handler = async (event) => {
     ? {
         resource: `${base}/mcp`,
         authorization_servers: [base],
-        scopes_supported: ['forge'],
+        scopes_supported: ['wrought'],
         bearer_methods_supported: ['header'],
-        resource_name: 'FORGE',
+        resource_name: 'WROUGHT',
         resource_documentation: `${base}/connect.html`,
       }
     : {
@@ -41,7 +41,7 @@ export const handler = async (event) => {
         authorization_endpoint: `${base}/authorize.html`,
         token_endpoint: `${base}/oauth/token`,
         registration_endpoint: `${base}/oauth/register`,
-        scopes_supported: ['forge'],
+        scopes_supported: ['wrought'],
         response_types_supported: ['code'],
         grant_types_supported: ['authorization_code', 'refresh_token'],
         // PKCE is not optional here. These are public clients — a desktop app

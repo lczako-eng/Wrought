@@ -2,7 +2,7 @@
 // The dashboard's data endpoint.
 //
 // This exists so the web charts and the MCP brief cannot disagree. Both call
-// into lib/forge.js and both get the same arithmetic. If the dashboard drew its
+// into lib/wrought.js and both get the same arithmetic. If the dashboard drew its
 // own averages in JavaScript, the day would come when the chart says 151g of
 // protein and the nightly verdict says 148, and on that day nobody believes
 // either one again.
@@ -11,7 +11,7 @@ import {
   getAuthUser, getProfile, getGoals, getWindow, windowStatus,
   localDateFor, addDays, humanDuration, kgToLb,
   rangeFacts, summariseRange, dayFacts, careFlags, scoreGoals, supabase,
-} from './lib/forge.js';
+} from './lib/wrought.js';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -48,7 +48,7 @@ export const handler = async (event) => {
 
   // Latest verdict, so the dashboard shows the same words the assistant said
   // rather than generating a second, subtly different opinion.
-  const { data: brief } = await supabase.from('forge_briefs')
+  const { data: brief } = await supabase.from('wrought_briefs')
     .select('local_date, kind, verdict').eq('user_id', user.id)
     .order('local_date', { ascending: false }).limit(1).maybeSingle();
 
