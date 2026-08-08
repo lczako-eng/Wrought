@@ -1,0 +1,188 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FORGE — the trainer that lives inside your AI</title>
+<meta name="description" content="Stop re-explaining yourself to a new chat every morning. FORGE remembers what you ate, what you lifted and what the scale said — and gives you an honest read every night.">
+<meta property="og:title" content="FORGE — the trainer that lives inside your AI">
+<meta property="og:description" content="One sentence a day. It remembers the rest.">
+<style>
+  :root{
+    --bg:#0b0b0d; --panel:#141417; --line:#26262b;
+    --text:#ececed; --muted:#8a8a93;
+    --ember:#ff5a1f; --ash:#b33d13;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0}
+  body{
+    background:var(--bg); color:var(--text);
+    font:16px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Roboto,Helvetica,Arial,sans-serif;
+    -webkit-font-smoothing:antialiased;
+  }
+  a{color:inherit}
+  .wrap{max-width:960px;margin:0 auto;padding:0 24px}
+
+  /* The mark: a bar under heat. The gradient is the point — cold steel on the
+     left, working temperature on the right. */
+  header{padding:80px 0 0}
+  .mark{display:flex;align-items:center;gap:14px;margin-bottom:56px}
+  .mark .bar{width:52px;height:6px;border-radius:3px;
+    background:linear-gradient(90deg,#3a3a40 0%,var(--ash) 55%,var(--ember) 100%);
+    box-shadow:0 0 24px rgba(255,90,31,.45)}
+  .mark .name{font-weight:700;letter-spacing:.34em;font-size:14px}
+
+  h1{font-size:clamp(38px,7vw,72px);line-height:1.03;letter-spacing:-.03em;margin:0 0 24px;font-weight:700}
+  h1 .hot{color:var(--ember)}
+  .lede{font-size:clamp(17px,2.4vw,21px);color:var(--muted);max-width:620px;margin:0 0 40px}
+
+  .cta{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:96px}
+  .btn{display:inline-block;padding:13px 22px;border-radius:8px;text-decoration:none;
+    font-weight:600;font-size:15px;border:1px solid transparent;transition:.15s}
+  .btn.primary{background:var(--ember);color:#120600}
+  .btn.primary:hover{background:#ff7440}
+  .btn.ghost{border-color:var(--line);color:var(--text)}
+  .btn.ghost:hover{border-color:#3d3d45}
+
+  /* The demo transcript carries the pitch better than any paragraph could:
+     one sentence in, a real read out. */
+  .demo{background:var(--panel);border:1px solid var(--line);border-radius:14px;
+    padding:26px 24px;margin-bottom:96px;font-size:15px}
+  .turn{margin:0 0 18px}
+  .turn:last-child{margin-bottom:0}
+  .who{font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--muted);margin-bottom:7px}
+  .you{color:var(--text)}
+  .forge{color:var(--text);border-left:2px solid var(--ember);padding-left:16px}
+  .forge .num{color:var(--ember);font-variant-numeric:tabular-nums}
+
+  section{padding:0 0 96px}
+  h2{font-size:clamp(24px,3.6vw,34px);letter-spacing:-.02em;margin:0 0 18px;font-weight:700}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:22px;margin-top:40px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:22px}
+  .card h3{margin:0 0 9px;font-size:16px;font-weight:650}
+  .card p{margin:0;color:var(--muted);font-size:14.5px}
+
+  .quiet{color:var(--muted);max-width:640px}
+  .quiet strong{color:var(--text);font-weight:600}
+
+  footer{border-top:1px solid var(--line);padding:36px 0 64px;color:var(--muted);font-size:13.5px}
+  footer a{color:var(--muted)}
+  footer a:hover{color:var(--text)}
+  .disclaimer{margin-top:14px;font-size:12.5px;line-height:1.55;max-width:640px}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="wrap">
+    <div class="mark"><span class="bar"></span><span class="name">FORGE</span></div>
+    <h1>You keep telling a<br>new chat <span class="hot">who you are.</span></h1>
+    <p class="lede">
+      Every morning, a blank page. What you ate yesterday, what you lifted, what the
+      scale said — all of it typed out again to something that will forget it by
+      lunchtime. FORGE is the memory that doesn't close with the tab, and the only
+      thing in your life willing to tell you the truth about the week you just had.
+    </p>
+    <div class="cta">
+      <a class="btn primary" href="/connect.html">Connect it to your AI</a>
+      <a class="btn ghost" href="/app.html">See the dashboard</a>
+    </div>
+  </div>
+</header>
+
+<div class="wrap">
+  <div class="demo">
+    <div class="turn">
+      <div class="who">You, 8:14am, one hand on the kettle</div>
+      <div class="you">two eggs and black coffee, 182 on the scale</div>
+    </div>
+    <div class="turn">
+      <div class="who">You, 7:40pm</div>
+      <div class="you">pushed 40 minutes upper body, bench 3x8 at 80</div>
+    </div>
+    <div class="turn">
+      <div class="who">FORGE, 10pm</div>
+      <div class="forge">
+        Roughly <span class="num">2,140</span> calories and <span class="num">148g</span>
+        of protein — you hit protein for the fourth day running, which is the longest
+        you've held it. Bench moved: <span class="num">80kg</span> for three sets of
+        eight is up from 77.5 a fortnight ago. You haven't trained legs in
+        <span class="num">19 days</span> and it's starting to show in the volume.
+        Weight's trending down about <span class="num">0.4kg</span> a week, which is
+        the right speed. Tomorrow is legs. No more negotiating with yourself about it.
+      </div>
+    </div>
+  </div>
+</div>
+
+<section class="wrap">
+  <h2>One sentence a day.<br>It remembers the rest.</h2>
+  <p class="quiet">
+    No forms. No weighing your rice in grams. No app to open and abandon by February.
+    You say what you did the way you'd say it to a person, and it files it — food broken
+    into macros, lifts into sets and loads, the scale into a trend rather than a number
+    to panic about.
+  </p>
+
+  <div class="grid">
+    <div class="card">
+      <h3>It lives where you already are</h3>
+      <p>ChatGPT, Claude, or anything else that speaks MCP. Not another icon on your
+         home screen — the assistant you already talk to every day, with a memory bolted on.</p>
+    </div>
+    <div class="card">
+      <h3>The verdict, every night</h3>
+      <p>What happened, what you got right, what you got wrong with the number attached,
+         and the one thing to do tomorrow. You choose how hard it hits: gentle, honest, or brutal.</p>
+    </div>
+    <div class="card">
+      <h3>Your watch fills in the rest</h3>
+      <p>Sleep, steps, resting heart rate and weight arrive on their own overnight.
+         Apple Watch works today through a free Shortcut. Rings and straps are next.</p>
+    </div>
+    <div class="card">
+      <h3>Progression you can actually see</h3>
+      <p>Weight as a trend line, not a daily scare. Volume per session. A muscle-by-week
+         matrix that shows the gap where legs used to be, without anyone having to say it.</p>
+    </div>
+    <div class="card">
+      <h3>Snacking is a time problem</h3>
+      <p>Nobody eats 900 calories of crisps at 2pm. Set the hours you eat between and
+         it counts down to them, instead of lecturing you at the fridge door.</p>
+    </div>
+    <div class="card">
+      <h3>It remembers the awkward parts</h3>
+      <p>The knee that goes below parallel. The month you travel. The fact that you will
+         never, ever go running. Said once, honoured forever.</p>
+    </div>
+  </div>
+</section>
+
+<section class="wrap">
+  <h2>Honest, not cruel.</h2>
+  <p class="quiet">
+    The whole point is a thing that won't flatter you — so it names the 3,400-calorie day
+    and the three weeks you skipped legs, with the numbers attached. But it is hard on the
+    <strong>behaviour</strong>, never on you. It will not comment on your body. It will not
+    shame you. And if the log starts looking like someone eating too little or dropping
+    weight too fast, it stops coaching entirely and says so plainly — no framing, no
+    workaround, no matter who asks.
+  </p>
+</section>
+
+<footer>
+  <div class="wrap">
+    <div class="mark" style="margin-bottom:20px"><span class="bar"></span><span class="name">FORGE</span></div>
+    <a href="/connect.html">Connect</a> · <a href="/app.html">Dashboard</a> ·
+    <a href="https://github.com/lczako-eng/forge">Source</a>
+    <p class="disclaimer">
+      FORGE is a training and nutrition journal. It is not a medical device, it does not
+      diagnose anything, and it is not a substitute for a doctor or a dietitian. Calories
+      inferred from a described meal are estimates and are always labelled as such.
+      © 2026 Laszlo Czako.
+    </p>
+  </div>
+</footer>
+
+</body>
+</html>

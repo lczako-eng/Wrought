@@ -1,0 +1,272 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FORGE — connect</title>
+<meta name="description" content="Connect FORGE to ChatGPT or Claude, and get your Apple Watch feeding it automatically.">
+<style>
+  :root{--bg:#0b0b0d;--panel:#141417;--panel2:#1b1b1f;--line:#26262b;
+    --text:#ececed;--muted:#8a8a93;--dim:#5c5c66;--ember:#ff5a1f;--ash:#b33d13;--warn:#e8b64c}
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0}
+  body{background:var(--bg);color:var(--text);
+    font:15.5px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Roboto,Helvetica,Arial,sans-serif;
+    -webkit-font-smoothing:antialiased}
+  .wrap{max-width:760px;margin:0 auto;padding:0 22px}
+  a{color:var(--ember)}
+  header{padding:44px 0 34px}
+  .mark{display:flex;align-items:center;gap:12px;margin-bottom:34px}
+  .mark .bar{width:44px;height:5px;border-radius:3px;
+    background:linear-gradient(90deg,#3a3a40,var(--ash) 55%,var(--ember));box-shadow:0 0 20px rgba(255,90,31,.4)}
+  .mark .name{font-weight:700;letter-spacing:.3em;font-size:13px}
+  h1{font-size:clamp(28px,5vw,40px);letter-spacing:-.025em;margin:0 0 12px;font-weight:700}
+  .lede{color:var(--muted);margin:0 0 8px;font-size:17px}
+  h2{font-size:20px;letter-spacing:-.015em;margin:52px 0 6px;font-weight:660}
+  h3{font-size:15px;margin:28px 0 6px;font-weight:640}
+  p{margin:0 0 14px}
+  .muted{color:var(--muted)}
+  code{background:var(--panel2);border:1px solid var(--line);border-radius:5px;
+    padding:2px 6px;font-size:13.5px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
+    word-break:break-all}
+  pre{background:var(--panel);border:1px solid var(--line);border-radius:10px;
+    padding:16px;overflow-x:auto;font-size:13px;line-height:1.55;
+    font-family:ui-monospace,SFMono-Regular,Menlo,monospace;color:#cfcfd4}
+  ol{padding-left:20px;margin:0 0 14px}
+  li{margin-bottom:9px}
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:22px;margin:20px 0}
+  .note{background:rgba(232,182,76,.08);border:1px solid rgba(232,182,76,.3);
+    border-radius:10px;padding:15px 17px;margin:20px 0;font-size:14.5px}
+  .note b{color:var(--warn)}
+  button{padding:11px 18px;border-radius:8px;border:none;background:var(--ember);
+    color:#120600;font-weight:640;font-size:14.5px;cursor:pointer;font-family:inherit}
+  button.ghost{background:transparent;border:1px solid var(--line);color:var(--text)}
+  input{width:100%;padding:11px 13px;border-radius:8px;border:1px solid var(--line);
+    background:var(--panel2);color:var(--text);font-size:15px;font-family:inherit;margin-bottom:10px}
+  .keybox{background:#0d0d10;border:1px solid var(--ember);border-radius:9px;padding:14px;
+    font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13px;
+    word-break:break-all;margin:12px 0}
+  .msg{color:var(--muted);font-size:13.5px;min-height:20px;margin-top:10px}
+  footer{border-top:1px solid var(--line);margin-top:60px;padding:28px 0 60px;
+    color:var(--dim);font-size:12.5px}
+</style>
+</head>
+<body>
+
+<header class="wrap">
+  <div class="mark"><span class="bar"></span><span class="name">FORGE</span></div>
+  <h1>Connect it</h1>
+  <p class="lede">Two things to set up. The AI takes a minute; the watch takes two.</p>
+</header>
+
+<div class="wrap">
+
+  <h2>1 · Put FORGE inside your AI</h2>
+  <p class="muted">
+    FORGE is an MCP server, which means any assistant that speaks MCP can use it — you
+    add one URL and sign in once. After that it is simply there, in every conversation,
+    forever.
+  </p>
+
+  <div class="panel">
+    <h3 style="margin-top:0">The URL</h3>
+    <p><code id="mcpurl">https://forge.fit/mcp</code></p>
+
+    <h3>ChatGPT</h3>
+    <ol>
+      <li>Settings → Connectors → Add custom connector.</li>
+      <li>Paste the URL above. Leave authentication as OAuth.</li>
+      <li>Sign in when the FORGE page appears. That is the only time you will see it.</li>
+    </ol>
+
+    <h3>Claude</h3>
+    <ol>
+      <li>Settings → Connectors → Add custom connector.</li>
+      <li>Paste the URL. Claude registers itself and opens the sign-in.</li>
+    </ol>
+
+    <h3>Anything else</h3>
+    <p class="muted" style="margin:0">
+      Any MCP client works — the server advertises OAuth 2.1 with dynamic client
+      registration at <code>/.well-known/oauth-authorization-server</code>, so a
+      conforming client needs nothing but the URL.
+    </p>
+  </div>
+
+  <p class="muted">Then just talk to it:</p>
+  <pre>"eggs and black coffee, 182 on the scale"
+"pushed 40 minutes upper body, bench 3x8 at 80"
+"how's the month looking?"
+"what should I eat, I've got 20 minutes"
+"my left knee goes if I squat below parallel"   ← said once, remembered forever</pre>
+
+  <h2>2 · Let your watch do the boring half</h2>
+  <p class="muted">
+    Sleep, steps, resting heart rate and weight should not be things you type. Connect a
+    device and they arrive on their own overnight.
+  </p>
+
+  <div class="note">
+    <b>Why Apple works differently.</b> Apple Health has no cloud API — there is no
+    entitlement, no partner programme and no price at which any server can read an Apple
+    Watch. The data lives on your phone and leaves only if your phone sends it. So instead
+    of us reading your watch, your phone pushes to us once a night. Every "Apple Health
+    integration" you have ever used is this underneath; most of them just do not say so.
+  </div>
+
+  <div class="panel" id="keypanel">
+    <h3 style="margin-top:0">Get your device key</h3>
+    <p class="muted" id="keyintro">Sign in to mint a key for this phone.</p>
+    <div id="signin">
+      <input id="email" type="email" placeholder="you@example.com" autocomplete="email">
+      <button id="send">Email me a link</button>
+    </div>
+    <div id="minter" hidden>
+      <button id="mint">Generate a key</button>
+      <button class="ghost" id="list">Show existing keys</button>
+    </div>
+    <div id="keyout"></div>
+    <p class="msg" id="msg"></p>
+  </div>
+
+  <h3>Option A — the Shortcut (free, five taps)</h3>
+  <ol>
+    <li>Open <b>Shortcuts</b> on the iPhone → Automation → new <b>Personal Automation</b>.</li>
+    <li>Trigger: <b>Time of Day</b> → 11:00 pm → <b>Run Immediately</b>.</li>
+    <li>Add <b>Find Health Samples</b>. Set it to Steps, today. Repeat the action for
+        Sleep Analysis, Resting Heart Rate, Heart Rate Variability, Active Energy and Body Mass.</li>
+    <li>Add <b>Get Contents of URL</b>, method <b>POST</b>, pointed at <code id="ingesturl">https://forge.fit/ingest</code>.</li>
+    <li>Headers: <code>Authorization: Bearer YOUR_KEY</code> and <code>Content-Type: application/json</code>.</li>
+    <li>Request body → JSON, in this shape:</li>
+  </ol>
+
+<pre>{
+  "source": "apple_health",
+  "metrics": [
+    { "metric": "steps",         "value": 8412, "unit": "count", "measured_at": "2026-08-08T23:00:00Z" },
+    { "metric": "sleep_minutes", "value": 402,  "unit": "min",   "measured_at": "2026-08-08T07:00:00Z" },
+    { "metric": "resting_hr",    "value": 54,   "unit": "bpm",   "measured_at": "2026-08-08T07:00:00Z" },
+    { "metric": "weight_kg",     "value": 82.6, "unit": "kg",    "measured_at": "2026-08-08T07:15:00Z" }
+  ]
+}</pre>
+
+  <p class="muted">
+    Run it once to check, then forget about it. Re-sending the same night twice is
+    harmless — duplicates are dropped on arrival, so a Shortcut that fires twice never
+    doubles your sleep.
+  </p>
+
+  <h3>Option B — Health Auto Export (no building)</h3>
+  <p class="muted">
+    The <b>Health Auto Export</b> app on the App Store posts the same data on a schedule
+    with nothing to assemble. Point its REST endpoint at <code>/ingest</code>, add the same
+    <code>Authorization: Bearer</code> header, and FORGE understands its format natively.
+  </p>
+
+  <h3>Rings, straps and scales</h3>
+  <p class="muted">
+    Oura, Whoop, Fitbit, Garmin and Withings all have real cloud APIs and will connect
+    over OAuth — those are a build item here, not something waiting on you.
+    In the meantime, most of them write into Apple Health on the iPhone, which means the
+    Shortcut above already picks their data up today.
+  </p>
+
+  <h2>Your data</h2>
+  <p class="muted">
+    Everything lives in one Supabase database with row-level security, so your rows are
+    reachable only by you. A device key can write health data and nothing else — it cannot
+    read anything back and cannot touch your login. Revoke a key here and the phone using
+    it stops working immediately. Delete your account and the rows go with it.
+  </p>
+</div>
+
+<footer class="wrap">
+  <a href="/">Home</a> · <a href="/app.html">Dashboard</a> ·
+  <a href="https://github.com/lczako-eng/forge">Source</a><br><br>
+  FORGE is a training and nutrition journal. It is not a medical device and does not
+  diagnose anything.
+</footer>
+
+<script type="module">
+import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm';
+
+const SUPABASE_URL  = window.FORGE_SUPABASE_URL || '';
+const SUPABASE_ANON = window.FORGE_SUPABASE_ANON || '';
+const sb = SUPABASE_URL ? createClient(SUPABASE_URL, SUPABASE_ANON) : null;
+
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+// The deployed origin is the truth, so the copyable URLs are right on any
+// preview deploy without anybody editing this file.
+$('mcpurl').textContent    = `${location.origin}/mcp`;
+$('ingesturl').textContent = `${location.origin}/ingest`;
+
+let token = null;
+
+async function boot() {
+  if (!sb) { $('msg').textContent = 'This deploy is missing its Supabase keys.'; return; }
+  const { data } = await sb.auth.getSession();
+  if (data.session) signedIn(data.session.access_token);
+}
+
+function signedIn(t) {
+  token = t;
+  $('signin').hidden = true;
+  $('minter').hidden = false;
+  $('keyintro').textContent = 'Generate a key for each phone. The key is shown once and cannot be recovered.';
+}
+
+$('send').addEventListener('click', async () => {
+  const email = $('email').value.trim();
+  if (!email) return;
+  $('msg').textContent = 'Sending…';
+  const { error } = await sb.auth.signInWithOtp({ email, options: { emailRedirectTo: location.href } });
+  $('msg').textContent = error ? error.message : 'Check your email — the link brings you back here signed in.';
+});
+
+sb?.auth.onAuthStateChange((_e, session) => { if (session) signedIn(session.access_token); });
+
+$('mint').addEventListener('click', async () => {
+  $('msg').textContent = 'Generating…';
+  const res = await fetch('/.netlify/functions/api-key', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ label: 'Apple Health' }),
+  });
+  const out = await res.json();
+  if (!res.ok) { $('msg').textContent = out.error || 'Could not generate a key.'; return; }
+
+  $('keyout').innerHTML = `<div class="keybox">${esc(out.key)}</div>
+    <p class="msg">Copy this now — it is stored hashed and will never be shown again.
+    Paste it into the Shortcut's Authorization header as <code>Bearer ${esc(out.key.slice(0, 8))}…</code></p>`;
+  $('msg').textContent = '';
+});
+
+$('list').addEventListener('click', async () => {
+  const res = await fetch('/.netlify/functions/api-key', { headers: { Authorization: `Bearer ${token}` } });
+  const out = await res.json();
+  const keys = out.keys || [];
+  $('keyout').innerHTML = keys.length
+    ? `<p class="msg">${keys.length} active key${keys.length === 1 ? '' : 's'}:</p>` +
+      keys.map(k => `<div class="keybox" style="border-color:var(--line)">
+        ${esc(k.label)} · created ${esc(k.created_at.slice(0, 10))} ·
+        ${k.last_used_at ? `last used ${esc(k.last_used_at.slice(0, 10))}` : 'never used'}
+        <button class="ghost" style="float:right;padding:4px 10px;font-size:12px"
+          data-revoke="${esc(k.id)}">Revoke</button></div>`).join('')
+    : '<p class="msg">No active keys.</p>';
+
+  $('keyout').querySelectorAll('[data-revoke]').forEach(b => b.addEventListener('click', async () => {
+    await fetch('/.netlify/functions/api-key', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ revoke_id: b.dataset.revoke }),
+    });
+    $('list').click();
+  }));
+});
+
+boot();
+</script>
+</body>
+</html>

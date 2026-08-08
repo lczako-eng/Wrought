@@ -1,0 +1,75 @@
+[build]
+  publish = "public"
+
+[functions]
+  directory = "netlify/functions"
+  node_bundler = "esbuild"
+
+# The MCP endpoint — the whole product, as far as an AI client is concerned.
+[[redirects]]
+  from = "/mcp"
+  to = "/.netlify/functions/mcp"
+  status = 200
+
+# The device door. Apple Shortcuts and Health Auto Export post here.
+[[redirects]]
+  from = "/ingest"
+  to = "/.netlify/functions/ingest"
+  status = 200
+
+# OAuth 2.1 — what makes "Sign in with Forge" appear inside ChatGPT and Claude.
+[[redirects]]
+  from = "/oauth/token"
+  to = "/.netlify/functions/oauth-token"
+  status = 200
+
+[[redirects]]
+  from = "/oauth/register"
+  to = "/.netlify/functions/oauth-register"
+  status = 200
+
+[[redirects]]
+  from = "/oauth/authorize-complete"
+  to = "/.netlify/functions/oauth-authorize-complete"
+  status = 200
+
+# Discovery metadata is served by a function rather than as static files:
+# extensionless files under /.well-known/ get an unreliable Content-Type from
+# static hosting, and a client that receives text/plain here fails discovery
+# with a generic connection error that tells nobody anything.
+[[redirects]]
+  from = "/.well-known/oauth-protected-resource"
+  to = "/.netlify/functions/oauth-metadata"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/.well-known/oauth-protected-resource/*"
+  to = "/.netlify/functions/oauth-metadata"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/.well-known/oauth-authorization-server"
+  to = "/.netlify/functions/oauth-metadata"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/.well-known/oauth-authorization-server/*"
+  to = "/.netlify/functions/oauth-metadata"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/.well-known/openid-configuration"
+  to = "/.netlify/functions/oauth-metadata"
+  status = 200
+  force = true
+
+[[headers]]
+  for = "/*.html"
+  [headers.values]
+    Cache-Control = "public, max-age=0, must-revalidate"
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "strict-origin-when-cross-origin"
