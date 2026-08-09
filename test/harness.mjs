@@ -23,7 +23,7 @@ import {
   localDateFor, addDays, daysBetween, clockString, humanDuration,
   kgToLb, lbToKg, cmToIn, inToCm, sayWeight,
   windowStatus, weightTrend, trainingMatrix, summariseRange, careFlags, scoreGoals,
-  eventsFromClient, fastLength, fastingSummary, needsMacros,
+  eventsFromClient, fastLength, fastingSummary, needsMacros, matchEntries,
 } from '../netlify/functions/lib/wrought.js';
 
 let passed = 0, failed = 0;
@@ -1162,6 +1162,52 @@ await test('the five facts are asked once, together, and never as an opener', ()
   assert.match(SERVER_INSTRUCTIONS, /ONE short message/);
   assert.match(SERVER_INSTRUCTIONS, /never ask one at a time/i);
   assert.match(SERVER_INSTRUCTIONS, /never open a conversation with it/i);
+});
+
+group('Retracting something that did not happen');
+
+const LOGGED = [
+  { id: 1, summary: 'large pepperoni pizza', raw_input: 'I ordered a large pepperoni pizza' },
+  { id: 2, summary: '182 lb', raw_input: '182 on the scale' },
+  { id: 3, summary: '40 minutes upper body', raw_input: 'pushed 40 minutes upper body' },
+  { id: 4, summary: 'two slices of pizza', raw_input: 'had two slices of pizza' },
+];
+
+await test('naming a thing finds that entry, not the newest', () => {
+  const hits = matchEntries(LOGGED, 'the upper body session');
+  assert.equal(hits.length, 1);
+  assert.equal(hits[0].id, 3);
+});
+
+await test('the filler in "I didn\'t actually eat the pizza" is ignored', () => {
+  const hits = matchEntries(LOGGED, "I didn't actually eat the pizza");
+  // Both pizza entries match, which is correct — two things really do match.
+  assert.equal(hits.length, 2);
+});
+
+await test('ambiguity returns everything rather than picking one', () => {
+  assert.equal(matchEntries(LOGGED, 'pizza').length, 2);
+  assert.equal(matchEntries(LOGGED, 'pepperoni pizza').length, 1);
+});
+
+await test('no match is no match — never a silent fallback to the newest', () => {
+  assert.equal(matchEntries(LOGGED, 'the curry').length, 0);
+  assert.equal(matchEntries(LOGGED, 'take that off').length, 0,
+    'all-filler input must match nothing rather than everything');
+  assert.equal(matchEntries(LOGGED, '').length, 0);
+});
+
+await test('the tool refuses to guess, and says why', () => {
+  const t = TOOLS.find(x => x.name === 'undo_last');
+  assert.ok(t.inputSchema.properties.match, 'undo_last needs targeted retraction');
+  assert.equal(t.annotations.destructiveHint, true);
+  assert.match(t.inputSchema.properties.match.description, /nothing is deleted/i);
+});
+
+await test('retraction phrasings are in the phrasebook', () => {
+  for (const phrase of ['scratch that', "I didn't actually eat it", 'that never happened', 'I was testing']) {
+    assert.ok(SERVER_INSTRUCTIONS.toLowerCase().includes(phrase.toLowerCase()), phrase);
+  }
 });
 
 group('The phrasebook');

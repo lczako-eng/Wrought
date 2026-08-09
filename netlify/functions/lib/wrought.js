@@ -787,6 +787,35 @@ export function needsMacros(written = [], events = []) {
   return out;
 }
 
+// Finding the entry somebody means when they say "take the pizza off". Deleting
+// is the one thing that cannot be undone, so this is deliberately literal: every
+// meaningful word in what they said has to appear in the entry. Better to come
+// back with nothing and ask than to quietly remove the wrong dinner.
+export function matchEntries(rows = [], query = '') {
+  const stop = new Set(['the', 'that', 'this', 'and', 'for', 'was', 'were', 'from',
+    'with', 'take', 'off', 'out', 'remove', 'delete', 'undo', 'retract', 'scratch',
+    'log', 'logged', 'entry', 'actually', 'didnt', 'did', 'not', 'eat', 'ate', 'had']);
+
+  const words = String(query).toLowerCase()
+    .replace(/['’]/g, '')                   // didn't → didnt, so the stop list catches it
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .split(/\s+/).filter(w => w.length > 2 && !stop.has(w));
+  if (!words.length) return [];
+
+  // Best overlap wins, rather than demanding every word appear. People describe
+  // an entry loosely — "the upper body session" against "40 minutes upper body"
+  // — and requiring all of it matches nothing. Ties come back as ties, which is
+  // what makes the caller stop and ask instead of guessing.
+  const scored = rows.map(r => {
+    const hay = `${r.summary || ''} ${r.raw_input || ''}`.toLowerCase();
+    return { row: r, score: words.filter(w => hay.includes(w)).length };
+  }).filter(s => s.score > 0);
+
+  if (!scored.length) return [];
+  const best = Math.max(...scored.map(s => s.score));
+  return scored.filter(s => s.score === best).map(s => s.row);
+}
+
 export async function parseLog(text, profile) {
   const fallback = () => ({
     events: [{

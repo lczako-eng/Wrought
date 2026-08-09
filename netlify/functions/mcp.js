@@ -21,7 +21,7 @@ import {
   sayWeight, sayWeightDelta, sayLength, lbToKg, inToCm, kgToLb,
   getProfile, getMemory, getGoals, getWindow, windowStatus,
   dayFacts, rangeFacts, summariseRange, scoreGoals, careFlags,
-  parseLog, eventsFromClient, needsMacros, insertEvents, writeVerdict, rememberFact,
+  parseLog, eventsFromClient, needsMacros, matchEntries, insertEvents, writeVerdict, rememberFact,
   fastLength, fastingSummary,
 } from './lib/wrought.js';
 import { PROVIDERS, providerSummary, recommendRoute } from './lib/providers.js';
@@ -79,6 +79,7 @@ HOW PEOPLE ACTUALLY ASK. Nobody says "call the brief tool". They say one of a hu
   start_session — "let's go", "starting now", "at the gym", "leg day", "chest day", "I'm at the rack", "warmed up"
   log_set — "done", "got it", "got 8", "8 at 225", "that's up", "failed at 5", "couldn't finish", "one more in the tank"
   recall / search_log — "what did I do last Tuesday", "have I had this before", "when did I last", "find", "look up", "what was my best"
+  undo_last — "scratch that", "take that off", "I didn't actually eat it", "never mind", "that never happened", "I was testing", "it never turned up", "delete the pizza", "remove that", "I changed my mind"
   earned_room — "have I earned it", "can I afford it", "do I have room", "treat"
 
 A GREETING IN THAT REGISTER IS A REQUEST, NOT SMALL TALK. "Hey jim bro", "gym bro", "morning", "coach" and the rest are not openers to be answered conversationally — they are the user asking for their read. CALL THE TOOL FIRST and lead with what comes back. Never reply "hey bro, what's up?" and wait: they already told you what's up. If genuinely nothing is logged yet, still call brief and say that, rather than making them ask twice.
@@ -430,11 +431,15 @@ const TOOLS = [
   },
   {
     name: 'undo_last',
-    title: 'Undo a mis-logged entry',
-    description: 'Deletes the most recent entries. Voice logging mishears constantly — "burrito" becomes "burrata" — so offer this the moment a log echo looks wrong, and never argue with the correction.',
+    title: 'Retract something that did not happen',
+    description: 'Removes an entry from the record. Two uses, both common. First, voice logging mishears constantly — "burrito" becomes "burrata" — so offer this the moment a log echo looks wrong and never argue with the correction. Second, plans change: "I ordered a pizza" then it never arrived, or they were only testing, or they said it and did not do it. Pass match with what they want gone — "the pizza" — and it finds that specific entry rather than blindly removing the newest, which would take the wrong thing when other stuff was logged after it. With nothing passed it removes the most recent entry.',
     inputSchema: {
       type: 'object',
-      properties: { count: { type: 'integer', description: 'How many of the most recent entries to remove. Default 1, max 10.' } },
+      properties: {
+        match: { type: 'string', description: 'What to retract, in their words — "the pizza", "the run". Finds that entry specifically. If several could match, nothing is deleted and the candidates come back for them to choose from.' },
+        date:  { type: 'string', description: 'YYYY-MM-DD to search. Defaults to today.' },
+        count: { type: 'integer', description: 'Only when no match is given: how many of the most recent entries to remove. Default 1, max 10.' },
+      },
     },
     annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
   },
@@ -787,6 +792,53 @@ async function amendLast(args, user) {
 }
 
 async function undoLast(args, user) {
+  // Naming what to retract is the common case once anything else has been
+  // logged since — "take the pizza off" must not remove the weigh-in that
+  // happened afterwards.
+  if (args.match) {
+    const profile = await getProfile(user.id);
+    const day = /^\d{4}-\d{2}-\d{2}$/.test(String(args.date || ''))
+      ? args.date : localDateFor(profile.timezone);
+
+    const { data: rows } = await supabase.from('wrought_events')
+      .select('id, summary, event_type, raw_input, local_date')
+      .eq('user_id', user.id).eq('local_date', day)
+      .order('created_at', { ascending: false }).limit(60);
+
+    const hits = matchEntries(rows || [], args.match);
+
+    if (!hits.length) {
+      return {
+        removed: 0,
+        candidates: (rows || []).slice(0, 8).map(r => r.summary),
+        say: `Nothing on ${day} matches "${args.match}".`,
+        note: 'Do NOT fall back to deleting the most recent entry. Show them what is logged for that day and let them name the one they meant.',
+      };
+    }
+
+    // Ambiguity is a reason to stop, not to guess. Deleting is the one action
+    // with no undo behind it.
+    if (hits.length > 1) {
+      return {
+        removed: 0,
+        candidates: hits.map(h => ({ summary: h.summary, type: h.event_type })),
+        say: `${hits.length} entries match "${args.match}": ${hits.map(h => h.summary).join('; ')}.`,
+        note: 'Nothing was deleted. Ask which one they mean and call again with a more specific match.',
+      };
+    }
+
+    const { error } = await supabase.from('wrought_events').delete().eq('id', hits[0].id);
+    if (error) return { error: error.message };
+
+    return {
+      removed: 1,
+      entries: [hits[0].summary],
+      say: `Removed "${hits[0].summary}". It never happened.`,
+      note: 'Acknowledge in one short line. Never question why — a person saying they did not eat something is the end of it.',
+      next_actions: ['brief for the day\'s read'],
+    };
+  }
+
   const count = Math.min(Math.max(parseInt(args.count, 10) || 1, 1), 10);
   const { data: recent } = await supabase.from('wrought_events')
     .select('id, summary, event_type')
