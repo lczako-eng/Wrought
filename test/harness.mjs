@@ -17,7 +17,7 @@ import { MOVEMENTS, PROGRAMMES, PATTERNS, movementsFor, pickProgramme, buildProg
 import {
   exerciseKey, loadStep, progressionCall, TIERS,
   restingBurn, energyBalance, planFromRoutine, sessionTotals, earnedRoom,
-  orderPlan, orderInsight, deviceMatrix, weekdayPattern, ACTIVITY,
+  orderPlan, orderInsight, deviceMatrix, weekdayPattern, ACTIVITY, focusCall,
 } from '../netlify/functions/lib/training.js';
 import {
   localDateFor, addDays, daysBetween, clockString, humanDuration,
@@ -1192,6 +1192,50 @@ await test('nothing missing and a target set means silence', () => {
 await test('the instructions forbid the plausible substitute', () => {
   assert.match(SERVER_INSTRUCTIONS, /NEVER SUBSTITUTE A PLAUSIBLE NUMBER/);
   assert.match(SERVER_INSTRUCTIONS, /wearing the clothes of a real one/);
+});
+
+group('What to train next');
+
+const trainedOn = (date, muscles) => ({ date, muscles, logged: true });
+
+await test('the longest neglected group is what gets recommended', () => {
+  const f = focusCall([
+    trainedOn('2026-06-01', ['legs']),
+    trainedOn('2026-07-26', ['chest', 'arms']),
+    trainedOn('2026-07-31', ['chest', 'arms']),
+    trainedOn('2026-08-03', ['chest', 'arms']),
+  ], { today: '2026-08-05' });
+
+  assert.equal(f.known, true);
+  assert.equal(f.target[0], 'legs', 'legs went cold in June and must lead');
+  assert.ok(f.strong.includes('chest'), 'chest has three sessions in the fortnight');
+  assert.match(f.say, /legs/);
+});
+
+await test('a group never trained at all outranks one merely stale', () => {
+  // Filtering to recent days would hide it entirely, which is the opposite of
+  // what somebody needs to be told.
+  const f = focusCall([trainedOn('2026-08-01', ['chest'])], { today: '2026-08-05' });
+  assert.ok(f.target.length, 'something should be recommended');
+  assert.ok(!f.target.includes('chest'), 'chest was trained four days ago');
+  assert.ok(f.groups.some(g => g.state === 'never'));
+});
+
+await test('nothing trained is not a scolding', () => {
+  const f = focusCall([], { today: '2026-08-05' });
+  assert.equal(f.known, false);
+  assert.equal(f.target.length, 0);
+  assert.doesNotMatch(f.say, /should|behind|failed|need to/i,
+    'day one is not a deficit to be lectured about');
+});
+
+await test('everything covered says so rather than inventing a gap', () => {
+  const all = ['chest', 'back', 'shoulders', 'arms', 'legs', 'glutes', 'core'];
+  const f = focusCall([
+    trainedOn('2026-08-03', all), trainedOn('2026-08-04', all), trainedOn('2026-08-05', all),
+  ], { today: '2026-08-05' });
+  assert.equal(f.target.length, 0);
+  assert.match(f.say, /Nothing is behind/i);
 });
 
 group('Retracting something that did not happen');

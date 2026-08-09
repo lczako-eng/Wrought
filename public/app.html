@@ -303,6 +303,22 @@ svg { display: block; width: 100%; height: auto; overflow: visible; }
 }
 .delta.up { color: var(--moss); } .delta.down { color: var(--heat-3); } .delta.flat { color: var(--ash-dim); }
 
+/* ── What to train ─────────────────────────────────────────────────────────
+   The matrix says the same thing in a grid. This says it in the shape of a
+   person, which needs no explaining, and states the answer in a sentence so
+   nobody has to derive it standing in a doorway. */
+.bodywrap { display: flex; gap: 22px; align-items: center; flex-wrap: wrap; }
+.bodymap { width: min(150px, 40vw); height: auto; display: block; }
+.bodymap .bp { transition: fill .6s var(--ease); }
+.frows { flex: 1 1 170px; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.frow { display: grid; grid-template-columns: 1fr auto; gap: 10px; align-items: baseline; font-size: 14px; }
+.frow .fm { color: var(--ash); }
+.frow .fs { font-family: var(--mono); font-size: 12px; letter-spacing: .08em; }
+.fs.never, .fs.cold { color: var(--heat-3); }
+.fs.stale { color: var(--heat-4); }
+.fs.worked { color: var(--ash); }
+.fs.hammered { color: var(--moss); }
+
 /* ── Matrix ─────────────────────────────────────────────────────────────── */
 .mshell { overflow-x: auto; }
 table.matrix { border-collapse: separate; border-spacing: 3px; min-width: 420px; }
@@ -1161,6 +1177,7 @@ function render(d) {
     ${bars('Training volume', 'Sets × reps × load, per session.', d.series.volume)}
   </div>`);
 
+  out.push(focusPanel(d));
   out.push(liftsPanel(d));
   out.push(matrixPanel(s.matrix));
   out.push(nutritionPanel(d.nutrition));
@@ -1367,6 +1384,48 @@ function bars(title, sub, series) {
       <text class="axis" x="${P.l}" y="${H - 4}">${esc(series[0].date.slice(5))}</text>
       <text class="axis" x="${W - P.r}" y="${H - 4}" text-anchor="end">${esc(series[series.length - 1].date.slice(5))}</text>
     </svg></section>`;
+}
+
+// What to train next — the question asked at the door of the gym. The matrix
+// already shows what has gone cold; nobody wants to read a grid and work the
+// answer out themselves, so the server decides and this only draws it.
+function focusPanel(d) {
+  const f = d.focus;
+  if (!f?.known) {
+    return `<section class="panel"><h2>What to train</h2>
+      <p class="empty">${esc(f?.say || 'Log a session and this fills in.')}</p></section>`;
+  }
+
+  const SCALE = { never: '#241D1B', cold: '#5C1806', stale: '#B8320C', worked: '#F26419', hammered: '#F5A623' };
+  const byMuscle = Object.fromEntries(f.groups.map(g => [g.muscle, g]));
+  const fill = m => SCALE[byMuscle[m]?.state] || '#241D1B';
+
+  const part = (m, attrs) => `<rect class="bp" data-m="${m}" fill="${fill(m)}" ${attrs}/>`;
+
+  const rows = f.groups.slice(0, 7).map(g => `
+    <div class="frow">
+      <span class="fm">${esc(g.muscle)}</span>
+      <span class="fs ${g.state}">${g.days_since == null ? 'never' : g.days_since === 0 ? 'today' : `${g.days_since}d ago`}</span>
+    </div>`).join('');
+
+  return `<section class="panel">
+    <h2>What to train</h2>
+    <p class="sub">${esc(f.say)}</p>
+    <div class="bodywrap">
+      <svg class="bodymap" viewBox="0 0 200 340" role="img" aria-label="${esc(f.say)}">
+        <circle cx="100" cy="26" r="17" fill="#241D1B"/>
+        ${part('shoulders', 'x="52" y="52" width="96" height="20" rx="10"')}
+        ${part('chest', 'x="66" y="76" width="68" height="34" rx="12"')}
+        ${part('arms', 'x="34" y="76" width="20" height="72" rx="10"')}
+        ${part('arms', 'x="146" y="76" width="20" height="72" rx="10"')}
+        ${part('core', 'x="72" y="114" width="56" height="42" rx="12"')}
+        ${part('back', 'x="66" y="160" width="68" height="24" rx="10"')}
+        ${part('legs', 'x="70" y="190" width="26" height="118" rx="13"')}
+        ${part('legs', 'x="104" y="190" width="26" height="118" rx="13"')}
+      </svg>
+      <div class="frows">${rows}</div>
+    </div>
+  </section>`;
 }
 
 // The question people actually open a training app to ask: is anything going up?

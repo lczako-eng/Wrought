@@ -12,7 +12,7 @@ import {
   localDateFor, addDays, humanDuration, kgToLb, daysBetween,
   rangeFacts, summariseRange, dayFacts, careFlags, scoreGoals, supabase,
 } from './lib/wrought.js';
-import { orderInsight, earnedRoom, energyBalance, exerciseKey, deviceMatrix, weekdayPattern } from './lib/training.js';
+import { orderInsight, earnedRoom, energyBalance, exerciseKey, deviceMatrix, weekdayPattern, focusCall } from './lib/training.js';
 import { nutritionTotals, composition, macroMatrix, yearOverYear } from './lib/nutrition.js';
 
 const CORS = {
@@ -173,6 +173,7 @@ export const handler = async (event) => {
       eating_window: windowStatus(win, profile.timezone),
       lifts,
       exercise_order: orderInsight(setRows),
+      focus: focusCall(range.days, { today: to }),
       nutrition: {
         totals: nutritionTotals(foodRows, { today: to }),
         composition: composition(foodRows, { since: addDays(to, -89) }),

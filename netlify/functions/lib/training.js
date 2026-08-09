@@ -7,7 +7,7 @@
 // the loading, it will cheerfully add 20kg to someone's squat one day and the
 // product will have hurt them.
 
-import { supabase } from './wrought.js';
+import { supabase, daysBetween } from './wrought.js';
 
 // ── Matching an exercise across time ────────────────────────────────────────
 // "Barbell Bench Press", "bench press", "Bench (BB)" and "benching" are one
@@ -444,6 +444,80 @@ export function orderPlan(plan) {
 // proves nothing, and a confident claim off a single data point is worse than
 // silence — it sends somebody rebuilding a programme around noise.
 const MIN_SESSIONS = 2;
+
+// What to train next, decided from the record rather than from a plan.
+//
+// The matrix already shows what has gone cold; nobody wants to read a grid and
+// work out the answer themselves. This turns it into the one sentence somebody
+// actually wants at the door of the gym: train these, they are the ones you
+// have left alone longest.
+//
+// Every muscle group the person has EVER trained is considered, not just the
+// ones in the last fortnight — a group that vanished five weeks ago is exactly
+// the one to surface, and filtering to recent days would hide it completely.
+const GROUPS = ['chest', 'back', 'shoulders', 'arms', 'legs', 'glutes', 'core'];
+
+export function focusCall(days = [], { today = null } = {}) {
+  const trained = days.filter(d => d.muscles?.length);
+  if (!trained.length) {
+    return {
+      known: false,
+      target: [], strong: [], groups: [],
+      say: 'No sessions logged yet — this fills in from the first one.',
+    };
+  }
+
+  const last = today || trained[trained.length - 1].date;
+  const seen = new Set(trained.flatMap(d => d.muscles));
+  // Their own vocabulary first, then the standard groups they have not used —
+  // a group never trained at all is the strongest possible recommendation.
+  const all = [...new Set([...seen, ...GROUPS])];
+
+  const groups = all.map(m => {
+    const hits = trained.filter(d => d.muscles.includes(m));
+    const lastOn = hits.length ? hits[hits.length - 1].date : null;
+    const ago = lastOn ? daysBetween(lastOn, last) : null;
+    const fortnight = hits.filter(d => daysBetween(d.date, last) <= 13).length;
+    return {
+      muscle: m,
+      sessions_14d: fortnight,
+      days_since: ago,
+      last_on: lastOn,
+      // Four days is roughly when a group is ready again; a fortnight without
+      // it is a hole rather than a rest.
+      state: ago == null ? 'never' : ago >= 14 ? 'cold' : ago >= 7 ? 'stale' : fortnight >= 3 ? 'hammered' : 'worked',
+    };
+  }).sort((a, b) => {
+    // A group they used to train and stopped outranks one they have never
+    // mentioned. Both are gaps, but "five weeks since legs saw a barbell" is
+    // the one that lands — they can plainly do it and have quietly stopped,
+    // whereas a group with no history may simply be described differently.
+    const abandoned = g => g.days_since != null && g.days_since >= 7;
+    if (abandoned(a) !== abandoned(b)) return abandoned(a) ? -1 : 1;
+    return (b.days_since ?? 999) - (a.days_since ?? 999);
+  });
+
+  const target = groups.filter(g => g.state === 'never' || g.state === 'cold' || g.state === 'stale').slice(0, 3);
+  const strong = groups.filter(g => g.state === 'hammered');
+
+  const name = g => g.muscle;
+  const phrase = target.length
+    ? `${target.map(name).join(', ')} — ${target[0].days_since == null
+        ? 'never trained'
+        : `${target[0].days_since} days since ${target[0].muscle}`}.`
+    : 'Nothing is behind. Everything has been trained inside the last week.';
+
+  return {
+    known: true,
+    groups,
+    target: target.map(name),
+    strong: strong.map(name),
+    say: target.length
+      ? `Train ${phrase}`
+      : phrase,
+    note: 'This is computed from what they actually did, not from a plan they said they would follow.',
+  };
+}
 
 export function orderInsight(sets) {
   const byExercise = new Map();
