@@ -96,6 +96,26 @@
 # Agent-readable overview and connector manifest. Both need a correct
 # Content-Type or the crawlers and directories that read them give up quietly.
 [[headers]]
+  for = "/site.webmanifest"
+  [headers.values]
+    Content-Type = "application/manifest+json; charset=utf-8"
+
+# Directories fetch the icon cross-origin to render a listing, so it needs the
+# same open CORS the connector manifest gets.
+[[headers]]
+  for = "/icon.svg"
+  [headers.values]
+    Content-Type = "image/svg+xml; charset=utf-8"
+    Access-Control-Allow-Origin = "*"
+    Cache-Control = "public, max-age=604800"
+
+[[headers]]
+  for = "/icon-*.png"
+  [headers.values]
+    Access-Control-Allow-Origin = "*"
+    Cache-Control = "public, max-age=604800"
+
+[[headers]]
   for = "/llms.txt"
   [headers.values]
     Content-Type = "text/plain; charset=utf-8"
