@@ -753,6 +753,40 @@ export function eventsFromClient(raw) {
   return usable.length ? usable : null;
 }
 
+// Words that name a mealtime rather than a food. "Had lunch" is genuinely
+// unquantifiable and must stay null; "two pepperettes" is not, and logging it
+// blank makes the entry nearly worthless. Telling those apart is what lets the
+// server ASK for macros in the one case and never in the other.
+const GENERIC_FOOD = new Set([
+  'lunch', 'dinner', 'breakfast', 'brunch', 'supper', 'tea', 'snack', 'snacks',
+  'meal', 'food', 'something', 'leftovers', 'takeaway', 'takeout', 'a meal',
+]);
+
+const named = s => {
+  const t = String(s || '').trim().toLowerCase().replace(/^(a|an|some|the)\s+/, '');
+  return t.length > 1 && !GENERIC_FOOD.has(t);
+};
+
+// A tool description is a hope; a line in the response is an instruction the
+// model is reading at the moment it matters. When a named food lands with no
+// calories on it, say so and ask for them — that is far more reliable than
+// trusting guidance written into a schema the model skimmed once.
+export function needsMacros(written = [], events = []) {
+  const out = [];
+  written.forEach((row, i) => {
+    if (row.event_type !== 'food' && row.event_type !== 'drink') return;
+    const detail = events[i]?.detail || {};
+    if (detail.calories != null) return;
+
+    const items = Array.isArray(detail.items) ? detail.items : [];
+    // Named if any item is a real food, or if there are no items at all but the
+    // summary itself names something.
+    const isNamed = items.length ? items.some(named) : named(row.summary);
+    if (isNamed) out.push({ id: row.id, summary: row.summary });
+  });
+  return out;
+}
+
 export async function parseLog(text, profile) {
   const fallback = () => ({
     events: [{

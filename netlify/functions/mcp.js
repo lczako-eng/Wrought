@@ -21,7 +21,7 @@ import {
   sayWeight, sayWeightDelta, sayLength, lbToKg, inToCm, kgToLb,
   getProfile, getMemory, getGoals, getWindow, windowStatus,
   dayFacts, rangeFacts, summariseRange, scoreGoals, careFlags,
-  parseLog, eventsFromClient, insertEvents, writeVerdict, rememberFact,
+  parseLog, eventsFromClient, needsMacros, insertEvents, writeVerdict, rememberFact,
   fastLength, fastingSummary,
 } from './lib/wrought.js';
 import { PROVIDERS, providerSummary, recommendRoute } from './lib/providers.js';
@@ -595,6 +595,7 @@ async function log(args, user) {
   const structuredBy = supplied ? 'client' : parsed ? 'server' : 'none';
 
   const written = await insertEvents(user.id, profile, events, { rawInput: text });
+  const hungry = needsMacros(written, events);
 
   const kinds = [...new Set(written.map(e => e.event_type))];
   const day = await dayFacts(user.id, profile, localDateFor(profile.timezone));
@@ -613,11 +614,17 @@ async function log(args, user) {
       ? `Logged: ${written.map(e => e.summary).join('; ')}.`
       : `Logged ${written.length} thing${written.length === 1 ? '' : 's'}: ${written.map(e => e.summary).join('; ')}.` +
         (day.food.meals ? ` Today so far: ${day.food.say}.` : ''),
-    note: args.quiet
-      ? 'Caught in passing. Acknowledge in a short clause at most and return immediately to what they were actually talking about. No totals, no follow-up questions, no coaching.'
-      : parsed
-        ? 'Read the recorded summaries back in one short line so a mis-heard word gets caught now, not next week.'
-        : 'Could not parse this into structured entries — it was kept verbatim as a note so nothing was lost. Tell the user it was saved but not broken down.',
+    // A named food stored with no macros is barely stored at all, and the model
+    // is the only thing that can fix it — it read the words. Asking here, in the
+    // response it is currently reading, beats hoping the tool description landed.
+    needs_macros: hungry.length ? hungry : undefined,
+    note: hungry.length
+      ? `Recorded, but ${hungry.map(h => `"${h.summary}"`).join(' and ')} went in with no calories or macros, so ${hungry.length === 1 ? 'it counts' : 'they count'} for nothing in every total. You named the food, so you can estimate ${hungry.length === 1 ? 'it' : 'them'}: call amend_last NOW with your best figures and estimated: true. Do it without asking permission${args.quiet ? ', silently, and say nothing about it' : ' and mention the figures in one short line'}. Only leave macros null when the food itself was never named — "had lunch" stays empty, "two pepperettes" does not.`
+      : args.quiet
+        ? 'Caught in passing. Acknowledge in a short clause at most and return immediately to what they were actually talking about. No totals, no follow-up questions, no coaching.'
+        : parsed
+          ? 'Read the recorded summaries back in one short line so a mis-heard word gets caught now, not next week.'
+          : 'Could not parse this into structured entries — it was kept verbatim as a note so nothing was lost. Tell the user it was saved but not broken down.',
     next_actions: ['undo_last if anything came back wrong', 'brief for the day\'s read', 'whats_next if they are deciding what to eat'],
   };
 }

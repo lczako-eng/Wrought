@@ -23,7 +23,7 @@ import {
   localDateFor, addDays, daysBetween, clockString, humanDuration,
   kgToLb, lbToKg, cmToIn, inToCm, sayWeight,
   windowStatus, weightTrend, trainingMatrix, summariseRange, careFlags, scoreGoals,
-  eventsFromClient, fastLength, fastingSummary,
+  eventsFromClient, fastLength, fastingSummary, needsMacros,
 } from '../netlify/functions/lib/wrought.js';
 
 let passed = 0, failed = 0;
@@ -991,6 +991,44 @@ await test('the schema still forbids inventing a number', () => {
   assert.match(events.description, /never a guessed 500/i);
   assert.match(events.description, /null/i);
   assert.match(events.items.properties.estimated.description, /inferred rather than stated/i);
+});
+
+await test('a named food logged blank gets chased, an unnamed one does not', () => {
+  const row = (id, summary, event_type = 'food') => ({ id, summary, event_type });
+
+  // Named, no calories → ask for them.
+  assert.equal(needsMacros(
+    [row(1, 'two pepperettes')],
+    [{ detail: { items: ['pepperettes'] } }],
+  ).length, 1);
+
+  // Unnamed → never chase. Inventing the food is the worse failure.
+  assert.equal(needsMacros(
+    [row(2, 'had lunch')],
+    [{ detail: { items: ['lunch'] } }],
+  ).length, 0);
+  assert.equal(needsMacros(
+    [row(3, 'grabbed some food')],
+    [{ detail: { items: ['food'] } }],
+  ).length, 0);
+
+  // Already counted → nothing to chase.
+  assert.equal(needsMacros(
+    [row(4, 'chicken burrito bowl')],
+    [{ detail: { items: ['burrito'], calories: 620 } }],
+  ).length, 0);
+
+  // Not food at all.
+  assert.equal(needsMacros(
+    [row(5, '40 minutes upper body', 'workout')],
+    [{ detail: {} }],
+  ).length, 0);
+
+  // No items listed, but the summary itself names something.
+  assert.equal(needsMacros(
+    [row(6, 'a flat white')],
+    [{ detail: {} }],
+  ).length, 1);
 });
 
 await test('a named food is estimated, an unnamed one is not', () => {
