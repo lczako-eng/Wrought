@@ -25,6 +25,12 @@
   to = "/.netlify/functions/api-log"
   status = 200
 
+# The operator's view. Aggregates only — see api-admin.js for why.
+[[redirects]]
+  from = "/api/admin"
+  to = "/.netlify/functions/api-admin"
+  status = 200
+
 # The rack screen. Mid-set nobody composes a sentence — they want one glance.
 [[redirects]]
   from = "/api/session"

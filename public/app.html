@@ -48,6 +48,8 @@
   --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   /* Compressed black for the mark — see index.html. */
   --stamp: -apple-system, BlinkMacSystemFont, "Helvetica Neue", "Arial Narrow", system-ui, sans-serif;
+  /* Same bracketed slab as the tile and the marketing page. */
+  --stamp-serif: Rockwell, "Roboto Slab", "Bookman Old Style", "Iowan Old Style", Georgia, serif;
   --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
   --serif: ui-serif, Georgia, "Iowan Old Style", "Palatino Linotype", serif;
 }
@@ -413,12 +415,40 @@ table.matrix td.rh.cold { color: var(--heat-3); }
 .more { display: flex; justify-content: center; padding: 22px 0 4px; }
 
 /* ── Sign in ────────────────────────────────────────────────────────────── */
-.gate { max-width: 380px; margin: 90px auto; display: flex; flex-direction: column; gap: 12px; text-align: center; }
-.gate input, .gate button {
-  font: inherit; width: 100%; padding: 12px 14px; border-radius: 3px;
+/* ── The way in ────────────────────────────────────────────────────────────
+   This is the first screen a new person ever sees, and it was three bare
+   controls on a black field. It now carries the same mark, type and weight as
+   the site they arrived from — and says plainly what pressing the button does,
+   because "email me a link" explains the mechanism and not the outcome. */
+.gate {
+  max-width: 400px; margin: clamp(48px, 12vh, 110px) auto;
+  display: flex; flex-direction: column; gap: 12px; text-align: center;
 }
-.gate input { background: var(--scale); border: 1px solid var(--edge); color: var(--bright); }
-.gate button { background: var(--heat-3); border: 0; color: #1A0A02; font-weight: 650; cursor: pointer; }
+.gate-mark {
+  border-radius: 18px; margin: 0 auto 6px; display: block;
+  box-shadow: 0 18px 40px -18px rgba(242,100,25,.6);
+}
+.gate-h {
+  margin: 0; font-family: var(--stamp-serif); font-weight: 700;
+  font-size: 40px; letter-spacing: .02em;
+}
+.gate-sub { margin: 2px 0 14px; color: var(--ash); font-size: 15px; }
+.gate input, .gate button {
+  font: inherit; width: 100%; padding: 15px 16px; border-radius: 12px;
+}
+.gate input {
+  background: var(--scale); border: 1px solid var(--edge); color: var(--bright);
+  font-size: 16px;   /* 16px or iOS zooms the page on focus */
+}
+.gate input:focus { outline: none; border-color: var(--heat-3); }
+.gate button {
+  background: var(--heat-3); border: 0; color: #1A0A02;
+  font-weight: 700; font-size: 16px; cursor: pointer;
+}
+.gate-note {
+  margin: 6px 0 0; color: var(--ash-dim); font-size: 13.5px; line-height: 1.55;
+}
+.gate-note b { color: var(--ash); }
 .msg { color: var(--ash); font-size: 13px; min-height: 19px; }
 
 @media (prefers-reduced-motion: reduce) { * { transition-duration: .01ms !important; } }
@@ -433,11 +463,19 @@ table.matrix td.rh.cold { color: var(--heat-3); }
 
 <div id="gate" class="wrap" hidden>
   <div class="gate">
-    <div class="mark" style="justify-content:center"><span class="name">Wrought</span></div>
-    <p class="sub" style="margin-bottom:8px">Your record. Same account your AI uses.</p>
-    <input id="email" type="email" placeholder="you@example.com" autocomplete="email">
-    <button id="send">Email me a link</button>
+    <img class="gate-mark" src="/icon.svg" alt="" width="72" height="72">
+    <h1 class="gate-h">WROUGHT</h1>
+    <p class="gate-sub">Your record — the same account your AI writes to.</p>
+
+    <input id="email" type="email" placeholder="you@example.com"
+           autocomplete="email" inputmode="email" enterkeyhint="go">
+    <button id="send">Continue</button>
     <p class="msg" id="msg"></p>
+
+    <p class="gate-note">
+      <b>No password.</b> Put your email in and we send a link that signs you in.
+      First time here, that link creates your account.
+    </p>
   </div>
 </div>
 
@@ -449,6 +487,7 @@ table.matrix td.rh.cold { color: var(--heat-3); }
         <button class="range view" data-view="record" aria-pressed="true">Record</button>
         <button class="range view" data-view="log" aria-pressed="false">Log</button>
         <button class="range view" data-view="trainer" aria-pressed="false">Trainer</button>
+        <button class="range view" data-view="admin" aria-pressed="false" id="admintab" hidden>Admin</button>
       </nav>
       <div class="ranges" id="rangebtns" role="group" aria-label="Time range">
         <button class="range" data-days="7"   aria-pressed="false">7d</button>
@@ -490,6 +529,7 @@ async function boot() {
   if (!data.session) { $('gate').hidden = false; return; }
   $('app').hidden = false;
   load(data.session.access_token);
+  maybeAdmin(data.session.access_token);
 }
 
 $('send')?.addEventListener('click', async () => {
@@ -522,9 +562,66 @@ document.querySelectorAll('.range.view').forEach(b => b.addEventListener('click'
 async function refresh() {
   if (view === 'log') return loadLog(true);
   if (view === 'trainer') return startTrainer();
+  if (view === 'admin') return loadAdmin();
   if (DEMO) { render(demoData()); return; }
   const { data } = await sb.auth.getSession();
   if (data.session) load(data.session.access_token);
+}
+
+// ── Admin ──────────────────────────────────────────────────────────────────
+// Operational numbers only. This screen cannot show one person's log, and that
+// is deliberate rather than unfinished — being the administrator of a health
+// product is not a licence to read the health data in it. The server refuses
+// too, so this is not the only thing standing in the way.
+async function loadAdmin() {
+  const { data } = await sb.auth.getSession();
+  if (!data.session) return;
+  const res = await fetch('/.netlify/functions/api-admin', {
+    headers: { Authorization: `Bearer ${data.session.access_token}` },
+  });
+  if (!res.ok) {
+    $('content').innerHTML = `<p class="empty">Not available.<br><small>${res.status}</small></p>`;
+    return;
+  }
+  renderAdmin(await res.json());
+}
+
+function renderAdmin(d) {
+  const L = d.logged || {};
+  $('content').innerHTML = `
+    <section class="panel">
+      <h2>Operator</h2>
+      <p class="sub">${esc(d.say)}</p>
+    </section>
+    <div class="tiles">
+      ${tile('Accounts', n(d.people), 'signed up')}
+      ${tile('Active', n(d.active_7d), 'logged in last 7 days')}
+      ${tile('Logged', n(L.events), 'entries all time')}
+      ${tile('This week', n(L.events_7d), 'entries')}
+      ${tile('Sets', n(L.sets), 'recorded individually')}
+      ${tile('Sessions', n(L.sessions), 'completed')}
+      ${tile('Device rows', n(L.device_metrics), 'pushed in')}
+      ${tile('Ingest keys', n(d.devices?.active_ingest_keys), 'active')}
+    </div>
+    <section class="panel">
+      <h2>The number that matters</h2>
+      <p class="sub">${esc(d.retention_note)}</p>
+      <p class="sub" style="color:var(--ash-dim)">Signups are vanity. Whether somebody is still logging a week later is the product working or not.</p>
+    </section>
+    <section class="panel">
+      <h2>What is not here</h2>
+      <p class="sub">${esc(d.privacy)}</p>
+    </section>`;
+  stagger();
+}
+
+// Only offer the tab if the server says so. Hiding it is cosmetic — the
+// endpoint checks on every call regardless.
+async function maybeAdmin(token) {
+  try {
+    const res = await fetch('/.netlify/functions/api-admin', { headers: { Authorization: `Bearer ${token}` } });
+    if (res.ok) $('admintab').hidden = false;
+  } catch { /* not an admin, or offline — either way the tab stays hidden */ }
 }
 
 // ── Trainer ────────────────────────────────────────────────────────────────

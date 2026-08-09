@@ -1437,6 +1437,41 @@ await test('the tool says out loud that it prescribes no weight', () => {
   assert.match(t.description, /NO WEIGHTS/);
 });
 
+// ── The operator's door ─────────────────────────────────────────────────────
+// Two failure modes, both quiet. An admin list that matches nobody locks the
+// founder out of his own product; one that matches too easily hands the
+// operator's view to a stranger. Neither throws.
+
+group('Administrator');
+
+await test('nobody is an administrator until the env var names them', async () => {
+  const { isAdmin } = await import('../netlify/functions/api-admin.js');
+  delete process.env.WROUGHT_ADMIN_EMAILS;
+  assert.equal(isAdmin('anyone@example.com'), false);
+  assert.equal(isAdmin(''), false);
+  assert.equal(isAdmin(null), false);
+});
+
+await test('the named address matches however it is typed', async () => {
+  const { isAdmin } = await import('../netlify/functions/api-admin.js');
+  process.env.WROUGHT_ADMIN_EMAILS = ' Boss@Example.com , second@example.com ';
+  assert.equal(isAdmin('boss@example.com'), true, 'case must not matter');
+  assert.equal(isAdmin('  BOSS@EXAMPLE.COM '), true, 'nor should stray whitespace');
+  assert.equal(isAdmin('second@example.com'), true);
+  assert.equal(isAdmin('boss@example.com.evil.net'), false, 'no partial matches');
+  assert.equal(isAdmin('bos@example.com'), false);
+  delete process.env.WROUGHT_ADMIN_EMAILS;
+});
+
+await test('the endpoint loads and refuses anonymous callers', async () => {
+  const { handler: admin } = await import('../netlify/functions/api-admin.js');
+  const res = await admin({ httpMethod: 'GET', headers: {} });
+  // No database configured in the harness, so it stops before auth — the point
+  // is that the module resolves and answers rather than throwing on import.
+  assert.equal(res.statusCode, 500);
+  assert.equal(JSON.parse(res.body).error, 'server_not_configured');
+});
+
 // ── The rack screen ─────────────────────────────────────────────────────────
 // This endpoint is imported by nothing else, so a bad import inside it would
 // stay invisible until somebody standing at a squat rack got a 500. Loading it

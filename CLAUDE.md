@@ -157,6 +157,23 @@ A list you scroll is not a library; this is one you ask a question of.
   never be offered an advanced lift, and gets every movement explained while an
   advanced lifter is left alone. Both tested.
 
+### The operator's view — and what it refuses to show
+
+`api-admin.js` + the Admin tab, which only appears when the server says so.
+Administrators are named in `WROUGHT_ADMIN_EMAILS` (comma separated, matched
+case-insensitively against the verified session email) — never a column somebody
+could set on themselves, never a flag in a token.
+
+**It shows aggregates only, and that is a decision rather than an unfinished
+screen.** Accounts, active-in-7-days, entries logged, sets, sessions, device
+rows. It cannot display one named person's food, training, weight or symptoms,
+and must not be extended to. Being the administrator of a health product is not
+a licence to read the health data in it; the moment that screen exists, every
+promise on `/privacy.html` reduces to trusting whoever holds the password.
+
+The retention line is the number that matters — signups are vanity, still
+logging a week later is the product working.
+
 ### The rack screen — trainer mode
 
 `api-session.js` + the Trainer tab. The coaching always existed in the tools;
