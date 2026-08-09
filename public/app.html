@@ -816,7 +816,14 @@ function demoData() {
 async function load(token) {
   $('content').innerHTML = '<p class="empty">Loading…</p>';
   const res = await fetch(`/.netlify/functions/api-progress?days=${days}`, { headers: { Authorization: `Bearer ${token}` } });
-  if (!res.ok) { $('content').innerHTML = '<p class="empty">Could not load. Try signing in again.</p>'; return; }
+  // The generic message was a dead end during setup: a misconfigured key, an
+  // expired session and a broken query all read identically. The status and the
+  // server's own words are the difference between a guess and a fix.
+  if (!res.ok) {
+    const detail = await res.text().catch(() => '');
+    $('content').innerHTML = `<p class="empty">Could not load. Try signing in again.<br><small>${res.status} ${esc(detail).slice(0, 400)}</small></p>`;
+    return;
+  }
   render(await res.json());
 }
 
