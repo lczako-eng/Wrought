@@ -681,7 +681,11 @@ footer a { color: var(--ash); }
 (() => {
   const el = document.getElementById('mcpurl');
   if (!el) return;
-  const url = `${location.origin}/mcp`;
+  // Only a real web origin can be the connector address. Opened from disk —
+  // saved page, local preview — location.origin is "file://" and would print
+  // file:///mcp, so the canonical domain is the honest fallback.
+  const web = location.protocol === 'https:' || location.protocol === 'http:';
+  const url = web ? `${location.origin}/mcp` : 'https://wrought.fit/mcp';
   el.textContent = url;
   el.addEventListener('click', async () => {
     try { await navigator.clipboard.writeText(url); } catch { return; }
