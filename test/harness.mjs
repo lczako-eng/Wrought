@@ -2203,6 +2203,58 @@ await test('it asks search engines not to index it', () => {
   assert.match(src, /name="robots" content="noindex"/);
 });
 
+group('Connected assistants — a promise the consent screen makes');
+
+await test('the consent screen promise is now something that exists', () => {
+  // authorize.html has always said "revoke it any time from the dashboard".
+  const consent = page('authorize.html');
+  assert.match(consent, /Revoke it any time from the dashboard/i);
+  assert.match(page('app.html'), /api-connections/);
+  assert.match(page('app.html'), /Connected assistants/);
+});
+
+await test('revoking kills the refresh token too', async () => {
+  // Access alone and the assistant mints a new one on its next call, so the
+  // revoke looks like it silently failed.
+  const src = readFileSync(new URL('../netlify/functions/api-connections.js', import.meta.url), 'utf8');
+  assert.match(src, /wrought_oauth_tokens/);
+  assert.match(src, /wrought_oauth_refresh/);
+  assert.match(src, /wrought_oauth_codes/);
+});
+
+await test('a guessed client id cannot cut off somebody else', () => {
+  const src = readFileSync(new URL('../netlify/functions/api-connections.js', import.meta.url), 'utf8');
+  // Every delete arm is scoped to the caller before anything from the body is
+  // applied.
+  assert.match(src, /\.delete\(\)\.eq\('user_id', user\.id\)/);
+});
+
+await test('it never hands back a token, only that one exists', () => {
+  const src = readFileSync(new URL('../netlify/functions/api-connections.js', import.meta.url), 'utf8');
+  assert.match(src, /select\('client_id, scope, expires_at, created_at'\)/);
+  assert.ok(!/token_hash/.test(src.slice(src.indexOf("httpMethod === 'GET'"))),
+    'the connections list exposes a token hash');
+});
+
+await test('a client is named from its redirect, not its self-report', async () => {
+  // client_name is registered by the client and can say anything at all.
+  const src = readFileSync(new URL('../netlify/functions/api-connections.js', import.meta.url), 'utf8');
+  const named = src.indexOf('openai|chatgpt');
+  const selfReport = src.indexOf('client.client_name');
+  assert.ok(named > 0 && named < selfReport, 'the self-reported name wins over the redirect');
+});
+
+await test('using a tool still requires a verified user', () => {
+  // The handshake answers without auth so a client can discover the toolset —
+  // that 401 is what makes "Sign in with Wrought" appear. Actually CALLING one
+  // must not.
+  const src = readFileSync(new URL('../netlify/functions/mcp.js', import.meta.url), 'utf8');
+  const call = src.slice(src.indexOf("case 'tools/call'"), src.indexOf("case 'tools/call'") + 700);
+  assert.match(call, /if \(!authUser\) return \{ __unauthorized: true, id \};/);
+  // And the check comes before anything is executed.
+  assert.ok(call.indexOf('__unauthorized') < call.indexOf('await impl('));
+});
+
 // ── Report ──────────────────────────────────────────────────────────────────
 
 console.log(results.join('\n'));

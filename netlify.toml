@@ -49,6 +49,13 @@
   to = "/.netlify/functions/api-session"
   status = 200
 
+# Which assistants are connected, and cutting one off. authorize.html has always
+# promised this; now it exists.
+[[redirects]]
+  from = "/api/connections"
+  to = "/.netlify/functions/api-connections"
+  status = 200
+
 # The profile, readable and editable. Everything here was reachable through the
 # assistant already; this is where somebody can go and CHECK it.
 [[redirects]]

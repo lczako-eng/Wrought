@@ -1029,6 +1029,12 @@ function renderAccount(user, ids, factors) {
     </section>
 
     <section class="panel">
+      <h2>Connected assistants</h2>
+      <div id="conn-body"><p class="empty">Checking…</p></div>
+      <p class="msg" id="connmsg"></p>
+    </section>
+
+    <section class="panel">
       <h2>Two-factor</h2>
       ${(factors || []).length ? `
         <p class="sub">On. A code from your authenticator app is needed alongside your
@@ -1086,6 +1092,7 @@ function renderAccount(user, ids, factors) {
   document.querySelectorAll('[data-mergeprov]').forEach(b => b.addEventListener('click', () => mergeWithProvider(b.dataset.mergeprov)));
   $('mo-go').addEventListener('click', mergeWithPassword);
   loadProfile();
+  loadConnections();
   loadPush();
   loadDevices();
   $('mfa-on')?.addEventListener('click', startEnrol);
@@ -1093,6 +1100,59 @@ function renderAccount(user, ids, factors) {
   $('mfa-confirm')?.addEventListener('click', confirmEnrol);
   $('mfa-code')?.addEventListener('keydown', e => { if (e.key === 'Enter') confirmEnrol(); });
   stagger();
+}
+
+// ── Connected assistants ───────────────────────────────────────────────────
+// The consent screen has always said "revoke it any time from the dashboard".
+// Until now there was no such thing on the dashboard, which made that sentence
+// a lie told at the exact moment somebody is deciding whether to trust this
+// with their health record.
+//
+// It also settles a genuinely confusing thing: the connector inside ChatGPT
+// holds its OWN token. That is a login, and it is a completely separate one
+// from this browser session. Being signed out here does not disconnect it, and
+// connecting it does not sign you in here.
+
+async function loadConnections() {
+  const el = $('conn-body');
+  if (!el) return;
+  const { data: s } = await sb.auth.getSession();
+  const res = await fetch('/.netlify/functions/api-connections', {
+    headers: { Authorization: `Bearer ${s.session.access_token}` },
+  });
+  if (!res.ok) { el.innerHTML = '<p class="empty">Not available.</p>'; return; }
+  const d = await res.json();
+
+  const live = (d.connections || []).filter(c => c.active);
+  el.innerHTML = `
+    <p class="sub">${esc(d.say)}</p>
+    ${live.length ? `<div class="doors">${live.map(c => `
+      <div class="door">
+        <div><b>${esc(c.name)}</b>
+          <span class="sub">connected ${esc(String(c.connected_at).slice(0, 10))}</span></div>
+        <button class="ghost small" data-cut="${esc(c.client_id || '')}">Disconnect</button>
+      </div>`).join('')}</div>` : ''}
+    <p class="sub dim">${esc(d.note)}</p>
+    ${live.length ? '<div class="btnrow"><button class="ghost" id="cut-all">Disconnect everything</button></div>' : ''}`;
+
+  document.querySelectorAll('[data-cut]').forEach(b =>
+    b.addEventListener('click', () => cutConnection(b.dataset.cut)));
+  $('cut-all')?.addEventListener('click', () => cutConnection(null));
+}
+
+async function cutConnection(clientId) {
+  if (!confirm(clientId
+    ? 'Disconnect this assistant? It will ask you to sign in again next time. Nothing you logged is touched.'
+    : 'Disconnect every assistant? Nothing you logged is touched.')) return;
+  const { data: s } = await sb.auth.getSession();
+  const res = await fetch('/.netlify/functions/api-connections', {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${s.session.access_token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(clientId ? { client_id: clientId } : {}),
+  });
+  const out = await res.json();
+  $('connmsg').textContent = out.say || 'Disconnected.';
+  setTimeout(loadConnections, 700);
 }
 
 // ── Profile ────────────────────────────────────────────────────────────────

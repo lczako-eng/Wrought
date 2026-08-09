@@ -367,6 +367,28 @@ A list you scroll is not a library; this is one you ask a question of.
   never be offered an advanced lift, and gets every movement explained while an
   advanced lifter is left alone. Both tested.
 
+### Connected assistants — two logins, and only one was visible
+
+`api-connections.js` + the Account tab. `authorize.html` had always said *"revoke
+it any time from the dashboard"* and there was no such thing on the dashboard —
+a promise made at the exact moment somebody is deciding whether to trust this
+with their health record, and not kept.
+
+It also settles a confusion the founder hit and was right to find odd: **the
+connector holds its own token, and that IS a login — just not this browser's.**
+ChatGPT can be fully working while wrought.fit shows a sign-in screen, because
+they are separate sessions. Signing out of the browser does not disconnect the
+assistant; connecting the assistant does not sign you into the browser. The
+panel says so in as many words.
+
+Revoking deletes the refresh token as well as the access token — access alone
+and the assistant mints a new one on its next call, so the revoke looks like it
+silently failed. Clients are named from their **redirect URI**, never from the
+`client_name` they registered, which is self-reported and can say anything.
+
+`get_profile` returning `account.email` is the one-message way to check which
+account an assistant is actually attached to: ask it, and it says.
+
 ### The profile — a place to look, not a form
 
 `010_wrought_profile_web.sql` + `api-profile.js` + the Account tab. Every field
@@ -596,7 +618,7 @@ self-reporting scale removes the most-abandoned manual entry), then Strava.
 
 ## Conventions
 
-- `npm test` runs `test/harness.mjs` — 237 offline tests, no network, no database.
+- `npm test` runs `test/harness.mjs` — 243 offline tests, no network, no database.
   Run it before every push. It covers the JSON-RPC envelope (which fails as an
   uninformative "could not connect" inside ChatGPT) and all the arithmetic
   (which fails as a confidently wrong number in somebody's verdict).
