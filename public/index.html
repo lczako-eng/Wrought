@@ -176,9 +176,12 @@ section > p { margin: 0; color: var(--ash); max-width: 34ch; }
 .ring-cap { font-family: var(--mono); font-size: 13px; letter-spacing: .22em; text-transform: uppercase; }
 
 .legs { display: flex; justify-content: center; gap: clamp(26px, 9vw, 54px); margin-top: 22px; }
-.leg b { display: block; font-size: clamp(26px, 7vw, 34px); font-weight: 700; letter-spacing: -.02em; }
+.leg b { display: block; font-size: clamp(19px, 5.6vw, 30px); font-weight: 700; letter-spacing: -.02em; white-space: nowrap; }
 .leg small { font-size: .55em; font-weight: 600; }
-.leg span { font-family: var(--mono); font-size: 11.5px; letter-spacing: .18em; text-transform: uppercase; color: var(--ash-dim); }
+/* Direct child only. As a descendant selector this also caught the <span
+   class="n"> holding the number itself, so every figure rendered as a small
+   grey mono label while its unit kept the heading colour — backwards. */
+.leg > span { font-family: var(--mono); font-size: 11.5px; letter-spacing: .18em; text-transform: uppercase; color: var(--ash-dim); }
 .leg.hot b { color: var(--heat-3); }
 .leg.cool b { color: var(--temper); }
 
@@ -272,6 +275,39 @@ section > p { margin: 0; color: var(--ash); max-width: 34ch; }
 .seen .cell { transform: none; opacity: 1; }
 .h1 { background: #5C1806 } .h2 { background: #B8320C } .h3 { background: #F26419 }
 .h4 { background: #F5A623 } .h0 { background: #241D1B }
+
+/* ── A session, in detail ──────────────────────────────────────────────── */
+.sess { display: flex; align-items: baseline; justify-content: space-between; gap: 14px; }
+.sess-nm { font-family: var(--stamp); font-weight: 700; font-size: clamp(24px, 6.4vw, 32px); letter-spacing: .005em; }
+.sess-tm { font-family: var(--mono); font-size: 16px; color: var(--ash); }
+
+.hr { width: 100%; height: auto; display: block; margin-top: 4px; }
+.hr .ln {
+  fill: none; stroke-width: 3; stroke-linecap: round; stroke-linejoin: round;
+  stroke-dasharray: 1; stroke-dashoffset: 1;
+  transition: stroke-dashoffset 1.9s var(--ease);
+}
+.seen .hr .ln { stroke-dashoffset: 0; }
+.hr .fillp { opacity: 0; transition: opacity .9s var(--ease) .7s; }
+.seen .hr .fillp { opacity: 1; }
+.hr .dot { opacity: 0; transition: opacity .5s var(--ease) 1.4s; }
+.seen .hr .dot { opacity: 1; }
+
+/* ── What connects ─────────────────────────────────────────────────────── */
+.chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.chip {
+  font-size: 14.5px; padding: 9px 15px; border-radius: 999px;
+  background: #241D1B; color: var(--ash);
+  opacity: 0; transform: translateY(8px);
+  transition: opacity .5s var(--ease), transform .5s var(--ease);
+}
+.seen .chip { opacity: 1; transform: none; }
+/* Two doors are live and everything else rides through them — the difference
+   has to be visible, or this reads as fifteen integrations that do not exist. */
+.chip.on {
+  background: linear-gradient(180deg, var(--heat-2), var(--heat-1));
+  color: #fff; font-weight: 600;
+}
 
 /* ── Call to action ────────────────────────────────────────────────────── */
 .cta { text-align: center; }
@@ -453,6 +489,79 @@ footer a { color: var(--ash); }
   </div>
 </section>
 
+<section class="wrap up">
+  <p class="eyebrow">The session itself</p>
+  <h2>Not "you trained". What you did, for how long, at what cost.</h2>
+  <p>Every set, the time it took, what your heart did, and what it actually burned.</p>
+
+  <div class="card" style="margin-top:26px">
+    <div class="sess">
+      <span class="sess-nm">Leg day</span>
+      <span class="sess-tm"><span class="n">51</span> min</span>
+    </div>
+    <div class="legs" style="justify-content:space-between;margin-top:20px">
+      <span class="leg hot"><b><span class="n">612</span> kcal</b><span>burned</span></span>
+      <span class="leg hot"><b><span class="n">142</span> bpm</b><span>avg hr</span></span>
+      <span class="leg cool"><b><span class="n">7,340</span> kg</b><span>moved</span></span>
+    </div>
+
+    <p class="mini" style="margin-top:24px">Heart rate through the session</p>
+    <svg class="hr" viewBox="0 0 320 90" role="img" aria-label="Heart rate rising through the session and falling on the rests">
+      <defs><linearGradient id="hrg" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stop-color="#F26419" stop-opacity=".45"/>
+        <stop offset="1" stop-color="#F26419" stop-opacity="0"/></linearGradient></defs>
+      <path class="fillp" d="M4,72 L28,44 L44,60 L68,30 L84,52 L108,26 L124,48 L148,22 L164,46 L188,28 L204,50 L228,32 L244,54 L268,38 L284,58 L308,50 L316,62 L316,90 L4,90 Z" fill="url(#hrg)"/>
+      <path class="ln" pathLength="1" d="M4,72 L28,44 L44,60 L68,30 L84,52 L108,26 L124,48 L148,22 L164,46 L188,28 L204,50 L228,32 L244,54 L268,38 L284,58 L308,50 L316,62" stroke="#F26419"/>
+    </svg>
+  </div>
+
+  <div class="card" style="margin-top:16px">
+    <p class="mini">Resting heart rate · twelve weeks</p>
+    <svg class="hr" viewBox="0 0 320 80" role="img" aria-label="Resting heart rate falling from 62 to 54 over twelve weeks">
+      <path class="ln" pathLength="1" d="M6,20 L34,24 L62,18 L90,28 L118,26 L146,36 L174,33 L202,44 L230,41 L258,52 L286,49 L314,58" stroke="#5FA3C7"/>
+      <circle class="dot" cx="314" cy="58" r="5.5" fill="#5FA3C7"/>
+    </svg>
+    <div class="legs" style="justify-content:space-between">
+      <span class="leg cool"><b><span class="n">62</span></b><span>then</span></span>
+      <span class="leg cool"><b><span class="n">54</span></b><span>now</span></span>
+    </div>
+    <p class="mini" style="margin-top:8px;color:var(--ash)">Down is fitter. It is not a diagnosis, and nothing here reads it as one.</p>
+  </div>
+</section>
+
+<section class="wrap up">
+  <p class="eyebrow">Connections</p>
+  <h2>One door, and everything walks through it.</h2>
+  <p>Apple Health and Health Connect are already aggregators. Connect the phone in your pocket and the rest arrives with it.</p>
+
+  <div class="card" style="margin-top:26px">
+    <p class="mini">Connect directly</p>
+    <div class="chips">
+      <span class="chip on">Apple Health</span>
+      <span class="chip on">Health Connect</span>
+    </div>
+
+    <p class="mini" style="margin-top:22px">Arrives automatically through those two</p>
+    <div class="chips">
+      <span class="chip">Strava</span><span class="chip">Nike Run Club</span><span class="chip">Peloton</span>
+      <span class="chip">Samsung Health</span><span class="chip">Fitbit</span><span class="chip">Oura</span>
+      <span class="chip">Whoop</span><span class="chip">Garmin</span><span class="chip">Strong</span>
+      <span class="chip">Hevy</span><span class="chip">MyFitnessPal</span>
+    </div>
+
+    <p class="mini" style="margin-top:22px">And anything that can post a number</p>
+    <div class="chips">
+      <span class="chip">Continuous glucose</span><span class="chip">Blood pressure</span>
+      <span class="chip">Smart scales</span><span class="chip">Bloodwork</span>
+    </div>
+  </div>
+
+  <p style="margin-top:22px;max-width:36ch">
+    <strong style="color:var(--bright)">Nike Run Club has had no public API for anyone since 2018.</strong>
+    <span style="color:var(--ash)">The phone is the only route that exists — not a workaround, and not worth apologising for.</span>
+  </p>
+</section>
+
 <section class="wrap up cta">
   <p class="eyebrow">Two minutes, once</p>
   <h2>Paste this into ChatGPT.</h2>
@@ -604,6 +713,17 @@ footer a { color: var(--ash); }
   requestAnimationFrame(() => bits.forEach(el => {
     if (el.getBoundingClientRect().top < innerHeight * .9) el.classList.add('seen');
   }));
+})();
+
+// Chips arrive in sequence. All at once reads as a page load; in sequence reads
+// as a list being filled in, which is what it is.
+(() => {
+  if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  document.querySelectorAll('.chips').forEach(group => {
+    [...group.children].forEach((chip, i) => {
+      chip.style.transitionDelay = `${Math.min(i * 55, 600)}ms`;
+    });
+  });
 })();
 
 // ── The connector URL, from wherever this page is really served ────────────
