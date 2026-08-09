@@ -90,8 +90,23 @@ a { color: var(--heat-2); text-underline-offset: 3px; }
 .up { opacity: 0; transform: translateY(22px); }
 .up.seen { opacity: 1; transform: none; transition: opacity .8s var(--ease), transform .8s var(--ease); }
 
+/* ── Way in ────────────────────────────────────────────────────────────────
+   Somebody who already has an account arrives looking for the door, and
+   without one visible the only route to the dashboard was knowing the URL. */
+.topbar {
+  position: absolute; top: 0; right: 0; z-index: 5;
+  padding: clamp(14px, 4vw, 22px) var(--gut);
+}
+.signin {
+  font-size: 15px; font-weight: 600; text-decoration: none; color: var(--bright);
+  padding: 9px 18px; border-radius: 999px;
+  box-shadow: inset 0 0 0 1px var(--edge);
+  transition: box-shadow .25s var(--ease), color .25s var(--ease);
+}
+.signin:hover { box-shadow: inset 0 0 0 1px var(--heat-2); color: var(--heat-3); }
+
 /* ── Masthead ──────────────────────────────────────────────────────────── */
-header { padding-block: clamp(36px, 10vw, 72px) 8px; text-align: center; }
+header { padding-block: clamp(36px, 10vw, 72px) 8px; text-align: center; position: relative; }
 .stamp-mark {
   width: clamp(76px, 20vw, 104px); height: auto; display: block; margin: 0 auto 26px;
   border-radius: 23%;
@@ -251,6 +266,10 @@ footer a { color: var(--ash); }
 </head>
 <body>
 
+<nav class="topbar">
+  <a class="signin" href="/app.html">Sign in</a>
+</nav>
+
 <header class="wrap">
   <svg class="stamp-mark" viewBox="0 0 512 512" aria-hidden="true">
     <defs><linearGradient id="mk" x1="0" y1="0" x2="0" y2="1">
@@ -365,11 +384,12 @@ footer a { color: var(--ash); }
   <p class="eyebrow">Two minutes, once</p>
   <h2>Paste this into ChatGPT.</h2>
   <button class="url" id="mcpurl" type="button">https://wrought.fit/mcp</button>
-  <p>Sign in once and it's simply there — tomorrow morning, and every morning after.</p>
+  <p>No password to invent and none to forget. Put your email in, tap the link it sends, and you're in — tomorrow morning, and every morning after.</p>
   <div class="btns">
-    <a class="btn a" href="/connect.html">Set it up</a>
-    <a class="btn b" href="/app.html?demo=1">See the record</a>
+    <a class="btn a" href="/app.html">Create your account</a>
+    <a class="btn b" href="/app.html?demo=1">See it with data first</a>
   </div>
+  <p style="margin-top:20px;font-size:15px">Already signed up? <a href="/app.html">Open your dashboard</a> · Setting up a watch? <a href="/connect.html">Start here</a></p>
 </section>
 
 <footer class="wrap">
