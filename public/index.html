@@ -4,845 +4,487 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>WROUGHT — the training memory that lives inside your AI</title>
-<meta name="description" content="One Tuesday, logged. Wrought remembers what you ate, what you lifted and what the scale said — and tells you the truth about the week you just had.">
+<meta name="description" content="Say one sentence. It remembers everything else — what you ate, what you lifted, what the scale said — and tells you the truth about your week.">
 <meta name="theme-color" content="#14110F">
 <meta property="og:title" content="WROUGHT">
 <meta property="og:description" content="One sentence a day. It remembers the rest.">
 <meta property="og:type" content="website">
-<style>
-/* ═══════════════════════════════════════════════════════════════════════════
-   WROUGHT — the page is the record.
-
-   The first version of this page was a good dark landing page: hero, sections,
-   cards, rules, one accent. Competent, and completely generic — nothing in its
-   STRUCTURE said "this thing keeps records."
-
-   So this one is not a page about a log. It is a log.
-
-   Set in monospace, because that is what a record is set in. Ruled with
-   hairlines. Dense where a landing page would be airy. And organised as a
-   single timestamped Tuesday — 06:41 the watch reports, 08:14 you say one
-   sentence, 18:22 you train, 22:00 you get told the truth — because that is
-   the literal shape of using the product. The timestamps are not decoration;
-   they are the argument.
-
-   The palette is metallurgy, not styling. Iron announces its temperature as it
-   is worked: dull red near 500°C, cherry, orange, straw, white at forging
-   heat. Two scales run through the whole product and they are not
-   interchangeable:
-
-     EFFORT RUNS HOT     — steps, volume, work done
-     RECOVERY RUNS COOL  — sleep, HRV, resting heart rate, in temper blue,
-                           the colour steel turns when it is drawn back from
-                           hardness so it bends instead of snapping
-
-   One visual world, committed to. A forge at night has no daylight mode, so
-   every colour is painted explicitly and the page holds on any ground.
-   ═══════════════════════════════════════════════════════════════════════════ */
-
-:root {
-  /* The mark is the word, so the word has to carry it alone — no symbol, ever.
-     Compressed black: SF exposes a width axis on Apple hardware that font-stretch
-     drives directly, and Arial Narrow catches everything else. */
-  --stamp: -apple-system, BlinkMacSystemFont, "Helvetica Neue", "Arial Narrow", system-ui, sans-serif;
-
-  --iron:      #14110F;
-  --scale:     #1B1614;
-  --scale-2:   #241D1A;
-  --edge:      #2E2622;
-  --edge-lit:  #463A33;
-
-  --bright:    #F4EFE9;
-  --ash:       #9A8D84;
-  --ash-dim:   #675D57;
-  --ash-faint: #453D38;
-
-  --heat-0:    #241D1B;
-  --heat-1:    #6E1C09;
-  --heat-2:    #B8320C;
-  --heat-3:    #F26419;
-  --heat-4:    #F5A623;
-  --heat-5:    #FFE3B8;
-
-  --temper:    #5B90B0;
-  --temper-2:  #3E6C87;
-  --temper-dk: #24404F;
-
-  --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
-  --serif: ui-serif, Georgia, "Iowan Old Style", "Palatino Linotype", serif;
-
-  --gut: clamp(18px, 4.5vw, 40px);
-  --spine: 76px;
-}
-
-* { box-sizing: border-box; }
-html { -webkit-text-size-adjust: 100%; }
-
-body::before {
-  /* Forge light, barely there. Gives the top of the page somewhere to come
-     from, and stops a flat near-black reading as an unstyled document. */
-  content: ""; position: fixed; inset: -20% -20% auto -20%; height: 90vh; z-index: -1;
-  background: radial-gradient(60% 55% at 50% 0%, rgba(242,100,25,.13), transparent 70%);
-  pointer-events: none;
-}
-body {
-  margin: 0;
-  background: var(--iron);
-  color: var(--bright);
-  /* Monospace as the primary voice, not a utility. A record is set in mono;
-     a brochure is not. This single choice does more than any other to stop
-     the page reading like every other dark product site. */
-  font-family: var(--mono);
-  font-size: 14.5px;
-  line-height: 1.72;
-  -webkit-font-smoothing: antialiased;
-  overflow-x: hidden;
-}
-
-a { color: var(--heat-3); text-underline-offset: 3px; }
-:focus-visible { outline: 2px solid var(--heat-4); outline-offset: 3px; }
-
-.sheet { max-width: 1000px; margin: 0 auto; padding-inline: var(--gut); }
-
-/* ── The spine ─────────────────────────────────────────────────────────────
-   Every entry hangs off a timestamp in a fixed left column, the way a real
-   log reads. On a phone the spine folds up above its entry instead of
-   squeezing the text into a gutter. */
-.entry {
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: 6px 24px;
-  padding-block: 34px;
-  border-top: 1px solid var(--edge);
-}
-.entry > .t {
-  color: var(--heat-3);
-  font-size: 11.5px; letter-spacing: .14em;
-  padding-top: 4px;
-  white-space: nowrap;
-}
-.entry > .t small { display: block; color: var(--ash-faint); letter-spacing: .1em; }
-.entry > .e { min-width: 0; display: flex; flex-direction: column; gap: 16px; }
-@media (min-width: 720px) {
-  .entry { grid-template-columns: var(--spine) 1fr; }
-}
-
-h1, h2 { margin: 0; font-weight: 700; }
-h2 {
-  font-size: clamp(19px, 3vw, 26px);
-  letter-spacing: -.01em; line-height: 1.22;
-  text-wrap: balance;
-}
-p { margin: 0; max-width: 68ch; }
-.dim { color: var(--ash); }
-.faint { color: var(--ash-dim); font-size: 12.5px; letter-spacing: .04em; }
-strong { color: var(--bright); font-weight: 700; }
-.hot { color: var(--heat-4); }
-.cool { color: var(--temper); }
-
-/* ── Masthead ──────────────────────────────────────────────────────────────
-   The word is still the mark. What sits above it is not a symbol invented to
-   stand in for the name — it is the same word cut down to the one letter a
-   16-pixel favicon and a connector tile can physically hold, and it exists
-   because those slots render something whether you supply it or not.
-
-   No wave, no abstract glyph, nothing that needs explaining. The rule that was
-   settled and stays settled is that nothing may sit BESIDE the name pretending
-   to mean it. */
-.masthead { padding-block: clamp(30px, 7vw, 58px) 26px; }
-.rule-row {
-  display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
-  font-size: 11px; letter-spacing: .2em; text-transform: uppercase; color: var(--ash-dim);
-}
-.wordmark {
-  font-family: var(--stamp);
-  font-weight: 900; font-stretch: 75%; letter-spacing: .04em;
-  text-transform: uppercase;
-  color: var(--bright); font-size: 14px;
-}
-h1 {
-  font-size: clamp(52px, 15vw, 168px);
-  line-height: .82;
-  /* Black, compressed and set tight — a plate stamp rather than a letterhead.
-     The earlier version was wide and airy, which read as considered; this reads
-     as load-bearing, and that is the register the product actually speaks in.
-     font-stretch drives SF's width axis on Apple hardware and falls back to a
-     narrow grotesque everywhere else. */
-  font-family: var(--stamp);
-  letter-spacing: -.015em; font-weight: 900; font-stretch: 75%;
-  margin-block: 26px 16px;
-  color: var(--bright);
-}
-/* The mark, struck once at the top of the page and never repeated. It is the
-   same tile the connector listing renders, so the thing somebody adds inside
-   ChatGPT and the thing they saw here are visibly one object. */
-.stamp {
-  width: clamp(64px, 13vw, 108px); height: auto; display: block;
-  border-radius: 22%;
-  box-shadow: 0 18px 46px -20px rgba(242,100,25,.55);
-  animation: strike 900ms cubic-bezier(.22,.61,.36,1) both;
-}
-@keyframes strike {
-  from { opacity: 0; transform: translateY(-14px) scale(.94); }
-  to   { opacity: 1; transform: none; }
-}
-
-/* Section headings in the stamp face rather than mono. The record voice stays
-   in the transcripts; the claims are allowed to be loud. */
-h2 {
-  font-family: var(--stamp);
-  font-weight: 900; font-stretch: 80%;
-  font-size: clamp(24px, 4.6vw, 40px);
-  letter-spacing: -.015em; line-height: 1.06;
-}
-
-.pron { color: var(--ash-dim); font-size: clamp(13px, 2.4vw, 17px); letter-spacing: .04em; }
-.pron b { color: var(--ash); font-weight: 400; }
-
-/* ── The hero matrix ───────────────────────────────────────────────────────
-   The most striking and most honest thing the product does, so it opens the
-   page instead of being buried three-quarters down it. Twelve weeks of
-   training as heat: what you hammered glows, what you avoided sits at cold
-   iron, and the hole where legs used to be reads in about a second. */
-.grid-hero { margin-block: 30px 8px; }
-.gridwrap { overflow-x: auto; padding-bottom: 6px; }
-table.heat { border-collapse: separate; border-spacing: 3px; }
-table.heat th {
-  font-weight: 400; font-size: 10px; letter-spacing: .1em;
-  color: var(--ash-faint); padding: 0 0 6px; text-align: center;
-}
-table.heat th.rh, table.heat td.rh {
-  text-align: left; padding-right: 14px; white-space: nowrap;
-  font-size: 12px; color: var(--ash);
-}
-table.heat td.rh.dead { color: var(--heat-3); }
-.cell {
-  display: block; width: clamp(15px, 3.1vw, 30px); height: 22px; border-radius: 2px;
-  background: var(--heat-0);
-}
-.h0{background:var(--heat-0)} .h1{background:var(--heat-1)} .h2{background:var(--heat-2)}
-.h3{background:var(--heat-3)} .h4{background:var(--heat-4)}
-.c0{background:var(--heat-0)} .c1{background:var(--temper-dk)} .c2{background:var(--temper-2)}
-.c3{background:var(--temper)} .c4{background:#8FBAD4}
-
-/* The one orchestrated moment on the page: the grid coming up to temperature,
-   cell by cell, like stock going into a fire. Nothing else moves. */
-.ignite { opacity: 0; animation: ignite .5s ease-out forwards; }
-@keyframes ignite { to { opacity: 1; } }
-
-.legend {
-  display: flex; gap: 18px; flex-wrap: wrap; align-items: center;
-  font-size: 10.5px; letter-spacing: .12em; text-transform: uppercase; color: var(--ash-dim);
-  margin-top: 14px;
-}
-.legend i { display: flex; gap: 3px; align-items: center; font-style: normal; }
-.legend i b { width: 17px; height: 7px; border-radius: 1px; display: block; }
-
-/* ── Log rows — the transcript, as a record rather than a chat bubble ────── */
-/* ── The transcript, as an object on the page ──────────────────────────────
-   Hairlines on a flat ground read as a spreadsheet. These are cards: a lit top
-   edge, a shadow under them, and the ground showing through — so the exchange
-   looks like a thing you could pick up rather than rows in a table. */
-.log {
-  display: flex; flex-direction: column;
-  background: linear-gradient(180deg, rgba(36,29,26,.92), rgba(20,17,15,.92));
-  border: 1px solid var(--edge);
-  border-radius: 16px;
-  box-shadow: 0 1px 0 rgba(255,255,255,.045) inset, 0 22px 44px -28px rgba(0,0,0,.9);
-  padding: 6px 18px;
-  backdrop-filter: blur(6px);
-}
-.line {
-  display: grid; grid-template-columns: 14px 1fr; gap: 10px;
-  padding-block: 11px; border-top: 1px dashed var(--edge);
-  align-items: baseline;
-}
-.line:first-child { border-top: 0; }
-.line .g { color: var(--heat-2); font-size: 12px; }
-.line .g.in { color: var(--ash-faint); }
-.line .s { min-width: 0; }
-.line .s em { font-style: normal; color: var(--ash-dim); }
-.said { color: var(--bright); }
-.reply { color: var(--ash); }
-.reply b { color: var(--bright); font-weight: 400; }
-.n { color: var(--heat-4); font-variant-numeric: tabular-nums; }
-.nc { color: var(--temper); font-variant-numeric: tabular-nums; }
-.pr {
-  color: var(--heat-5); background: var(--heat-1);
-  font-size: 10px; letter-spacing: .12em; padding: 1px 6px; border-radius: 2px;
-  margin-left: 6px;
-}
-
-/* ── Data blocks ───────────────────────────────────────────────────────────
-   Actual numbers as content. A landing page that says "it tracks your weight"
-   is weaker than one that simply shows the column. */
-.tab { width: 100%; border-collapse: collapse; font-size: 13px; }
-.tab td, .tab th {
-  padding: 7px 10px 7px 0; border-bottom: 1px solid var(--edge);
-  text-align: left; font-weight: 400; vertical-align: baseline;
-}
-.tab th { color: var(--ash-faint); font-size: 10.5px; letter-spacing: .12em; text-transform: uppercase; }
-.tab td:last-child, .tab th:last-child { text-align: right; padding-right: 0; }
-.tab .num { font-variant-numeric: tabular-nums; }
-.tab tr:last-child td { border-bottom: 0; }
-
-.bars { display: flex; flex-direction: column; gap: 9px; max-width: 520px; }
-.brow { display: grid; grid-template-columns: 42px 1fr 68px; gap: 10px; align-items: center; font-size: 12.5px; }
-.brow .k { color: var(--ash-dim); font-size: 10.5px; letter-spacing: .12em; text-transform: uppercase; }
-.track { height: 12px; background: var(--scale-2); border-radius: 99px; overflow: hidden; }
-/* Filled from zero when the row is reached — a bar already at its length is a
-   picture of a number; one that travels is the number arriving. */
-.fill { height: 100%; border-radius: 99px; width: 0; transition: width 1.1s cubic-bezier(.22,.61,.36,1); }
-.seen .fill { width: var(--to); }
-.fill.in { background: linear-gradient(90deg, var(--heat-2), var(--heat-3)); }
-.fill.out { background: linear-gradient(90deg, var(--temper-dk), var(--temper)); }
-.brow .v { text-align: right; font-variant-numeric: tabular-nums; }
-
-/* ── The verdict — the only thing on the page not set in mono ───────────── */
-.verdict {
-  font-family: var(--serif);
-  font-size: clamp(17px, 2.6vw, 22px);
-  line-height: 1.58; letter-spacing: -.005em;
-  color: var(--bright);
-  border-left: 2px solid var(--heat-2);
-  padding-left: 20px;
-  max-width: 62ch;
-}
-.verdict .n { font-family: var(--mono); font-size: .82em; }
-
-.callout {
-  border: 1px solid var(--temper-dk); background: rgba(91,144,176,.06);
-  padding: 16px 18px; display: flex; flex-direction: column; gap: 8px;
-  border-radius: 2px; max-width: 68ch;
-}
-.callout .lab { color: var(--temper); font-size: 10.5px; letter-spacing: .16em; text-transform: uppercase; }
-
-/* ── Close ─────────────────────────────────────────────────────────────── */
-.close { padding-block: 46px 30px; border-top: 1px solid var(--edge); }
-/* The single most important string on the page — the whole call to action is
-   "paste this" — so it is a button that copies itself rather than something to
-   select by hand on a phone. */
-.url {
-  display: block; width: 100%; text-align: left; cursor: pointer;
-  font-family: var(--mono, ui-monospace, monospace);
-  background: var(--scale); border: 1px solid var(--edge-lit);
-  padding: 16px 18px; color: var(--heat-4); border-radius: 10px;
-  font-size: clamp(13px, 3.2vw, 17px); word-break: break-all; margin-block: 18px;
-  transition: border-color .2s ease, background .2s ease, color .2s ease;
-}
-.url:hover { border-color: var(--heat-3); }
-.url.copied { color: var(--moss); border-color: var(--moss); }
-.acts { display: flex; gap: 10px; flex-wrap: wrap; }
-.btn {
-  font: inherit; font-size: 13px; letter-spacing: .1em; text-transform: uppercase;
-  padding: 12px 20px; border-radius: 2px; text-decoration: none; border: 1px solid transparent;
-}
-.btn.a { background: var(--heat-3); color: #190800; font-weight: 700; }
-.btn.a:hover { background: var(--heat-4); }
-.btn.b { border-color: var(--edge-lit); color: var(--bright); }
-.btn.b:hover { border-color: var(--ash-dim); }
-
-footer { padding-block: 26px 70px; color: var(--ash-dim); font-size: 11.5px; line-height: 1.65; }
-footer a { color: var(--ash); }
-
-/* ── Arriving ─────────────────────────────────────────────────────────────
-   The page is a series of claims, and a claim that fades up as you reach it
-   gets read; a wall of them delivered at once gets skimmed. Everything below
-   is progressive — with no JavaScript, or with reduced motion asked for, the
-   whole page is simply there, which is the state that has to be correct. */
-.reveal { opacity: 0; transform: translateY(16px); }
-.reveal.seen {
-  opacity: 1; transform: none;
-  transition: opacity .7s cubic-bezier(.22,.61,.36,1), transform .7s cubic-bezier(.22,.61,.36,1);
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .ignite { animation: none; opacity: 1; }
-  .reveal, .reveal.seen { opacity: 1; transform: none; transition: none; }
-}
-</style>
 <link rel="icon" href="/icon.svg" type="image/svg+xml">
 <link rel="icon" href="/icon-32.png" sizes="32x32" type="image/png">
 <link rel="apple-touch-icon" href="/icon-180.png">
 <link rel="manifest" href="/site.webmanifest">
-<meta name="theme-color" content="#14110F">
+<style>
+/* ═══════════════════════════════════════════════════════════════════════════
+   WROUGHT — the landing page.
+
+   The version before this one was set in monospace and built as a log: ruled
+   hairlines, timestamps down the left margin, dense body copy. It was a
+   considered piece of design aimed at completely the wrong person. Nobody
+   walks out of a gym and reads a terminal.
+
+   So this is built for whoever actually uses it. Big sans-serif type at a size
+   readable at arm's length. Numbers large enough to see across a room.
+   Graphics that say how the day went before a single word is read, and that
+   come alive as you scroll past them. Almost no borders — depth and space do
+   the separating instead.
+
+   The palette does not change, because it was never the problem: iron
+   announces its temperature as it is worked, so effort runs hot and recovery
+   runs cool in temper blue. What changed is the register. Same forge, spoken
+   plainly.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+:root {
+  --iron:      #14110F;
+  --coal:      #1B1614;
+  --slate:     #241D1A;
+  --edge:      #2E2622;
+
+  --bright:    #F7F3EE;
+  --ash:       #A79A90;
+  --ash-dim:   #7A6E67;
+
+  --heat-1:    #B8320C;
+  --heat-2:    #F26419;
+  --heat-3:    #F5A623;
+
+  --temper:    #5FA3C7;
+  --moss:      #6FA672;
+
+  --stamp: -apple-system, BlinkMacSystemFont, "Helvetica Neue", "Arial Narrow", system-ui, sans-serif;
+  --sans:  -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --mono:  ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+
+  --gut: clamp(20px, 6vw, 48px);
+  --ease: cubic-bezier(.22, .61, .36, 1);
+}
+
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; scroll-behavior: smooth; }
+
+body {
+  margin: 0;
+  background: var(--iron);
+  color: var(--bright);
+  font-family: var(--sans);
+  /* Large. This gets read standing up, by somebody who has just trained. */
+  font-size: clamp(17px, 4.3vw, 20px);
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
+}
+body::before {
+  content: ""; position: fixed; inset: -10% -20% auto -20%; height: 80vh; z-index: -1;
+  background: radial-gradient(58% 50% at 50% 0%, rgba(242,100,25,.16), transparent 72%);
+  pointer-events: none;
+}
+
+a { color: var(--heat-2); text-underline-offset: 3px; }
+:focus-visible { outline: 2px solid var(--heat-3); outline-offset: 3px; }
+
+.wrap { max-width: 640px; margin: 0 auto; padding-inline: var(--gut); }
+
+/* ── Arriving ──────────────────────────────────────────────────────────────
+   The hiding class is applied from script, never in the markup, so a page
+   whose JavaScript never runs is fully readable rather than permanently blank. */
+.up { opacity: 0; transform: translateY(22px); }
+.up.seen { opacity: 1; transform: none; transition: opacity .8s var(--ease), transform .8s var(--ease); }
+
+/* ── Masthead ──────────────────────────────────────────────────────────── */
+header { padding-block: clamp(36px, 10vw, 72px) 8px; text-align: center; }
+.stamp-mark {
+  width: clamp(76px, 20vw, 104px); height: auto; display: block; margin: 0 auto 26px;
+  border-radius: 23%;
+  box-shadow: 0 22px 50px -18px rgba(242,100,25,.6);
+  animation: drop 900ms var(--ease) both;
+}
+@keyframes drop { from { opacity: 0; transform: translateY(-18px) scale(.9); } }
+
+h1 {
+  margin: 0;
+  font-family: var(--stamp);
+  font-weight: 900; font-stretch: 75%;
+  font-size: clamp(44px, 13.6vw, 104px);
+  letter-spacing: -.02em; line-height: .9;
+}
+.tag {
+  margin: 18px auto 0; max-width: 22ch;
+  font-size: clamp(20px, 5.4vw, 27px); line-height: 1.28;
+  font-weight: 600; letter-spacing: -.015em;
+}
+.sub { margin: 14px auto 0; max-width: 30ch; color: var(--ash); font-size: clamp(16px, 4.1vw, 18px); }
+
+/* ── Sections ──────────────────────────────────────────────────────────── */
+section { padding-block: clamp(48px, 13vw, 96px); }
+h2 {
+  margin: 0 0 14px;
+  font-size: clamp(28px, 7.4vw, 44px);
+  line-height: 1.08; letter-spacing: -.025em; font-weight: 700;
+  text-wrap: balance;
+}
+section > p { margin: 0; color: var(--ash); max-width: 34ch; }
+.eyebrow {
+  font-family: var(--mono); font-size: 12px; letter-spacing: .2em;
+  text-transform: uppercase; color: var(--heat-2); margin: 0 0 14px;
+}
+
+.card {
+  background: linear-gradient(180deg, rgba(36,29,26,.94), rgba(21,18,16,.94));
+  border-radius: 26px;
+  box-shadow: 0 1px 0 rgba(255,255,255,.05) inset, 0 30px 60px -34px rgba(0,0,0,.95);
+  padding: clamp(22px, 6vw, 34px);
+}
+
+/* ── The ring — how the day went, before a word is read ────────────────── */
+.ring-card { text-align: center; margin-top: 26px; }
+.ring { width: min(300px, 78vw); height: auto; display: block; margin: 0 auto; }
+.ring .track { stroke: #2A211D; }
+.ring .arc {
+  stroke-linecap: round;
+  stroke-dasharray: var(--circ);
+  stroke-dashoffset: var(--circ);
+  transition: stroke-dashoffset 1.5s var(--ease);
+}
+.seen .ring .arc { stroke-dashoffset: var(--to); }
+.ring-mid {
+  font-family: var(--stamp); font-weight: 900; font-stretch: 75%;
+  font-size: 56px; letter-spacing: -.03em;
+}
+.ring-cap { font-family: var(--mono); font-size: 13px; letter-spacing: .22em; text-transform: uppercase; }
+
+.legs { display: flex; justify-content: center; gap: clamp(26px, 9vw, 54px); margin-top: 22px; }
+.leg b { display: block; font-size: clamp(26px, 7vw, 34px); font-weight: 700; letter-spacing: -.02em; }
+.leg small { font-size: .55em; font-weight: 600; }
+.leg span { font-family: var(--mono); font-size: 11.5px; letter-spacing: .18em; text-transform: uppercase; color: var(--ash-dim); }
+.leg.hot b { color: var(--heat-3); }
+.leg.cool b { color: var(--temper); }
+
+/* ── Stat strip ────────────────────────────────────────────────────────── */
+.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 14px; margin-top: 26px; }
+.stat {
+  border-radius: 20px; padding: 20px;
+  background: linear-gradient(180deg, rgba(36,29,26,.9), rgba(21,18,16,.9));
+  box-shadow: 0 1px 0 rgba(255,255,255,.04) inset;
+}
+.stat b { display: block; font-size: clamp(30px, 8vw, 38px); font-weight: 700; letter-spacing: -.03em; line-height: 1; }
+.stat b small { font-size: .5em; font-weight: 600; color: var(--ash-dim); }
+.stat span { display: block; margin-top: 8px; color: var(--ash-dim); font-size: 14px; }
+
+/* ── Chat — big and friendly, not a terminal ───────────────────────────── */
+.chat { display: flex; flex-direction: column; gap: 12px; margin-top: 26px; }
+.bub {
+  max-width: 88%; padding: 15px 19px; border-radius: 22px;
+  font-size: clamp(16px, 4.2vw, 18px); line-height: 1.45;
+}
+.bub.you {
+  align-self: flex-end; background: linear-gradient(180deg, var(--heat-2), var(--heat-1));
+  color: #fff; border-bottom-right-radius: 7px; font-weight: 500;
+}
+.bub.it {
+  align-self: flex-start; background: var(--slate); color: var(--bright);
+  border-bottom-left-radius: 7px;
+}
+.bub .k { color: var(--heat-3); font-weight: 700; }
+.bub small { display: block; margin-top: 6px; color: var(--ash-dim); font-size: 14px; }
+
+/* ── The trend line, drawing itself ────────────────────────────────────── */
+.spark { width: 100%; height: auto; margin-top: 6px; display: block; }
+.spark .ln {
+  fill: none; stroke: var(--temper); stroke-width: 3.5;
+  stroke-linecap: round; stroke-linejoin: round;
+  stroke-dasharray: 1; stroke-dashoffset: 1;
+  transition: stroke-dashoffset 1.8s var(--ease);
+}
+.seen .spark .ln { stroke-dashoffset: 0; }
+.spark .dot { opacity: 0; transition: opacity .5s var(--ease) 1.2s; }
+.seen .spark .dot { opacity: 1; }
+
+/* ── Heat grid ─────────────────────────────────────────────────────────── */
+.grid { display: grid; gap: 7px; }
+.grow { display: grid; grid-template-columns: 84px 1fr; gap: 12px; align-items: center; }
+.grow .nm { font-size: 15px; color: var(--ash); }
+.grow.dead .nm { color: var(--heat-2); font-weight: 600; }
+.cells { display: grid; grid-template-columns: repeat(9, 1fr); gap: 6px; }
+.cell {
+  aspect-ratio: 1; border-radius: 6px; background: #241D1B;
+  transform: scale(.4); opacity: 0;
+  transition: transform .5s var(--ease), opacity .5s var(--ease);
+}
+.seen .cell { transform: none; opacity: 1; }
+.h1 { background: #5C1806 } .h2 { background: #B8320C } .h3 { background: #F26419 }
+.h4 { background: #F5A623 } .h0 { background: #241D1B }
+
+/* ── Call to action ────────────────────────────────────────────────────── */
+.cta { text-align: center; }
+.cta > p { margin-inline: auto; }
+.url {
+  display: block; width: 100%; margin: 22px 0 16px; cursor: pointer;
+  font-family: var(--mono); font-size: clamp(14px, 3.8vw, 17px);
+  background: var(--coal); border: 1px solid var(--edge); color: var(--heat-3);
+  padding: 18px; border-radius: 16px; word-break: break-all;
+  transition: border-color .25s var(--ease), color .25s var(--ease);
+}
+.url:hover { border-color: var(--heat-2); }
+.url.done { color: var(--moss); border-color: var(--moss); }
+.btns { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; margin-top: 22px; }
+.btn {
+  font: inherit; font-size: 16px; font-weight: 600; text-decoration: none;
+  padding: 15px 26px; border-radius: 999px;
+}
+.btn.a { background: var(--heat-2); color: #fff; }
+.btn.b { background: transparent; color: var(--bright); box-shadow: inset 0 0 0 1px var(--edge); }
+
+footer { padding: 34px 0 64px; color: var(--ash-dim); font-size: 14px; line-height: 1.6; text-align: center; }
+footer a { color: var(--ash); }
+.links { display: flex; gap: 14px; justify-content: center; flex-wrap: wrap; margin-bottom: 16px; }
+
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  .up, .up.seen { opacity: 1; transform: none; transition: none; }
+  .stamp-mark { animation: none; }
+  .ring .arc { stroke-dashoffset: var(--to); transition: none; }
+  .spark .ln { stroke-dashoffset: 0; transition: none; }
+  .spark .dot { opacity: 1; transition: none; }
+  .cell { transform: none; opacity: 1; transition: none; }
+}
+</style>
 </head>
 <body>
 
-<div class="sheet">
+<header class="wrap">
+  <svg class="stamp-mark" viewBox="0 0 512 512" aria-hidden="true">
+    <defs><linearGradient id="mk" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#F5A623"/><stop offset=".55" stop-color="#F26419"/>
+      <stop offset="1" stop-color="#C3350D"/></linearGradient></defs>
+    <rect width="512" height="512" rx="112" fill="url(#mk)"/>
+    <path fill="#14110F" d="M104 150 L206 150 L206 178 L182 183 L212 306 L238 183 L214 178 L214 150 L298 150 L298 178 L274 183 L304 306 L330 183 L306 178 L306 150 L408 150 L408 178 L386 184 L330 366 L276 366 L256 268 L236 366 L182 366 L126 184 L104 178 Z"/>
+  </svg>
+  <h1>WROUGHT</h1>
+  <p class="tag">Say one sentence. It remembers the rest.</p>
+  <p class="sub">Lives inside ChatGPT. No app to download, no forms to fill in.</p>
+</header>
 
-  <!-- ═══ MASTHEAD ═══════════════════════════════════════════════════════ -->
-  <header class="masthead">
-    <div class="rule-row">
-      <span class="wordmark">Wrought</span>
-      <span style="color:var(--ash-faint)">Record № 001</span>
-      <span style="color:var(--ash-faint)">Tuesday</span>
-    </div>
-    <svg class="stamp" viewBox="0 0 512 512" aria-hidden="true">
-      <defs><linearGradient id="mk" x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0" stop-color="#F5A623"/><stop offset=".55" stop-color="#F26419"/>
-        <stop offset="1" stop-color="#C3350D"/></linearGradient></defs>
-      <rect width="512" height="512" rx="112" fill="url(#mk)"/>
-      <path fill="#14110F" d="M104 150 L206 150 L206 178 L182 183 L212 306 L238 183 L214 178 L214 150 L298 150 L298 178 L274 183 L304 306 L330 183 L306 178 L306 150 L408 150 L408 178 L386 184 L330 366 L276 366 L256 268 L236 366 L182 366 L126 184 L104 178 Z"/>
+<section class="wrap up">
+  <p class="eyebrow">Today</p>
+  <h2>Know how the day went before you read a word.</h2>
+  <p>Everything you ate against everything you burned, and the gap in the middle.</p>
+
+  <div class="card ring-card">
+    <svg class="ring" viewBox="0 0 240 240" role="img" aria-label="Roughly 1,840 eaten against 2,510 burned — about 670 under for the day">
+      <defs><linearGradient id="rg" x1="0" y1="0" x2="1" y2="1">
+        <stop offset="0" stop-color="#F5A623"/><stop offset="1" stop-color="#F26419"/></linearGradient></defs>
+      <g transform="rotate(-90 120 120)" fill="none" stroke-width="17">
+        <circle class="track" cx="120" cy="120" r="94"/>
+        <circle class="arc" cx="120" cy="120" r="94" stroke="url(#rg)" style="--circ:590.6; --to:141.7"/>
+      </g>
+      <text class="ring-mid" x="120" y="112" text-anchor="middle" dominant-baseline="middle" fill="#F7F3EE"><tspan class="n">670</tspan></text>
+      <text class="ring-cap" x="120" y="150" text-anchor="middle" fill="#7A6E67">under</text>
     </svg>
-    <h1>WROUGHT</h1>
-    <p class="pron">/rôt/ &nbsp;·&nbsp; <b>past tense of <i>work</i>. Shaped by hammering, not poured into a mould.</b></p>
-  </header>
-
-  <!-- ═══ THE MATRIX, UP FRONT ═══════════════════════════════════════════ -->
-  <section class="grid-hero">
-    <p class="faint" style="margin-bottom:14px">TWELVE WEEKS OF TRAINING · WHAT YOU HAMMERED, AND WHAT YOU DIDN'T</p>
-    <div class="gridwrap">
-      <table class="heat" id="hero-grid"><caption class="faint" style="position:absolute;left:-9999px">Sessions per muscle group per week</caption></table>
+    <div class="legs">
+      <span class="leg hot"><b class="n">1,840</b><span>eaten</span></span>
+      <span class="leg cool"><b class="n">2,510</b><span>burned</span></span>
     </div>
-    <div class="legend">
-      <i>Cold iron
-        <b class="h0"></b><b class="h1"></b><b class="h2"></b><b class="h3"></b><b class="h4"></b>
-        Forging heat</i>
+  </div>
+
+  <div class="stats">
+    <div class="stat"><b><span class="n">126</span><small>g</small></b><span>protein today</span></div>
+    <div class="stat"><b><span class="n">7,340</span><small>kg</small></b><span>lifted this week</span></div>
+    <div class="stat"><b><span class="n">6</span><small>h</small> <span class="n">42</span><small>m</small></b><span>slept last night</span></div>
+  </div>
+</section>
+
+<section class="wrap up">
+  <p class="eyebrow">Logging</p>
+  <h2>No forms. No searching a food database.</h2>
+  <p>Just say it, the way you'd say it to a mate. Or photograph the plate.</p>
+
+  <div class="chat">
+    <div class="bub you">two eggs and black coffee, 182 on the scale</div>
+    <div class="bub it">Logged both. <span class="k">Roughly 180 calories</span> and 13g of protein so far.<small>Down 0.4 kg on last week.</small></div>
+    <div class="bub you">ordered a pizza but never ate it</div>
+    <div class="bub it">Taken back off. It never happened.</div>
+  </div>
+</section>
+
+<section class="wrap up">
+  <p class="eyebrow">At the rack</p>
+  <h2>It doesn't hand you a list. It walks you through it.</h2>
+  <p>The weight comes from your own last session — never a guess.</p>
+
+  <div class="chat">
+    <div class="bub you">leg day</div>
+    <div class="bub it">Back squat, 4 sets of 6. You had <span class="k">92.5</span> for 6 last Tuesday and left one in the tank — put <span class="k">95</span> on.</div>
+    <div class="bub you">done, got all 6</div>
+    <div class="bub it">That's a personal best.<small>Rest 3:00 · same weight, set 2 of 4.</small></div>
+    <div class="bub you">left knee grumbled on that one</div>
+    <div class="bub it">Noted against that set. I'll keep you off deep flexion until you say otherwise.</div>
+  </div>
+</section>
+
+<section class="wrap up">
+  <p class="eyebrow">Twelve weeks</p>
+  <h2>See what you've been avoiding.</h2>
+  <p>What you hammered glows. What you skipped goes cold — and you spot it in about a second.</p>
+
+  <div class="card" style="margin-top:26px">
+    <div class="grid" id="grid"></div>
+  </div>
+  <p style="margin-top:22px;color:var(--bright);max-width:36ch">
+    <strong>Five weeks since legs saw a barbell.</strong>
+    <span style="color:var(--ash)">Nobody counted. That's the whole argument for a record you can't quietly edit in your own head.</span>
+  </p>
+</section>
+
+<section class="wrap up">
+  <p class="eyebrow">The long game</p>
+  <h2>One bad Tuesday stops mattering.</h2>
+  <p>A day is noise. A month is the truth, and it's the only thing worth acting on.</p>
+
+  <div class="card" style="margin-top:26px">
+    <svg class="spark" viewBox="0 0 320 120" role="img" aria-label="Weight trending down over twelve weeks">
+      <path class="ln" pathLength="1" d="M8,26 L34,32 L60,28 L86,42 L112,38 L138,52 L164,49 L190,63 L216,58 L242,72 L268,80 L294,76"/>
+      <circle class="dot" cx="294" cy="76" r="6" fill="#5FA3C7"/>
+    </svg>
+    <div class="legs" style="justify-content:space-between">
+      <span class="leg cool"><b class="n">86.4</b><span>12 weeks ago</span></span>
+      <span class="leg cool"><b class="n">82.4</b><span>today</span></span>
     </div>
-    <p class="dim" style="margin-top:20px;max-width:60ch">
-      <strong>Five weeks since legs saw a barbell.</strong> Nobody counted. That is the
-      whole argument for keeping a record you can't quietly edit in your own head.
-    </p>
-  </section>
+  </div>
+</section>
 
-  <!-- ═══ THE DAY ════════════════════════════════════════════════════════ -->
+<section class="wrap up">
+  <p class="eyebrow">Room you earn</p>
+  <h2>It gives permission. It never takes it away.</h2>
+  <div class="chat">
+    <div class="bub you">can I get a takeaway</div>
+    <div class="bub it">You're about <span class="k">1,420</span> under for the week across six logged days. That's a proper meal out, whatever you actually want.<small>You've earned it — spend it, and don't log it as a failure.</small></div>
+  </div>
+</section>
 
-  <article class="entry">
-    <div class="t">06:41<small>slept</small></div>
-    <div class="e">
-      <h2>Your watch files the night before you're awake.</h2>
-      <p class="dim">
-        Nobody types their resting heart rate. Connect the phone once — Apple Health or
-        Health Connect — and sleep, steps, HRV and weight arrive on their own. That one
-        connection also brings <span class="cool">Nike Run Club, Strava, Peloton, Oura,
-        Whoop, Samsung Health and Fitbit</span>, because they already write into it.
-      </p>
-      <table class="tab">
-        <tbody>
-          <tr><td>Asleep</td><td class="num nc">6h 42m</td><td class="faint">−18m on your average</td></tr>
-          <tr><td>Resting HR</td><td class="num nc">54 bpm</td><td class="faint">lowest this month</td></tr>
-          <tr><td>HRV</td><td class="num nc">68 ms</td><td class="faint">recovered</td></tr>
-          <tr><td>Weight</td><td class="num n">82.4 kg</td><td class="faint">trend ↓ 0.39/wk</td></tr>
-        </tbody>
-      </table>
-      <p class="faint">
-        EFFORT RUNS HOT · RECOVERY RUNS COOL — two scales, because a red-hot resting
-        heart rate would read as a good week when it means the opposite.
-      </p>
-    </div>
-  </article>
+<section class="wrap up cta">
+  <p class="eyebrow">Two minutes, once</p>
+  <h2>Paste this into ChatGPT.</h2>
+  <button class="url" id="mcpurl" type="button">https://wrought.fit/mcp</button>
+  <p>Sign in once and it's simply there — tomorrow morning, and every morning after.</p>
+  <div class="btns">
+    <a class="btn a" href="/connect.html">Set it up</a>
+    <a class="btn b" href="/app.html?demo=1">See the record</a>
+  </div>
+</section>
 
-  <article class="entry">
-    <div class="t">08:14<small>ate</small></div>
-    <div class="e">
-      <h2>One sentence is a complete log.</h2>
-      <p class="dim">
-        No forms. No weighing rice in grams. You say it the way you'd say it to a person,
-        and it files it — food broken into macros, lifts into sets and loads, the scale
-        into a trend rather than a number to panic about.
-      </p>
-      <div class="log">
-        <div class="line"><span class="g in">›</span><span class="s said">two eggs and black coffee, 182 on the scale</span></div>
-        <div class="line"><span class="g">·</span><span class="s reply">Logged 2 things. <em>Today so far: roughly <span class="n">180</span> kcal · <span class="n">13g</span> protein.</em></span></div>
-      </div>
-    </div>
-  </article>
-
-  <article class="entry">
-    <div class="t">18:22<small>trained</small></div>
-    <div class="e">
-      <h2>It doesn't hand you a workout.<br>It walks you through one.</h2>
-      <p class="dim">
-        Say <strong>leg day</strong> and it starts. One exercise at a time, the load already
-        worked out from what you lifted last time, then it waits. Four words between sets.
-        Nobody reads a list on their phone with a bar on their back.
-      </p>
-      <div class="log">
-        <div class="line"><span class="g in">›</span><span class="s said">leg day</span></div>
-        <div class="line"><span class="g">·</span><span class="s reply">Back squat, 4×6. You had <b><span class="n">92.5</span></b> for 6 last Tuesday at RPE 8 — put <b><span class="n">95</span></b> on.</span></div>
-        <div class="line"><span class="g in">›</span><span class="s said">done, got all 6</span></div>
-        <div class="line"><span class="g">·</span><span class="s reply">That's a PR.<span class="pr">BEST EVER</span> <em>Rest 3:00 · same weight, set 2 of 4.</em></span></div>
-        <div class="line"><span class="g in">›</span><span class="s said">only 4, it was heavy</span></div>
-        <div class="line"><span class="g">·</span><span class="s reply">Noted. Two short, so we hold <b><span class="n">95</span></b> next week rather than chase it.</span></div>
-        <div class="line"><span class="g in">›</span><span class="s said">left knee grumbled on that one</span></div>
-        <div class="line"><span class="g">·</span><span class="s reply">Kept against that set. I'll keep you off deep flexion until you say otherwise.</span></div>
-      </div>
-      <p class="faint">
-        The weight is never a guess. It comes from your own last session, and it flatly
-        refuses to invent a number for a lift you've never done — it asks you to find it.
-      </p>
-    </div>
-  </article>
-
-  <article class="entry">
-    <div class="t">21:30<small>asked</small></div>
-    <div class="e">
-      <h2>Room you earn, and can never lose.</h2>
-      <div class="log">
-        <div class="line"><span class="g in">›</span><span class="s said">can I get a takeaway</span></div>
-        <div class="line"><span class="g">·</span><span class="s reply">You're about <b><span class="n">1,420</span></b> under for the week across 6 logged days. That's a proper meal out, whatever you actually want. You've earned it — spend it, and don't log it as a failure.</span></div>
-      </div>
-      <div class="bars">
-        <div class="brow"><span class="k">In</span><span class="track"><span class="fill in" style="--to:85%"></span></span><span class="v n">2,140</span></div>
-        <div class="brow"><span class="k">Out</span><span class="track"><span class="fill out" style="--to:100%"></span></span><span class="v nc">2,510</span></div>
-        <div class="brow"><span class="k"></span><span class="faint">1,770 at rest · 740 moved</span><span class="v" style="color:var(--heat-4)">−370</span></div>
-      </div>
-      <div class="callout">
-        <span class="lab">The rule that never inverts</span>
-        <p class="dim">
-          It only ever <strong>adds</strong> permission. Go over for the week and you get one
-          factual line and nothing else — no eating less, no making up for it. The moment
-          "earned" has an opposite it's a punishment schedule, and that's what turns a food
-          log into a disorder. If the log ever starts looking like someone eating too little,
-          the whole frame switches off and the coaching stops.
-        </p>
-      </div>
-    </div>
-  </article>
-
-  <article class="entry">
-    <div class="t">22:00<small>told</small></div>
-    <div class="e">
-      <h2>The truth about the day you just had.</h2>
-      <p class="verdict">
-        Roughly <span class="n">2,140</span> calories and <span class="n">148g</span> of
-        protein — fourth day running you've hit protein, the longest you've held it. Squat
-        moved: <span class="n">102.5</span> for 6 is up <span class="n">10kg</span> on where
-        you started this block. But you've gone five weeks without training legs properly
-        outside that session, and the volume shows it. Weight's coming down about
-        <span class="n">0.4kg</span> a week, which is the right speed — so leave the food
-        alone. Tomorrow is legs. And put the bench first for once; it's costing you six
-        kilos going last.
-      </p>
-      <p class="faint">
-        YOU CHOOSE HOW HARD IT HITS — GENTLE, HONEST, OR BRUTAL — AND IT HOLDS THAT LINE
-        EXACTLY. HARD ON THE WORK, NEVER ON YOU. NO COMMENT ON YOUR BODY, EVER.
-      </p>
-    </div>
-  </article>
-
-  <article class="entry">
-    <div class="t">↑<small>a year</small></div>
-    <div class="e">
-      <h2>What you actually eat,<br>from every altitude.</h2>
-      <p class="dim">
-        A daily macro total is the least interesting number in nutrition — everybody has a
-        bad Tuesday. What nobody can see without years of record is the shape.
-      </p>
-
-      <div class="gridwrap">
-        <table class="heat" style="border-spacing:3px">
-          <thead><tr>
-            <th class="rh">per day</th>
-            <th>May</th><th>Jun</th><th>Jul</th><th>Aug</th><th>Sep</th><th>Oct</th>
-            <th>Nov</th><th>Dec</th><th>Jan</th><th>Feb</th><th>Mar</th><th>Apr</th>
-          </tr></thead>
-          <tbody>
-            <tr><td class="rh">calories</td>
-              <td><span class="cell h2"></span></td><td><span class="cell h2"></span></td>
-              <td><span class="cell h3"></span></td><td><span class="cell h2"></span></td>
-              <td><span class="cell h2"></span></td><td><span class="cell h3"></span></td>
-              <td><span class="cell h3"></span></td><td><span class="cell h4"></span></td>
-              <td><span class="cell h2"></span></td><td><span class="cell h1"></span></td>
-              <td><span class="cell h2"></span></td><td><span class="cell h2"></span></td></tr>
-            <tr><td class="rh">protein</td>
-              <td><span class="cell h1"></span></td><td><span class="cell h2"></span></td>
-              <td><span class="cell h2"></span></td><td><span class="cell h3"></span></td>
-              <td><span class="cell h3"></span></td><td><span class="cell h3"></span></td>
-              <td><span class="cell h2"></span></td><td><span class="cell h1"></span></td>
-              <td><span class="cell h3"></span></td><td><span class="cell h4"></span></td>
-              <td><span class="cell h4"></span></td><td><span class="cell h4"></span></td></tr>
-            <tr><td class="rh">carbs</td>
-              <td><span class="cell h2"></span></td><td><span class="cell h2"></span></td>
-              <td><span class="cell h3"></span></td><td><span class="cell h2"></span></td>
-              <td><span class="cell h2"></span></td><td><span class="cell h2"></span></td>
-              <td><span class="cell h3"></span></td><td><span class="cell h4"></span></td>
-              <td><span class="cell h2"></span></td><td><span class="cell h2"></span></td>
-              <td><span class="cell h2"></span></td><td><span class="cell h1"></span></td></tr>
-            <tr><td class="rh dead">sugar</td>
-              <td><span class="cell h1"></span></td><td><span class="cell h2"></span></td>
-              <td><span class="cell h2"></span></td><td><span class="cell h1"></span></td>
-              <td><span class="cell h2"></span></td><td><span class="cell h3"></span></td>
-              <td><span class="cell h4"></span></td><td><span class="cell h4"></span></td>
-              <td><span class="cell h3"></span></td><td><span class="cell h2"></span></td>
-              <td><span class="cell h1"></span></td><td><span class="cell h1"></span></td></tr>
-            <tr><td class="rh">fibre</td>
-              <td><span class="cell h1"></span></td><td><span class="cell h1"></span></td>
-              <td><span class="cell h2"></span></td><td><span class="cell h2"></span></td>
-              <td><span class="cell h2"></span></td><td><span class="cell h1"></span></td>
-              <td><span class="cell h1"></span></td><td><span class="cell h1"></span></td>
-              <td><span class="cell h2"></span></td><td><span class="cell h3"></span></td>
-              <td><span class="cell h3"></span></td><td><span class="cell h3"></span></td></tr>
-            <tr><td class="rh">fat</td>
-              <td><span class="cell h2"></span></td><td><span class="cell h2"></span></td>
-              <td><span class="cell h2"></span></td><td><span class="cell h2"></span></td>
-              <td><span class="cell h3"></span></td><td><span class="cell h3"></span></td>
-              <td><span class="cell h3"></span></td><td><span class="cell h4"></span></td>
-              <td><span class="cell h2"></span></td><td><span class="cell h2"></span></td>
-              <td><span class="cell h2"></span></td><td><span class="cell h2"></span></td></tr>
-          </tbody>
-        </table>
-      </div>
-      <p class="faint" style="margin-top:12px">
-        SUGAR CLIMBS EVERY NOVEMBER AND DECEMBER. YOU KNEW THAT. NOW YOU CAN SEE IT.
-      </p>
-
-      <table class="tab" style="margin-top:22px">
-        <thead><tr><th>Per day</th><th>Week</th><th>Month</th><th>Year</th></tr></thead>
-        <tbody>
-          <tr><td>Calories</td><td class="num">2,166</td><td class="num">2,240</td><td class="num">2,318</td></tr>
-          <tr><td>Protein</td><td class="num">147g</td><td class="num">141g</td><td class="num">128g</td></tr>
-          <tr><td>Carbs</td><td class="num">201g</td><td class="num">212g</td><td class="num">238g</td></tr>
-          <tr><td>Sugar</td><td class="num">44g</td><td class="num">51g</td><td class="num">68g</td></tr>
-          <tr><td>Fibre</td><td class="num">28g</td><td class="num">26g</td><td class="num">21g</td></tr>
-          <tr><td>Fat</td><td class="num">72g</td><td class="num">75g</td><td class="num">79g</td></tr>
-        </tbody>
-      </table>
-
-      <h2 style="margin-top:26px;font-size:clamp(17px,2.4vw,21px)">And what your meals are made of.</h2>
-      <p class="dim">
-        Counted in <strong>meals</strong>, never in grams — because "meat was in 71% of your
-        meals" is honest, and "you ate 4kg of meat" would be a number nobody's description
-        of dinner could possibly support.
-      </p>
-      <div class="bars">
-        <div class="brow"><span class="k">Meat</span><span class="track"><span class="fill in" style="--to:71%"></span></span><span class="v">71%</span></div>
-        <div class="brow"><span class="k">Veg</span><span class="track"><span class="fill in" style="--to:64%"></span></span><span class="v">64%</span></div>
-        <div class="brow"><span class="k">Grain</span><span class="track"><span class="fill in" style="--to:58%"></span></span><span class="v">58%</span></div>
-        <div class="brow"><span class="k">Dairy</span><span class="track"><span class="fill in" style="--to:41%"></span></span><span class="v">41%</span></div>
-        <div class="brow"><span class="k">Fruit</span><span class="track"><span class="fill in" style="--to:33%"></span></span><span class="v">33%</span></div>
-        <div class="brow"><span class="k">Fish</span><span class="track"><span class="fill in" style="--to:12%"></span></span><span class="v">12%</span></div>
-        <div class="brow"><span class="k">Sweets</span><span class="track"><span class="fill in" style="--to:19%"></span></span><span class="v">19%</span></div>
-        <div class="brow"><span class="k">Booze</span><span class="track"><span class="fill in" style="--to:9%"></span></span><span class="v">9%</span></div>
-      </div>
-
-      <div class="callout" style="margin-top:22px">
-        <span class="lab">The number nobody else can give you</span>
-        <p class="dim">
-          <strong>This year is averaging roughly 152 calories a day below last year, and 19g
-          of protein above it.</strong> That sentence needs two years of memory to exist. It
-          is the entire reason for keeping a record instead of an app — and it's also why
-          nothing here will ever moralise a category at you. It reports the share. What it
-          means is yours to decide.
-        </p>
-      </div>
-    </div>
-  </article>
-
-  <article class="entry">
-    <div class="t">∞<small>kept</small></div>
-    <div class="e">
-      <h2>Everything above is still there tomorrow.</h2>
-      <p class="dim">
-        That's the entire product. Not the logging — a hundred apps log. The part nobody
-        has is a memory that survives the tab closing, so you never open a blank page and
-        explain yourself again.
-      </p>
-      <p class="dim">
-        And it is a <strong>hub</strong>, not an app: one documented door that anything able
-        to POST JSON can feed — watch, ring, scale, glucose sensor, blood pressure cuff,
-        the numbers off a lab sheet, a script you wrote yourself. One timeline, one place.
-        <strong>All of it comes back out</strong> whenever you want it, every row, as JSON
-        or CSV. A hub you can't leave is a trap.
-      </p>
-      <table class="tab">
-        <thead><tr><th>Kept</th><th>Which is why it can say</th></tr></thead>
-        <tbody>
-          <tr><td>Every set, individually</td><td class="dim">"92.5 for 6 last Tuesday — go to 95"</td></tr>
-          <tr><td>Where in the session it happened</td><td class="dim">"your bench isn't stalling, it's always third"</td></tr>
-          <tr><td>What you said mid-set</td><td class="dim">"the knee — I'll keep you off deep flexion"</td></tr>
-          <tr><td>Every meal, in your own words</td><td class="dim">"you're 1,420 under for the week"</td></tr>
-          <tr><td>The shape of your week</td><td class="dim">"Sunday is your worst night, every week"</td></tr>
-          <tr><td>Every macro, for years</td><td class="dim">"sugar climbs every November — here it is"</td></tr>
-          <tr><td>What each meal was made of</td><td class="dim">"meat was in 71% of your meals"</td></tr>
-          <tr><td>Glucose, blood pressure, labs</td><td class="dim">"your ferritin has climbed since March"</td></tr>
-          <tr><td>The things you only say once</td><td class="dim">"you don't run. I haven't forgotten."</td></tr>
-        </tbody>
-      </table>
-    </div>
-  </article>
-
-  <!-- ═══ CLOSE ══════════════════════════════════════════════════════════ -->
-  <section class="close">
-    <p class="faint">TWO MINUTES, ONCE</p>
-    <h2 style="margin-top:10px">Paste this into ChatGPT or Claude.</h2>
-    <button class="url" id="mcpurl" type="button" title="Copy">https://wrought.fit/mcp</button>
-    <p class="dim" style="margin-bottom:20px">
-      No app to download and abandon by February. Sign in once and it's simply there —
-      tomorrow morning, and every morning after.
-    </p>
-    <div class="acts">
-      <a class="btn a" href="/connect.html">Set it up</a>
-      <a class="btn b" href="/app.html?demo=1">See the record</a>
-    </div>
-  </section>
-
-  <footer>
-    <div class="rule-row" style="margin-bottom:16px"><span class="wordmark">Wrought</span></div>
-    <a href="/connect.html">Connect</a> · <a href="/app.html?demo=1">Dashboard</a> ·
-    <a href="/privacy.html">Privacy</a> · <a href="/terms.html">Terms</a> ·
-    <a href="https://github.com/lczako-eng/wrought">Source</a>
-    <p style="margin-top:12px;max-width:70ch">
-      Wrought is a training and nutrition journal. It is not a medical device, it diagnoses
-      nothing, and it is not a substitute for a doctor or a dietitian. Calories inferred
-      from a described meal are estimates and are always labelled as such.
-      © 2026 Laszlo Czako.
-    </p>
-  </footer>
-
-</div>
+<footer class="wrap">
+  <div class="links">
+    <a href="/connect.html">Connect</a><a href="/app.html">Dashboard</a>
+    <a href="/privacy.html">Privacy</a><a href="/terms.html">Terms</a>
+  </div>
+  <p style="max-width:46ch;margin:0 auto">Wrought is a training and nutrition journal. It is not a medical device, it diagnoses nothing, and it is not a substitute for a doctor or a dietitian. Calories inferred from a described meal are estimates and are always labelled as such.</p>
+  <p style="margin-top:12px">© 2026 Laszlo Czako</p>
+</footer>
 
 <script>
-// The hero grid is built rather than hand-written: seventy cells of hand-authored
-// markup is unreadable, and the ignition needs a per-cell delay anyway.
+// ── The heat grid ──────────────────────────────────────────────────────────
+// Twelve weeks of training. Legs go cold at the end, which is the entire point
+// of the graphic and the reason it is not decoration.
 (() => {
-  const MUSCLES = ['chest', 'back', 'shoulders', 'arms', 'legs', 'core', 'conditioning'];
-  const WEEKS = 12;
-
-  // Deliberately imperfect. A demo where everything glows is not a demo of an
-  // honest record — legs go cold at week seven and never come back.
-  const heat = (m, w) => {
-    if (m === 'legs')         return w < 7 ? [2, 3, 2][w % 3] : 0;
-    if (m === 'conditioning') return w > 6 ? [3, 4, 3][w % 3] : 1;
-    if (m === 'core')         return [1, 2, 1, 2][w % 4];
-    if (m === 'shoulders')    return [2, 1, 2, 3][w % 4];
-    return [3, 4, 3, 2][w % 4];
+  const MUSCLES = ['chest', 'back', 'shoulders', 'arms', 'legs', 'core'];
+  const HEAT = {
+    chest:     [3, 4, 3, 2, 3, 4, 3, 2, 3],
+    back:      [3, 4, 3, 2, 3, 4, 3, 2, 3],
+    shoulders: [2, 2, 2, 3, 2, 1, 2, 3, 2],
+    arms:      [3, 4, 3, 2, 3, 4, 3, 2, 3],
+    legs:      [2, 3, 3, 2, 3, 2, 2, 0, 0],
+    core:      [2, 2, 1, 2, 1, 2, 2, 2, 1],
   };
-
-  const label = w => {
-    const d = new Date(Date.UTC(2026, 4, 4) + w * 7 * 86400000);
-    return `${d.getUTCDate()}/${d.getUTCMonth() + 1}`;
-  };
-
-  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
-  const rows = MUSCLES.map(m => {
-    const dead = m === 'legs';
-    const cells = Array.from({ length: WEEKS }, (_, w) => {
-      const delay = reduce ? 0 : (w * 34 + MUSCLES.indexOf(m) * 26);
-      return `<td><span class="cell h${heat(m, w)} ignite" style="animation-delay:${delay}ms"></span></td>`;
-    }).join('');
-    return `<tr><td class="rh${dead ? ' dead' : ''}">${m}</td>${cells}</tr>`;
-  }).join('');
-
-  const head = `<tr><th class="rh">muscle</th>${
-    Array.from({ length: WEEKS }, (_, w) => `<th>${label(w)}</th>`).join('')}</tr>`;
-
-  document.getElementById('hero-grid').innerHTML =
-    `<thead>${head}</thead><tbody>${rows}</tbody>`;
+  document.getElementById('grid').innerHTML = MUSCLES.map(m => `
+    <div class="grow${m === 'legs' ? ' dead' : ''}">
+      <span class="nm">${m}</span>
+      <div class="cells">${HEAT[m].map(h => `<span class="cell h${h}"></span>`).join('')}</div>
+    </div>`).join('');
 })();
 
-// The connector URL is written from wherever the page is actually served, not
-// from the domain we hope to be on. Hard-coding wrought.fit while the site
-// lives at a netlify.app address hands every visitor a URL that fails with a
-// message telling them nothing.
+// ── Numbers land rather than appear ────────────────────────────────────────
+// A figure sitting at its value is a picture of a result; one that counts up is
+// the result arriving. Formatting is preserved exactly — "1,840" keeps its
+// comma, "82.4" its decimal — because a counter that mangles the number it is
+// animating is worse than no counter at all.
 (() => {
-  const el = document.getElementById('mcpurl');
-  if (!el) return;
-  // Only a real web origin can be the connector address. Opened from disk —
-  // saved page, local preview — location.origin is "file://" and would print
-  // file:///mcp, so the canonical domain is the honest fallback.
-  const web = location.protocol === 'https:' || location.protocol === 'http:';
-  const url = web ? `${location.origin}/mcp` : 'https://wrought.fit/mcp';
-  el.textContent = url;
-  el.addEventListener('click', async () => {
-    try { await navigator.clipboard.writeText(url); } catch { return; }
-    const was = el.textContent;
-    el.textContent = 'Copied — now paste it into ChatGPT or Claude';
-    el.classList.add('copied');
-    setTimeout(() => { el.textContent = was; el.classList.remove('copied'); }, 2200);
-  });
-})();
+  if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  if (!('IntersectionObserver' in window)) return;
 
-// Every number on the page counts up as you reach it. A figure already sitting
-// at its value is a picture of a result; one that lands is the result arriving,
-// which is the difference between reading a claim and watching it happen.
-// Formatting is preserved exactly — "1,420" keeps its comma, "92.5" its decimal,
-// "13g" its unit — because a counter that mangles the number it is animating is
-// worse than no counter.
-(() => {
-  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
-  if (reduce) return;
-
-  const parse = (txt) => {
-    const m = String(txt).match(/^([^\d-]*)(-?[\d,]+(?:\.\d+)?)(.*)$/);
+  const read = (txt) => {
+    const m = String(txt).trim().match(/^(-?[\d,]+(?:\.\d+)?)$/);
     if (!m) return null;
-    const raw = m[2];
+    const raw = m[1];
     return {
-      pre: m[1], post: m[3],
       value: parseFloat(raw.replace(/,/g, '')),
       commas: raw.includes(','),
-      decimals: (raw.split('.')[1] || '').length,
+      dp: (raw.split('.')[1] || '').length,
     };
   };
 
-  const fmt = (n, spec) => {
-    const fixed = n.toFixed(spec.decimals);
-    const withCommas = spec.commas
-      ? fixed.replace(/\B(?=(\d{3})+(?!\d))/g, ',')
-      : fixed;
-    return spec.pre + withCommas + spec.post;
+  const paint = (n, s) => {
+    const f = n.toFixed(s.dp);
+    return s.commas ? f.replace(/\B(?=(\d{3})+(?!\d))/g, ',') : f;
   };
 
-  const run = (el) => {
-    const spec = parse(el.textContent);
-    if (!spec || !isFinite(spec.value)) return;
-    const from = 0, to = spec.value, dur = 900;
+  const run = (el, s) => {
+    const dur = 1100;
     let start = null;
-    el.textContent = fmt(0, spec);
+    el.textContent = paint(0, s);
     const step = (t) => {
       if (start === null) start = t;
       const p = Math.min(1, (t - start) / dur);
-      // Ease out: fast off the mark, settling rather than stopping dead.
-      const eased = 1 - Math.pow(1 - p, 3);
-      el.textContent = fmt(from + (to - from) * eased, spec);
+      el.textContent = paint(s.value * (1 - Math.pow(1 - p, 3)), s);
       if (p < 1) requestAnimationFrame(step);
     };
     requestAnimationFrame(step);
   };
 
-  if (!('IntersectionObserver' in window)) return;
   const io = new IntersectionObserver((entries) => {
     for (const e of entries) {
       if (!e.isIntersecting) continue;
-      run(e.target);
+      const s = read(e.target.textContent);
+      if (s && isFinite(s.value)) run(e.target, s);
       io.unobserve(e.target);
     }
-  }, { threshold: 1 });
+  }, { threshold: .9 });
 
-  document.querySelectorAll('.n, .nc, .brow .v').forEach(el => io.observe(el));
+  document.querySelectorAll('.n').forEach(el => io.observe(el));
 })();
 
-// Sections arrive as you reach them. Applied from script rather than markup on
-// purpose: if this file never runs, nothing is ever given the hiding class, so
-// the page stays fully readable instead of being invisible forever — the one
-// failure mode a scroll animation must not have.
+// ── Sections light up as you reach them ────────────────────────────────────
 (() => {
-  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
-  // article, not just section. The whole Tuesday narrative is marked up as
-  // <article class="entry">, so leaving it out meant the main body of the page
-  // never revealed and every bar sat at zero width.
-  const bits = document.querySelectorAll('.sheet > section, .sheet > article, .sheet > footer');
-  if (reduce || !('IntersectionObserver' in window)) return;
-
-  bits.forEach(el => el.classList.add('reveal'));
+  const bits = document.querySelectorAll('section, header');
+  if (matchMedia('(prefers-reduced-motion: reduce)').matches || !('IntersectionObserver' in window)) {
+    bits.forEach(el => el.classList.add('seen'));
+    return;
+  }
   const io = new IntersectionObserver((entries) => {
     for (const e of entries) {
       if (!e.isIntersecting) continue;
       e.target.classList.add('seen');
       io.unobserve(e.target);
     }
-  }, { rootMargin: '0px 0px -12% 0px', threshold: 0.06 });
+  }, { rootMargin: '0px 0px -10% 0px', threshold: .12 });
 
   bits.forEach(el => io.observe(el));
+  requestAnimationFrame(() => bits.forEach(el => {
+    if (el.getBoundingClientRect().top < innerHeight * .9) el.classList.add('seen');
+  }));
+})();
 
-  // Anything already on screen at load should not wait for a scroll that may
-  // never come — on a short viewport the first section can sit inside the
-  // margin and would otherwise stay hidden.
-  requestAnimationFrame(() => {
-    bits.forEach(el => {
-      if (el.getBoundingClientRect().top < innerHeight) el.classList.add('seen');
-    });
+// ── The connector URL, from wherever this page is really served ────────────
+// Hard-coding the domain hands a dead URL to anyone visiting before DNS moves.
+(() => {
+  const el = document.getElementById('mcpurl');
+  const web = location.protocol === 'https:' || location.protocol === 'http:';
+  const url = web ? `${location.origin}/mcp` : 'https://wrought.fit/mcp';
+  el.textContent = url;
+  el.addEventListener('click', async () => {
+    try { await navigator.clipboard.writeText(url); } catch { return; }
+    el.textContent = 'Copied — now paste it into ChatGPT';
+    el.classList.add('done');
+    setTimeout(() => { el.textContent = url; el.classList.remove('done'); }, 2200);
   });
 })();
 </script>
