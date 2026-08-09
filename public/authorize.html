@@ -12,9 +12,13 @@
     display:flex;align-items:center;justify-content:center;min-height:100vh;padding:24px}
   .box{width:100%;max-width:400px}
   .mark{display:flex;align-items:center;justify-content:center;gap:12px;margin-bottom:30px}
-  .mark .bar{width:44px;height:5px;border-radius:3px;
+  .mark img{border-radius:11px;display:block}
+  .mark .bar{display:none;
     background:linear-gradient(90deg,#3a3a40,var(--ash) 55%,var(--ember));box-shadow:0 0 20px rgba(255,90,31,.4)}
-  .mark .name{font-family:-apple-system,BlinkMacSystemFont,"Helvetica Neue","Arial Narrow",system-ui,sans-serif;font-weight:900;font-stretch:75%;letter-spacing:.04em;font-size:15px;text-transform:uppercase}
+  .mark .name{font-family:Rockwell,"Roboto Slab","Bookman Old Style",Georgia,serif;font-weight:700;letter-spacing:.04em;font-size:17px;text-transform:uppercase}
+  .first{margin:16px 0 0;font-size:13.5px;line-height:1.55;color:#9A8D84}
+  .first b{color:#F4EFE9}
+  .first a{color:#F26419}
   .card{background:var(--panel);border:1px solid var(--line);border-radius:13px;padding:26px 24px}
   h1{font-size:19px;margin:0 0 7px;font-weight:650;letter-spacing:-.01em}
   .who{color:var(--muted);font-size:14px;margin:0 0 22px}
@@ -38,15 +42,20 @@
 </head>
 <body>
 <div class="box">
-  <div class="mark"><span class="bar"></span><span class="name">WROUGHT</span></div>
+  <div class="mark"><img src="/icon.svg" alt="" width="42" height="42"><span class="name">WROUGHT</span></div>
   <div class="card">
     <h1>Connect your training memory</h1>
     <p class="who"><b id="client">An AI assistant</b> wants to read and write your WROUGHT log.</p>
 
     <div id="form">
       <input id="email" type="email" placeholder="you@example.com" autocomplete="email">
-      <button id="send">Email me a sign-in link</button>
+      <button id="send">Continue with email</button>
     </div>
+    <p class="first">
+      <b>First time?</b> This creates your WROUGHT account — no password to invent and
+      none to forget. The same account opens your dashboard and charts at
+      <a href="https://wrought.fit">wrought.fit</a>.
+    </p>
     <p class="msg" id="msg"></p>
 
     <div class="grants">
