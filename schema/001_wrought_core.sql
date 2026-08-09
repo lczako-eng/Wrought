@@ -3,7 +3,7 @@
 --
 -- The problem, stated plainly: every morning you open a brand new chat and
 -- re-explain your entire life. What you ate. What you lifted. What the scale
--- said. The model is brilliant for ninety seconds and then wroughtts you exist.
+-- said. The model is brilliant for ninety seconds and then forgets you exist.
 -- Meanwhile the watch on your wrist knows your resting heart rate to the beat
 -- and has never once volunteered an opinion about it.
 --
@@ -317,7 +317,7 @@ create index if not exists wrought_memory_user_idx
 -- This is the most personal data anybody will ever hand this system. Default
 -- deny everywhere. A signed-in user reaches their own rows and nobody else's.
 -- The two token tables get NO policy at all, so a leaked anon key cannot read
--- a wearable credential or wrought an ingest bearer.
+-- a wearable credential or forge an ingest bearer.
 
 alter table public.wrought_profile       enable row level security;
 alter table public.wrought_events        enable row level security;

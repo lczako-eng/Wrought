@@ -211,6 +211,52 @@ export function windowStatus(win, tz, now = new Date()) {
   };
 }
 
+// ── Fasting — the record, not the plan ──────────────────────────────────────
+// The eating window above is a timetable. This is the train: what actually
+// happened last night. Keeping them apart matters, because a product that reads
+// the plan as the record ends up congratulating somebody for a fast they did not
+// do — and once it has done that twice, none of its numbers mean anything.
+//
+// It is a trust system on purpose. "Stopped at eight, ate again at noon" is a
+// complete entry, said the next morning, with nothing to press at either end. A
+// tracker that needs a button at 8pm measures the evenings somebody remembered
+// to open it — which is exactly how every food log dies.
+
+export function fastLength(from, to) {
+  if (!from || !to) return null;
+  const f = minutesFromTime(from), t = minutesFromTime(to);
+  // Crossing midnight is the ordinary case, not the exception: the fast that
+  // matters runs from dinner to the next day. Equal times mean a full 24h.
+  const mins = t > f ? t - f : (1440 - f) + t;
+  return Math.round((mins / 60) * 10) / 10;
+}
+
+export function fastingSummary(rows = []) {
+  const hours = rows
+    .map(r => r?.detail?.hours)
+    .filter(h => Number.isFinite(h) && h > 0);
+
+  if (!hours.length) {
+    return { count: 0, average_hours: null, longest_hours: null, say: 'No fasts logged yet.' };
+  }
+
+  const total   = hours.reduce((a, b) => a + b, 0);
+  const average = Math.round((total / hours.length) * 10) / 10;
+  const longest = Math.max(...hours);
+
+  return {
+    count: hours.length,
+    average_hours: average,
+    longest_hours: longest,
+    // No target, no streak, no score. A fast is a thing that happened, and the
+    // moment this starts grading them it becomes a reason to skip breakfast to
+    // keep a number alive.
+    say: hours.length === 1
+      ? `One fast logged: ${hours[0]}h.`
+      : `${hours.length} fasts logged, averaging ${average}h. Longest ${longest}h.`,
+  };
+}
+
 // ── Reading a day ───────────────────────────────────────────────────────────
 // One function, every number for one calendar day, already added up. The brief,
 // the dashboard and the coach all call this and therefore cannot disagree.
@@ -810,7 +856,7 @@ export async function insertEvents(userId, profile, parsedEvents, { source = 'ag
   return data || [];
 }
 
-const VALID_TYPES = new Set(['food','drink','workout','weight','measurement','sleep','symptom','mood','supplement','note']);
+const VALID_TYPES = new Set(['food','drink','workout','weight','measurement','sleep','symptom','mood','supplement','note','fast']);
 
 export async function rememberFact(userId, fact, category = 'general') {
   const { error } = await supabase.from('wrought_memory')

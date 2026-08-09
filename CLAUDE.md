@@ -138,6 +138,25 @@ quotes no number and explains nothing — explaining *why* would tell someone
 already under-eating that they had not qualified for a treat. There is a test
 for that exact failure, because the first version had it.
 
+### Fasting — the record, not the plan
+
+`004_wrought_fasting.sql` adds `fast` as an event type; `log_fast` records one.
+The eating window is a **timetable**; a fast is the **train**. Conflating them
+means congratulating somebody for a fast they did not do, and after that none of
+the numbers mean anything.
+
+Deliberately a trust system, in the founder's words: *"it could be all just
+verbal — I could say last night I stopped eating at eight and I started eating
+again at eight."* Nothing to press at either end, because a tracker needing a
+button at 8pm measures the evenings somebody remembered to open it, which is how
+every food log dies. `fastLength()` treats crossing midnight as the ordinary
+case; equal times are 24h, not zero.
+
+**It is never graded** — no target, no streak, no score, and a test asserts the
+summary carries no praise or judgement. A fast with a score attached becomes a
+reason to skip breakfast to keep a number alive, which is the same failure mode
+`earnedRoom()` is built to avoid.
+
 ### Nutrition — counted honestly, at every altitude
 
 `lib/nutrition.js`. A daily macro total is the least interesting number in
@@ -252,7 +271,7 @@ self-reporting scale removes the most-abandoned manual entry), then Strava.
    sent: a git bundle with full history. `git clone wrought-full.bundle`, set the
    remote, push. Retry `add_repo` first in any new session.
 2. Run `schema/001_wrought_core.sql`, then `002_wrought_oauth.sql`, then
-   `003_wrought_training.sql` in Supabase.
+   `003_wrought_training.sql`, then `004_wrought_fasting.sql` in Supabase.
 3. Set env vars in Netlify: `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`,
    `OPENAI_API_KEY`, `WROUGHT_SITE_URL=https://wrought.fit`. Inject
    `window.WROUGHT_SUPABASE_URL` and `window.WROUGHT_SUPABASE_ANON` for the pages.

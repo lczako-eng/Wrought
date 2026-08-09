@@ -22,7 +22,7 @@ import {
   localDateFor, addDays, daysBetween, clockString, humanDuration,
   kgToLb, lbToKg, cmToIn, inToCm, sayWeight,
   windowStatus, weightTrend, trainingMatrix, summariseRange, careFlags, scoreGoals,
-  eventsFromClient,
+  eventsFromClient, fastLength, fastingSummary,
 } from '../netlify/functions/lib/wrought.js';
 
 let passed = 0, failed = 0;
@@ -1003,6 +1003,60 @@ await test('the doctrine reaches the model that has to follow it', async () => {
   const body = JSON.parse((await post(rpc('initialize', { protocolVersion: '2025-06-18' }))).body);
   assert.match(body.result.instructions, /YOU STRUCTURE THE LOG/);
   assert.match(body.result.instructions, /never invent a number/i);
+});
+
+// ── Fasting ─────────────────────────────────────────────────────────────────
+// A fast is a record of something that happened, and the arithmetic between two
+// clock times is the whole of it. The midnight crossing is the case that matters
+// — almost every real fast runs from dinner to the next day — and getting it
+// wrong turns a 16-hour fast into a negative number without anything failing.
+
+group('Fasting — the record, not the plan');
+
+await test('a fast across midnight is measured forwards', () => {
+  assert.equal(fastLength('20:00', '12:00'), 16);
+  assert.equal(fastLength('21:30', '13:00'), 15.5);
+});
+
+await test('a fast inside one day still counts', () => {
+  assert.equal(fastLength('08:00', '16:00'), 8);
+});
+
+await test('same time both ends is a full day, not zero', () => {
+  assert.equal(fastLength('20:00', '20:00'), 24);
+});
+
+await test('an unfinished fast has no length yet', () => {
+  assert.equal(fastLength('20:00', null), null);
+  assert.equal(fastLength(null, '12:00'), null);
+});
+
+await test('history averages only the fasts that finished', () => {
+  const s = fastingSummary([
+    { detail: { hours: 16 } },
+    { detail: { hours: 18 } },
+    { detail: { hours: null, open: true } },
+    { detail: {} },
+  ]);
+  assert.equal(s.count, 2);
+  assert.equal(s.average_hours, 17);
+  assert.equal(s.longest_hours, 18);
+});
+
+await test('nothing logged says so rather than dividing by zero', () => {
+  const s = fastingSummary([]);
+  assert.equal(s.count, 0);
+  assert.equal(s.average_hours, null);
+  assert.match(s.say, /No fasts/);
+});
+
+await test('the fast is never graded', () => {
+  const say = fastingSummary([{ detail: { hours: 22 } }, { detail: { hours: 13 } }]).say;
+  assert.doesNotMatch(say, /good|great|well done|only|just|short|impressive/i,
+    'a graded fast becomes a reason to skip breakfast to keep a number alive');
+  const tool = TOOLS.find(t => t.name === 'log_fast');
+  assert.ok(tool, 'log_fast must be in the toolset');
+  assert.deepEqual(tool.inputSchema.required, ['from']);
 });
 
 // ── Report ──────────────────────────────────────────────────────────────────

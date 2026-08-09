@@ -22,6 +22,7 @@ import {
   getProfile, getMemory, getGoals, getWindow, windowStatus,
   dayFacts, rangeFacts, summariseRange, scoreGoals, careFlags,
   parseLog, eventsFromClient, insertEvents, writeVerdict, rememberFact,
+  fastLength, fastingSummary,
 } from './lib/wrought.js';
 import { PROVIDERS, providerSummary, recommendRoute } from './lib/providers.js';
 import { nutritionTotals, composition, macroMatrix, yearOverYear } from './lib/nutrition.js';
@@ -127,7 +128,7 @@ const TOOLS = [
           items: {
             type: 'object',
             properties: {
-              event_type: { type: 'string', enum: ['food','drink','workout','weight','measurement','sleep','symptom','mood','supplement','note'] },
+              event_type: { type: 'string', enum: ['food','drink','workout','weight','measurement','sleep','symptom','mood','supplement','note','fast'] },
               summary:    { type: 'string', description: 'A short natural sentence in the user\'s own register — "two eggs and black coffee". This is what gets read back to them.' },
               detail: {
                 type: 'object',
@@ -336,7 +337,7 @@ const TOOLS = [
       type: 'object',
       properties: {
         query: { type: 'string',  description: 'What to look for — "deadlift", "pizza", "beer", "knee".' },
-        type:  { type: 'string',  enum: ['food','drink','workout','weight','measurement','sleep','symptom','mood','supplement','note'],
+        type:  { type: 'string',  enum: ['food','drink','workout','weight','measurement','sleep','symptom','mood','supplement','note','fast'],
                  description: 'Optional filter to one kind of entry.' },
         days:  { type: 'integer', description: 'How far back to search. Default 365.' },
       },
@@ -385,13 +386,13 @@ const TOOLS = [
           type: 'object',
           description: 'The merged entry: the original mention and this new detail read together as ONE thing, structured the same way as log.events. Supply this when you can still see what was originally logged earlier in the conversation; omit it if you cannot, and the server will merge as best it can. Merge rather than replace — detail arriving late must never wipe something already known — and still never invent a number they did not give.',
           properties: {
-            event_type: { type: 'string', enum: ['food','drink','workout','weight','measurement','sleep','symptom','mood','supplement','note'] },
+            event_type: { type: 'string', enum: ['food','drink','workout','weight','measurement','sleep','symptom','mood','supplement','note','fast'] },
             summary:    { type: 'string' },
             detail:     { type: 'object' },
             estimated:  { type: 'boolean' },
           },
         },
-        type: { type: 'string', enum: ['food','drink','workout','weight','measurement','sleep','symptom','mood','supplement','note'],
+        type: { type: 'string', enum: ['food','drink','workout','weight','measurement','sleep','symptom','mood','supplement','note','fast'],
                 description: 'Which kind of entry to amend. Omit to amend whatever was logged most recently.' },
       },
       required: ['text'],
@@ -466,10 +467,27 @@ const TOOLS = [
         opens_at:   { type: 'string', description: 'HH:MM, 24-hour, e.g. "11:00".' },
         closes_at:  { type: 'string', description: 'HH:MM, 24-hour, e.g. "19:00". May be after midnight.' },
         strictness: { type: 'string', enum: ['soft', 'firm'], description: 'soft = a note in the brief. firm = called out in the verdict.' },
-        active:     { type: 'boolean', description: 'false turns the window off without wroughttting it.' },
+        active:     { type: 'boolean', description: 'false turns the window off without forgetting it.' },
       },
     },
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+  },
+  {
+    name: 'log_fast',
+    title: 'Record a fast, from what they say afterwards',
+    description: 'Records a completed fast — the gap between the last thing eaten and the first. "Stopped eating at eight last night, ate again at noon" is a complete entry; the server works out the hours. Use it whenever somebody mentions fasting, skipping dinner, skipping breakfast, or eating in a window, including in passing. Deliberately a trust system: there is nothing to start and nothing to stop, because a fasting tracker that needs a button pressed at 8pm only ever measures the evenings somebody remembered to open it. This is the RECORD of what happened — set_eating_window is the PLAN, and they are different things.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        from:  { type: 'string', description: 'HH:MM, 24-hour, when they stopped eating. "eight last night" is "20:00".' },
+        to:    { type: 'string', description: 'HH:MM, 24-hour, when they ate again. Omit if they are still fasting right now.' },
+        date:  { type: 'string', description: 'YYYY-MM-DD, the day the fast ENDED. Defaults to today in their timezone.' },
+        note:  { type: 'string', description: 'Anything they said about it — "felt fine", "was rough after the gym".' },
+        quiet: { type: 'boolean', description: 'True when this came up in passing during another conversation.' },
+      },
+      required: ['from'],
+    },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
   },
   {
     name: 'connect_device',
@@ -1701,6 +1719,51 @@ async function setEatingWindow(args, user) {
   };
 }
 
+async function logFast(args, user) {
+  const from = String(args.from || '').trim();
+  if (!/^\d{1,2}:\d{2}$/.test(from)) return { error: 'from must be HH:MM, 24-hour.' };
+  const to = /^\d{1,2}:\d{2}$/.test(String(args.to || '')) ? String(args.to).trim() : null;
+
+  const profile = await getProfile(user.id);
+  const today = localDateFor(profile.timezone);
+  const date = /^\d{4}-\d{2}-\d{2}$/.test(String(args.date || '')) ? args.date : today;
+
+  const hours = fastLength(from, to);
+  const summary = to
+    ? `fasted ${hours}h — ${from} to ${to}`
+    : `fasting since ${from}`;
+
+  await insertEvents(user.id, profile, [{
+    event_type: 'fast',
+    summary,
+    detail: { from, to, hours, open: !to, ...(args.note ? { note: args.note } : {}) },
+    // Nothing here is inferred. They said when they stopped and when they
+    // started, and the arithmetic between two clock times is not a guess.
+    estimated: false,
+    time_hint: to || null,
+  }], { rawInput: `fast ${from}${to ? `–${to}` : ''}` });
+
+  const since = addDays(today, -89);
+  const { data: past } = await supabase.from('wrought_events')
+    .select('detail, local_date')
+    .eq('user_id', user.id).eq('event_type', 'fast')
+    .gte('local_date', since).order('local_date', { ascending: false }).limit(90);
+
+  const history = fastingSummary(past || []);
+
+  return {
+    recorded: { date, from, to, hours, open: !to },
+    history,
+    say: to
+      ? `Logged: ${hours}h, ${from} to ${to}.`
+      : `Logged: fasting since ${from}. Tell me when you eat and I'll close it.`,
+    note: args.quiet
+      ? 'Caught in passing. One short clause at most, then straight back to what they were talking about.'
+      : 'Report the hours and the average. Do NOT congratulate a long one or query a short one — a fast that gets graded becomes a reason to skip breakfast to keep a number alive. It is a record, not a score.',
+    next_actions: ['brief for the day\'s read', 'set_eating_window only if they ask for a plan rather than a record'],
+  };
+}
+
 async function connectDevice(args, user) {
   const { data: conns } = await supabase.from('wrought_connections')
     .select('provider, mode, status, last_sync_at').eq('user_id', user.id);
@@ -1847,6 +1910,7 @@ const IMPL = {
   set_profile: setProfile,
   set_goal: setGoal,
   set_eating_window: setEatingWindow,
+  log_fast: logFast,
   connect_device: connectDevice,
   remember, recall,
 };
