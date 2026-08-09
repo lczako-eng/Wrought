@@ -791,6 +791,39 @@ export function needsMacros(written = [], events = []) {
 // is the one thing that cannot be undone, so this is deliberately literal: every
 // meaningful word in what they said has to appear in the entry. Better to come
 // back with nothing and ask than to quietly remove the wrong dinner.
+// What is missing before the numbers can mean anything — carried on every read
+// so the model meets it at the moment it would otherwise paper over the gap.
+//
+// The failure this exists to stop: asked "how many calories do I have left"
+// with no target set, a model will happily answer "if we use 2,500 as your
+// budget…". Nothing set 2,500. It is a plausible number in place of a real one,
+// which is the exact shape of mistake this product cannot make — and it lets
+// the setup question go unasked forever, because the gap never surfaces.
+export function setupNeeded(profile, { hasWeight = false, hasCalorieGoal = false } = {}) {
+  const missing = [
+    !profile?.height_cm    ? 'height' : null,
+    !profile?.birth_year   ? 'the year they were born' : null,
+    !profile?.sex          ? 'male or female (for the metabolic formula)' : null,
+    !hasWeight             ? 'a current weight' : null,
+    !profile?.activity_level ? 'how much they are on their feet in a normal day' : null,
+  ].filter(Boolean);
+
+  if (!missing.length && hasCalorieGoal) return null;
+
+  return {
+    missing,
+    has_calorie_target: hasCalorieGoal,
+    say: missing.length
+      ? `Setup is incomplete: ${missing.join(', ')}.`
+      : 'No daily calorie target has been set.',
+    // Written at the model, deliberately blunt, because the polite version gets
+    // reasoned around.
+    note: missing.length
+      ? `ASK FOR THESE NOW, in ONE short message, all together, before answering anything that depends on them — then call set_profile and answer the original question. Do NOT invent a calorie target, a burn, or a "typical" figure to fill the gap: a made-up number here is worse than no answer, because it looks like a fact and quietly becomes the basis of every day after it.`
+      : `There is no calorie target on file. Do NOT pick one yourself and do NOT say "if we use 2,500". Ask what they are aiming for, or offer to work one out from their weight and activity, then call set_goal.`,
+  };
+}
+
 export function matchEntries(rows = [], query = '') {
   const stop = new Set(['the', 'that', 'this', 'and', 'for', 'was', 'were', 'from',
     'with', 'take', 'off', 'out', 'remove', 'delete', 'undo', 'retract', 'scratch',

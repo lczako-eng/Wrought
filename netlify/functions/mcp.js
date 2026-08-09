@@ -21,7 +21,7 @@ import {
   sayWeight, sayWeightDelta, sayLength, lbToKg, inToCm, kgToLb,
   getProfile, getMemory, getGoals, getWindow, windowStatus,
   dayFacts, rangeFacts, summariseRange, scoreGoals, careFlags,
-  parseLog, eventsFromClient, needsMacros, matchEntries, insertEvents, writeVerdict, rememberFact,
+  parseLog, eventsFromClient, needsMacros, matchEntries, setupNeeded, insertEvents, writeVerdict, rememberFact,
   fastLength, fastingSummary,
 } from './lib/wrought.js';
 import { PROVIDERS, providerSummary, recommendRoute } from './lib/providers.js';
@@ -63,6 +63,8 @@ THE LINE IS THE FOOD, NOT THE NUMBERS. If they named what they ate, estimate the
 VAGUE IS STILL WORTH RECORDING. "Doing my workout", "went for a run", "had lunch" carry no numbers and should still be logged exactly as said. A workout with no detail is a training day, and a training day recorded is worth vastly more than an interrogation that makes them stop telling you things. The server files what is known and leaves the rest null. If they add detail later — "that was legs, about 40 minutes" — call amend_last so it updates that entry rather than creating a second phantom session.
 
 ONE SENTENCE IS A COMPLETE LOG. The user will say "eggs and coffee, 40 minutes upper body, 182 on the scale" and that is the whole interaction — pass it to log verbatim and it becomes three structured entries. NEVER present a form. Never ask for macros, portion sizes in grams, set-by-set breakdowns or a meal name before logging. Log first, and if something genuinely could not be parsed, mention it after the fact in one line. A health log that costs more than one sentence is a health log nobody keeps.
+
+NEVER SUBSTITUTE A PLAUSIBLE NUMBER FOR A MISSING ONE. Asked "how many calories do I have left" with no target on file, the tempting answer is "if we use 2,500 a day…". Nothing set 2,500. It is a made-up number wearing the clothes of a real one, it becomes the basis of every day after it, and it means the setup question never gets asked because the gap never shows. Responses carry setup_needed when something is missing — when you see it, ASK, do not fill in. This applies to calorie targets, resting burn, activity and body weight alike. "I don't know yet, tell me X" is a better answer than a confident invention, and it is the only one this product is allowed to give.
 
 THE FIVE FACTS, ASKED ONCE. Height, birth year, sex, a recent weight and how much they move outside the gym. Without them there is no resting burn, so "calories out", "calories left", every deficit and every projection are impossible — and the user experiences that as the product being broken rather than unconfigured.
 
@@ -911,9 +913,15 @@ async function brief(args, user) {
     }
   }
 
+  const setup = setupNeeded(profile, {
+    hasWeight: day.body?.weight_kg != null,
+    hasCalorieGoal: goals.some(g => g.metric === 'calories' && g.cadence === 'daily'),
+  });
+
   return {
     date, kind, facts, verdict,
     ...(flags.length ? { care_flags: flags } : {}),
+    ...(setup ? { setup_needed: setup } : {}),
     say: verdict || `${date}: ${day.food.say} · ${day.training.say}`,
     note: flags.length
       ? 'Care flags are up. They override the honesty doctrine — follow their guidance exactly and do not coach intake down.'
@@ -1096,10 +1104,16 @@ Answer in 2-4 short sentences: what to do right now and why, in their units. If 
     } catch { /* the computed situation still answers on its own */ }
   }
 
+  const setup = setupNeeded(profile, {
+    hasWeight: day.body?.weight_kg != null,
+    hasCalorieGoal: !!calorieGoal,
+  });
+
   return {
     situation,
     recommendation,
     ...(flags.length ? { care_flags: flags } : {}),
+    ...(setup ? { setup_needed: setup } : {}),
     say: recommendation || [
       wStatus?.say,
       proteinLeft != null ? `${proteinLeft}g of protein left to hit today.` : null,

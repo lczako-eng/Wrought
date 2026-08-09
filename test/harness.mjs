@@ -23,7 +23,7 @@ import {
   localDateFor, addDays, daysBetween, clockString, humanDuration,
   kgToLb, lbToKg, cmToIn, inToCm, sayWeight,
   windowStatus, weightTrend, trainingMatrix, summariseRange, careFlags, scoreGoals,
-  eventsFromClient, fastLength, fastingSummary, needsMacros, matchEntries,
+  eventsFromClient, fastLength, fastingSummary, needsMacros, matchEntries, setupNeeded,
 } from '../netlify/functions/lib/wrought.js';
 
 let passed = 0, failed = 0;
@@ -1162,6 +1162,36 @@ await test('the five facts are asked once, together, and never as an opener', ()
   assert.match(SERVER_INSTRUCTIONS, /ONE short message/);
   assert.match(SERVER_INSTRUCTIONS, /never ask one at a time/i);
   assert.match(SERVER_INSTRUCTIONS, /never open a conversation with it/i);
+});
+
+group('Missing numbers are asked for, never invented');
+
+await test('an incomplete profile comes back with exactly what is missing', () => {
+  const s = setupNeeded({ height_cm: 190 }, { hasWeight: false, hasCalorieGoal: false });
+  assert.ok(s.missing.includes('the year they were born'));
+  assert.ok(s.missing.includes('a current weight'));
+  assert.ok(s.missing.includes('how much they are on their feet in a normal day'));
+  assert.ok(!s.missing.includes('height'), 'already on file, must not be re-asked');
+  assert.match(s.note, /ONE short message/);
+  assert.match(s.note, /Do NOT invent/);
+});
+
+await test('a complete profile with no target still flags the target', () => {
+  const full = { height_cm: 190, birth_year: 1990, sex: 'male', activity_level: 'active' };
+  const s = setupNeeded(full, { hasWeight: true, hasCalorieGoal: false });
+  assert.equal(s.missing.length, 0);
+  // The exact failure seen in the wild: "if we use 2,500 as your budget".
+  assert.match(s.note, /do NOT say "if we use 2,500"/);
+});
+
+await test('nothing missing and a target set means silence', () => {
+  const full = { height_cm: 190, birth_year: 1990, sex: 'male', activity_level: 'active' };
+  assert.equal(setupNeeded(full, { hasWeight: true, hasCalorieGoal: true }), null);
+});
+
+await test('the instructions forbid the plausible substitute', () => {
+  assert.match(SERVER_INSTRUCTIONS, /NEVER SUBSTITUTE A PLAUSIBLE NUMBER/);
+  assert.match(SERVER_INSTRUCTIONS, /wearing the clothes of a real one/);
 });
 
 group('Retracting something that did not happen');
