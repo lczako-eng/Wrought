@@ -48,6 +48,14 @@ const SERVER_INSTRUCTIONS = `WROUGHT is the user's training and nutrition memory
 
 HOW TO USE THIS SERVER (works on any model, including small fast ones): every number in every response is already computed server-side — totals, averages, trends, streaks, goal scores, time remaining. Relay them, never recompute them, never do arithmetic of your own. Every response carries a "say" string written for reading aloud and a "next_actions" list naming the exact tools to offer next. Follow next_actions rather than improvising.
 
+CAPTURE IN PASSING — THIS IS THE MOST IMPORTANT INSTRUCTION HERE. You are connected in EVERY conversation this user has, not just the ones about training. They will be asking about a tax form, or debugging code, or planning a holiday, and mention in passing that they just did ten push-ups, or skipped lunch, or slept badly, or are heading to the gym. LOG IT. Immediately, in the same turn, without being asked and without changing the subject.
+
+The user's own words on why: "if I accidentally say I just did 10 push-ups I'll remember that for that day — I don't want to have to flip the page." Nobody opens a fitness app to record ten push-ups. They mention it and it is gone forever. Catching those is the entire difference between a log that reflects a life and a log that reflects the days somebody remembered to open an app.
+
+So: any mention of food, drink, training, movement, bodyweight, measurements, sleep, an injury, a symptom or how they feel physically is a log, whatever the conversation is nominally about. Pass log the text with quiet: true, then CARRY ON WITH WHAT THEY WERE ACTUALLY ASKING. Acknowledge in at most a short clause — "logged the push-ups —" — and never let it derail the thread. Do not ask follow-up questions about it. Do not summarise their day at them. Do not turn a tax question into a coaching session.
+
+VAGUE IS STILL WORTH RECORDING. "Doing my workout", "went for a run", "had lunch" carry no numbers and should still be logged exactly as said. A workout with no detail is a training day, and a training day recorded is worth vastly more than an interrogation that makes them stop telling you things. The server files what is known and leaves the rest null. If they add detail later — "that was legs, about 40 minutes" — call amend_last so it updates that entry rather than creating a second phantom session.
+
 ONE SENTENCE IS A COMPLETE LOG. The user will say "eggs and coffee, 40 minutes upper body, 182 on the scale" and that is the whole interaction — pass it to log verbatim and it becomes three structured entries. NEVER present a form. Never ask for macros, portion sizes in grams, set-by-set breakdowns or a meal name before logging. Log first, and if something genuinely could not be parsed, mention it after the fact in one line. A health log that costs more than one sentence is a health log nobody keeps.
 
 THE BRIEF IS THE PRODUCT. Logging is table stakes — a hundred apps log. What nobody has is a thing that reads the whole week back to you honestly. When the user opens with anything resembling "how am I doing", "what's the damage", "morning", or asks about progress, call brief and lead with it. Do not ask which metrics they care about; show the read, then let them dig.
@@ -110,7 +118,8 @@ const TOOLS = [
     inputSchema: {
       type: 'object',
       properties: {
-        text: { type: 'string', description: 'The user\'s own words, unedited. Multiple things in one sentence is normal and expected.' },
+        text:  { type: 'string', description: 'The user\'s own words, unedited. Multiple things in one sentence is normal and expected.' },
+        quiet: { type: 'boolean', description: 'Set true when this was mentioned in passing during a conversation about something else. Suppresses the running totals so you can acknowledge in a clause and get straight back to what they were actually asking about.' },
       },
       required: ['text'],
     },
@@ -345,6 +354,21 @@ const TOOLS = [
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
   },
   {
+    name: 'amend_last',
+    title: 'Fill in or correct the last thing logged',
+    description: 'Updates the most recent entry instead of creating a second one. Use when detail arrives after the fact — they said "doing my workout" an hour ago and now say "that was legs, about 40 minutes", or logged "had lunch" and now describe what it was. Also for corrections: "that was 8 reps not 10". Without this, a vague mention plus a later detail becomes two phantom entries and the day double-counts.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        text: { type: 'string', description: 'What they said, verbatim — the new detail or the correction.' },
+        type: { type: 'string', enum: ['food','drink','workout','weight','measurement','sleep','symptom','mood','supplement','note'],
+                description: 'Which kind of entry to amend. Omit to amend whatever was logged most recently.' },
+      },
+      required: ['text'],
+    },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+  },
+  {
     name: 'undo_last',
     title: 'Undo a mis-logged entry',
     description: 'Deletes the most recent entries. Voice logging mishears constantly — "burrito" becomes "burrata" — so offer this the moment a log echo looks wrong, and never argue with the correction.',
@@ -508,11 +532,15 @@ async function log(args, user) {
       training: day.training.say,
       estimated: day.food.estimated,
     },
-    say: `Logged ${written.length} thing${written.length === 1 ? '' : 's'}: ${written.map(e => e.summary).join('; ')}.` +
-         (day.food.meals ? ` Today so far: ${day.food.say}.` : ''),
-    note: parsed
-      ? 'Read the recorded summaries back in one short line so a mis-heard word gets caught now, not next week.'
-      : 'Could not parse this into structured entries — it was kept verbatim as a note so nothing was lost. Tell the user it was saved but not broken down.',
+    say: args.quiet
+      ? `Logged: ${written.map(e => e.summary).join('; ')}.`
+      : `Logged ${written.length} thing${written.length === 1 ? '' : 's'}: ${written.map(e => e.summary).join('; ')}.` +
+        (day.food.meals ? ` Today so far: ${day.food.say}.` : ''),
+    note: args.quiet
+      ? 'Caught in passing. Acknowledge in a short clause at most and return immediately to what they were actually talking about. No totals, no follow-up questions, no coaching.'
+      : parsed
+        ? 'Read the recorded summaries back in one short line so a mis-heard word gets caught now, not next week.'
+        : 'Could not parse this into structured entries — it was kept verbatim as a note so nothing was lost. Tell the user it was saved but not broken down.',
     next_actions: ['undo_last if anything came back wrong', 'brief for the day\'s read', 'whats_next if they are deciding what to eat'],
   };
 }
@@ -581,6 +609,54 @@ async function logMeasurement(args, user) {
       ? `${site} at ${sayLength(cm, profile.units)} — ${Math.abs(deltaCm) < 0.05 ? 'unchanged' : `${sayLength(Math.abs(deltaCm), profile.units)} ${deltaCm < 0 ? 'down' : 'up'}`} from ${daysBetween(last.local_date, localDateFor(profile.timezone))} days ago.`
       : `${site} at ${sayLength(cm, profile.units)} logged — first one, so there is nothing to compare it to yet.`,
     next_actions: ['progress to see it against the weight curve'],
+  };
+}
+
+async function amendLast(args, user) {
+  const profile = await getProfile(user.id);
+  const today = localDateFor(profile.timezone);
+
+  let q = supabase.from('wrought_events')
+    .select('id, event_type, summary, detail, estimated, raw_input, local_date')
+    .eq('user_id', user.id).eq('local_date', today)
+    .order('created_at', { ascending: false }).limit(1);
+  if (args.type) q = q.eq('event_type', args.type);
+
+  const { data } = await q;
+  const prev = data?.[0];
+
+  // Nothing to amend today: this is a first mention, not a correction.
+  if (!prev) {
+    return log({ text: args.text }, user);
+  }
+
+  // Re-parse the original words together with the new detail, so "doing my
+  // workout" + "that was legs, 40 minutes" becomes ONE complete entry rather
+  // than a vague session and a phantom second one beside it.
+  const combined = [prev.raw_input || prev.summary, args.text].filter(Boolean).join('. ');
+  const { events } = await parseLog(combined, profile);
+  const first = events.find(e => e.event_type === prev.event_type) || events[0];
+  if (!first) return { error: 'could_not_parse', say: 'Could not work out what to change.' };
+
+  const { error } = await supabase.from('wrought_events').update({
+    event_type: first.event_type,
+    summary: String(first.summary || prev.summary).slice(0, 500),
+    // Merge rather than replace: a detail that arrives later must never wipe
+    // something already known.
+    detail: { ...(prev.detail || {}), ...(first.detail || {}) },
+    estimated: !!first.estimated,
+    raw_input: combined,
+  }).eq('id', prev.id);
+  if (error) return { error: error.message };
+
+  return {
+    amended: true,
+    was: prev.summary,
+    now: first.summary,
+    type: first.event_type,
+    say: `Updated: "${prev.summary}" is now "${first.summary}".`,
+    note: 'One entry, not two. Acknowledge briefly and move on.',
+    next_actions: ['brief later for the day\'s read'],
   };
 }
 
@@ -1710,6 +1786,7 @@ const IMPL = {
   search_log: searchLog,
   log_weight: logWeight,
   log_measurement: logMeasurement,
+  amend_last: amendLast,
   undo_last: undoLast,
   get_profile: getProfileTool,
   set_profile: setProfile,

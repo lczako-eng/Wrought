@@ -53,12 +53,39 @@ nothing else.
   MCP brief and the web dashboard cannot disagree. `api-progress.js` exists
   purely so the dashboard calls the same code rather than recomputing in JS.
 - **MCP server**: `netlify/functions/mcp.js` at `/mcp` — stateless Streamable
-  HTTP, JSON-RPC. 25 tools. Doctrines ship in `SERVER_INSTRUCTIONS`.
+  HTTP, JSON-RPC. 26 tools. Doctrines ship in `SERVER_INSTRUCTIONS`.
 - **Auth**: OAuth 2.1 (PKCE, dynamic client registration) so "Sign in with
   Wrought" appears in ChatGPT/Claude. Supabase session JWTs also accepted as a
   fallback. Everything secret is stored SHA-256 hashed.
 - **Ingest**: `/ingest`, bearer key from `wrought_ingest_keys`, idempotent via
   unique indexes. Accepts native shape and Health Auto Export's shape.
+
+### Capture in passing — the most important doctrine in the server
+
+The founder's words: *"if I accidentally say I just did 10 push-ups I'll
+remember that for that day — I don't want to have to flip the page."*
+
+The connector is live in **every** conversation on the account, not just the
+ones about training. So a mention of food, training, weight, sleep or a symptom
+is a log regardless of what the conversation is nominally about — someone asking
+about a tax form who says they just did ten push-ups gets those push-ups filed,
+in the same turn, with `quiet: true`, and then the tax conversation continues.
+
+Nobody opens a fitness app to record ten push-ups. They mention it and it is gone
+forever. Catching those is the whole difference between a log that reflects a
+life and one that reflects the days somebody remembered to open an app.
+
+**Vague is still worth recording.** "Doing my workout" files a training day with
+every number null. A training day recorded beats an interrogation that makes
+somebody stop telling you things, and the parser is explicitly instructed never
+to pad a vague mention into a specific one — a guessed 500-calorie "lunch"
+silently poisons a weekly total in a way a null never does.
+
+**`amend_last` exists so detail arriving later updates the entry instead of
+creating a second one.** Without it, "doing my workout" plus a later "that was
+legs, 40 minutes" becomes two phantom sessions and the day double-counts. It
+re-parses the original words together with the new ones and merges the detail,
+so nothing already known gets wiped.
 
 ### Training — a partner, not a diary
 

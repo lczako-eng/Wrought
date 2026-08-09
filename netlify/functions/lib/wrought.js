@@ -655,6 +655,22 @@ detail by type:
   supplement     {items: [string]}
   note           {note: string}
 
+VAGUE MENTIONS ARE STILL EVENTS. This is caught constantly in passing, mid-conversation
+about something else entirely, so most input is scraps rather than reports:
+  "just did 10 push-ups"     -> workout, exercises [{name:"push-up", sets:1, reps:10}],
+                                muscles ["chest","arms"], minutes null
+  "doing my workout"          -> workout, kind null, minutes null, exercises []
+                                 summary "workout"  — a training day recorded with no
+                                 detail is worth far more than nothing
+  "went for a run"            -> workout, kind "cardio", muscles ["full body"], rest null
+  "had lunch"                 -> food, items ["lunch"], every macro null, estimated false
+                                 — do NOT invent a calorie figure for an unnamed meal
+  "slept badly"               -> sleep, minutes null, quality "poor"
+  "knee's sore today"         -> symptom
+Record what was actually said and leave every unknown null. NEVER pad a vague mention
+into a specific one — a guessed 500-calorie "lunch" is worse than a lunch with no number,
+because the guess silently poisons a weekly total and the null does not.
+
 Rules:
 - Split multiple things into separate events. "Eggs, then a 40 min lift, 182 on the scale" is three events.
 - NEVER invent food, exercise or numbers the user did not mention. No filling in a "probable" lunch.
