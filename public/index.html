@@ -41,6 +41,11 @@
    ═══════════════════════════════════════════════════════════════════════════ */
 
 :root {
+  /* The mark is the word, so the word has to carry it alone — no symbol, ever.
+     Compressed black: SF exposes a width axis on Apple hardware that font-stretch
+     drives directly, and Arial Narrow catches everything else. */
+  --stamp: -apple-system, BlinkMacSystemFont, "Helvetica Neue", "Arial Narrow", system-ui, sans-serif;
+
   --iron:      #14110F;
   --scale:     #1B1614;
   --scale-2:   #241D1A;
@@ -142,15 +147,21 @@ strong { color: var(--bright); font-weight: 700; }
   font-size: 11px; letter-spacing: .2em; text-transform: uppercase; color: var(--ash-dim);
 }
 .wordmark {
-  font-weight: 800; letter-spacing: .3em; text-transform: uppercase;
-  color: var(--bright); font-size: 12px;
+  font-family: var(--stamp);
+  font-weight: 900; font-stretch: 75%; letter-spacing: .04em;
+  text-transform: uppercase;
+  color: var(--bright); font-size: 14px;
 }
 h1 {
-  font-size: clamp(44px, 12.6vw, 132px);
-  line-height: .88;
-  /* Heavy, wide, and cut into the page. Positive tracking at display size is
-     unusual and it is the point — it reads as stamped rather than typed. */
-  letter-spacing: .04em; font-weight: 800;
+  font-size: clamp(52px, 15vw, 168px);
+  line-height: .82;
+  /* Black, compressed and set tight — a plate stamp rather than a letterhead.
+     The earlier version was wide and airy, which read as considered; this reads
+     as load-bearing, and that is the register the product actually speaks in.
+     font-stretch drives SF's width axis on Apple hardware and falls back to a
+     narrow grotesque everywhere else. */
+  font-family: var(--stamp);
+  letter-spacing: -.015em; font-weight: 900; font-stretch: 75%;
   margin-block: 26px 16px;
   color: var(--bright);
 }

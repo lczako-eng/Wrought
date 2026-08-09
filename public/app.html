@@ -46,6 +46,8 @@
 
   --gut: clamp(16px, 4vw, 28px);
   --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  /* Compressed black for the mark — see index.html. */
+  --stamp: -apple-system, BlinkMacSystemFont, "Helvetica Neue", "Arial Narrow", system-ui, sans-serif;
   --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
   --serif: ui-serif, Georgia, "Iowan Old Style", "Palatino Linotype", serif;
 }
@@ -70,7 +72,11 @@ header {
 }
 .bar { display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap; }
 .mark { display: flex; align-items: center; }
-.mark .name { font-weight: 800; font-size: 13px; letter-spacing: .3em; text-transform: uppercase; color: var(--bright); }
+.mark .name {
+  font-family: var(--stamp);
+  font-weight: 900; font-stretch: 75%; font-size: 16px; letter-spacing: .04em;
+  text-transform: uppercase; color: var(--bright);
+}
 
 .ranges { display: flex; gap: 5px; }
 .range {
@@ -147,15 +153,42 @@ svg { display: block; width: 100%; height: auto; overflow: visible; }
 
 /* ── Lifts ──────────────────────────────────────────────────────────────── */
 .lifts { display: flex; flex-direction: column; }
-.lift {
-  display: grid; grid-template-columns: 1fr 84px 62px; gap: 12px; align-items: center;
-  padding: 13px 0; border-top: 1px solid var(--edge);
+.lift { padding: 20px 0; border-top: 1px solid var(--edge); }
+.lift:first-child { border-top: 0; padding-top: 4px; }
+.lift-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.lift .nm {
+  font-family: var(--stamp); font-weight: 900; font-stretch: 80%;
+  font-size: 19px; letter-spacing: .01em; text-transform: uppercase;
 }
-.lift:first-child { border-top: 0; }
-.lift .nm { font-size: 14.5px; display: flex; flex-direction: column; gap: 2px; }
-.lift .nm small { color: var(--ash-dim); font-size: 11.5px; font-family: var(--mono); }
-.lift .spark { width: 84px; }
-.lift .delta { font-family: var(--mono); font-size: 13px; text-align: right; font-variant-numeric: tabular-nums; }
+.lift-foot { color: var(--ash-dim); font-size: 11.5px; font-family: var(--mono); margin: 8px 0 0; }
+/* Bars rather than a line: a session is a discrete event, and a line between two
+   of them draws days that never happened. */
+.lift .bars {
+  display: flex; align-items: flex-end; gap: 4px;
+  height: 92px; margin-top: 12px;
+}
+.lift .bar {
+  flex: 1 1 0; min-width: 0; position: relative;
+  background: linear-gradient(180deg, var(--heat-3), var(--heat-1));
+  border-radius: 2px 2px 0 0;
+}
+.lift .bar:last-child { background: linear-gradient(180deg, var(--heat-4), var(--heat-2)); }
+.lift .bar b {
+  position: absolute; inset: auto 0 100% 0; text-align: center;
+  font-family: var(--mono); font-weight: 400; font-size: 9.5px;
+  color: var(--ash-dim); padding-bottom: 3px; white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+/* Below about six bars the labels collide, so the newest keeps its number and
+   the rest live in the tooltip rather than turning into grey mush. */
+@media (max-width: 560px) {
+  .lift .bar b { display: none; }
+  .lift .bar:last-child b { display: block; }
+}
+.lift .delta {
+  font-family: var(--mono); font-size: 15px; text-align: right;
+  font-variant-numeric: tabular-nums; white-space: nowrap;
+}
 .delta.up { color: var(--moss); } .delta.down { color: var(--heat-3); } .delta.flat { color: var(--ash-dim); }
 
 /* ── Matrix ─────────────────────────────────────────────────────────────── */
@@ -1009,37 +1042,40 @@ function liftsPanel(d) {
     return `<section class="panel"><h2>Lifts</h2>
       <p class="empty">Run a couple of sessions and every lift shows its own curve here.</p></section>`;
   }
+  // An 84-pixel sparkline is a footnote. This is the question the whole training
+  // side exists to answer, so it gets the room: every session as a bar you can
+  // read off, with the weight AND the reps on it — 100 for 3 and 100 for 8 are
+  // different weeks, and a chart that plots only load calls them the same.
   const rows = d.lifts.slice(0, 12).map(l => {
     const cls = l.change == null ? 'flat' : l.change > 0 ? 'up' : l.change < 0 ? 'down' : 'flat';
     const sign = l.change > 0 ? '+' : '';
+    const unit = l.unit || d.weight_unit;
+    const vals = l.series.map(p => p.value);
+    const top = Math.max(...vals) || 1;
+    const bars = l.series.slice(-14).map(p => {
+      const h = Math.max(6, Math.round((p.value / top) * 100));
+      const label = l.metric === 'reps'
+        ? `${p.reps ?? '—'}`
+        : `${p.weight ?? '—'}${p.reps ? `×${p.reps}` : ''}`;
+      return `<span class="bar" style="height:${h}%" title="${esc(p.date)} · ${esc(label)}">
+        <b>${esc(label)}</b></span>`;
+    }).join('');
+
     return `<div class="lift">
-      <span class="nm">${esc(l.name)}<small>best ${l.best.weight}${d.weight_unit} × ${l.best.reps ?? '—'} · ${l.sessions} sessions</small></span>
-      <span class="spark">${spark(l.series)}</span>
-      <span class="delta ${cls}">${l.change == null ? '—' : `${sign}${l.change}${d.weight_unit}`}</span>
+      <div class="lift-head">
+        <span class="nm">${esc(l.name)}</span>
+        <span class="delta ${cls}">${l.change == null ? '—' : `${sign}${l.change} ${unit}`}</span>
+      </div>
+      <div class="bars">${bars}</div>
+      <p class="lift-foot">best ${l.metric === 'reps'
+        ? `${l.best.reps ?? '—'} reps`
+        : `${l.best.weight}${d.weight_unit} × ${l.best.reps ?? '—'}`} · ${l.sessions} sessions${
+        l.metric === 'reps' ? ' · bodyweight, measured in reps' : ''}</p>
     </div>`;
   }).join('');
   return `<section class="panel"><h2>Lifts</h2>
-    <p class="sub">Top set each session, and how it has moved across this stretch.</p>
+    <p class="sub">Top set each session, newest on the right. Up is up.</p>
     <div class="lifts">${rows}</div></section>`;
-}
-
-function spark(series) {
-  if (series.length < 2) return '';
-  const W = 84, H = 24;
-  const vals = series.map(p => p.value);
-  const min = Math.min(...vals), max = Math.max(...vals);
-  const rng = (max - min) || 1;
-  const x = i => (i / (series.length - 1)) * W;
-  const y = v => H - 2 - ((v - min) / rng) * (H - 6);
-  const line = series.map((p, i) => `${i ? 'L' : 'M'}${x(i).toFixed(1)},${y(p.value).toFixed(1)}`).join(' ');
-  const area = `${line} L${W},${H} L0,${H} Z`;
-  const up = vals[vals.length - 1] >= vals[0];
-  const c = up ? 'var(--moss)' : 'var(--heat-3)';
-  return `<svg viewBox="0 0 ${W} ${H}" aria-hidden="true">
-    <path d="${area}" fill="${c}" opacity=".13"/>
-    <path d="${line}" fill="none" stroke="${c}" stroke-width="1.6" stroke-linejoin="round"/>
-    <circle cx="${x(series.length - 1).toFixed(1)}" cy="${y(vals[vals.length - 1]).toFixed(1)}" r="2.2" fill="${c}"/>
-  </svg>`;
 }
 
 function matrixPanel(m) {

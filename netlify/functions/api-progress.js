@@ -99,30 +99,47 @@ export const handler = async (event) => {
   // ── Strength: best set ever seen per lift, and how it moved ───────────────
   // The dashboard's job here is the question people actually open a training
   // app to ask: is anything going up?
+  //
+  // Bodyweight work used to be dropped here for having no weight, which quietly
+  // deleted press-ups, pull-ups, dips and every calisthenic from the one view
+  // that answers "is anything going up?". They progress too — in reps. So a lift
+  // is measured by load if it ever carried one, and by reps if it never did.
   const byLift = new Map();
   for (const s of setRows) {
-    if (s.weight_kg == null) continue;
     const k = s.exercise_key || exerciseKey(s.exercise);
     if (!byLift.has(k)) byLift.set(k, { name: s.exercise, sessions: new Map() });
     const lift = byLift.get(k);
     const id = s.session_id || s.local_date;
     const prev = lift.sessions.get(id);
-    if (!prev || Number(s.weight_kg) > Number(prev.weight_kg)) {
-      lift.sessions.set(id, { weight_kg: Number(s.weight_kg), reps: s.reps, date: s.local_date });
-    }
+    const kg = s.weight_kg == null ? null : Number(s.weight_kg);
+    const reps = s.reps == null ? null : Number(s.reps);
+    // The session's best set: heaviest when loaded, most reps when not.
+    const better = !prev
+      || (kg != null && (prev.weight_kg == null || kg > prev.weight_kg))
+      || (kg == null && prev.weight_kg == null && (reps || 0) > (prev.reps || 0));
+    if (better) lift.sessions.set(id, { weight_kg: kg, reps, date: s.local_date });
   }
 
   const lifts = [...byLift.entries()].map(([key, lift]) => {
     const points = [...lift.sessions.values()].sort((a, b) => a.date.localeCompare(b.date));
-    const best = points.reduce((a, p) => (p.weight_kg > a.weight_kg ? p : a), points[0]);
+    const loaded = points.some(p => p.weight_kg != null);
+    const at = p => (loaded ? w(p.weight_kg) : p.reps) ?? 0;
+
+    const best = points.reduce((a, p) => (at(p) > at(a) ? p : a), points[0]);
     const first = points[0], last = points[points.length - 1];
     return {
       key, name: lift.name,
       sessions: points.length,
-      best: { weight: w(best.weight_kg), reps: best.reps, date: best.date },
+      // What this lift is measured in, so the page can label a number rather
+      // than print a bare one and leave the reader to guess.
+      metric: loaded ? 'weight' : 'reps',
+      unit: loaded ? (imperial ? 'lb' : 'kg') : 'reps',
+      best:   { weight: w(best.weight_kg), reps: best.reps, date: best.date },
       latest: { weight: w(last.weight_kg), reps: last.reps, date: last.date },
-      change: points.length > 1 ? Math.round((w(last.weight_kg) - w(first.weight_kg)) * 10) / 10 : null,
-      series: points.map(p => ({ date: p.date, value: w(p.weight_kg) })),
+      change: points.length > 1 ? Math.round((at(last) - at(first)) * 10) / 10 : null,
+      // Both numbers ride along on every point: the question is never just
+      // "how heavy" — 100kg for 3 and 100kg for 8 are different weeks.
+      series: points.map(p => ({ date: p.date, value: at(p), weight: w(p.weight_kg), reps: p.reps })),
     };
   }).filter(l => l.sessions >= 2)
     .sort((a, b) => b.sessions - a.sessions);
