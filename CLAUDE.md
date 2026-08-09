@@ -122,6 +122,22 @@ partner is present tense and writes down what actually happened.
 - **Routines cover sport.** A training log that cannot hold Tuesday five-a-side
   is not a training log.
 
+### The phrasebook — nobody says "call the brief tool"
+
+A block in `SERVER_INSTRUCTIONS` maps how people actually ask onto the tools:
+*"what's the damage"*, *"hit me"*, *"gym bro"*, *"jim bro"*, *"roast me"*,
+*"morning"* all mean `brief`; *"I'm hungry"*, *"talk me out of it"*,
+*"it's late and I'm at the fridge"* mean `whats_next`; *"got 8"*, *"failed at
+5"* mean `log_set`. Losing it breaks nothing loudly — the connector just quietly
+stops understanding ordinary English, which is the hardest regression to spot,
+so there are tests.
+
+**"Gym bro" is a register, not a licence.** It changes delivery and nothing
+else: the numbers still come from the tools, nothing about their body is ever
+mentioned, and a care flag silences the whole voice instantly. Tested, because a
+persona that can outrank the flags is exactly how this feature would turn into
+the thing the flags exist to prevent.
+
 ### The library — curated, and never a weight
 
 `lib/library.js` + the `programmes` tool. The founder's complaint was a filing

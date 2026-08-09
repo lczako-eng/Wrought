@@ -1111,6 +1111,41 @@ await test('the fast is never graded', () => {
   assert.deepEqual(tool.inputSchema.required, ['from']);
 });
 
+// ── How people actually ask ─────────────────────────────────────────────────
+// Nobody says "call the brief tool". If the phrasebook falls out of the
+// instructions, nothing errors — the connector just gets steadily less useful
+// as the model stops recognising ordinary English, which is the hardest kind of
+// regression to notice.
+
+group('The phrasebook');
+
+await test('sideways ways of asking still reach the brief', () => {
+  for (const phrase of ['gym bro', 'jim bro', "what's the damage", 'roast me', 'hit me', 'morning']) {
+    assert.ok(SERVER_INSTRUCTIONS.toLowerCase().includes(phrase.toLowerCase()),
+      `"${phrase}" should be recognised as asking for the brief`);
+  }
+});
+
+await test('the fridge-at-11pm phrasings reach whats_next', () => {
+  for (const phrase of ["I'm hungry", 'can I have a snack', 'talk me out of it']) {
+    assert.ok(SERVER_INSTRUCTIONS.toLowerCase().includes(phrase.toLowerCase()), phrase);
+  }
+});
+
+await test('mid-set phrasings reach log_set', () => {
+  for (const phrase of ['got 8', 'failed at 5', "one more in the tank"]) {
+    assert.ok(SERVER_INSTRUCTIONS.toLowerCase().includes(phrase.toLowerCase()), phrase);
+  }
+});
+
+await test('the gym-bro voice cannot outrank the safety rules', () => {
+  // A persona that can override the care flags is the one way this feature
+  // turns a good idea into the thing the flags exist to prevent.
+  assert.match(SERVER_INSTRUCTIONS, /REGISTER, NOT A LICENCE/);
+  assert.match(SERVER_INSTRUCTIONS, /care flag silences the whole register/i);
+  assert.match(SERVER_INSTRUCTIONS, /nothing about their body is ever mentioned/i);
+});
+
 // ── The library ─────────────────────────────────────────────────────────────
 // A curated list is only safe if it stays curated. The two things that would
 // quietly ruin it: a weight appearing anywhere in it, and a beginner being
