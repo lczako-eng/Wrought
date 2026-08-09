@@ -2147,6 +2147,62 @@ await test('the setup page polls only while somebody is watching', () => {
     'polling starts without being asked for');
 });
 
+group('The setup page — one look instead of a tour of broken screens');
+
+await test('it answers without a database rather than falling over', async () => {
+  const { handler: status } = await import('../netlify/functions/api-status.js');
+  const res = await status({ httpMethod: 'GET', headers: {} });
+  assert.equal(res.statusCode, 200);
+  const b = JSON.parse(res.body);
+  assert.equal(b.ready, false);
+  // One thing to do next, not a list of eleven. A checklist that long is one
+  // nobody starts.
+  assert.ok(b.next && b.next.length > 10);
+});
+
+await test('it never prints a value, only whether one is set', async () => {
+  const { handler: status } = await import('../netlify/functions/api-status.js');
+  process.env.WROUGHT_ADMIN_EMAILS = 'someone@example.com';
+  process.env.SUPABASE_SERVICE_ROLE_KEY = 'super-secret-service-role-key';
+  try {
+    for (const accept of [undefined, 'text/html']) {
+      const res = await status({ httpMethod: 'GET', headers: accept ? { accept } : {} });
+      assert.ok(!res.body.includes('someone@example.com'), 'the status page leaked an admin address');
+      assert.ok(!res.body.includes('super-secret-service-role-key'), 'the status page leaked a key');
+    }
+  } finally {
+    delete process.env.WROUGHT_ADMIN_EMAILS;
+    delete process.env.SUPABASE_SERVICE_ROLE_KEY;
+  }
+});
+
+await test('the trailing slash is caught by name', async () => {
+  // It answers "Invalid path specified in request URL" and nothing anywhere
+  // explains why. It has already cost this project an evening.
+  const { handler: status } = await import('../netlify/functions/api-status.js');
+  process.env.SUPABASE_URL = 'https://abc.supabase.co/';
+  try {
+    const b = JSON.parse((await status({ httpMethod: 'GET', headers: {} })).body);
+    assert.equal(b.database.trailing_slash_on_url, true);
+    assert.match(b.say, /trailing slash/i);
+    assert.match(b.next, /trailing slash/i);
+  } finally { delete process.env.SUPABASE_URL; }
+});
+
+await test('every migration in the repo is on the checklist', async () => {
+  // A migration that ships without being checked here is one somebody forgets
+  // to run and then hunts for through a broken screen.
+  const { readdirSync } = await import('node:fs');
+  const files = readdirSync(new URL('../schema/', import.meta.url)).filter(f => f.endsWith('.sql'));
+  const src = readFileSync(new URL('../netlify/functions/api-status.js', import.meta.url), 'utf8');
+  for (const f of files) assert.ok(src.includes(f), `${f} is missing from the setup checklist`);
+});
+
+await test('it asks search engines not to index it', () => {
+  const src = readFileSync(new URL('../netlify/functions/api-status.js', import.meta.url), 'utf8');
+  assert.match(src, /name="robots" content="noindex"/);
+});
+
 // ── Report ──────────────────────────────────────────────────────────────────
 
 console.log(results.join('\n'));

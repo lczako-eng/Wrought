@@ -388,6 +388,24 @@ bulk operation on one bucket must never reach the other. **Nothing reads it**,
 same rule, and there is a test. `administrator` on the response is read from
 `WROUGHT_ADMIN_EMAILS`, never from a column.
 
+### /status — the page that answers "is this thing set up"
+
+`api-status.js`, served at `/status`. Every endpoint names the migration IT
+needs when IT fails, which is right, but it means finding out what is missing
+costs a tour of the product one broken screen at a time. This answers it in one
+look, and renders as a readable page when a browser asks for HTML.
+
+It checks migrations by **probing for a table or column each one creates**, never
+a version number — so it still tells the truth when somebody ran the SQL by hand
+in pieces. The trailing slash on `SUPABASE_URL` is caught by name, because Kong
+answers "Invalid path specified in request URL" and nothing explains why.
+
+**It shows presence, never values.** No key, no admin address, no row counts —
+a setup checklist is not a reason to publish how busy a health product is. There
+is a test that plants a fake key and admin address in the environment and
+asserts neither appears in either response format. It gives **one** next step,
+not a list: a checklist with eleven open items is one nobody starts.
+
 ### The operator's view — and what it refuses to show
 
 `api-admin.js` + the Admin tab, which only appears when the server says so.
@@ -578,7 +596,7 @@ self-reporting scale removes the most-abandoned manual entry), then Strava.
 
 ## Conventions
 
-- `npm test` runs `test/harness.mjs` — 229 offline tests, no network, no database.
+- `npm test` runs `test/harness.mjs` — 237 offline tests, no network, no database.
   Run it before every push. It covers the JSON-RPC envelope (which fails as an
   uninformative "could not connect" inside ChatGPT) and all the arithmetic
   (which fails as a confidently wrong number in somebody's verdict).

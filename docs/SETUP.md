@@ -1,5 +1,11 @@
 # Setup — everything the operator has to switch on
 
+> **Open `https://wrought.fit/status` first.** It tells you exactly which
+> migrations have run, which environment variables are set, and the one thing to
+> do next. It never prints a value — only whether something is set — so it is
+> safe to look at from a phone. Come back here for the how.
+
+
 Ordered so the product works after step 3 and gets better after that. Nothing
 below step 3 blocks anybody from using WROUGHT.
 

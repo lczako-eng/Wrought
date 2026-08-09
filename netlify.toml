@@ -18,6 +18,18 @@
   to = "/.netlify/functions/mcp"
   status = 200
 
+# "Is this thing actually set up?" — one look instead of a tour of broken
+# screens. Presence only; never a value.
+[[redirects]]
+  from = "/status"
+  to = "/.netlify/functions/api-status"
+  status = 200
+
+[[redirects]]
+  from = "/api/status"
+  to = "/.netlify/functions/api-status"
+  status = 200
+
 # The record itself, readable. Everything else is arithmetic about the log;
 # this is the log.
 [[redirects]]
