@@ -82,6 +82,53 @@ nothing else.
 - **Ingest**: `/ingest`, bearer key from `wrought_ingest_keys`, idempotent via
   unique indexes. Accepts native shape and Health Auto Export's shape.
 
+### Many doors, one account — and the fork that must never happen
+
+Apple, Google and a password, on all three sign-in surfaces. Apple leads because
+on an iPhone it is Face ID and nothing else — the founder asked for exactly that
+("the Apple facial recognition"), and it is the fastest door this product has.
+Full setup in `docs/SIGN_IN.md`. Apple costs **US$99/year**; Google is free.
+
+**The reason this is not a convenience feature.** A person is one training
+history, not one email address. The founder saw it coming: *"even though your
+GTP might have a different email. You're gonna have to link it to."* Sign into
+wrought.fit with Google, let ChatGPT connect under some other address, and there
+are two accounts holding half a life each. Nothing errors. It looks like you did
+nothing for three weeks — on the one product whose entire promise is memory.
+**A silent fork is the worst failure in this system**, worse than any crash,
+because a crash is visible.
+
+Three defences, in order:
+
+- **Prevention** — `authorize.html` says to come in the same way as at
+  wrought.fit, and offers the same three doors so that is easy to obey.
+- **Linking** — dashboard → Account. Adds a door to the account you are in.
+  Never a second account, never moves anything. Needs *manual linking* ON in
+  Supabase.
+- **Merging** — `api-merge.js` + `006_wrought_identity.sql`, for when it already
+  happened.
+
+**Merging demands a live token for BOTH accounts** — never an email, never a
+user id. An email is guessable and a user id sits inside every JWT; either alone
+would make `/api/merge` a way to read a stranger's health record. The other
+account is proved either by its password (through a throwaway client with its
+own storage, so the surviving session is untouched) or by its provider (which
+means leaving the page, so the kept token is stashed first).
+
+The move is **one transaction**. Rows both accounts already held stay single;
+nothing is dropped that was not already there. **The load-bearing line is
+`wrought_oauth_tokens`** — moving the live grants means ChatGPT keeps working
+and starts writing to the surviving account with nothing to reconnect. The
+emptied account is then deleted: an empty duplicate re-forks the log the next
+time somebody comes through that door, and deleting it frees its Apple or Google
+identity to be linked properly.
+
+`get_profile` returns `account.email` and, when the account is empty, a
+`fork_check` note. **An empty account and someone saying "I logged that
+yesterday" is almost never a new user** — and answering it by asking them to log
+the week again is how a memory product loses trust while looking like working
+software. There is a test.
+
 ### Capture in passing — the most important doctrine in the server
 
 The founder's words: *"if I accidentally say I just did 10 push-ups I'll
@@ -360,7 +407,7 @@ self-reporting scale removes the most-abandoned manual entry), then Strava.
 
 ## Conventions
 
-- `npm test` runs `test/harness.mjs` — 171 offline tests, no network, no database.
+- `npm test` runs `test/harness.mjs` — 182 offline tests, no network, no database.
   Run it before every push. It covers the JSON-RPC envelope (which fails as an
   uninformative "could not connect" inside ChatGPT) and all the arithmetic
   (which fails as a confidently wrong number in somebody's verdict).
@@ -379,19 +426,24 @@ self-reporting scale removes the most-abandoned manual entry), then Strava.
    sent: a git bundle with full history. `git clone wrought-full.bundle`, set the
    remote, push. Retry `add_repo` first in any new session.
 2. Run `schema/001_wrought_core.sql`, then `002_wrought_oauth.sql`, then
-   `003_wrought_training.sql`, `004_wrought_fasting.sql`, and
-   `005_wrought_activity.sql` in Supabase.
+   `003_wrought_training.sql`, `004_wrought_fasting.sql`,
+   `005_wrought_activity.sql` and `006_wrought_identity.sql` in Supabase.
 3. Set env vars in Netlify: `SUPABASE_URL` (**no trailing slash** — Kong answers
    "Invalid path specified in request URL" and nothing says why),
    `SUPABASE_SERVICE_ROLE_KEY`, `WROUGHT_SITE_URL=https://wrought.fit`,
    `WROUGHT_ADMIN_EMAILS=laszlobrianczako@gmail.com`. Inject
    `window.WROUGHT_SUPABASE_URL` and `window.WROUGHT_SUPABASE_ANON` for the pages.
-4. **Supabase → Authentication → Providers → Email → turn OFF "Confirm email."**
+4. **Sign-in providers** — `docs/SIGN_IN.md` has the full walkthrough. In
+   Supabase: turn ON *manual linking*, add `https://wrought.fit/**` to the
+   redirect URLs, set the Site URL, and configure the Google provider (free) and
+   the Apple provider (needs the **US$99/year** Apple Developer Program). Until
+   each is on, its button says so in as many words rather than failing oddly.
+5. **Supabase → Authentication → Providers → Email → turn OFF "Confirm email."**
    Without this, `signUp` still sends a confirmation link, which is exactly what
    the password change was meant to get rid of. The pages handle it either way
    and say so rather than hanging, but the founder's ask is only actually met
    with it off.
-5. Domain bought: **wrought.fit** (renews ~C$70 Aug 2027).
+6. Domain bought: **wrought.fit** (renews ~C$70 Aug 2027).
 
 ### Notifications — MCP cannot push, so the phone carries it
 

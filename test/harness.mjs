@@ -1545,7 +1545,8 @@ await test('a wrong password and an unknown address read the same', () => {
 
 await test('nothing still promises there is no password', () => {
   for (const f of [...AUTH_PAGES, 'index.html']) {
-    const prose = page(f).replace(/^\s*\/\/.*$/gm, '');   // comments may discuss it
+    // Comments may discuss it — only what a person actually reads is asserted on.
+    const prose = page(f).replace(/^\s*\/\/.*$/gm, '').replace(/<!--[\s\S]*?-->/g, '');
     assert.ok(!/no password|passwordless|tap the link/i.test(prose),
       `${f} still promises a passwordless sign-in`);
   }
@@ -1555,6 +1556,112 @@ await test('reset still goes by email, because it has to', () => {
   for (const f of ['app.html', 'authorize.html']) {
     assert.match(page(f), /resetPasswordForEmail/, `${f} strands anyone who forgets`);
   }
+});
+
+group('Many doors, one account');
+
+// The founder: "even though your GTP might have a different email. You're gonna
+// have to link it to." A person is one training history, not one email address.
+// When that stops being true the log forks — and a forked log does not look
+// broken, it looks like you did nothing for three weeks, which is the single
+// most damaging thing this product could show somebody.
+
+await test('Apple and Google are offered on every sign-in surface', () => {
+  for (const f of AUTH_PAGES) {
+    const src = page(f);
+    assert.match(src, /data-provider="apple"/, `${f} offers no Apple sign-in`);
+    assert.match(src, /data-provider="google"/, `${f} offers no Google sign-in`);
+    assert.match(src, /signInWithOAuth/, `${f} has no provider handler`);
+  }
+});
+
+await test('the provider marks are drawn, never fetched', () => {
+  // A logo loaded from Apple or Google is a third party watching a health
+  // product's sign-in page, and it is a blank square when the network is slow.
+  for (const f of AUTH_PAGES) {
+    const svgs = page(f).match(/<svg[\s\S]*?<\/svg>/g) || [];
+    assert.ok(svgs.length >= 2, `${f} is missing the provider marks`);
+    assert.ok(!/<img[^>]+(apple|google)/i.test(page(f)), `${f} fetches a provider logo`);
+  }
+});
+
+await test('the dashboard can link a second door without making a second account', () => {
+  const src = page('app.html');
+  assert.match(src, /linkIdentity/);
+  assert.match(src, /getUserIdentities/);
+  assert.match(src, /unlinkIdentity/);
+});
+
+await test('unlinking can never take the last way in', () => {
+  // Removing somebody's only sign-in is not a setting. It is locking them out of
+  // years of their own history with nothing to fall back on.
+  const src = page('app.html');
+  assert.match(src, /ids \|\| \[\]\)\.length <= 1/);
+  assert.match(src, /only way in/i);
+});
+
+await test('merging demands proof of BOTH accounts', async () => {
+  const { handler: merge } = await import('../netlify/functions/api-merge.js');
+  const src = readFileSync(new URL('../netlify/functions/api-merge.js', import.meta.url), 'utf8');
+  // An email address is guessable and a user id is printed inside every JWT.
+  // Either one alone would turn this into a way to read a stranger's record.
+  assert.ok(!/body\.(other_)?(email|user_id)\b/.test(src),
+    'the merge accepts something other than a verified token');
+  assert.match(src, /other_token/);
+
+  const res = await merge({ httpMethod: 'POST', headers: {}, body: '{}' });
+  assert.equal(res.statusCode, 500);   // no database configured offline
+  assert.equal(JSON.parse(res.body).error, 'server_not_configured');
+});
+
+await test('the merge refuses anything but POST, and passes preflight', async () => {
+  const { handler: merge } = await import('../netlify/functions/api-merge.js');
+  assert.equal((await merge({ httpMethod: 'OPTIONS', headers: {} })).statusCode, 204);
+  assert.equal((await merge({ httpMethod: 'GET', headers: {} })).statusCode, 405);
+});
+
+await test('the merge moves every table, and the connector follows', () => {
+  const sql = readFileSync(new URL('../schema/006_wrought_identity.sql', import.meta.url), 'utf8');
+  // Miss one and that slice of somebody's life stays orphaned under an account
+  // that is about to be deleted.
+  for (const t of ['wrought_events', 'wrought_metrics', 'wrought_sets', 'wrought_sessions',
+                   'wrought_routines', 'wrought_goals', 'wrought_memory', 'wrought_briefs',
+                   'wrought_connections', 'wrought_ingest_keys', 'wrought_profile',
+                   'wrought_eating_window']) {
+    assert.ok(new RegExp(`update ${t}\\s+set user_id = keep`).test(sql), `${t} is left behind`);
+  }
+  // The line that means ChatGPT keeps working and starts writing to the account
+  // that survived, with nothing to reconnect.
+  assert.match(sql, /update wrought_oauth_tokens\s+set user_id = keep/);
+});
+
+await test('the merge function is unreachable from a browser', () => {
+  // It is SECURITY DEFINER, so it runs straight past row level security. That
+  // makes who may call it the entire safety story.
+  const sql = readFileSync(new URL('../schema/006_wrought_identity.sql', import.meta.url), 'utf8');
+  assert.match(sql, /security definer/);
+  assert.match(sql, /revoke all on function public\.wrought_merge_accounts\(uuid, uuid\) from authenticated/);
+  assert.match(sql, /revoke all on function public\.wrought_merge_accounts\(uuid, uuid\) from anon/);
+  assert.match(sql, /grant execute on function public\.wrought_merge_accounts\(uuid, uuid\) to service_role/);
+});
+
+await test('an account cannot absorb itself', () => {
+  const sql = readFileSync(new URL('../schema/006_wrought_identity.sql', import.meta.url), 'utf8');
+  assert.match(sql, /if keep = absorb then/);
+});
+
+await test('the assistant is told which account it is attached to', () => {
+  const src = readFileSync(new URL('../netlify/functions/mcp.js', import.meta.url), 'utf8');
+  assert.match(src, /account: \{\s*\n\s*email: user\.email/);
+  assert.match(src, /fork_check/);
+});
+
+await test('an empty account is never answered by asking them to log it again', () => {
+  // Re-logging a week somebody already logged is how they stop trusting a
+  // memory product, and it looks exactly like working software.
+  assert.match(SERVER_INSTRUCTIONS, /ONE PERSON, ONE ACCOUNT, SEVERAL DOORS/);
+  assert.match(SERVER_INSTRUCTIONS, /never respond to an empty account by asking them to start logging again/i);
+  assert.match(SERVER_INSTRUCTIONS, /wrought\.fit/);
 });
 
 // ── Report ──────────────────────────────────────────────────────────────────

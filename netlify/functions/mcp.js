@@ -66,6 +66,12 @@ ONE SENTENCE IS A COMPLETE LOG. The user will say "eggs and coffee, 40 minutes u
 
 NEVER SUBSTITUTE A PLAUSIBLE NUMBER FOR A MISSING ONE. Asked "how many calories do I have left" with no target on file, the tempting answer is "if we use 2,500 a day…". Nothing set 2,500. It is a made-up number wearing the clothes of a real one, it becomes the basis of every day after it, and it means the setup question never gets asked because the gap never shows. Responses carry setup_needed when something is missing — when you see it, ASK, do not fill in. This applies to calorie targets, resting burn, activity and body weight alike. "I don't know yet, tell me X" is a better answer than a confident invention, and it is the only one this product is allowed to give.
 
+ONE PERSON, ONE ACCOUNT, SEVERAL DOORS. get_profile returns account.email — the address WROUGHT knows this conversation by. It may not be the address you know the user by, and that is fine: they can sign in with Apple, with Google, or with a password, and all of it reaches the same record.
+
+What is NOT fine is two accounts. If get_profile comes back with nothing logged and a fork_check note on it, do not treat the person as brand new until you have checked. Someone who says "I logged that yesterday" or "where did my week go" over an empty account is almost never mistaken — they are signed in here under one address while their history sits under another. Say so plainly, name the address this connector is attached to, and send them to wrought.fit, Account, where the merge brings the two together. Nothing is lost, duplicates stay single, and this connection keeps working afterwards with nothing to reconnect.
+
+Never respond to an empty account by asking them to start logging again. Re-logging a week they already logged is how somebody stops trusting a memory product, and it is the one failure here that looks exactly like working software.
+
 THE FIVE FACTS, ASKED ONCE. Height, birth year, sex, a recent weight and how much they move outside the gym. Without them there is no resting burn, so "calories out", "calories left", every deficit and every projection are impossible — and the user experiences that as the product being broken rather than unconfigured.
 
 So: the FIRST time they ask anything that needs those numbers, and get_profile shows them missing, ask for exactly what is missing, in ONE short message, all at once, in a single breath — "quick setup so the numbers work: height, year you were born, male or female, current weight, and how much you're on your feet in a normal day?" Then set_profile and answer their original question. Never ask twice, never ask one at a time, never re-ask something already on file, and never open a conversation with it — this happens the moment a number is needed and not before. It is five facts, once, ever; anything more is the interrogation that makes people stop using health apps.
@@ -1747,6 +1753,14 @@ async function getProfileTool(_args, user) {
   ]);
 
   return {
+    // Which account this conversation is actually attached to. Worth saying out
+    // loud because the assistant may know the user by one address and WROUGHT by
+    // another — and if those are two accounts rather than two names for one, the
+    // history silently splits and nothing looks broken until a brief is wrong.
+    account: {
+      email: user.email || null,
+      ways_in: (user.identities || []).map(i => i.provider),
+    },
     profile: {
       timezone: profile.timezone, units: profile.units,
       height_cm: profile.height_cm, birth_year: profile.birth_year, sex: profile.sex,
@@ -1768,6 +1782,12 @@ async function getProfileTool(_args, user) {
       ? `Set up: ${profile.units}, ${profile.timezone}, ${profile.bluntness} feedback. ${count || 0} entries logged${first?.[0]?.local_date ? ` since ${first[0].local_date}` : ''}.`
       : 'Nothing set up yet — WROUGHT still works, it just reads everything back in metric on Toronto time until told otherwise.',
     note: 'Read this before asking the user anything. Never ask for something already here.',
+    // An empty account is either a new user or a split one, and those need
+    // opposite responses — welcome versus "your history is under another
+    // address". Never guess between them silently.
+    fork_check: (count || 0) === 0
+      ? `This account (${user.email || 'no email on file'}) has nothing logged. If they speak as though they have logged before, they are signed in here under a different address than the one holding their history — send them to wrought.fit, Account, and the merge there puts the two back together without losing anything or needing this connector reconnected.`
+      : null,
     next_actions: (conns || []).length ? [] : ['connect_device to get the watch feeding it automatically'],
   };
 }
