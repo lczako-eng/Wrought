@@ -9,7 +9,7 @@
 // fails as a confidently wrong number in somebody's nightly verdict.
 
 import assert from 'node:assert/strict';
-import { handler, TOOLS, handleRpc } from '../netlify/functions/mcp.js';
+import { handler, TOOLS, handleRpc, SERVER_INSTRUCTIONS } from '../netlify/functions/mcp.js';
 import { canonicalMetric, normalise, normaliseWorkout } from '../netlify/functions/ingest.js';
 import { PROVIDERS, LIVE_PROVIDERS, providerSummary, recommendRoute } from '../netlify/functions/lib/providers.js';
 import { nutritionTotals, composition, macroMatrix, yearOverYear } from '../netlify/functions/lib/nutrition.js';
@@ -988,9 +988,21 @@ await test('log accepts a structured reading alongside the verbatim words', () =
 
 await test('the schema still forbids inventing a number', () => {
   const events = TOOLS.find(t => t.name === 'log').inputSchema.properties.events;
-  assert.match(events.description, /NEVER invent/i);
+  assert.match(events.description, /never a guessed 500/i);
   assert.match(events.description, /null/i);
   assert.match(events.items.properties.estimated.description, /inferred rather than stated/i);
+});
+
+await test('a named food is estimated, an unnamed one is not', () => {
+  // Both halves are load-bearing and they pull opposite ways. Drop the first
+  // and every named meal logs blank, which is what "0 calories" on a day
+  // somebody ate came from. Drop the second and the model invents lunches.
+  const events = TOOLS.find(t => t.name === 'log').inputSchema.properties.events;
+  assert.match(events.description, /named the food/i);
+  assert.match(events.description, /had lunch/i);
+  const instructions = SERVER_INSTRUCTIONS;
+  assert.match(instructions, /THE LINE IS THE FOOD, NOT THE NUMBERS/);
+  assert.match(instructions, /barely worth logging/i);
 });
 
 await test('amend_last takes a merged entry, and still only needs the words', () => {
@@ -1003,7 +1015,8 @@ await test('amend_last takes a merged entry, and still only needs the words', ()
 await test('the doctrine reaches the model that has to follow it', async () => {
   const body = JSON.parse((await post(rpc('initialize', { protocolVersion: '2025-06-18' }))).body);
   assert.match(body.result.instructions, /YOU STRUCTURE THE LOG/);
-  assert.match(body.result.instructions, /never invent a number/i);
+  assert.match(body.result.instructions, /inventing the food itself/i);
+  assert.match(body.result.instructions, /poisons a weekly total/i);
 });
 
 // ── Fasting ─────────────────────────────────────────────────────────────────

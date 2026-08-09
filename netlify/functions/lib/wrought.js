@@ -288,6 +288,14 @@ export async function dayFacts(userId, profile, date) {
   }), { calories: 0, protein_g: 0, carbs_g: 0, fat_g: 0 });
   const foodEstimated = meals.some(e => e.estimated);
 
+  // A meal with no calorie figure is UNKNOWN, not zero, and the difference is
+  // the whole estimates doctrine. Summing nulls to zero is right for the
+  // arithmetic and catastrophic for the sentence built on it: "0 calories
+  // today" reads as a fact about a day somebody ate on. Counting the silent
+  // meals is what lets the verdict say "macros unknown for one of them"
+  // instead of stating a number that is confidently wrong.
+  const mealsUncounted = meals.filter(e => e.detail?.calories == null).length;
+
   // Late eating — the number that actually explains a stalled week.
   const lastMeal = meals.length ? meals[meals.length - 1] : null;
   const lastMealMin = lastMeal ? localMinutesFor(profile.timezone, new Date(lastMeal.occurred_at)) : null;
@@ -329,12 +337,18 @@ export async function dayFacts(userId, profile, date) {
       ...roundMacros(food),
       meals: meals.length,
       estimated: foodEstimated,
+      meals_uncounted: mealsUncounted,
       last_meal_at: lastMealMin != null ? clockString(lastMealMin) : null,
       last_meal_summary: lastMeal?.summary || null,
-      say: meals.length
-        ? `${Math.round(food.calories)} kcal · ${Math.round(food.protein_g)}g protein · ${Math.round(food.carbs_g)}g carbs · ${Math.round(food.fat_g)}g fat` +
-          (foodEstimated ? ' (estimated from what you described)' : '')
-        : 'Nothing logged.',
+      say: !meals.length
+        ? 'Nothing logged.'
+        // Every meal silent: the total is not zero, it is unknown, and saying
+        // zero here is the single easiest way to be confidently wrong.
+        : mealsUncounted === meals.length
+          ? `${meals.length} thing${meals.length === 1 ? '' : 's'} logged, no macros on ${meals.length === 1 ? 'it' : 'any of them'} yet — the total is unknown rather than zero.`
+          : `${Math.round(food.calories)} kcal · ${Math.round(food.protein_g)}g protein · ${Math.round(food.carbs_g)}g carbs · ${Math.round(food.fat_g)}g fat` +
+            (foodEstimated ? ' (estimated from what you described)' : '') +
+            (mealsUncounted ? ` — and ${mealsUncounted} logged with no macros, so the real total is higher.` : ''),
     },
     training: {
       sessions: workouts.length,
