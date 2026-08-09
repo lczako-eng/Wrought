@@ -2193,7 +2193,9 @@ await test('every migration in the repo is on the checklist', async () => {
   // A migration that ships without being checked here is one somebody forgets
   // to run and then hunts for through a broken screen.
   const { readdirSync } = await import('node:fs');
-  const files = readdirSync(new URL('../schema/', import.meta.url)).filter(f => f.endsWith('.sql'));
+  // Numbered migrations only — ALL.sql is the generated concatenation of them,
+  // not a migration in its own right.
+  const files = readdirSync(new URL('../schema/', import.meta.url)).filter(f => /^\d{3}_.*\.sql$/.test(f));
   const src = readFileSync(new URL('../netlify/functions/api-status.js', import.meta.url), 'utf8');
   for (const f of files) assert.ok(src.includes(f), `${f} is missing from the setup checklist`);
 });
@@ -2346,6 +2348,34 @@ await test('suspension is relayed as words, not a broken connector', () => {
   const src = readFileSync(new URL('../netlify/functions/mcp.js', import.meta.url), 'utf8');
   assert.match(src, /const gate = await allowed\(authUser\.id, 'mcp'\);/);
   assert.match(src, /isError: true/);
+});
+
+group('One paste, not eleven');
+
+await test('schema/ALL.sql is current', async () => {
+  // A stale ALL.sql missing the newest migration is worse than not having one:
+  // somebody runs it, believes they are set up, and finds out through a broken
+  // screen a week later.
+  const { readdirSync } = await import('node:fs');
+  const dir = new URL('../schema/', import.meta.url);
+  const files = readdirSync(dir).filter(f => /^\d{3}_.*\.sql$/.test(f)).sort();
+  const all = readFileSync(new URL('ALL.sql', dir), 'utf8');
+
+  for (const f of files) {
+    assert.ok(all.includes(f), `${f} is not in ALL.sql — run node scripts/build-all-sql.mjs`);
+    // Not just named in the header — the actual contents have to be there.
+    const body = readFileSync(new URL(f, dir), 'utf8').trim();
+    const firstStatement = body.split('\n').find(l => l.trim() && !l.trim().startsWith('--'));
+    assert.ok(all.includes(firstStatement.trim()),
+      `${f} is listed in ALL.sql but its SQL is missing — run node scripts/build-all-sql.mjs`);
+  }
+  // And in order, so a table lands before the thing referencing it.
+  let at = -1;
+  for (const f of files) {
+    const i = all.indexOf(`── ${f} ──`);
+    assert.ok(i > at, `${f} is out of order in ALL.sql`);
+    at = i;
+  }
 });
 
 // ── Report ──────────────────────────────────────────────────────────────────

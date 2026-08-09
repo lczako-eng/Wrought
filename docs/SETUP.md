@@ -11,9 +11,16 @@ below step 3 blocks anybody from using WROUGHT.
 
 ---
 
-## 1. Supabase — the migrations, in order
+## 1. Supabase — the migrations
 
-SQL editor, one at a time, top to bottom:
+**One paste:** open `schema/ALL.sql`, copy the whole file, paste it into the
+Supabase SQL editor, run it. That is every migration below, in order.
+
+Safe to run again — every statement is idempotent, so re-running after a partial
+failure picks up rather than doubling anything. Regenerate it with `npm run sql`
+after adding a migration; a test fails if it is stale.
+
+Or one at a time, top to bottom:
 
 | File | What stops working without it |
 |---|---|
