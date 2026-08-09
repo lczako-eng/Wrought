@@ -1,0 +1,55 @@
+WROUGHT — how to get this onto GitHub
+=====================================
+
+The repo already exists and is empty:
+  https://github.com/lczako-eng/wrought
+
+Everything is in wrought-full.bundle — a complete git repository in one
+file. 14 commits, 35 files, full history. Nothing is missing.
+
+On any computer with git installed, in the folder where the bundle is:
+
+  git clone wrought-full.bundle wrought
+  cd wrought
+  git remote set-url origin https://github.com/lczako-eng/wrought.git
+  git push -u origin claude/daily-health-brief-mcp-8zspa7
+
+That's it. Refresh the GitHub page and it's all there.
+
+If it asks for a password, use a Personal Access Token rather than your
+GitHub password (github.com/settings/tokens → generate → repo scope).
+GitHub stopped accepting passwords over https years ago.
+
+Want it on main instead of the branch? Add one line before the push:
+
+  git branch -M main
+  git push -u origin main
+
+
+THEN, IN ORDER
+--------------
+
+1. Supabase — SQL editor, run these three in order:
+     schema/001_wrought_core.sql
+     schema/002_wrought_oauth.sql
+     schema/003_wrought_training.sql
+
+2. Netlify — connect the repo, then set:
+     SUPABASE_URL
+     SUPABASE_SERVICE_ROLE_KEY
+     OPENAI_API_KEY
+     WROUGHT_SITE_URL = https://wrought.fit
+     RESEND_API_KEY            (optional — the 10pm email)
+
+   And inject these two into the pages (Netlify snippet injection):
+     window.WROUGHT_SUPABASE_URL
+     window.WROUGHT_SUPABASE_ANON
+
+3. Point wrought.fit at the Netlify site.
+
+4. In ChatGPT or Claude: Settings → Connectors → Add custom connector
+     https://wrought.fit/mcp
+   Sign in once. Then say "eggs and black coffee, 182 on the scale".
+
+Everything else — what's built, why, and what's next — is in CLAUDE.md.
+Directory submissions are in docs/SUBMISSION.md.
