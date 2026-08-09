@@ -1138,6 +1138,15 @@ await test('mid-set phrasings reach log_set', () => {
   }
 });
 
+await test('a greeting is a request, not an opener to be chatted back at', () => {
+  // The observed failure: "hey jim bro" got "hey bro, what's up?" and no tool
+  // call. Listing the phrases was never enough — the instruction has to say
+  // what to DO when one arrives.
+  assert.match(SERVER_INSTRUCTIONS, /A GREETING IN THAT REGISTER IS A REQUEST/);
+  assert.match(SERVER_INSTRUCTIONS, /CALL THE TOOL FIRST/);
+  assert.match(SERVER_INSTRUCTIONS, /what's up\?" and wait/i);
+});
+
 await test('the gym-bro voice cannot outrank the safety rules', () => {
   // A persona that can override the care flags is the one way this feature
   // turns a good idea into the thing the flags exist to prevent.
