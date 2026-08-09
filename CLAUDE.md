@@ -282,11 +282,25 @@ with integrations.
 
 ### Brand — the word is the mark
 
-**No symbol.** The wave/bar mark was removed deliberately: a mark beside the
-name is a small apology for the name not being strong enough alone. WROUGHT set
-heavy (800) and wide (0.3em tracking) in capitals is harder to look at than any
-glyph drawn next to it, and it survives being a favicon, a lock-screen line and
-a connector entry without anything being redrawn. Do not reintroduce a symbol.
+**Still no invented symbol** — no wave, no abstract glyph, nothing standing
+beside the name pretending to mean it. That rule holds.
+
+**But the word now has a tile**, because a favicon slot and a connector listing
+render something whether you supply one or not, and an empty slot is somebody
+else's placeholder — which is exactly what ChatGPT showed. The tile is the same
+word cut to its first letter: a slab W punched OUT of a hot plate, so the tile
+is the metal and the letter is the hole. Knockout rather than a letter on a dark
+square, because figure-ground contrast is the only thing that survives 32px once
+no serif is a pixel wide. Founder-approved after seeing five drawn options —
+*"that new symbol looks amazing, make that universal"*.
+
+The wordmark itself is **black, compressed, tight** (`--stamp`, weight 900,
+`font-stretch: 75%`), not the earlier wide airy setting. Wide read as
+considered; this reads as load-bearing.
+
+`icon.svg` plus PNG at 512/192/180/32, wired into every page head,
+`.well-known/mcp.json` and `site.webmanifest`. Paths, never `<text>` — a favicon
+depending on a font is a rectangle on somebody else's machine.
 
 ### Devices — two doors, not fifteen integrations
 

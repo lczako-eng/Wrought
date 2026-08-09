@@ -78,6 +78,13 @@
 * { box-sizing: border-box; }
 html { -webkit-text-size-adjust: 100%; }
 
+body::before {
+  /* Forge light, barely there. Gives the top of the page somewhere to come
+     from, and stops a flat near-black reading as an unstyled document. */
+  content: ""; position: fixed; inset: -20% -20% auto -20%; height: 90vh; z-index: -1;
+  background: radial-gradient(60% 55% at 50% 0%, rgba(242,100,25,.13), transparent 70%);
+  pointer-events: none;
+}
 body {
   margin: 0;
   background: var(--iron);
@@ -134,13 +141,14 @@ strong { color: var(--bright); font-weight: 700; }
 .cool { color: var(--temper); }
 
 /* ── Masthead ──────────────────────────────────────────────────────────────
-   No mark. The word is the mark.
+   The word is still the mark. What sits above it is not a symbol invented to
+   stand in for the name — it is the same word cut down to the one letter a
+   16-pixel favicon and a connector tile can physically hold, and it exists
+   because those slots render something whether you supply it or not.
 
-   A wave, a bar, a monogram — every one of them would be a small apology for
-   the name not being strong enough on its own. WROUGHT set heavy and wide in
-   capitals is a harder thing to look at than any symbol drawn beside it, and
-   it survives being a favicon, a lock-screen line and an app connector entry
-   without redrawing anything. */
+   No wave, no abstract glyph, nothing that needs explaining. The rule that was
+   settled and stays settled is that nothing may sit BESIDE the name pretending
+   to mean it. */
 .masthead { padding-block: clamp(30px, 7vw, 58px) 26px; }
 .rule-row {
   display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
@@ -165,6 +173,29 @@ h1 {
   margin-block: 26px 16px;
   color: var(--bright);
 }
+/* The mark, struck once at the top of the page and never repeated. It is the
+   same tile the connector listing renders, so the thing somebody adds inside
+   ChatGPT and the thing they saw here are visibly one object. */
+.stamp {
+  width: clamp(64px, 13vw, 108px); height: auto; display: block;
+  border-radius: 22%;
+  box-shadow: 0 18px 46px -20px rgba(242,100,25,.55);
+  animation: strike 900ms cubic-bezier(.22,.61,.36,1) both;
+}
+@keyframes strike {
+  from { opacity: 0; transform: translateY(-14px) scale(.94); }
+  to   { opacity: 1; transform: none; }
+}
+
+/* Section headings in the stamp face rather than mono. The record voice stays
+   in the transcripts; the claims are allowed to be loud. */
+h2 {
+  font-family: var(--stamp);
+  font-weight: 900; font-stretch: 80%;
+  font-size: clamp(24px, 4.6vw, 40px);
+  letter-spacing: -.015em; line-height: 1.06;
+}
+
 .pron { color: var(--ash-dim); font-size: clamp(13px, 2.4vw, 17px); letter-spacing: .04em; }
 .pron b { color: var(--ash); font-weight: 400; }
 
@@ -208,10 +239,22 @@ table.heat td.rh.dead { color: var(--heat-3); }
 .legend i b { width: 17px; height: 7px; border-radius: 1px; display: block; }
 
 /* ── Log rows — the transcript, as a record rather than a chat bubble ────── */
-.log { display: flex; flex-direction: column; }
+/* ── The transcript, as an object on the page ──────────────────────────────
+   Hairlines on a flat ground read as a spreadsheet. These are cards: a lit top
+   edge, a shadow under them, and the ground showing through — so the exchange
+   looks like a thing you could pick up rather than rows in a table. */
+.log {
+  display: flex; flex-direction: column;
+  background: linear-gradient(180deg, rgba(36,29,26,.92), rgba(20,17,15,.92));
+  border: 1px solid var(--edge);
+  border-radius: 16px;
+  box-shadow: 0 1px 0 rgba(255,255,255,.045) inset, 0 22px 44px -28px rgba(0,0,0,.9);
+  padding: 6px 18px;
+  backdrop-filter: blur(6px);
+}
 .line {
   display: grid; grid-template-columns: 14px 1fr; gap: 10px;
-  padding-block: 9px; border-top: 1px dashed var(--edge);
+  padding-block: 11px; border-top: 1px dashed var(--edge);
   align-items: baseline;
 }
 .line:first-child { border-top: 0; }
@@ -246,8 +289,11 @@ table.heat td.rh.dead { color: var(--heat-3); }
 .bars { display: flex; flex-direction: column; gap: 9px; max-width: 520px; }
 .brow { display: grid; grid-template-columns: 42px 1fr 68px; gap: 10px; align-items: center; font-size: 12.5px; }
 .brow .k { color: var(--ash-dim); font-size: 10.5px; letter-spacing: .12em; text-transform: uppercase; }
-.track { height: 10px; background: var(--scale-2); border-radius: 1px; overflow: hidden; }
-.fill { height: 100%; }
+.track { height: 12px; background: var(--scale-2); border-radius: 99px; overflow: hidden; }
+/* Filled from zero when the row is reached — a bar already at its length is a
+   picture of a number; one that travels is the number arriving. */
+.fill { height: 100%; border-radius: 99px; width: 0; transition: width 1.1s cubic-bezier(.22,.61,.36,1); }
+.seen .fill { width: var(--to); }
 .fill.in { background: linear-gradient(90deg, var(--heat-2), var(--heat-3)); }
 .fill.out { background: linear-gradient(90deg, var(--temper-dk), var(--temper)); }
 .brow .v { text-align: right; font-variant-numeric: tabular-nums; }
@@ -332,6 +378,13 @@ footer a { color: var(--ash); }
       <span style="color:var(--ash-faint)">Record № 001</span>
       <span style="color:var(--ash-faint)">Tuesday</span>
     </div>
+    <svg class="stamp" viewBox="0 0 512 512" aria-hidden="true">
+      <defs><linearGradient id="mk" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stop-color="#F5A623"/><stop offset=".55" stop-color="#F26419"/>
+        <stop offset="1" stop-color="#C3350D"/></linearGradient></defs>
+      <rect width="512" height="512" rx="112" fill="url(#mk)"/>
+      <path fill="#14110F" d="M104 150 L206 150 L206 178 L182 183 L212 306 L238 183 L214 178 L214 150 L298 150 L298 178 L274 183 L304 306 L330 183 L306 178 L306 150 L408 150 L408 178 L386 184 L330 366 L276 366 L256 268 L236 366 L182 366 L126 184 L104 178 Z"/>
+    </svg>
     <h1>WROUGHT</h1>
     <p class="pron">/rôt/ &nbsp;·&nbsp; <b>past tense of <i>work</i>. Shaped by hammering, not poured into a mould.</b></p>
   </header>
@@ -431,8 +484,8 @@ footer a { color: var(--ash); }
         <div class="line"><span class="g">·</span><span class="s reply">You're about <b><span class="n">1,420</span></b> under for the week across 6 logged days. That's a proper meal out, whatever you actually want. You've earned it — spend it, and don't log it as a failure.</span></div>
       </div>
       <div class="bars">
-        <div class="brow"><span class="k">In</span><span class="track"><span class="fill in" style="width:85%"></span></span><span class="v n">2,140</span></div>
-        <div class="brow"><span class="k">Out</span><span class="track"><span class="fill out" style="width:100%"></span></span><span class="v nc">2,510</span></div>
+        <div class="brow"><span class="k">In</span><span class="track"><span class="fill in" style="--to:85%"></span></span><span class="v n">2,140</span></div>
+        <div class="brow"><span class="k">Out</span><span class="track"><span class="fill out" style="--to:100%"></span></span><span class="v nc">2,510</span></div>
         <div class="brow"><span class="k"></span><span class="faint">1,770 at rest · 740 moved</span><span class="v" style="color:var(--heat-4)">−370</span></div>
       </div>
       <div class="callout">
@@ -554,14 +607,14 @@ footer a { color: var(--ash); }
         of dinner could possibly support.
       </p>
       <div class="bars">
-        <div class="brow"><span class="k">Meat</span><span class="track"><span class="fill in" style="width:71%"></span></span><span class="v">71%</span></div>
-        <div class="brow"><span class="k">Veg</span><span class="track"><span class="fill in" style="width:64%"></span></span><span class="v">64%</span></div>
-        <div class="brow"><span class="k">Grain</span><span class="track"><span class="fill in" style="width:58%"></span></span><span class="v">58%</span></div>
-        <div class="brow"><span class="k">Dairy</span><span class="track"><span class="fill in" style="width:41%"></span></span><span class="v">41%</span></div>
-        <div class="brow"><span class="k">Fruit</span><span class="track"><span class="fill in" style="width:33%"></span></span><span class="v">33%</span></div>
-        <div class="brow"><span class="k">Fish</span><span class="track"><span class="fill in" style="width:12%"></span></span><span class="v">12%</span></div>
-        <div class="brow"><span class="k">Sweets</span><span class="track"><span class="fill in" style="width:19%"></span></span><span class="v">19%</span></div>
-        <div class="brow"><span class="k">Booze</span><span class="track"><span class="fill in" style="width:9%"></span></span><span class="v">9%</span></div>
+        <div class="brow"><span class="k">Meat</span><span class="track"><span class="fill in" style="--to:71%"></span></span><span class="v">71%</span></div>
+        <div class="brow"><span class="k">Veg</span><span class="track"><span class="fill in" style="--to:64%"></span></span><span class="v">64%</span></div>
+        <div class="brow"><span class="k">Grain</span><span class="track"><span class="fill in" style="--to:58%"></span></span><span class="v">58%</span></div>
+        <div class="brow"><span class="k">Dairy</span><span class="track"><span class="fill in" style="--to:41%"></span></span><span class="v">41%</span></div>
+        <div class="brow"><span class="k">Fruit</span><span class="track"><span class="fill in" style="--to:33%"></span></span><span class="v">33%</span></div>
+        <div class="brow"><span class="k">Fish</span><span class="track"><span class="fill in" style="--to:12%"></span></span><span class="v">12%</span></div>
+        <div class="brow"><span class="k">Sweets</span><span class="track"><span class="fill in" style="--to:19%"></span></span><span class="v">19%</span></div>
+        <div class="brow"><span class="k">Booze</span><span class="track"><span class="fill in" style="--to:9%"></span></span><span class="v">9%</span></div>
       </div>
 
       <div class="callout" style="margin-top:22px">
@@ -701,13 +754,75 @@ footer a { color: var(--ash); }
   });
 })();
 
+// Every number on the page counts up as you reach it. A figure already sitting
+// at its value is a picture of a result; one that lands is the result arriving,
+// which is the difference between reading a claim and watching it happen.
+// Formatting is preserved exactly — "1,420" keeps its comma, "92.5" its decimal,
+// "13g" its unit — because a counter that mangles the number it is animating is
+// worse than no counter.
+(() => {
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if (reduce) return;
+
+  const parse = (txt) => {
+    const m = String(txt).match(/^([^\d-]*)(-?[\d,]+(?:\.\d+)?)(.*)$/);
+    if (!m) return null;
+    const raw = m[2];
+    return {
+      pre: m[1], post: m[3],
+      value: parseFloat(raw.replace(/,/g, '')),
+      commas: raw.includes(','),
+      decimals: (raw.split('.')[1] || '').length,
+    };
+  };
+
+  const fmt = (n, spec) => {
+    const fixed = n.toFixed(spec.decimals);
+    const withCommas = spec.commas
+      ? fixed.replace(/\B(?=(\d{3})+(?!\d))/g, ',')
+      : fixed;
+    return spec.pre + withCommas + spec.post;
+  };
+
+  const run = (el) => {
+    const spec = parse(el.textContent);
+    if (!spec || !isFinite(spec.value)) return;
+    const from = 0, to = spec.value, dur = 900;
+    let start = null;
+    el.textContent = fmt(0, spec);
+    const step = (t) => {
+      if (start === null) start = t;
+      const p = Math.min(1, (t - start) / dur);
+      // Ease out: fast off the mark, settling rather than stopping dead.
+      const eased = 1 - Math.pow(1 - p, 3);
+      el.textContent = fmt(from + (to - from) * eased, spec);
+      if (p < 1) requestAnimationFrame(step);
+    };
+    requestAnimationFrame(step);
+  };
+
+  if (!('IntersectionObserver' in window)) return;
+  const io = new IntersectionObserver((entries) => {
+    for (const e of entries) {
+      if (!e.isIntersecting) continue;
+      run(e.target);
+      io.unobserve(e.target);
+    }
+  }, { threshold: 1 });
+
+  document.querySelectorAll('.n, .nc, .brow .v').forEach(el => io.observe(el));
+})();
+
 // Sections arrive as you reach them. Applied from script rather than markup on
 // purpose: if this file never runs, nothing is ever given the hiding class, so
 // the page stays fully readable instead of being invisible forever — the one
 // failure mode a scroll animation must not have.
 (() => {
   const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
-  const bits = document.querySelectorAll('.sheet > section, .sheet > footer');
+  // article, not just section. The whole Tuesday narrative is marked up as
+  // <article class="entry">, so leaving it out meant the main body of the page
+  // never revealed and every bar sat at zero width.
+  const bits = document.querySelectorAll('.sheet > section, .sheet > article, .sheet > footer');
   if (reduce || !('IntersectionObserver' in window)) return;
 
   bits.forEach(el => el.classList.add('reveal'));
