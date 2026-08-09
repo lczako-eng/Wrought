@@ -1059,6 +1059,27 @@ await test('the fast is never graded', () => {
   assert.deepEqual(tool.inputSchema.required, ['from']);
 });
 
+// ── The rack screen ─────────────────────────────────────────────────────────
+// This endpoint is imported by nothing else, so a bad import inside it would
+// stay invisible until somebody standing at a squat rack got a 500. Loading it
+// here at least proves the module resolves and the handler answers.
+
+group('Trainer endpoint');
+
+await test('api-session loads and answers without a database', async () => {
+  const { handler: session } = await import('../netlify/functions/api-session.js');
+  const res = await session({ httpMethod: 'GET', headers: {} });
+  assert.equal(res.statusCode, 500);
+  assert.equal(JSON.parse(res.body).error, 'server_not_configured');
+});
+
+await test('api-session passes CORS preflight', async () => {
+  const { handler: session } = await import('../netlify/functions/api-session.js');
+  const res = await session({ httpMethod: 'OPTIONS', headers: {} });
+  assert.equal(res.statusCode, 204);
+  assert.equal(res.headers['Access-Control-Allow-Origin'], '*');
+});
+
 // ── Report ──────────────────────────────────────────────────────────────────
 
 console.log(results.join('\n'));

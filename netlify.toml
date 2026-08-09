@@ -25,6 +25,12 @@
   to = "/.netlify/functions/api-log"
   status = 200
 
+# The rack screen. Mid-set nobody composes a sentence — they want one glance.
+[[redirects]]
+  from = "/api/session"
+  to = "/.netlify/functions/api-session"
+  status = 200
+
 # Everything out, in one call. A hub you cannot leave is a trap.
 [[redirects]]
   from = "/api/export"

@@ -155,6 +155,33 @@ svg.ser .cursor { transition: opacity var(--quick) var(--ease); }
 .hero .leg span { font-family: var(--mono); font-size: 9.5px; letter-spacing: .14em; text-transform: uppercase; color: var(--ash-dim); }
 .hero .caveat { color: var(--ash-dim); font-size: 12px; margin: 10px 0 0; max-width: 34ch; }
 
+/* ── Trainer ──────────────────────────────────────────────────────────────
+   Read at arm's length, between sets, by somebody slightly out of breath. So:
+   one number big enough to see standing up, and everything else small. */
+.trainer .lifting {
+  font-family: var(--stamp); font-weight: 900; font-stretch: 75%;
+  font-size: clamp(26px, 8vw, 40px); letter-spacing: -.01em;
+  text-transform: uppercase; margin: 6px 0 2px; line-height: 1;
+}
+.trainer .setline { color: var(--ash); font-size: 13.5px; margin: 0 0 10px; }
+.trainer .net { display: block; }
+.trainer .net small { font-size: .38em; color: var(--ash-dim); margin-left: .12em; }
+.trainer .net.rpe { font-size: clamp(28px, 9vw, 42px); color: var(--amber); }
+.trainer .cue { color: var(--temper); }
+.restbar {
+  display: flex; align-items: baseline; gap: 10px; margin-top: 16px;
+  padding: 10px 16px; border-radius: 999px; background: var(--heat-0);
+}
+.restbar .k { font-family: var(--mono); font-size: 10px; letter-spacing: .16em; text-transform: uppercase; color: var(--ash-dim); }
+.restbar .v { font-family: var(--mono); font-size: 21px; font-variant-numeric: tabular-nums; }
+.restbar.ready { background: color-mix(in srgb, var(--moss) 22%, transparent); }
+.restbar.ready .k, .restbar.ready .v { color: var(--moss); }
+.setpills { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; margin-top: 14px; }
+.setpill {
+  font-family: var(--mono); font-size: 11.5px; padding: 4px 9px; border-radius: 999px;
+  background: var(--scale-2); border: 1px solid var(--edge); color: var(--ash);
+}
+
 /* ── Navigation, thumb-height ─────────────────────────────────────────────
    Designed as an app system while it is still a website: on a phone the view
    switcher lives at the bottom where a thumb actually is, translucent over the
@@ -400,6 +427,7 @@ table.matrix td.rh.cold { color: var(--heat-3); }
       <nav class="ranges views" role="group" aria-label="View">
         <button class="range view" data-view="record" aria-pressed="true">Record</button>
         <button class="range view" data-view="log" aria-pressed="false">Log</button>
+        <button class="range view" data-view="trainer" aria-pressed="false">Trainer</button>
       </nav>
       <div class="ranges" id="rangebtns" role="group" aria-label="Time range">
         <button class="range" data-days="7"   aria-pressed="false">7d</button>
@@ -464,16 +492,105 @@ document.querySelectorAll('.range.view').forEach(b => b.addEventListener('click'
   view = b.dataset.view;
   // The range buttons only mean something on the record; the log paginates by
   // day and loads more on demand.
-  $('rangebtns').style.display = view === 'log' ? 'none' : '';
+  $('rangebtns').style.display = view === 'record' ? '' : 'none';
   logCursor = null; logDays = [];
+  stopTrainer();
   refresh();
 }));
 
 async function refresh() {
   if (view === 'log') return loadLog(true);
+  if (view === 'trainer') return startTrainer();
   if (DEMO) { render(demoData()); return; }
   const { data } = await sb.auth.getSession();
   if (data.session) load(data.session.access_token);
+}
+
+// ── Trainer ────────────────────────────────────────────────────────────────
+// The screen you look at between sets. Everything on it is computed server-side
+// from the same session state the assistant writes, so the phone in your hand
+// and the voice in the conversation can never tell you two different weights.
+
+let trainerTimer = null;
+
+function stopTrainer() {
+  if (trainerTimer) { clearInterval(trainerTimer); trainerTimer = null; }
+}
+
+async function startTrainer() {
+  stopTrainer();
+  await loadTrainer();
+  // A rest countdown that only moves when you reload is not a countdown. Cheap
+  // enough at one small request a few times a minute, and it stops entirely the
+  // moment you leave the tab.
+  trainerTimer = setInterval(() => { if (view === 'trainer') loadTrainer(); else stopTrainer(); }, 5000);
+}
+
+async function loadTrainer() {
+  const { data } = await sb.auth.getSession();
+  if (!data.session) return;
+  const res = await fetch('/.netlify/functions/api-session', {
+    headers: { Authorization: `Bearer ${data.session.access_token}` },
+  });
+  if (!res.ok) {
+    const detail = await res.text().catch(() => '');
+    $('content').innerHTML = `<p class="empty">Could not load the session.<br><small>${res.status} ${esc(detail).slice(0, 300)}</small></p>`;
+    return;
+  }
+  renderTrainer(await res.json());
+}
+
+function renderTrainer(d) {
+  if (!d.active) {
+    $('content').innerHTML = `<section class="panel hero">
+      <h2>Trainer</h2>
+      <p class="caveat">${esc(d.say)}</p></section>`;
+    stagger();
+    return;
+  }
+
+  const c = d.current, s = d.session;
+  const rest = d.rest?.left;
+  // Rest is shown as a state, not a nag: it counts down and then says the word.
+  const restBlock = rest == null ? ''
+    : `<div class="restbar ${rest === 0 ? 'ready' : ''}">
+         <span class="k">${rest === 0 ? 'Go' : 'Rest'}</span>
+         <span class="v">${rest === 0 ? '—' : `${Math.floor(rest / 60)}:${String(rest % 60).padStart(2, '0')}`}</span>
+       </div>`;
+
+  const done = (c?.done || []).map(x =>
+    `<span class="setpill">${x.weight != null ? `${x.weight}${d.unit}` : 'bw'} × ${x.reps ?? '—'}${x.rpe ? ` @${x.rpe}` : ''}</span>`).join('');
+
+  const load = c?.prescribed != null
+    ? `<span class="net">${c.prescribed}<small>${esc(d.unit)}</small></span>`
+    // With no history it refuses to invent a weight — that refusal is the
+    // safest thing this product does, so it is shown rather than hidden.
+    : `<span class="net rpe">RPE ${c?.rpe ?? 7}</span>`;
+
+  $('content').innerHTML = `
+    <section class="panel hero trainer">
+      <h2>${esc(s.name)} · ${s.minutes}m${s.of ? ` · ${s.position} of ${s.of}` : ''}</h2>
+      <p class="lifting">${esc(c?.name || 'Session')}</p>
+      <p class="setline">Set ${c?.set_number ?? 1}${c?.sets ? ` of ${c.sets}` : ''}${c?.target_reps ? ` · target ${c.target_reps} reps` : ''}</p>
+      ${load}
+      ${c?.say ? `<p class="caveat">${esc(c.say)}</p>` : ''}
+      ${c?.cue ? `<p class="caveat cue">${esc(c.cue)}</p>` : ''}
+      ${restBlock}
+      ${done ? `<div class="setpills">${done}</div>` : ''}
+    </section>
+    <div class="tiles">
+      ${tile('Sets', String(d.totals.sets), 'this session')}
+      ${tile('Reps', String(d.totals.reps), 'this session')}
+      ${tile('Volume', `${n(d.totals.volume)}${d.unit}`, 'weight moved')}
+    </div>
+    ${d.upcoming?.length ? `<section class="panel"><h2>Coming up</h2>
+      ${d.upcoming.map(u => `<p class="sub">${esc(u.name)} · ${u.sets}×${u.reps}</p>`).join('')}
+    </section>` : ''}
+    <section class="panel"><h2>Logging</h2>
+      <p class="sub">Say it to the assistant — "got 8" or "95 for 6" — and this screen follows.
+      It reads the same session, so it cannot disagree with what the coach told you.</p>
+    </section>`;
+  stagger();
 }
 
 // ── The log ───────────────────────────────────────────────────────────────

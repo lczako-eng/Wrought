@@ -122,6 +122,19 @@ partner is present tense and writes down what actually happened.
 - **Routines cover sport.** A training log that cannot hold Tuesday five-a-side
   is not a training log.
 
+### The rack screen — trainer mode
+
+`api-session.js` + the Trainer tab. The coaching always existed in the tools;
+what did not exist was somewhere to **look** at it. Mid-set nobody composes a
+sentence to an assistant — they want one glance saying what lift, what weight,
+which set, how long left on the rest.
+
+It reads the same `wrought_sessions` row the tools write, and takes its load
+from `progressionCall()` rather than working one out, so **the screen and the
+voice cannot tell you two different weights**. When there is no history it shows
+the RPE refusal rather than hiding it — that refusal is the safest thing in the
+product. Polls every 5s while the tab is open and stops the moment you leave it.
+
 ### Earned room — the one rule that must never invert
 
 `earnedRoom()` tracks the week, and when someone has genuinely been under it
