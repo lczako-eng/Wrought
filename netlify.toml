@@ -37,6 +37,13 @@
   to = "/.netlify/functions/api-session"
   status = 200
 
+# The profile, readable and editable. Everything here was reachable through the
+# assistant already; this is where somebody can go and CHECK it.
+[[redirects]]
+  from = "/api/profile"
+  to = "/.netlify/functions/api-profile"
+  status = 200
+
 # The nightly read on a lock screen. An MCP server can never speak first, so
 # the phone has to carry it.
 [[redirects]]

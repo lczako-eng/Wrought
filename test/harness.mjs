@@ -2057,6 +2057,65 @@ await test('a rotating refresh token is kept when none comes back', () => {
   assert.match(src, /t\.refresh_token \|\| conn\.refresh_token/);
 });
 
+group('The profile — a place to look, not a form');
+
+await test('the profile endpoint refuses anonymous callers and passes preflight', async () => {
+  const { handler: prof } = await import('../netlify/functions/api-profile.js');
+  assert.equal((await prof({ httpMethod: 'OPTIONS', headers: {} })).statusCode, 204);
+  assert.equal(JSON.parse((await prof({ httpMethod: 'GET', headers: {} })).body).error, 'server_not_configured');
+});
+
+await test('a bad timezone is rejected rather than stored', () => {
+  // It would file every late-night snack under the wrong day and quietly
+  // corrupt every brief from then on.
+  const src = readFileSync(new URL('../netlify/functions/api-profile.js', import.meta.url), 'utf8');
+  assert.match(src, /new Intl\.DateTimeFormat\('en', \{ timeZone: tz \}\)/);
+  assert.match(src, /bad\.push\('timezone'\)/);
+});
+
+await test('bluntness and units only accept what the schema allows', () => {
+  const src = readFileSync(new URL('../netlify/functions/api-profile.js', import.meta.url), 'utf8');
+  assert.match(src, /\['gentle', 'honest', 'brutal'\]\.includes/);
+  assert.match(src, /\['metric', 'imperial'\]\.includes/);
+});
+
+await test('administrator is read from the environment, never from the row', () => {
+  // Never a column somebody could set on themselves, never a flag in a token.
+  const src = readFileSync(new URL('../netlify/functions/api-profile.js', import.meta.url), 'utf8');
+  assert.match(src, /WROUGHT_ADMIN_EMAILS/);
+  assert.ok(!/is_admin|profile\.admin/.test(src), 'admin is read off the profile row');
+});
+
+await test('the avatar is private and nothing reads it', () => {
+  const sql = readFileSync(new URL('../schema/010_wrought_profile_web.sql', import.meta.url), 'utf8');
+  const src = readFileSync(new URL('../netlify/functions/api-profile.js', import.meta.url), 'utf8');
+  assert.match(sql, /'wrought-avatars', false/);
+  assert.match(sql, /storage\.foldername\(name\)\)\[1\] = auth\.uid\(\)::text/);
+  assert.match(src, /createSignedUrl/);
+  assert.ok(!/getPublicUrl/.test(src), 'a permanent public avatar URL is handed out');
+  for (const tell of ['openai', 'vision', 'classify', 'body_fat', 'detect']) {
+    assert.ok(!new RegExp(tell, 'i').test(src), `api-profile reaches for ${tell}`);
+  }
+});
+
+await test('a replaced picture does not leave the old file behind', () => {
+  const src = readFileSync(new URL('../netlify/functions/api-profile.js', import.meta.url), 'utf8');
+  // And the delete happens AFTER the new path is recorded — the other order
+  // leaves a profile pointing at nothing if the write fails.
+  const record = src.indexOf("avatar_path: path");
+  const remove = src.indexOf("remove([previous])");
+  assert.ok(record > 0 && remove > record, 'the old avatar is removed before the new one is recorded');
+});
+
+await test('avatars and progress photos are separate buckets', () => {
+  // Deleting every progress photo must not take somebody's profile picture with
+  // it, and a bulk operation on one must never reach the other.
+  const a = readFileSync(new URL('../netlify/functions/api-profile.js', import.meta.url), 'utf8');
+  const b = readFileSync(new URL('../netlify/functions/api-photos.js', import.meta.url), 'utf8');
+  assert.match(a, /BUCKET = 'wrought-avatars'/);
+  assert.match(b, /BUCKET = 'wrought-photos'/);
+});
+
 // ── Report ──────────────────────────────────────────────────────────────────
 
 console.log(results.join('\n'));

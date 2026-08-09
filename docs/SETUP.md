@@ -20,6 +20,7 @@ SQL editor, one at a time, top to bottom:
 | `007_wrought_push.sql` | notifications, and the per-user send hour |
 | `008_wrought_blocks.sql` | multi-week programmes |
 | `009_wrought_photos.sql` | progress photos, and the private bucket they live in |
+| `010_wrought_profile_web.sql` | the profile screen — display name, picture, and the avatar bucket |
 
 Each endpoint that needs a missing migration says which one by name rather than
 failing with something generic.
@@ -43,7 +44,7 @@ Apple US$99/year).
 | `SUPABASE_URL` | everything — **no trailing slash**, or Kong answers "Invalid path specified in request URL" and nothing explains why |
 | `SUPABASE_SERVICE_ROLE_KEY` | everything |
 | `WROUGHT_SITE_URL` | `https://wrought.fit` — OAuth redirects are built from it |
-| `WROUGHT_ADMIN_EMAILS` | the Admin tab. Comma separated |
+| `WROUGHT_ADMIN_EMAILS` | the Admin tab. Comma separated, matched case-insensitively against the **verified** session email |
 
 And inject `window.WROUGHT_SUPABASE_URL` / `window.WROUGHT_SUPABASE_ANON` for
 the pages.

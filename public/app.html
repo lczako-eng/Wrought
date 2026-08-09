@@ -365,6 +365,37 @@ table.matrix td.rh.cold { color: var(--heat-3); }
 .empty { color: var(--ash-dim); font-size: 13.5px; padding: 14px 0; }
 
 
+
+/* ── Profile ──────────────────────────────────────────────────────────────
+   A place to look, not a form. Two columns where there is room, one on a
+   phone, and nothing marked required because nothing is. */
+.me { display: flex; align-items: center; gap: 16px; margin: 4px 0 18px; }
+.avatar {
+  width: 72px; height: 72px; border-radius: 50%; flex: none; overflow: hidden;
+  background: var(--scale-2); border: 1px solid var(--edge-lit);
+  display: grid; place-items: center;
+}
+.avatar img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.avatar span { font-family: var(--stamp-serif); font-size: 28px; color: var(--ash); }
+.me-who { min-width: 0; }
+.me-who b { display: block; font-size: 17px; color: var(--bright); }
+/* break-all split "administrator" across lines. Long emails still wrap. */
+.me-who .sub { display: block; font-size: 13px; margin-bottom: 4px; overflow-wrap: anywhere; }
+.me-who .btnrow { margin: 8px 0 0; }
+.fields { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin: 4px 0 16px; }
+.fields label { display: flex; flex-direction: column; gap: 6px;
+  font-size: 12.5px; color: var(--ash-dim); text-transform: uppercase; letter-spacing: .06em; }
+.fields label.wide { grid-column: 1 / -1; }
+.fields input, .fields select, .fields textarea {
+  font: inherit; font-size: 16px;   /* 16px or iOS zooms on focus */
+  text-transform: none; letter-spacing: normal;
+  padding: 11px 13px; border-radius: 10px; width: 100%;
+  background: var(--scale); border: 1px solid var(--edge); color: var(--bright);
+}
+.fields textarea { resize: vertical; line-height: 1.5; }
+.fields input:focus, .fields select:focus, .fields textarea:focus { outline: none; border-color: var(--heat-3); }
+@media (max-width: 520px) { .fields { grid-template-columns: 1fr; } }
+
 /* ── The plan, and the photographs ────────────────────────────────────────── */
 .weeks { display: flex; gap: 6px; flex-wrap: wrap; margin: 14px 0 10px; }
 .wk {
@@ -963,6 +994,12 @@ function renderAccount(user, ids, factors) {
 
   $('content').innerHTML = `
     <section class="panel">
+      <h2>You</h2>
+      <div id="prof-body"><p class="empty">Loading…</p></div>
+      <p class="msg" id="profmsg"></p>
+    </section>
+
+    <section class="panel">
       <h2>Ways in</h2>
       <p class="sub">Signed in as ${esc(user.email || 'this account')}.</p>
       <p class="sub dim">Every door below opens the same record. Your AI, your watch and
@@ -1048,6 +1085,7 @@ function renderAccount(user, ids, factors) {
   document.querySelectorAll('[data-unlink]').forEach(b => b.addEventListener('click', () => unlink(b.dataset.unlink, b.dataset.prov, ids)));
   document.querySelectorAll('[data-mergeprov]').forEach(b => b.addEventListener('click', () => mergeWithProvider(b.dataset.mergeprov)));
   $('mo-go').addEventListener('click', mergeWithPassword);
+  loadProfile();
   loadPush();
   loadDevices();
   $('mfa-on')?.addEventListener('click', startEnrol);
@@ -1055,6 +1093,180 @@ function renderAccount(user, ids, factors) {
   $('mfa-confirm')?.addEventListener('click', confirmEnrol);
   $('mfa-code')?.addEventListener('keydown', e => { if (e.key === 'Enter') confirmEnrol(); });
   stagger();
+}
+
+// ── Profile ────────────────────────────────────────────────────────────────
+// Everything here was reachable through the assistant already. That is the
+// right way to CAPTURE these — five facts, asked once, in passing, never as an
+// opener — but it was the only way to CHECK them, and a memory product that
+// cannot show you what it remembers is asking for trust it has not earned.
+//
+// So this is a place to look. Nothing is required, and blank means WROUGHT
+// does not know it and will say so rather than guessing.
+
+let PROF = null;
+
+const ZONES = (() => {
+  try { return Intl.supportedValuesOf('timeZone'); }
+  catch { return ['America/Toronto', 'America/New_York', 'America/Vancouver', 'Europe/London', 'UTC']; }
+})();
+
+async function loadProfile() {
+  const el = $('prof-body');
+  if (!el) return;
+  const { data: s } = await sb.auth.getSession();
+  const res = await fetch('/.netlify/functions/api-profile', {
+    headers: { Authorization: `Bearer ${s.session.access_token}` },
+  });
+  if (!res.ok) { el.innerHTML = '<p class="empty">Not available.</p>'; return; }
+  PROF = await res.json();
+  renderProfile(PROF);
+}
+
+function opt(v, cur, label) {
+  return `<option value="${esc(v)}"${String(cur ?? '') === String(v) ? ' selected' : ''}>${esc(label ?? v)}</option>`;
+}
+
+function renderProfile(d) {
+  const p = d.profile, a = d.account;
+  const initials = (p.display_name || a.email || '?').trim().slice(0, 1).toUpperCase();
+
+  $('prof-body').innerHTML = `
+    <div class="me">
+      <div class="avatar">
+        ${p.avatar_url ? `<img src="${esc(p.avatar_url)}" alt="">` : `<span>${esc(initials)}</span>`}
+      </div>
+      <div class="me-who">
+        <b>${esc(p.display_name || a.email || 'You')}</b>
+        <span class="sub">${esc(a.email || '')}${a.administrator ? ' · administrator' : ''}</span>
+        <div class="btnrow">
+          <label class="ghost small" for="avfile">${p.avatar_url ? 'Change picture' : 'Add a picture'}</label>
+          ${p.avatar_url ? '<button class="ghost small" id="avdel">Remove</button>' : ''}
+        </div>
+      </div>
+    </div>
+    <input id="avfile" type="file" accept="image/*" hidden>
+
+    <div class="fields">
+      <label>What to call you
+        <input id="f-name" type="text" value="${esc(p.display_name || '')}" placeholder="Marcus" autocomplete="name"></label>
+
+      <label>How blunt
+        <select id="f-blunt">
+          ${opt('gentle', p.bluntness, 'Gentle — encouragement first')}
+          ${opt('honest', p.bluntness, 'Honest — the default')}
+          ${opt('brutal', p.bluntness, 'Brutal — no cushioning')}
+        </select></label>
+
+      <label>Units
+        <select id="f-units">${opt('metric', p.units, 'Metric — kg, cm')}${opt('imperial', p.units, 'Imperial — lb, in')}</select></label>
+
+      <label>Timezone
+        <select id="f-tz">${ZONES.map(z => opt(z, p.timezone)).join('')}</select></label>
+
+      <label>Height (cm)
+        <input id="f-height" type="number" min="50" max="260" step="0.5" value="${p.height_cm ?? ''}" placeholder="—"></label>
+
+      <label>Born
+        <input id="f-year" type="number" min="1900" max="${new Date().getFullYear()}" value="${p.birth_year ?? ''}" placeholder="—"></label>
+
+      <label>Sex
+        <input id="f-sex" type="text" value="${esc(p.sex || '')}" placeholder="your words"></label>
+
+      <label>Day job
+        <select id="f-act">
+          <option value="">—</option>
+          ${(d.activity_options || []).map(o => opt(o.id, p.activity_level, `${o.id.replace('_', ' ')} — ${o.detail}`)).join('')}
+        </select></label>
+
+      <label>Training days a week
+        <input id="f-days" type="number" min="0" max="14" value="${p.train_days ?? ''}" placeholder="—"></label>
+
+      <label>How long training
+        <input id="f-age" type="text" value="${esc(p.training_age || '')}" placeholder="beginner, 3 years, whatever"></label>
+
+      <label class="wide">Kit you have
+        <input id="f-kit" type="text" value="${esc((p.equipment || []).join(', '))}" placeholder="full gym, dumbbells, bodyweight"></label>
+
+      <label class="wide">Food you avoid
+        <input id="f-diet" type="text" value="${esc((p.dietary || []).join(', '))}" placeholder="vegetarian, no dairy, hates fish"></label>
+
+      <label class="wide">Anything else it should know
+        <textarea id="f-notes" rows="3" placeholder="left knee goes if I squat below parallel">${esc(p.notes || '')}</textarea></label>
+    </div>
+
+    <div class="btnrow"><button class="ghost" id="prof-save">Save</button></div>
+    <p class="sub dim">${esc(d.note)}</p>`;
+
+  $('prof-save').addEventListener('click', saveProfile);
+  $('avfile').addEventListener('change', uploadAvatar);
+  $('avdel')?.addEventListener('click', removeAvatar);
+}
+
+async function saveProfile() {
+  const csv = id => $(id).value.split(',').map(x => x.trim()).filter(Boolean);
+  const numOrNull = id => ($(id).value === '' ? null : Number($(id).value));
+
+  $('prof-save').disabled = true;
+  $('profmsg').textContent = 'Saving…';
+  const { data: s } = await sb.auth.getSession();
+  const res = await fetch('/.netlify/functions/api-profile', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${s.session.access_token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      display_name: $('f-name').value.trim() || null,
+      bluntness: $('f-blunt').value,
+      units: $('f-units').value,
+      timezone: $('f-tz').value,
+      height_cm: numOrNull('f-height'),
+      birth_year: numOrNull('f-year'),
+      sex: $('f-sex').value.trim() || null,
+      activity_level: $('f-act').value || null,
+      train_days: numOrNull('f-days'),
+      training_age: $('f-age').value.trim() || null,
+      equipment: csv('f-kit'),
+      dietary: csv('f-diet'),
+      notes: $('f-notes').value.trim() || null,
+    }),
+  });
+  const out = await res.json();
+  $('prof-save').disabled = false;
+  // Name the field that was rejected. "Could not save" sends somebody hunting
+  // through eleven inputs.
+  $('profmsg').textContent = res.ok ? out.say : (out.message || out.error || 'Could not save.');
+  if (res.ok) setTimeout(loadProfile, 700);
+}
+
+async function uploadAvatar(e) {
+  const file = e.target.files?.[0];
+  if (!file) return;
+  if (file.size > 4 * 1024 * 1024) { $('profmsg').textContent = 'Under 4MB, please.'; return; }
+  $('profmsg').textContent = 'Uploading…';
+  const avatar = await new Promise((res, rej) => {
+    const r = new FileReader();
+    r.onload = () => res(String(r.result).split(',')[1]);
+    r.onerror = rej;
+    r.readAsDataURL(file);
+  });
+  const { data: s } = await sb.auth.getSession();
+  const res = await fetch('/.netlify/functions/api-profile', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${s.session.access_token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ avatar, content_type: file.type }),
+  });
+  const out = await res.json();
+  $('profmsg').textContent = out.say || out.message || out.error || 'Could not upload.';
+  if (res.ok) setTimeout(loadProfile, 600);
+}
+
+async function removeAvatar() {
+  const { data: s } = await sb.auth.getSession();
+  await fetch('/.netlify/functions/api-profile', {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${s.session.access_token}`, 'Content-Type': 'application/json' },
+    body: '{}',
+  });
+  loadProfile();
 }
 
 // ── Devices ────────────────────────────────────────────────────────────────

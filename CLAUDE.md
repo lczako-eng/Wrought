@@ -367,6 +367,27 @@ A list you scroll is not a library; this is one you ask a question of.
   never be offered an advanced lift, and gets every movement explained while an
   advanced lifter is left alone. Both tested.
 
+### The profile — a place to look, not a form
+
+`010_wrought_profile_web.sql` + `api-profile.js` + the Account tab. Every field
+here was already reachable through `set_profile`, and that stays the right way
+to CAPTURE them — five facts, asked once, in passing, never as an opener. It was
+the wrong and only way to CHECK them: *"what does it think my height is"* had no
+answer anybody could go and read, and **a memory product that cannot show you
+what it remembers is asking for trust it has not earned.**
+
+Nothing is required and nothing is asked at signup. Blank means WROUGHT does not
+know it and will say so rather than guessing. The timezone is verified against
+`Intl` rather than trusted — a bad one files every late-night snack under the
+wrong day and corrupts every brief after it. Rejections name the field, because
+"could not save" sends somebody hunting through eleven inputs.
+
+The picture lives in its own private bucket, separate from progress photos:
+deleting every progress photo must not take somebody's avatar with it, and a
+bulk operation on one bucket must never reach the other. **Nothing reads it**,
+same rule, and there is a test. `administrator` on the response is read from
+`WROUGHT_ADMIN_EMAILS`, never from a column.
+
 ### The operator's view — and what it refuses to show
 
 `api-admin.js` + the Admin tab, which only appears when the server says so.
@@ -557,7 +578,7 @@ self-reporting scale removes the most-abandoned manual entry), then Strava.
 
 ## Conventions
 
-- `npm test` runs `test/harness.mjs` — 222 offline tests, no network, no database.
+- `npm test` runs `test/harness.mjs` — 229 offline tests, no network, no database.
   Run it before every push. It covers the JSON-RPC envelope (which fails as an
   uninformative "could not connect" inside ChatGPT) and all the arithmetic
   (which fails as a confidently wrong number in somebody's verdict).
@@ -578,7 +599,8 @@ self-reporting scale removes the most-abandoned manual entry), then Strava.
 2. Run `schema/001_wrought_core.sql`, then `002_wrought_oauth.sql`, then
    `003_wrought_training.sql`, `004_wrought_fasting.sql`,
    `005_wrought_activity.sql`, `006_wrought_identity.sql`, `007_wrought_push.sql`,
-   `008_wrought_blocks.sql` and `009_wrought_photos.sql` in Supabase.
+   `008_wrought_blocks.sql`, `009_wrought_photos.sql` and
+   `010_wrought_profile_web.sql` in Supabase. Full checklist in `docs/SETUP.md`.
 3. Set env vars in Netlify: `SUPABASE_URL` (**no trailing slash** — Kong answers
    "Invalid path specified in request URL" and nothing says why),
    `SUPABASE_SERVICE_ROLE_KEY`, `WROUGHT_SITE_URL=https://wrought.fit`,
