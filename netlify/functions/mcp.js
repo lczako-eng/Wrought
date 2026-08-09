@@ -24,6 +24,7 @@ import {
   parseLog, eventsFromClient, needsMacros, matchEntries, setupNeeded, insertEvents, writeVerdict, rememberFact,
   fastLength, fastingSummary,
 } from './lib/wrought.js';
+import { allowed } from './lib/membership.js';
 import { PROVIDERS, providerSummary, recommendRoute } from './lib/providers.js';
 import { nutritionTotals, composition, macroMatrix, yearOverYear } from './lib/nutrition.js';
 import {
@@ -2378,6 +2379,18 @@ export async function handleRpc(msg, authUser) {
       // and a stranger has no business learning whether we are configured.
       if (!authUser) return { __unauthorized: true, id };
       if (!supabase) return rpcError(id, -32603, 'Server not configured');
+
+      // A suspended account. Said as a tool result rather than a protocol error
+      // so the assistant relays it in words instead of showing a broken
+      // connector — and the words say the record is intact and exportable,
+      // because being cut off is exactly when somebody needs to hear that.
+      const gate = await allowed(authUser.id, 'mcp');
+      if (!gate.ok) {
+        return rpcResult(id, {
+          content: [{ type: 'text', text: JSON.stringify({ error: gate.error, say: gate.message }) }],
+          isError: true,
+        });
+      }
 
       try {
         const out = await impl(params.arguments || {}, authUser);

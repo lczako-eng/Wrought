@@ -2249,10 +2249,103 @@ await test('using a tool still requires a verified user', () => {
   // that 401 is what makes "Sign in with Wrought" appear. Actually CALLING one
   // must not.
   const src = readFileSync(new URL('../netlify/functions/mcp.js', import.meta.url), 'utf8');
-  const call = src.slice(src.indexOf("case 'tools/call'"), src.indexOf("case 'tools/call'") + 700);
+  const call = src.slice(src.indexOf("case 'tools/call'"), src.indexOf("case 'tools/call'") + 1600);
   assert.match(call, /if \(!authUser\) return \{ __unauthorized: true, id \};/);
   // And the check comes before anything is executed.
   assert.ok(call.indexOf('__unauthorized') < call.indexOf('await impl('));
+});
+
+group('Memberships, trials and codes');
+
+const { membershipFor, allowed, makeCode, planSummary, ALWAYS_ALLOWED } =
+  await import('../netlify/functions/lib/membership.js');
+
+await test('no membership row means free and working', async () => {
+  // The failure mode here is locking somebody out of their own health record,
+  // so a missing row, a failed lookup and an un-migrated table all let the
+  // request through.
+  const m = await membershipFor('nobody');
+  assert.equal(m.plan, 'free');
+  assert.equal(m.status, 'active');
+  const gate = await allowed('nobody', 'mcp');
+  assert.equal(gate.ok, true);
+});
+
+await test('export works even for a suspended account', () => {
+  // A hub you cannot leave is a trap, and that has to hold on the worst day of
+  // the relationship rather than only the good ones.
+  assert.ok(ALWAYS_ALLOWED.includes('api-export'));
+  const src = readFileSync(new URL('../netlify/functions/lib/membership.js', import.meta.url), 'utf8');
+  assert.match(src, /if \(ALWAYS_ALLOWED\.includes\(surface\)\) return \{ ok: true \};/);
+  // And the message a suspended person sees says so.
+  assert.match(src, /still export all of it/i);
+});
+
+await test('an expired trial drops to free rather than blocking', () => {
+  // Ending a trial by taking away access to a year of somebody's own training
+  // is not a business model.
+  const src = readFileSync(new URL('../netlify/functions/lib/membership.js', import.meta.url), 'utf8');
+  assert.match(src, /plan: lapsed \? 'free'/);
+  assert.match(src, /if \(m\.status !== 'revoked'\) return \{ ok: true/);
+  assert.match(planSummary({ plan: 'free', was: 'trial', lapsed: true, status: 'active' }), /nothing was lost/i);
+});
+
+await test('codes can be read down a phone', () => {
+  // No 0/O and no 1/I. A code that cannot be dictated is a support ticket.
+  for (let i = 0; i < 200; i++) {
+    const c = makeCode('WROUGHT');
+    assert.ok(!/[O0I1]/.test(c.replace(/^WROUGHT/, '')), `ambiguous character in ${c}`);
+  }
+});
+
+await test('redeeming is one transaction, so a last use cannot be spent twice', () => {
+  const sql = readFileSync(new URL('../schema/011_wrought_membership.sql', import.meta.url), 'utf8');
+  assert.match(sql, /for update/);
+  assert.match(sql, /used_count >= c\.max_uses/);
+  assert.match(sql, /already_redeemed/);
+  // And stacking two codes extends rather than shortens.
+  assert.match(sql, /greatest\(coalesce\(wrought_memberships\.expires_on/);
+});
+
+await test('nobody can set their own plan', () => {
+  const sql = readFileSync(new URL('../schema/011_wrought_membership.sql', import.meta.url), 'utf8');
+  // Read-only for the member; writes are service-role only.
+  assert.match(sql, /for select using \(auth\.uid\(\) = user_id\)/);
+  assert.ok(!/for all using \(auth\.uid\(\) = user_id\)[\s\S]*wrought_memberships/.test(sql));
+  assert.match(sql, /grant execute on function public\.wrought_redeem_code\(text, uuid\) to service_role/);
+});
+
+await test('the operator cannot lock themselves out', async () => {
+  const src = readFileSync(new URL('../netlify/functions/api-admin.js', import.meta.url), 'utf8');
+  assert.match(src, /cannot_revoke_yourself/);
+});
+
+group('The operator sees who, never what');
+
+await test('the people list cannot return anything anybody logged', () => {
+  const src = readFileSync(new URL('../netlify/functions/api-admin.js', import.meta.url), 'utf8');
+  const peopleArm = src.slice(src.indexOf('async function people()'), src.indexOf('async function codes()'));
+  // It reads wrought_events for COUNTS only — user_id and a date, never detail.
+  assert.match(peopleArm, /select\('user_id, local_date'\)/);
+  for (const leak of ['detail', 'weight_kg', 'calories', 'protein', 'exercise', 'wrought_sets', 'wrought_photos', 'wrought_memory']) {
+    assert.ok(!new RegExp(leak).test(peopleArm), `the people list reaches for ${leak}`);
+  }
+});
+
+await test('the privacy line is stated on the response, not just in a comment', async () => {
+  const src = readFileSync(new URL('../netlify/functions/api-admin.js', import.meta.url), 'utf8');
+  assert.match(src, /Never what they logged/i);
+  const { handler: admin } = await import('../netlify/functions/api-admin.js');
+  // Still refuses anonymous callers with everything new bolted on.
+  assert.equal(JSON.parse((await admin({ httpMethod: 'GET', headers: {} })).body).error, 'server_not_configured');
+});
+
+await test('suspension is relayed as words, not a broken connector', () => {
+  // A protocol error shows up in ChatGPT as "the connector is not working",
+  // which is both wrong and unhelpful to somebody who has just been cut off.
+  const src = readFileSync(new URL('../netlify/functions/mcp.js', import.meta.url), 'utf8');
+  assert.match(src, /const gate = await allowed\(authUser\.id, 'mcp'\);/);
+  assert.match(src, /isError: true/);
 });
 
 // ── Report ──────────────────────────────────────────────────────────────────

@@ -14,6 +14,7 @@ import {
 } from './lib/wrought.js';
 import { orderInsight, earnedRoom, energyBalance, exerciseKey, deviceMatrix, weekdayPattern, focusCall, lastSession } from './lib/training.js';
 import { blockPosition } from './lib/library.js';
+import { allowed } from './lib/membership.js';
 import { nutritionTotals, composition, macroMatrix, yearOverYear } from './lib/nutrition.js';
 
 const CORS = {
@@ -30,6 +31,12 @@ export const handler = async (event) => {
 
   const user = await getAuthUser(event);
   if (!user) return { statusCode: 401, headers: CORS, body: JSON.stringify({ error: 'sign_in_required' }) };
+
+  // Suspended accounts do not get the dashboard. They DO keep sign-in, the
+  // profile screen and export — see lib/membership.js for why that line is
+  // where it is.
+  const gate = await allowed(user.id, 'api-progress');
+  if (!gate.ok) return { statusCode: 402, headers: CORS, body: JSON.stringify(gate) };
 
   const params = event.queryStringParameters || {};
   const span = Math.min(Math.max(parseInt(params.days, 10) || 30, 3), 400);

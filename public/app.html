@@ -460,7 +460,7 @@ label.ghost { display: inline-block; }
   padding: 13px 0; border-top: 1px solid var(--edge);
 }
 .door:first-child { border-top: 0; }
-.door b { font-size: 15px; display: block; }
+.door b { font-size: 15px; display: block; overflow-wrap: anywhere; }
 .door .sub { font-size: 13px; }
 .sub.dim, .dim { color: var(--ash-dim); }
 .btnrow { display: flex; flex-wrap: wrap; gap: 10px; margin: 14px 0 4px; }
@@ -491,6 +491,8 @@ a.ghost { display: inline-block; }
    half the phones in a gym will not read. */
 .qr { margin: 16px 0 10px; }
 .qr img { width: 172px; height: 172px; display: block; background: #fff; padding: 10px; border-radius: 10px; }
+.codetext { font-family: var(--mono); font-size: 14px; letter-spacing: .04em; color: var(--heat-4); }
+.door .sub { display: block; }
 .secret {
   font-family: var(--mono); font-size: 14px; letter-spacing: .08em; word-break: break-all;
   background: var(--scale); border: 1px solid var(--edge); border-radius: 9px;
@@ -1753,9 +1755,151 @@ async function loadAdmin() {
   renderAdmin(await res.json());
 }
 
+let adminView = 'numbers';
+
+function adminTabs() {
+  return `<div class="btnrow" style="margin-bottom:4px">
+    ${['numbers', 'people', 'codes'].map(v =>
+      `<button class="ghost small" data-av="${v}" ${v === adminView ? 'style="border-color:var(--heat-3);color:var(--heat-4)"' : ''}>${v}</button>`).join('')}
+  </div>`;
+}
+
+function wireAdminTabs() {
+  document.querySelectorAll('[data-av]').forEach(b => b.addEventListener('click', () => {
+    adminView = b.dataset.av;
+    adminView === 'people' ? loadPeople() : adminView === 'codes' ? loadCodes() : loadAdmin();
+  }));
+}
+
+// ── The people ─────────────────────────────────────────────────────────────
+// Emails, dates, plans and HOW MUCH somebody logged. Never WHAT they logged.
+// Being the administrator of a health product is not a licence to read the
+// health data in it, and the server refuses too — this is not the only thing
+// standing in the way, it is the polite half.
+async function loadPeople() {
+  const { data: s } = await sb.auth.getSession();
+  const res = await fetch('/.netlify/functions/api-admin?view=people', {
+    headers: { Authorization: `Bearer ${s.session.access_token}` },
+  });
+  if (!res.ok) { $('content').innerHTML = '<section class="panel"><p class="empty">Not available.</p></section>'; return; }
+  const d = await res.json();
+
+  const rows = (d.people || []).map(p => `
+    <div class="door">
+      <div style="min-width:0">
+        <b>${esc(p.email || p.id.slice(0, 8))}</b>
+        <span class="sub">joined ${esc(p.joined || '—')} · ${p.entries} entr${p.entries === 1 ? 'y' : 'ies'}${p.last_logged ? ` · last logged ${esc(p.last_logged)}` : ' · never logged'}</span>
+        <span class="sub dim">${esc(p.plan)}${p.expires_on ? ` until ${esc(p.expires_on)}` : ''}${p.status === 'revoked' ? ' · SUSPENDED' : ''}</span>
+      </div>
+      <div class="btnrow" style="margin:0">
+        <select class="hourpick" data-plan-for="${esc(p.id)}">
+          ${['free', 'trial', 'pro', 'comp'].map(pl => `<option value="${pl}"${pl === p.plan ? ' selected' : ''}>${pl}</option>`).join('')}
+        </select>
+        <button class="ghost small" data-suspend="${esc(p.id)}" data-now="${esc(p.status)}">${p.status === 'revoked' ? 'Restore' : 'Suspend'}</button>
+      </div>
+    </div>`).join('');
+
+  $('content').innerHTML = `${adminTabs()}
+    <section class="panel">
+      <h2>People</h2>
+      <p class="sub">${d.total} account${d.total === 1 ? '' : 's'}${d.truncated ? ' (first 200)' : ''}.</p>
+      <div class="doors">${rows || '<p class="empty">No accounts yet.</p>'}</div>
+      <p class="msg" id="admmsg"></p>
+      <p class="sub dim">${esc(d.privacy)}</p>
+    </section>`;
+
+  wireAdminTabs();
+  document.querySelectorAll('[data-suspend]').forEach(b => b.addEventListener('click', () => {
+    const revoking = b.dataset.now !== 'revoked';
+    if (revoking && !confirm('Suspend this account? They keep their record and can still export it — only access to the tools and dashboard stops.')) return;
+    setMembership(b.dataset.suspend, { status: revoking ? 'revoked' : 'active' });
+  }));
+  document.querySelectorAll('[data-plan-for]').forEach(sel => sel.addEventListener('change', () =>
+    setMembership(sel.dataset.planFor, { plan: sel.value })));
+  stagger();
+}
+
+async function setMembership(userId, patch) {
+  const { data: s } = await sb.auth.getSession();
+  const res = await fetch('/.netlify/functions/api-admin', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${s.session.access_token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'set_membership', user_id: userId, ...patch }),
+  });
+  const out = await res.json();
+  const el = $('admmsg'); if (el) el.textContent = out.say || out.message || out.error || 'Could not save.';
+  if (res.ok) setTimeout(loadPeople, 800);
+}
+
+// ── Codes ──────────────────────────────────────────────────────────────────
+async function loadCodes() {
+  const { data: s } = await sb.auth.getSession();
+  const res = await fetch('/.netlify/functions/api-admin?view=codes', {
+    headers: { Authorization: `Bearer ${s.session.access_token}` },
+  });
+  if (!res.ok) { $('content').innerHTML = '<section class="panel"><p class="empty">Not available.</p></section>'; return; }
+  const d = await res.json();
+
+  const rows = (d.codes || []).map(c => `
+    <div class="door">
+      <div style="min-width:0">
+        <b class="codetext">${esc(c.code)}</b>
+        <span class="sub">${c.days} days of ${esc(c.plan)} · used ${c.used}/${c.max_uses}${c.expires_on ? ` · expires ${esc(c.expires_on)}` : ''}</span>
+        ${c.note ? `<span class="sub dim">${esc(c.note)}</span>` : ''}
+      </div>
+      ${c.active && !c.spent ? `<button class="ghost small" data-kill="${esc(c.code)}">Switch off</button>`
+        : `<span class="sub dim">${c.spent ? 'used up' : 'off'}</span>`}
+    </div>`).join('');
+
+  $('content').innerHTML = `${adminTabs()}
+    <section class="panel">
+      <h2>Make a code</h2>
+      <div class="mergebox">
+        <select id="c-plan" class="hourpick">
+          <option value="trial">trial</option><option value="pro">pro</option><option value="comp">comp</option>
+        </select>
+        <input id="c-days" type="number" min="1" max="3650" value="30" placeholder="days">
+        <input id="c-uses" type="number" min="1" max="10000" value="1" placeholder="how many people can use it">
+        <input id="c-note" type="text" placeholder="what it is for — only you see this">
+        <button class="ghost" id="c-make">Generate</button>
+      </div>
+      <p class="msg" id="codemsg"></p>
+    </section>
+    <section class="panel">
+      <h2>Codes</h2>
+      <div class="doors">${rows || '<p class="empty">None yet.</p>'}</div>
+      <p class="sub dim">${esc(d.note)}</p>
+    </section>`;
+
+  wireAdminTabs();
+  $('c-make').addEventListener('click', async () => {
+    const { data: s2 } = await sb.auth.getSession();
+    const r = await fetch('/.netlify/functions/api-admin', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${s2.session.access_token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'make_code', plan: $('c-plan').value,
+        days: +$('c-days').value, max_uses: +$('c-uses').value, note: $('c-note').value.trim() || null }),
+    });
+    const o = await r.json();
+    $('codemsg').textContent = o.say || o.message || o.error || 'Could not create.';
+    if (r.ok) setTimeout(loadCodes, 900);
+  });
+  document.querySelectorAll('[data-kill]').forEach(b => b.addEventListener('click', async () => {
+    if (!confirm('Switch this code off? Anybody who already used it keeps what they were given.')) return;
+    const { data: s2 } = await sb.auth.getSession();
+    await fetch('/.netlify/functions/api-admin', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${s2.session.access_token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'kill_code', code: b.dataset.kill }),
+    });
+    loadCodes();
+  }));
+  stagger();
+}
+
 function renderAdmin(d) {
   const L = d.logged || {};
-  $('content').innerHTML = `
+  $('content').innerHTML = `${adminTabs()}
     <section class="panel">
       <h2>Operator</h2>
       <p class="sub">${esc(d.say)}</p>
@@ -1779,6 +1923,7 @@ function renderAdmin(d) {
       <h2>What is not here</h2>
       <p class="sub">${esc(d.privacy)}</p>
     </section>`;
+  wireAdminTabs();
   stagger();
 }
 

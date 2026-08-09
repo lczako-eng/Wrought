@@ -428,6 +428,43 @@ is a test that plants a fake key and admin address in the environment and
 asserts neither appears in either response format. It gives **one** next step,
 not a list: a checklist with eleven open items is one nobody starts.
 
+### Memberships, trials and codes — and what a revoke may never take
+
+`011_wrought_membership.sql` + `lib/membership.js` + the Admin tab's *people*
+and *codes* views. The founder's ask, and he drew the privacy line himself:
+*"I agree with you that I won't see health information but everything else I
+should."* That is exactly the right line, and it is enforced in code rather than
+in a promise.
+
+**The default is permissive, always.** No membership row means free and active.
+A missing row, a failed lookup, an un-migrated table — all of them let the
+request through. The failure mode being designed against is locking somebody out
+of their own health record, so only an explicit revoke ever blocks.
+
+**An expired trial does not block, it drops to free.** Ending a trial by taking
+away access to a year of somebody's own training is not a business model, it is
+a hostage situation.
+
+**Export always works. Even revoked, even lapsed.** `ALWAYS_ALLOWED` covers
+export, the profile, connections and status, and the suspension message says out
+loud that the record is intact and portable — being cut off is precisely when
+somebody needs to hear that. Suspension reaches the assistant as a tool result
+rather than a protocol error, so ChatGPT relays the words instead of showing a
+broken connector.
+
+**Codes are coupons, not credentials** — stored as they read, because they are
+meant to be handed out; the limit is `max_uses` and `expires_on`, not secrecy.
+That is the opposite of `wrought_ingest_keys`, which are secrets and are hashed.
+The alphabet excludes `0/O` and `1/I` because somebody will read one down a
+phone. Redemption is a single locked transaction, so a code with one use left
+cannot be spent twice by two people pressing at once, and stacking two codes
+**extends** rather than shortens.
+
+**The people list shows who, never what.** Email, join date, last sign-in, how
+MANY entries, plan and status. It reads `wrought_events` for `user_id` and
+`local_date` only — never `detail` — and a test greps for the attempt. An
+operator cannot revoke themselves; that is a locked door with the key inside.
+
 ### The operator's view — and what it refuses to show
 
 `api-admin.js` + the Admin tab, which only appears when the server says so.
@@ -618,7 +655,7 @@ self-reporting scale removes the most-abandoned manual entry), then Strava.
 
 ## Conventions
 
-- `npm test` runs `test/harness.mjs` — 243 offline tests, no network, no database.
+- `npm test` runs `test/harness.mjs` — 253 offline tests, no network, no database.
   Run it before every push. It covers the JSON-RPC envelope (which fails as an
   uninformative "could not connect" inside ChatGPT) and all the arithmetic
   (which fails as a confidently wrong number in somebody's verdict).
@@ -640,7 +677,7 @@ self-reporting scale removes the most-abandoned manual entry), then Strava.
    `003_wrought_training.sql`, `004_wrought_fasting.sql`,
    `005_wrought_activity.sql`, `006_wrought_identity.sql`, `007_wrought_push.sql`,
    `008_wrought_blocks.sql`, `009_wrought_photos.sql` and
-   `010_wrought_profile_web.sql` in Supabase. Full checklist in `docs/SETUP.md`.
+   `010_wrought_profile_web.sql` and `011_wrought_membership.sql` in Supabase. Full checklist in `docs/SETUP.md`.
 3. Set env vars in Netlify: `SUPABASE_URL` (**no trailing slash** — Kong answers
    "Invalid path specified in request URL" and nothing says why),
    `SUPABASE_SERVICE_ROLE_KEY`, `WROUGHT_SITE_URL=https://wrought.fit`,

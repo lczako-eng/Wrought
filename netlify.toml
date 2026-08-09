@@ -56,6 +56,12 @@
   to = "/.netlify/functions/api-connections"
   status = 200
 
+# What plan somebody is on, and redeeming a code.
+[[redirects]]
+  from = "/api/membership"
+  to = "/.netlify/functions/api-membership"
+  status = 200
+
 # The profile, readable and editable. Everything here was reachable through the
 # assistant already; this is where somebody can go and CHECK it.
 [[redirects]]

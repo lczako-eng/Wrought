@@ -37,6 +37,7 @@ const MIGRATIONS = [
   { file: '008_wrought_blocks.sql',      probe: t('wrought_blocks'),                gives: 'multi-week training blocks' },
   { file: '009_wrought_photos.sql',      probe: t('wrought_photos'),                gives: 'progress photos' },
   { file: '010_wrought_profile_web.sql', probe: col('wrought_profile', 'display_name'), gives: 'the profile screen and your picture' },
+  { file: '011_wrought_membership.sql',  probe: t('wrought_memberships'),           gives: 'plans, trials, codes and the admin people list' },
 ];
 
 function t(table) {
