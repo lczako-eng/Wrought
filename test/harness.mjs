@@ -1338,6 +1338,55 @@ await test('a beginner gets the movement explained, an advanced lifter does not'
   assert.ok(expert.sessions[0].exercises.every(e => e.cue === null), 'advanced lifters get left alone');
 });
 
+await test('what they train FOR picks the programme', () => {
+  // Strength and size are different training. Handing somebody the wrong one is
+  // how they decide the whole thing does not work.
+  assert.equal(pickProgramme({ goal: 'strength', tier: 'advanced', days: 5 }).goal, 'strength');
+  assert.equal(pickProgramme({ goal: 'tactical', tier: 'advanced', days: 5 }).goal, 'tactical');
+  assert.equal(pickProgramme({ goal: 'endurance', tier: 'advanced', days: 5 }).goal, 'endurance');
+  assert.equal(pickProgramme({ goal: 'hypertrophy', tier: 'advanced', days: 6 }).goal, 'hypertrophy');
+});
+
+await test('days still outrank the goal', () => {
+  // Wanting the military programme does not conjure two extra days in the week.
+  const p = pickProgramme({ goal: 'tactical', tier: 'advanced', days: 3 });
+  assert.ok(p.days <= 3, `${p.id} wants ${p.days} days against 3 available`);
+});
+
+await test('a programme keeps its own rep scheme', () => {
+  const strength = PROGRAMMES.find(p => p.id === 'strength-4');
+  const size = PROGRAMMES.find(p => p.id === 'size-5');
+  const s = buildProgramme(strength, { tier: 'advanced' });
+  const h = buildProgramme(size, { tier: 'advanced' });
+
+  const reps = pl => pl.sessions[0].exercises[0].reps;
+  const rest = pl => pl.sessions[0].exercises[0].rest_s;
+  assert.equal(reps(s), 4, 'five heavy triples is not four sets of ten');
+  assert.equal(reps(h), 10);
+  assert.ok(rest(s) > rest(h), 'heavy work rests longer, or it is not heavy work');
+});
+
+await test('bodyweight stays bodyweight even in a full gym', () => {
+  const bw = PROGRAMMES.find(p => p.id === 'bodyweight-4');
+  const built = buildProgramme(bw, { tier: 'intermediate', equipment: ['full gym', 'barbell'] });
+  const names = built.sessions.flatMap(s => s.exercises.map(e => e.name));
+  for (const n of names) {
+    const m = MOVEMENTS.find(x => x.name === n);
+    assert.ok(m.equipment.some(r => ['bodyweight', 'bars'].includes(r)),
+      `${n} needs kit — that is the whole promise of a bodyweight programme`);
+  }
+});
+
+await test('every programme still carries no weight and states a goal', () => {
+  for (const p of PROGRAMMES) {
+    assert.ok(p.goal, `${p.id} needs a goal`);
+    const built = buildProgramme(p, { tier: 'advanced' });
+    for (const s of built.sessions) {
+      for (const e of s.exercises) assert.equal(e.load_kg, null, `${e.name} in ${p.id}`);
+    }
+  }
+});
+
 await test('the tool says out loud that it prescribes no weight', () => {
   const t = TOOLS.find(x => x.name === 'programmes');
   assert.ok(t, 'programmes must be in the toolset');

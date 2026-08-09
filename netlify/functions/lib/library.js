@@ -91,7 +91,7 @@ export const PROGRAMMES = [
   {
     id: 'full-body-3',
     name: 'Full Body, 3 days',
-    tier: 'beginner', days: 3, minutes: 50,
+    goal: 'general', tier: 'beginner', days: 3, minutes: 50,
     why: 'Every pattern three times a week. For anyone under about a year of consistent training this beats any split, because the limit is practice rather than recovery.',
     sessions: [
       { name: 'Full Body A', patterns: ['squat', 'horizontal push', 'horizontal pull', 'core'] },
@@ -102,7 +102,7 @@ export const PROGRAMMES = [
   {
     id: 'upper-lower-4',
     name: 'Upper / Lower, 4 days',
-    tier: 'intermediate', days: 4, minutes: 60,
+    goal: 'general', tier: 'intermediate', days: 4, minutes: 60,
     why: 'The most reliable split there is. Everything gets hit twice a week, which is where the evidence on frequency actually sits, and it survives missing a day.',
     sessions: [
       { name: 'Upper A', patterns: ['horizontal push', 'horizontal pull', 'vertical push', 'vertical pull'] },
@@ -114,7 +114,7 @@ export const PROGRAMMES = [
   {
     id: 'push-pull-legs-6',
     name: 'Push / Pull / Legs, 6 days',
-    tier: 'advanced', days: 6, minutes: 70,
+    goal: 'hypertrophy', tier: 'advanced', days: 6, minutes: 70,
     why: 'High volume, twice-weekly frequency, and it demands six real sessions. Worth it only if you already train consistently — done at four days a week it is just an upper/lower with gaps.',
     sessions: [
       { name: 'Push', patterns: ['horizontal push', 'vertical push', 'horizontal push'] },
@@ -125,14 +125,90 @@ export const PROGRAMMES = [
   {
     id: 'minimal-2',
     name: 'Two days, everything',
-    tier: 'beginner', days: 2, minutes: 45,
+    goal: 'general', tier: 'beginner', days: 2, minutes: 45,
     why: 'For a genuinely busy week. Two full-body sessions hold nearly all of the progress three would have made — and a programme you actually complete beats a better one you abandon.',
     sessions: [
       { name: 'Whole Body A', patterns: ['squat', 'horizontal push', 'horizontal pull'] },
       { name: 'Whole Body B', patterns: ['hinge', 'vertical push', 'vertical pull'] },
     ],
   },
+  {
+    id: 'strength-4',
+    name: 'Pure Strength, 4 days',
+    goal: 'strength', tier: 'intermediate', days: 4, minutes: 65,
+    why: 'Heavy, low reps, long rests, built around the four lifts that actually carry a total. Fewer sets than you expect, and every one of them means something.',
+    reps: 4, sets: 5, rest: 210,
+    sessions: [
+      { name: 'Squat Day',    patterns: ['squat', 'hinge', 'core'] },
+      { name: 'Bench Day',    patterns: ['horizontal push', 'horizontal pull', 'vertical push'] },
+      { name: 'Deadlift Day', patterns: ['hinge', 'squat', 'carry'] },
+      { name: 'Press Day',    patterns: ['vertical push', 'vertical pull', 'horizontal push'] },
+    ],
+  },
+  {
+    id: 'size-5',
+    name: 'Size, 5 days',
+    goal: 'hypertrophy', tier: 'intermediate', days: 5, minutes: 60,
+    why: 'Higher reps, shorter rests, more total sets per muscle. Built for the look rather than the total — the two are related, but they are not the same programme.',
+    reps: 10, sets: 4, rest: 90,
+    sessions: [
+      { name: 'Chest & Arms',   patterns: ['horizontal push', 'horizontal push', 'vertical push'] },
+      { name: 'Back',           patterns: ['vertical pull', 'horizontal pull', 'horizontal pull'] },
+      { name: 'Legs',           patterns: ['squat', 'lunge', 'hinge'] },
+      { name: 'Shoulders',      patterns: ['vertical push', 'horizontal pull', 'core'] },
+      { name: 'Arms & Core',    patterns: ['horizontal push', 'vertical pull', 'core'] },
+    ],
+  },
+  {
+    id: 'military-5',
+    name: 'Military / Tactical, 5 days',
+    goal: 'tactical', tier: 'intermediate', days: 5, minutes: 55,
+    why: 'Built for a fitness test and a rucksack rather than a mirror: carries, pull-ups, press-ups and conditioning alongside the barbell. Work capacity is the point — being strong once is no use if you cannot repeat it.',
+    reps: 8, sets: 4, rest: 75,
+    sessions: [
+      { name: 'Strength & Carry', patterns: ['squat', 'carry', 'horizontal push', 'core'] },
+      { name: 'Conditioning',     patterns: ['conditioning', 'core', 'lunge'] },
+      { name: 'Pull & Press',     patterns: ['vertical pull', 'vertical push', 'horizontal pull'] },
+      { name: 'Ruck & Legs',      patterns: ['hinge', 'lunge', 'carry', 'conditioning'] },
+      { name: 'Bodyweight Test',  patterns: ['horizontal push', 'vertical pull', 'core', 'conditioning'] },
+    ],
+  },
+  {
+    id: 'bodyweight-4',
+    name: 'Bodyweight Only, 4 days',
+    goal: 'general', tier: 'beginner', days: 4, minutes: 40,
+    why: 'No gym, no kit, no excuse. Progression comes from reps and leverage rather than load, which is slower but works anywhere on earth.',
+    reps: 12, sets: 3, rest: 60,
+    equipment: ['bodyweight', 'bars'],
+    sessions: [
+      { name: 'Push',  patterns: ['horizontal push', 'core'] },
+      { name: 'Pull',  patterns: ['vertical pull', 'horizontal pull'] },
+      { name: 'Legs',  patterns: ['lunge', 'squat', 'core'] },
+      { name: 'Whole', patterns: ['horizontal push', 'vertical pull', 'lunge', 'conditioning'] },
+    ],
+  },
+  {
+    id: 'engine-3',
+    name: 'Engine, 3 days',
+    goal: 'endurance', tier: 'beginner', days: 3, minutes: 45,
+    why: 'For the person whose limit is breath rather than strength. Conditioning leads and the lifting exists to keep the joints able to take it.',
+    reps: 12, sets: 3, rest: 60,
+    sessions: [
+      { name: 'Long & Easy',  patterns: ['conditioning', 'core'] },
+      { name: 'Strength Bit', patterns: ['squat', 'horizontal push', 'horizontal pull'] },
+      { name: 'Hard & Short', patterns: ['conditioning', 'lunge', 'carry'] },
+    ],
+  },
 ];
+
+// What a programme is FOR, in the words somebody would use asking for it.
+export const GOALS = {
+  general:     'Get generally fitter and stronger',
+  strength:    'Lift heavier — the total is the point',
+  hypertrophy: 'Add size',
+  tactical:    'Pass a test and carry a load',
+  endurance:   'Build the engine',
+};
 
 export function movementsFor(pattern, { equipment = null, tier = 'intermediate' } = {}) {
   const ceiling = TIER_RANK[tier] ?? 1;
@@ -152,19 +228,32 @@ export function movementsFor(pattern, { equipment = null, tier = 'intermediate' 
 // Which programme fits the person in front of you. Days available is the
 // binding constraint, not ambition: prescribing six sessions to somebody with
 // three is how a programme gets abandoned in week two.
-export function pickProgramme({ days = null, tier = 'intermediate', equipment = null } = {}) {
+export function pickProgramme({ days = null, tier = 'intermediate', equipment = null, goal = null } = {}) {
   const ceiling = TIER_RANK[tier] ?? 1;
-  const eligible = PROGRAMMES.filter(p => (TIER_RANK[p.tier] ?? 1) <= ceiling);
-  const pool = eligible.length ? eligible : PROGRAMMES.filter(p => p.tier === 'beginner');
+  let eligible = PROGRAMMES.filter(p => (TIER_RANK[p.tier] ?? 1) <= ceiling);
 
+  // What they are training FOR narrows it before anything else does. Strength
+  // and size are different programmes, and handing somebody the wrong one is
+  // how they conclude the whole thing does not work.
   const want = Number(days) || null;
+  const fitsDays = p => !want || p.days <= want;
+
+  // DAYS BEAT THE GOAL, always. Wanting the military programme does not conjure
+  // two extra evenings, and a five-day plan handed to somebody with three is
+  // abandoned in week two — which teaches them the product does not know them.
+  // So: their goal within what their week can hold; failing that, anything that
+  // fits; and only if nothing fits at all, the shortest thing here.
+  const byGoal = goal ? eligible.filter(p => p.goal === goal) : [];
+  const pool =
+    byGoal.filter(fitsDays).length ? byGoal.filter(fitsDays)
+    : eligible.filter(fitsDays).length ? eligible.filter(fitsDays)
+    : eligible.length ? [eligible.reduce((a, p) => (p.days < a.days ? p : a))]
+    : PROGRAMMES.filter(p => p.tier === 'beginner');
+
   const best = pool.reduce((a, p) => {
     if (!a) return p;
     if (!want) return (TIER_RANK[p.tier] ?? 1) > (TIER_RANK[a.tier] ?? 1) ? p : a;
-    // Never schedule more days than they said they have; among the rest, the
-    // one closest to their number wins.
-    const fits = x => (x.days <= want ? 0 : 1);
-    if (fits(p) !== fits(a)) return fits(p) < fits(a) ? p : a;
+    // Among those that fit, the one closest to the days they actually have.
     return Math.abs(p.days - want) < Math.abs(a.days - want) ? p : a;
   }, null);
 
@@ -174,10 +263,24 @@ export function pickProgramme({ days = null, tier = 'intermediate', equipment = 
 export function buildProgramme(programme, { tier = 'intermediate', equipment = null } = {}) {
   const beginner = tier === 'beginner';
 
+  // A programme that states its own scheme keeps it — five heavy triples and
+  // four sets of ten are different training, and flattening them to one house
+  // default would make every programme here the same programme with new names.
+  const SETS = programme.sets ?? (beginner ? 3 : 4);
+  const REPS = programme.reps ?? (beginner ? 8 : 6);
+  const REST = programme.rest ?? (beginner ? 120 : 150);
+
+  // A bodyweight programme stays bodyweight even in a full gym — that is the
+  // whole promise of it.
+  const kit = programme.equipment
+    ? (equipment?.length ? equipment.filter(e => programme.equipment.some(a => String(e).toLowerCase().includes(a))) : programme.equipment)
+    : equipment;
+  const gear = programme.equipment ? (kit.length ? kit : programme.equipment) : equipment;
+
   const sessions = programme.sessions.map(s => {
     const used = new Set();
     const exercises = s.patterns.map(pattern => {
-      const options = movementsFor(pattern, { equipment, tier });
+      const options = movementsFor(pattern, { equipment: gear, tier });
       const pick = options.find(m => !used.has(m.name)) || options[0];
       if (!pick) return null;
       used.add(pick.name);
@@ -186,12 +289,12 @@ export function buildProgramme(programme, { tier = 'intermediate', equipment = n
         pattern,
         // Volume by tier: fewer, cleaner sets while the movement is still being
         // learned; more once it is not.
-        sets: beginner ? 3 : 4,
-        reps: pattern === 'core' || pattern === 'carry' ? 12 : beginner ? 8 : 6,
+        sets: SETS,
+        reps: pattern === 'core' || pattern === 'carry' ? 12 : REPS,
         // No load, ever. progressionCall decides against real history, or the
         // coach prescribes an RPE.
         load_kg: null,
-        rest_s: pattern === 'conditioning' ? 60 : beginner ? 120 : 150,
+        rest_s: pattern === 'conditioning' ? 60 : REST,
         muscles: pick.muscles,
         // A beginner gets told why. An advanced lifter gets left alone.
         cue: beginner || tier === 'intermediate' ? pick.cue : null,
@@ -205,6 +308,7 @@ export function buildProgramme(programme, { tier = 'intermediate', equipment = n
   return {
     id: programme.id,
     name: programme.name,
+    goal: programme.goal || 'general',
     tier: programme.tier,
     days: programme.days,
     est_minutes: programme.minutes,

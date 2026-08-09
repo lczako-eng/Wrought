@@ -261,6 +261,27 @@ section > p { margin: 0; color: var(--ash); max-width: 34ch; }
 .spark .dot { opacity: 0; transition: opacity .5s var(--ease) 1.2s; }
 .seen .spark .dot { opacity: 1; }
 
+/* ── The body map ──────────────────────────────────────────────────────────
+   The training matrix says the same thing in a table. This says it in the shape
+   of a person, which is the version somebody understands without being taught
+   how to read it — and the cold legs are visible before a single label is. */
+.body-card { display: flex; gap: clamp(18px, 6vw, 40px); align-items: center; flex-wrap: wrap; }
+.body { width: min(180px, 44vw); height: auto; display: block; margin: 0 auto; }
+.body .p {
+  fill: #241D1B;
+  opacity: 0; transform: scale(.94); transform-origin: center;
+  transition: fill .8s var(--ease), opacity .6s var(--ease), transform .6s var(--ease);
+}
+.seen .body .p { opacity: 1; transform: none; }
+
+.body-key { flex: 1 1 180px; display: flex; flex-direction: column; gap: 9px; min-width: 0; }
+.bk { display: grid; grid-template-columns: 1fr auto; gap: 10px; align-items: center; font-size: 15px; }
+.bk .nm { color: var(--ash); }
+.bk .st { font-family: var(--mono); font-size: 12.5px; letter-spacing: .1em; text-transform: uppercase; }
+.bk .st.cold { color: var(--heat-2); }
+.bk .st.warm { color: var(--ash-dim); }
+.bk .st.hot  { color: var(--heat-3); }
+
 /* ── Heat grid ─────────────────────────────────────────────────────────── */
 .grid { display: grid; gap: 7px; }
 .grow { display: grid; grid-template-columns: 84px 1fr; gap: 12px; align-items: center; }
@@ -456,6 +477,31 @@ footer a { color: var(--ash); }
 </section>
 
 <section class="wrap up">
+  <p class="eyebrow">Where the work went</p>
+  <h2>Your body, lit by what you've actually trained.</h2>
+  <p>Hot is hammered. Cold is neglected. You don't need the numbers to see it.</p>
+
+  <div class="card body-card" style="margin-top:26px">
+    <svg class="body" viewBox="0 0 200 340" role="img" aria-label="Body map: chest, back, shoulders and arms trained hard; legs cold for five weeks">
+      <g class="parts">
+        <!-- Head and frame stay neutral: only trained groups take colour. -->
+        <circle cx="100" cy="26" r="17" fill="#241D1B"/>
+        <rect class="p" data-m="shoulders" x="52"  y="52"  width="96" height="20" rx="10"/>
+        <rect class="p" data-m="chest"     x="66"  y="76"  width="68" height="34" rx="12"/>
+        <rect class="p" data-m="arms"      x="34"  y="76"  width="20" height="72" rx="10"/>
+        <rect class="p" data-m="arms"      x="146" y="76"  width="20" height="72" rx="10"/>
+        <rect class="p" data-m="core"      x="72"  y="114" width="56" height="42" rx="12"/>
+        <rect class="p" data-m="back"      x="66"  y="160" width="68" height="24" rx="10"/>
+        <rect class="p" data-m="legs"      x="70"  y="190" width="26" height="118" rx="13"/>
+        <rect class="p" data-m="legs"      x="104" y="190" width="26" height="118" rx="13"/>
+      </g>
+    </svg>
+
+    <div class="body-key" id="bodykey"></div>
+  </div>
+</section>
+
+<section class="wrap up">
   <p class="eyebrow">Twelve weeks</p>
   <h2>See what you've been avoiding.</h2>
   <p>What you hammered glows. What you skipped goes cold — and you spot it in about a second.</p>
@@ -602,6 +648,31 @@ footer a { color: var(--ash); }
 </footer>
 
 <script>
+// ── The body map ───────────────────────────────────────────────────────────
+// Same data as the matrix, in the shape of a person. Colours come from one
+// scale so the map and the grid can never tell different stories, and the
+// legend is generated from the same object rather than typed twice.
+(() => {
+  const WORK = {
+    chest: 4, back: 4, shoulders: 3, arms: 4, core: 2, legs: 0,
+  };
+  const SCALE = ['#241D1B', '#5C1806', '#B8320C', '#F26419', '#F5A623'];
+  const WORD = ['nothing in 5 weeks', 'barely', 'some', 'worked', 'hammered'];
+
+  document.querySelectorAll('.body .p').forEach((el, i) => {
+    const lvl = WORK[el.dataset.m] ?? 0;
+    el.style.fill = SCALE[lvl];
+    el.style.transitionDelay = `${Math.min(i * 70, 500)}ms`;
+  });
+
+  const key = document.getElementById('bodykey');
+  if (key) key.innerHTML = Object.entries(WORK).map(([m, lvl]) => `
+    <div class="bk">
+      <span class="nm">${m}</span>
+      <span class="st ${lvl === 0 ? 'cold' : lvl >= 3 ? 'hot' : 'warm'}">${WORD[lvl]}</span>
+    </div>`).join('');
+})();
+
 // ── The heat grid ──────────────────────────────────────────────────────────
 // Twelve weeks of training. Legs go cold at the end, which is the entire point
 // of the graphic and the reason it is not decoration.

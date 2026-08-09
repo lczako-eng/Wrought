@@ -31,7 +31,7 @@ import {
   restingBurn, energyBalance, planFromRoutine, sessionTotals, earnedRoom,
   orderPlan, orderInsight, deviceMatrix, weekdayPattern,
 } from './lib/training.js';
-import { PROGRAMMES, movementsFor, pickProgramme, buildProgramme } from './lib/library.js';
+import { PROGRAMMES, GOALS, movementsFor, pickProgramme, buildProgramme } from './lib/library.js';
 
 const PROTOCOL_VERSION = '2025-06-18';
 
@@ -513,11 +513,13 @@ const TOOLS = [
   {
     name: 'programmes',
     title: 'Proven programmes and the movement library',
-    description: 'A curated library rather than an invented session: named programmes (full body 3-day, upper/lower 4-day, push/pull/legs 6-day, minimal 2-day) built from movements chosen for pattern coverage and how well they load. Call with no arguments to get the one that fits their days, tier and equipment, with the reasoning. Use for "give me a proper programme", "what should I be running", "is there a template", or when somebody has no routines saved yet. NO WEIGHTS are returned and none should be invented — loads come from their own history via the session tools, or as an RPE. Pass adopt to save the programme as routines they can then start by name.',
+    description: 'A curated library rather than an invented session: nine named programmes across five goals — general fitness (full body 3-day, upper/lower 4-day, two-day minimal), pure strength, size, military/tactical, bodyweight-only and endurance — built from movements chosen for pattern coverage and how well they load. Call with no arguments to get the one that fits their days, tier and equipment, with the reasoning. Use for "give me a proper programme", "what should I be running", "is there a template", or when somebody has no routines saved yet. NO WEIGHTS are returned and none should be invented — loads come from their own history via the session tools, or as an RPE. Pass adopt to save the programme as routines they can then start by name.',
     inputSchema: {
       type: 'object',
       properties: {
         days:      { type: 'integer', description: 'Sessions per week they can realistically do. Defaults to their profile. Never returns a programme demanding more days than this.' },
+        goal:      { type: 'string', enum: ['general', 'strength', 'hypertrophy', 'tactical', 'endurance'],
+                     description: 'What they are training FOR, which narrows the choice before anything else. strength = heavy, low reps, long rests. hypertrophy = size, higher reps, shorter rests. tactical = military or fitness-test work — carries, pull-ups, press-ups and conditioning alongside the bar. endurance = the engine leads. Ask if they have not said; handing somebody the size programme when they want a bigger total is how they conclude the whole thing does not work.' },
         adopt:     { type: 'boolean', description: 'true saves the programme\'s sessions as named routines. Ask before doing this — it replaces any routine sharing a name.' },
         programme: { type: 'string', description: 'Pick a specific one by id: full-body-3, upper-lower-4, push-pull-legs-6, minimal-2. Omit to be matched.' },
         pattern:   { type: 'string', description: 'Instead of a programme, list the good movements for one pattern: squat, hinge, horizontal push, vertical push, horizontal pull, vertical pull, lunge, carry, core, conditioning. Use for "what is a good back exercise" or when they want to swap something out mid-session.' },
@@ -1868,14 +1870,15 @@ async function programmes(args, user) {
     ? (PROGRAMMES.find(p => p.id === args.programme)
         ? buildProgramme(PROGRAMMES.find(p => p.id === args.programme), { tier, equipment: profile.equipment })
         : null)
-    : pickProgramme({ days: args.days ?? profile.train_days, tier, equipment: profile.equipment });
+    : pickProgramme({ days: args.days ?? profile.train_days, tier, equipment: profile.equipment, goal: args.goal });
 
   if (!chosen) return { error: 'no_such_programme', say: 'No programme by that name. Call with no arguments to be matched to one.' };
 
   if (!args.adopt) {
     return {
       programme: chosen,
-      available: PROGRAMMES.map(p => ({ id: p.id, name: p.name, days: p.days, tier: p.tier })),
+      available: PROGRAMMES.map(p => ({ id: p.id, name: p.name, goal: p.goal, days: p.days, tier: p.tier })),
+      goals: GOALS,
       say: `${chosen.name} — ${chosen.days} days a week, about ${chosen.est_minutes} minutes. ${chosen.why}`,
       note: 'Read back the session names and roughly what each covers, not all thirty exercises. Offer to adopt it — that saves the sessions as routines they can start by name. No weights appear here and none should be invented; the first time they run a lift, the session tools work the load out from what they actually do.',
       next_actions: ['programmes with adopt: true if they want it saved', 'start_session once adopted'],
