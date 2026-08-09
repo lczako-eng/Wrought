@@ -129,6 +129,50 @@ yesterday" is almost never a new user** — and answering it by asking them to l
 the week again is how a memory product loses trust while looking like working
 software. There is a test.
 
+### Two-factor — enforced on the server, or it is decoration
+
+TOTP via any authenticator app; nothing is ever sent by text. Switched on from
+the dashboard's Account tab, which is the **only** place it can be enrolled or
+removed — a connect flow offering to set up 2FA mid-authorization is how
+somebody ends up half-enrolled.
+
+**The browser prompt is the polite half.** A second factor the browser checks
+and the server does not is decoration: the password alone still yields a valid
+session JWT and every endpoint would take it. Supabase stamps `aal` on the
+session — `aal1` is one factor, `aal2` is the second actually presented — and
+the claim alone proves nothing, since somebody with no factors is legitimately
+`aal1` forever. It is only a failure when the account **has** a verified factor
+and the token says `aal1`. That is `mfaSatisfied()` in `lib/wrought.js`, and
+`getAuthUser` refuses on the session-JWT path.
+
+**The connector path is deliberately NOT re-checked**, and that asymmetry is
+load-bearing. ChatGPT holds a token minted at authorization time and there is no
+way to ask it for a code mid-conversation — re-checking would break every
+connector. So the gate moves to where the token is *minted*:
+`oauth-authorize-complete.js` refuses `aal1` before it writes the code. Without
+that line, "connect your assistant" would be a permanent way around the second
+factor rather than a use of it. Both halves have tests.
+
+Factor lookups are cached five minutes. On a lookup failure the **last answer
+actually received is preferred, even expired** — an outage must not quietly
+switch somebody's second factor off. With no answer ever recorded it allows the
+request, because locking every user out of their own health record when an admin
+endpoint blinks is the worse failure and almost nobody has a factor to bypass.
+
+### The page you land on when the network is gone
+
+**A failed navigation is never answered with a different page.** The worker used
+to fall back to `/index.html`, so tapping the home screen icon on bad wifi
+dropped you on the marketing homepage — which reads as having been signed out,
+the one thing a product whose whole promise is memory must never fake. Now an
+unreachable page gets an honest offline card, and `caches.match` runs with
+`ignoreSearch` because `/app.html?merge=1` is `/app.html` and without it every
+link carrying a query string missed the cache.
+
+The wordmark is a link on every page, but on the dashboard it goes to the
+dashboard, not to `/`. Being thrown out to a sales pitch from inside your own
+record was the complaint, not the fix.
+
 ### Capture in passing — the most important doctrine in the server
 
 The founder's words: *"if I accidentally say I just did 10 push-ups I'll
@@ -407,7 +451,7 @@ self-reporting scale removes the most-abandoned manual entry), then Strava.
 
 ## Conventions
 
-- `npm test` runs `test/harness.mjs` — 182 offline tests, no network, no database.
+- `npm test` runs `test/harness.mjs` — 194 offline tests, no network, no database.
   Run it before every push. It covers the JSON-RPC envelope (which fails as an
   uninformative "could not connect" inside ChatGPT) and all the arithmetic
   (which fails as a confidently wrong number in somebody's verdict).

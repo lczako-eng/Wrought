@@ -13,7 +13,7 @@
 // yesterday's numbers with confidence, so anything carrying data is network
 // first and only falls back to cache when the network genuinely fails.
 
-const SHELL = 'wrought-shell-v1';
+const SHELL = 'wrought-shell-v2';
 
 // Only the frame: markup, icons, manifest. No API responses ever.
 const SHELL_FILES = [
@@ -63,9 +63,41 @@ self.addEventListener('fetch', (e) => {
         caches.open(SHELL).then(c => c.put(e.request, copy)).catch(() => {});
         return res;
       })
-      .catch(() => caches.match(e.request).then(hit => hit || caches.match('/index.html')))
+      .catch(async () => {
+        // ignoreSearch matters more than it looks. /app.html?merge=1 is the same
+        // page as /app.html, and without this every link carrying a query string
+        // is a cache miss.
+        const hit = await caches.match(e.request, { ignoreSearch: true });
+        if (hit) return hit;
+
+        // Never answer a navigation with a DIFFERENT page. Tapping the home
+        // screen icon and landing on the marketing homepage reads as having been
+        // signed out — which, on a product whose whole promise is that it
+        // remembers, is the one thing it must never fake. An honest "no network"
+        // is better than a page that looks like your account is gone.
+        if (e.request.mode === 'navigate') {
+          return new Response(OFFLINE, {
+            status: 503,
+            headers: { 'Content-Type': 'text/html; charset=utf-8' },
+          });
+        }
+        return Response.error();
+      })
   );
 });
+
+const OFFLINE = `<!doctype html><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>WROUGHT — offline</title>
+<style>body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;
+background:#14110F;color:#F4EFE9;font:16px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+text-align:center;padding:28px}p{color:#9A8D84;margin:8px 0 0;font-size:14px}
+h1{font-family:Rockwell,"Roboto Slab",Georgia,serif;font-size:26px;margin:0;letter-spacing:.02em}
+button{margin-top:20px;padding:13px 20px;border:0;border-radius:11px;background:#F26419;
+color:#1A0A02;font:inherit;font-weight:700;font-size:15px;cursor:pointer}</style>
+<div><h1>No connection</h1>
+<p>Your record is safe on the server. This page just cannot reach it right now.</p>
+<button onclick="location.reload()">Try again</button></div>`;
 
 // ── Push ───────────────────────────────────────────────────────────────────
 // The nightly verdict on the lock screen, which is the whole point of the

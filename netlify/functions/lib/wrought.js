@@ -130,14 +130,69 @@ export async function getAuthUser(event) {
       .select('user_id, expires_at').eq('token_hash', hash).maybeSingle();
     if (row && new Date(row.expires_at).getTime() > Date.now()) {
       const { data } = await supabase.auth.admin.getUserById(row.user_id);
+      // A token we issued ourselves already passed the second factor at the
+      // moment it was authorised — see oauth-authorize-complete.js. Re-checking
+      // here would demand a code from ChatGPT, which has no way to ask for one.
       if (data?.user) return data.user;
     }
   } catch { /* fall through to JWT */ }
 
   try {
     const { data, error } = await supabase.auth.getUser(token);
-    return error ? null : data?.user || null;
+    if (error || !data?.user) return null;
+    if (!(await mfaSatisfied(data.user, token))) return null;
+    return data.user;
   } catch { return null; }
+}
+
+// ── Two-factor, enforced where it actually matters ──────────────────────────
+// A second factor the browser checks and the server does not is decoration. The
+// password alone still produces a valid session JWT, and every endpoint here
+// would take it — so the gate has to be on this side, on the one path that
+// everything goes through.
+//
+// Supabase stamps `aal` on the session: aal1 means one factor was presented,
+// aal2 means the second one actually was. The claim on its own proves nothing —
+// somebody with no factors is legitimately aal1 forever — so it is only a
+// failure when the account HAS a verified factor and the token says aal1.
+
+const FACTOR_CACHE = new Map();          // user_id -> { has, until }
+const FACTOR_TTL_MS = 5 * 60 * 1000;
+
+function tokenClaims(jwt) {
+  try {
+    const payload = String(jwt).split('.')[1];
+    return JSON.parse(Buffer.from(payload, 'base64url').toString('utf8')) || {};
+  } catch { return {}; }
+}
+
+export async function hasVerifiedFactor(userId) {
+  const hit = FACTOR_CACHE.get(userId);
+  if (hit && hit.until > Date.now()) return hit.has;
+
+  try {
+    const { data, error } = await supabase.auth.admin.mfa.listFactors({ userId });
+    if (error) throw error;
+    const has = (data?.factors || []).some(f => f.status === 'verified');
+    FACTOR_CACHE.set(userId, { has, until: Date.now() + FACTOR_TTL_MS });
+    return has;
+  } catch {
+    // The lookup failed. Prefer the last answer we actually got, even expired —
+    // an outage must not quietly switch somebody's second factor off. With no
+    // answer ever recorded, allow the request: locking every user out of their
+    // own health record because an admin endpoint blinked is the worse failure,
+    // and the vast majority have no second factor to bypass.
+    return hit ? hit.has : false;
+  }
+}
+
+// Exported so a freshly enrolled factor takes effect immediately rather than up
+// to five minutes later.
+export function forgetFactorCache(userId) { FACTOR_CACHE.delete(userId); }
+
+export async function mfaSatisfied(user, jwt) {
+  if (tokenClaims(jwt).aal === 'aal2') return true;
+  return !(await hasVerifiedFactor(user.id));
 }
 
 export const newToken = () => randomBytes(32).toString('base64url');

@@ -16,7 +16,7 @@
   .wrap{max-width:760px;margin:0 auto;padding:0 22px}
   a{color:var(--ember)}
   header{padding:44px 0 34px}
-  .mark{display:flex;align-items:center;margin-bottom:34px}
+  .mark{display:flex;align-items:center;margin-bottom:34px;color:inherit;text-decoration:none}
   .mark .name{font-family:-apple-system,BlinkMacSystemFont,"Helvetica Neue","Arial Narrow",system-ui,sans-serif;font-weight:900;font-stretch:75%;letter-spacing:.04em;font-size:15px;text-transform:uppercase}
   h1{font-size:clamp(28px,5vw,40px);letter-spacing:-.025em;margin:0 0 12px;font-weight:700}
   .lede{color:var(--muted);margin:0 0 8px;font-size:17px}
@@ -42,6 +42,7 @@
   input{width:100%;padding:11px 13px;border-radius:8px;border:1px solid var(--line);
     background:var(--panel2);color:var(--text);font-size:15px;font-family:inherit;margin-bottom:10px}
 
+  [hidden]{display:none!important}
   .oauth{display:flex;align-items:center;justify-content:center;gap:10px;
     background:#1f1f24;color:var(--text);border:1px solid #3a3a42;font-weight:600;margin-bottom:11px}
   .oauth svg{width:19px;height:19px;flex:none}
@@ -65,7 +66,7 @@
 <body>
 
 <header class="wrap">
-  <div class="mark"><span class="name">WROUGHT</span></div>
+  <a class="mark" href="/" aria-label="WROUGHT home"><span class="name">WROUGHT</span></a>
   <h1>Connect it</h1>
   <p class="lede">Two things to set up. The AI takes a minute; the watch takes two.</p>
 </header>
@@ -187,6 +188,12 @@
       <input id="email" type="email" placeholder="you@example.com" autocomplete="email">
       <input id="pass" type="password" placeholder="Password" autocomplete="current-password">
       <button id="send">Sign in</button>
+      <div id="mfa" hidden>
+        <p class="msg">Six digits from your authenticator app.</p>
+        <input id="mfacode" type="text" inputmode="numeric" autocomplete="one-time-code"
+               placeholder="000000" maxlength="6" enterkeyhint="go">
+        <button id="mfago">Verify</button>
+      </div>
       <p class="msg">No account yet? <a href="/app.html">Make one on the dashboard</a> — this
       page hands out device keys for an account that already exists.</p>
     </div>
@@ -347,7 +354,49 @@ async function boot() {
   if (data.session) signedIn(data.session.access_token);
 }
 
-function signedIn(t) {
+// The second factor. This page hands out device keys that write to the log
+// forever, so a password on its own must not be enough to mint one.
+async function mfaNeeded() {
+  try {
+    const { data } = await sb.auth.mfa.getAuthenticatorAssuranceLevel();
+    return !!data && data.nextLevel === 'aal2' && data.currentLevel !== 'aal2';
+  } catch { return false; }
+}
+
+async function submitCode() {
+  const code = $('mfacode').value.replace(/\D/g, '');
+  if (code.length !== 6) { $('msg').textContent = 'Six digits.'; return; }
+  $('mfago').disabled = true;
+  $('msg').textContent = 'Checking\u2026';
+  try {
+    const { data: f } = await sb.auth.mfa.listFactors();
+    const factor = (f?.totp || [])[0];
+    if (!factor) { $('msg').textContent = 'No authenticator is set up on this account.'; return; }
+    const { data: ch, error: chErr } = await sb.auth.mfa.challenge({ factorId: factor.id });
+    if (chErr) { $('msg').textContent = chErr.message; return; }
+    const { error } = await sb.auth.mfa.verify({ factorId: factor.id, challengeId: ch.id, code });
+    if (error) {
+      $('msg').textContent = /invalid|incorrect/i.test(error.message)
+        ? 'That code did not match. It changes every 30 seconds \u2014 try the current one.'
+        : error.message;
+      return;
+    }
+    const { data } = await sb.auth.getSession();
+    if (data.session) signedIn(data.session.access_token);
+  } finally { $('mfago').disabled = false; }
+}
+
+$('mfago').addEventListener('click', submitCode);
+$('mfacode').addEventListener('keydown', e => { if (e.key === 'Enter') submitCode(); });
+
+async function signedIn(t) {
+  if (await mfaNeeded()) {
+    $('mfa').hidden = false;
+    $('msg').textContent = '';
+    $('mfacode').focus();
+    return;
+  }
+  $('mfa').hidden = true;
   token = t;
   $('signin').hidden = true;
   $('minter').hidden = false;

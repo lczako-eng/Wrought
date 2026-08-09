@@ -73,7 +73,11 @@ header {
   backdrop-filter: blur(12px); z-index: 20;
 }
 .bar { display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap; }
-.mark { display: flex; align-items: center; }
+/* An author display rule beats the hidden attribute, so anything set to flex
+   stays visible when hidden. Caught by the provider buttons surviving the
+   two-factor prompt. */
+[hidden] { display: none !important; }
+.mark { display: flex; align-items: center; color: inherit; text-decoration: none; }
 .mark .name {
   font-family: var(--stamp);
   font-weight: 900; font-stretch: 75%; font-size: 16px; letter-spacing: .04em;
@@ -390,6 +394,16 @@ table.matrix td.rh.cold { color: var(--heat-3); }
 .mergebox input:focus { outline: none; border-color: var(--heat-3); }
 .mergebox .sub { margin: 4px 0 0; }
 .mergebox .btnrow { margin: 0; align-self: stretch; }
+/* The QR gets a white ground on purpose. Scanners want the quiet zone and the
+   contrast the spec assumes, and a code tinted to match the site is a code that
+   half the phones in a gym will not read. */
+.qr { margin: 16px 0 10px; }
+.qr img { width: 172px; height: 172px; display: block; background: #fff; padding: 10px; border-radius: 10px; }
+.secret {
+  font-family: var(--mono); font-size: 14px; letter-spacing: .08em; word-break: break-all;
+  background: var(--scale); border: 1px solid var(--edge); border-radius: 9px;
+  padding: 11px 13px; margin: 4px 0 12px; max-width: 330px; color: var(--bright);
+}
 
 /* ── The log ───────────────────────────────────────────────────────────────
    Everything else on this page is arithmetic ABOUT the record. This is the
@@ -549,6 +563,16 @@ table.matrix td.rh.cold { color: var(--heat-3); }
     </p>
     <p class="msg" id="msg"></p>
 
+    <!-- The second factor. Hidden until the account actually asks for one, so
+         nobody who has not turned it on ever sees a field they cannot fill. -->
+    <div id="mfa" hidden>
+      <p class="gate-sub" style="margin:0 0 10px">Six digits from your authenticator app.</p>
+      <input id="mfacode" type="text" inputmode="numeric" autocomplete="one-time-code"
+             placeholder="000000" maxlength="6" enterkeyhint="go">
+      <button id="mfago">Verify</button>
+      <p class="gate-alt"><a href="#" id="mfaback">Use a different account</a></p>
+    </div>
+
     <p class="gate-note">
       The same account your AI writes to. Sign in once on this phone and it stays
       signed in — no inbox in the way every time you want to look at your own week.
@@ -559,7 +583,7 @@ table.matrix td.rh.cold { color: var(--heat-3); }
 <div id="app" hidden>
   <header>
     <div class="wrap bar">
-      <div class="mark"><span class="name">Wrought</span></div>
+      <a class="mark" href="/app.html" aria-label="WROUGHT dashboard"><span class="name">Wrought</span></a>
       <nav class="ranges views" role="group" aria-label="View">
         <button class="range view" data-view="record" aria-pressed="true">Record</button>
         <button class="range view" data-view="log" aria-pressed="false">Log</button>
@@ -612,6 +636,12 @@ async function boot() {
 
   const { data } = await sb.auth.getSession();
   if (!data.session) { $('gate').hidden = false; return; }
+
+  // A session can be live and still not finished. This catches all three ways
+  // in at once — a password, coming back from Apple or Google, and a reload
+  // partway through — instead of three separate checks that can drift apart.
+  if (await mfaNeeded()) { askForCode(); return; }
+
   $('app').hidden = false;
   load(data.session.access_token);
   maybeAdmin(data.session.access_token);
@@ -745,6 +775,72 @@ async function refresh() {
 const PROVIDER_NAME = { apple: 'Apple', google: 'Google', email: 'Email and password' };
 const MERGE_STASH = 'wrought_merge_keep';
 
+// ── Two-factor ─────────────────────────────────────────────────────────────
+// Supabase calls it assurance level: aal1 is one factor presented, aal2 is the
+// second one as well. nextLevel is what THIS account requires, so an account
+// with no authenticator never sees any of this.
+//
+// The prompt below is only the polite half. A second factor the browser checks
+// and the server does not is decoration — the real gate is in lib/wrought.js
+// and in oauth-authorize-complete.js, which is what stops "connect ChatGPT"
+// from becoming a permanent way around it.
+
+async function mfaNeeded() {
+  try {
+    const { data } = await sb.auth.mfa.getAuthenticatorAssuranceLevel();
+    return !!data && data.nextLevel === 'aal2' && data.currentLevel !== 'aal2';
+  } catch { return false; }
+}
+
+function askForCode() {
+  $('gate').hidden = false;
+  $('app').hidden = true;
+  // Everything above the code field goes away. Somebody halfway through signing
+  // in should not be looking at a second password box wondering which one to use.
+  ['name', 'email', 'pass', 'send', 'swap-line', 'forgot'].forEach(id => {
+    const el = $(id); if (el) el.hidden = true;
+  });
+  document.querySelectorAll('#gate .oauth, #gate .or').forEach(el => { el.hidden = true; });
+  $('mfa').hidden = false;
+  $('msg').textContent = '';
+  $('mfacode').focus();
+}
+
+async function submitCode() {
+  const code = $('mfacode').value.replace(/\D/g, '');
+  if (code.length !== 6) { $('msg').textContent = 'Six digits.'; return; }
+  $('mfago').disabled = true;
+  $('msg').textContent = 'Checking…';
+  try {
+    const { data: f } = await sb.auth.mfa.listFactors();
+    const factor = (f?.totp || [])[0];
+    if (!factor) { $('msg').textContent = 'No authenticator is set up on this account.'; return; }
+    const { data: ch, error: chErr } = await sb.auth.mfa.challenge({ factorId: factor.id });
+    if (chErr) throw chErr;
+    const { error } = await sb.auth.mfa.verify({ factorId: factor.id, challengeId: ch.id, code });
+    if (error) {
+      // Codes roll every thirty seconds and phones drift. Say which of the two
+      // it probably is rather than a flat rejection.
+      $('msg').textContent = /invalid|incorrect/i.test(error.message)
+        ? 'That code did not match. It changes every 30 seconds — try the current one.'
+        : error.message;
+      return;
+    }
+    $('mfa').hidden = true;
+    $('gate').hidden = true;
+    $('msg').textContent = '';
+    boot();
+  } finally { $('mfago').disabled = false; }
+}
+
+$('mfago')?.addEventListener('click', submitCode);
+$('mfacode')?.addEventListener('keydown', e => { if (e.key === 'Enter') submitCode(); });
+$('mfaback')?.addEventListener('click', async (e) => {
+  e.preventDefault();
+  await sb.auth.signOut();
+  location.reload();
+});
+
 function providerError(msg, provider) {
   const who = PROVIDER_NAME[provider] || provider;
   if (/not enabled|unsupported provider/i.test(msg))
@@ -775,10 +871,17 @@ async function loadAccount() {
     const { data } = await sb.auth.getUserIdentities();
     ids = data?.identities || [];
   } catch { /* manual linking off, or an older SDK — the panel says so */ }
-  renderAccount(s.session.user, ids);
+
+  let factors = [];
+  try {
+    const { data } = await sb.auth.mfa.listFactors();
+    factors = (data?.totp || []).filter(f => f.status === 'verified');
+  } catch { /* nothing enrolled */ }
+
+  renderAccount(s.session.user, ids, factors);
 }
 
-function renderAccount(user, ids) {
+function renderAccount(user, ids, factors) {
   const have = new Set((ids || []).map(i => i.provider));
   const only = (ids || []).length <= 1;
 
@@ -809,6 +912,35 @@ function renderAccount(user, ids) {
     </section>
 
     <section class="panel">
+      <h2>Two-factor</h2>
+      ${(factors || []).length ? `
+        <p class="sub">On. A code from your authenticator app is needed alongside your
+        password, and to connect a new assistant.</p>
+        <p class="sub dim">Anything already connected keeps working — ChatGPT cannot be
+        asked for a code mid-conversation, so it proved itself once when you connected it.</p>
+        <div class="btnrow"><button class="ghost" id="mfa-off">Turn off two-factor</button></div>
+      ` : `
+        <p class="sub">Off. Your password is the only thing between somebody and every meal,
+        session, weight and symptom you have ever logged.</p>
+        <p class="sub dim">Any authenticator app works — Google Authenticator, Authy, 1Password,
+        the one built into your phone. Nothing is sent by text.</p>
+        <div class="btnrow"><button class="ghost" id="mfa-on">Turn on two-factor</button></div>
+      `}
+      <div id="mfa-setup" hidden>
+        <div class="qr" id="mfa-qr"></div>
+        <p class="sub">Scan that, or type this key in by hand:</p>
+        <p class="secret" id="mfa-secret"></p>
+        <p class="sub">Then enter the six digits it shows, to prove it took.</p>
+        <div class="mergebox">
+          <input id="mfa-code" type="text" inputmode="numeric" autocomplete="one-time-code"
+                 placeholder="000000" maxlength="6">
+          <button class="ghost" id="mfa-confirm">Confirm and switch it on</button>
+        </div>
+      </div>
+      <p class="msg" id="mfamsg"></p>
+    </section>
+
+    <section class="panel">
       <h2>Already signed in twice?</h2>
       <p class="sub">If your AI connected under one address and this dashboard under another,
       you have two accounts and half your training is in each. This puts them back together:
@@ -836,7 +968,74 @@ function renderAccount(user, ids) {
   document.querySelectorAll('[data-unlink]').forEach(b => b.addEventListener('click', () => unlink(b.dataset.unlink, b.dataset.prov, ids)));
   document.querySelectorAll('[data-mergeprov]').forEach(b => b.addEventListener('click', () => mergeWithProvider(b.dataset.mergeprov)));
   $('mo-go').addEventListener('click', mergeWithPassword);
+  $('mfa-on')?.addEventListener('click', startEnrol);
+  $('mfa-off')?.addEventListener('click', () => dropFactor(factors));
+  $('mfa-confirm')?.addEventListener('click', confirmEnrol);
+  $('mfa-code')?.addEventListener('keydown', e => { if (e.key === 'Enter') confirmEnrol(); });
   stagger();
+}
+
+// The factor being set up right now. Held here rather than in the markup so a
+// half-finished enrolment cannot be completed by editing the page.
+let pendingFactor = null;
+
+async function startEnrol() {
+  $('mfamsg').textContent = 'Making a key…';
+  // A leftover unverified factor from an abandoned attempt blocks a new one, and
+  // the error Supabase gives for that is not something anybody could act on.
+  try {
+    const { data: existing } = await sb.auth.mfa.listFactors();
+    for (const f of (existing?.all || existing?.totp || [])) {
+      if (f.status !== 'verified') await sb.auth.mfa.unenroll({ factorId: f.id });
+    }
+  } catch { /* nothing to clear */ }
+
+  const { data, error } = await sb.auth.mfa.enroll({ factorType: 'totp', friendlyName: 'Authenticator' });
+  if (error) { $('mfamsg').textContent = error.message; return; }
+
+  pendingFactor = data.id;
+  // Supabase returns the QR as an SVG data URL. Shown as an <img> rather than
+  // injected as markup — it is generated content and does not belong inline.
+  $('mfa-qr').innerHTML = `<img alt="Two-factor QR code" src="${esc(data.totp.qr_code)}">`;
+  $('mfa-secret').textContent = data.totp.secret;
+  $('mfa-setup').hidden = false;
+  $('mfamsg').textContent = '';
+  $('mfa-code').focus();
+}
+
+async function confirmEnrol() {
+  const code = $('mfa-code').value.replace(/\D/g, '');
+  if (!pendingFactor || code.length !== 6) { $('mfamsg').textContent = 'Six digits from the app.'; return; }
+  $('mfa-confirm').disabled = true;
+  $('mfamsg').textContent = 'Checking…';
+  try {
+    const { data: ch, error: chErr } = await sb.auth.mfa.challenge({ factorId: pendingFactor });
+    if (chErr) throw chErr;
+    const { error } = await sb.auth.mfa.verify({ factorId: pendingFactor, challengeId: ch.id, code });
+    if (error) {
+      $('mfamsg').textContent = /invalid|incorrect/i.test(error.message)
+        ? 'That code did not match. It changes every 30 seconds — try the current one.'
+        : error.message;
+      return;
+    }
+    pendingFactor = null;
+    $('mfamsg').textContent = 'On. Keep that app — without it and without your password, nobody gets in, including you.';
+    setTimeout(loadAccount, 1400);
+  } catch (e) {
+    $('mfamsg').textContent = e.message || 'Could not switch it on.';
+  } finally { $('mfa-confirm').disabled = false; }
+}
+
+async function dropFactor(factors) {
+  const f = (factors || [])[0];
+  if (!f) return;
+  // Turning off the thing protecting years of health data should cost one
+  // deliberate confirmation. Not a dialog for its own sake — a mis-tap here is
+  // silent until the day it matters.
+  if (!confirm('Turn off two-factor? Your password alone will open your whole record again.')) return;
+  const { error } = await sb.auth.mfa.unenroll({ factorId: f.id });
+  $('mfamsg').textContent = error ? error.message : 'Two-factor is off.';
+  if (!error) setTimeout(loadAccount, 900);
 }
 
 async function link(provider) {

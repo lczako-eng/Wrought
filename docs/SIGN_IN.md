@@ -66,6 +66,33 @@ so it can be linked to the surviving account and become one more way in.
 
 ---
 
+## Two-factor
+
+TOTP, from any authenticator app — Google Authenticator, Authy, 1Password, the
+one built into the phone. Nothing by text, ever. Turned on and off in Dashboard
+→ **Account**, and nowhere else.
+
+Supabase needs nothing switched on for this; it ships enabled.
+
+**Where it is actually enforced.** The prompt on the sign-in screens is the
+polite half. The gates are:
+
+| Path | Gate | Why |
+|---|---|---|
+| Session JWT (dashboard, device-key page) | `getAuthUser` in `lib/wrought.js` | The password alone must not open the record. |
+| Minting a connector token | `oauth-authorize-complete.js` | The token outlives the session. |
+| Presenting a connector token (ChatGPT) | **none, deliberately** | ChatGPT cannot be asked for a code mid-conversation. |
+
+That last row is the whole design. Re-checking a connector token would break
+every assistant; skipping the check when the token is *minted* would make
+"connect your assistant" a permanent bypass. So the check sits at the mint.
+
+If you lose the authenticator **and** cannot sign in, there is no self-service
+recovery — that is the point of a second factor. Removing it means removing the
+factor in Supabase (Authentication → Users → the user → factors).
+
+---
+
 ## Setup — what has to be switched on
 
 ### 1. Supabase, one migration

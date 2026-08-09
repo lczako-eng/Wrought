@@ -11,7 +11,7 @@
     font:15px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Roboto,Helvetica,Arial,sans-serif;
     display:flex;align-items:center;justify-content:center;min-height:100vh;padding:24px}
   .box{width:100%;max-width:400px}
-  .mark{display:flex;align-items:center;justify-content:center;gap:12px;margin-bottom:30px}
+  .mark{display:flex;align-items:center;justify-content:center;gap:12px;margin-bottom:30px;color:inherit;text-decoration:none}
   .mark img{border-radius:11px;display:block}
   .mark .bar{display:none;
     background:linear-gradient(90deg,#3a3a40,var(--ash) 55%,var(--ember));box-shadow:0 0 20px rgba(255,90,31,.4)}
@@ -31,6 +31,7 @@
   .msg{color:var(--muted);font-size:13.5px;margin-top:15px;min-height:20px}
   .msg.err{color:#e8734c}
 
+  [hidden]{display:none!important}
   .oauth{display:flex;align-items:center;justify-content:center;gap:10px;
     background:#1f1f24;color:var(--text);border:1px solid #3a3a42;font-weight:600;margin-bottom:11px}
   .oauth svg{width:19px;height:19px;flex:none}
@@ -53,7 +54,7 @@
 </head>
 <body>
 <div class="box">
-  <div class="mark"><img src="/icon.svg" alt="" width="42" height="42"><span class="name">WROUGHT</span></div>
+  <a class="mark" href="/" aria-label="WROUGHT home"><img src="/icon.svg" alt="" width="42" height="42"><span class="name">WROUGHT</span></a>
   <div class="card">
     <h1>Connect your training memory</h1>
     <p class="who"><b id="client">An AI assistant</b> wants to read and write your WROUGHT log.</p>
@@ -81,6 +82,17 @@
         <span id="swap-line">New here? <a href="#" id="swap">Create an account</a></span>
         <a href="#" id="forgot">Forgotten?</a>
       </p>
+    </div>
+
+    <!-- The second factor, asked for here as well. This screen mints a token
+         that outlives the browser session, and the assistant holding it can
+         never be asked for a code later — so if it were skipped here,
+         connecting an assistant would be a permanent way around it. -->
+    <div id="mfa" hidden>
+      <p class="who">Six digits from your authenticator app.</p>
+      <input id="mfacode" type="text" inputmode="numeric" autocomplete="one-time-code"
+             placeholder="000000" maxlength="6" enterkeyhint="go">
+      <button id="mfago">Verify and connect</button>
     </div>
     <p class="first">
       <b>Already use WROUGHT?</b> Come in the same way you do at
@@ -260,13 +272,60 @@ $('send').addEventListener('click', submitAuth);
 $('pass').addEventListener('keydown', e => { if (e.key === 'Enter') submitAuth(); });
 $('email').addEventListener('keydown', e => { if (e.key === 'Enter') $('pass').focus(); });
 
+// ── Two-factor ─────────────────────────────────────────────────────────────
+async function mfaNeeded() {
+  try {
+    const { data } = await sb.auth.mfa.getAuthenticatorAssuranceLevel();
+    return !!data && data.nextLevel === 'aal2' && data.currentLevel !== 'aal2';
+  } catch { return false; }
+}
+
+function askForCode() {
+  $('form').hidden = true;
+  $('mfa').hidden = false;
+  $('msg').className = 'msg';
+  $('msg').textContent = '';
+  $('mfacode').focus();
+}
+
+async function submitCode() {
+  const code = $('mfacode').value.replace(/\D/g, '');
+  if (code.length !== 6) return fail('Six digits.');
+  $('mfago').disabled = true;
+  $('msg').className = 'msg';
+  $('msg').textContent = 'Checking\u2026';
+  try {
+    const { data: f } = await sb.auth.mfa.listFactors();
+    const factor = (f?.totp || [])[0];
+    if (!factor) return fail('No authenticator is set up on this account.');
+    const { data: ch, error: chErr } = await sb.auth.mfa.challenge({ factorId: factor.id });
+    if (chErr) return fail(chErr.message);
+    const { error } = await sb.auth.mfa.verify({ factorId: factor.id, challengeId: ch.id, code });
+    if (error) return fail(/invalid|incorrect/i.test(error.message)
+      ? 'That code did not match. It changes every 30 seconds \u2014 try the current one.'
+      : error.message);
+
+    const { data } = await sb.auth.getSession();
+    const req = request();
+    if (data.session && req) complete(data.session.access_token, req);
+  } finally { $('mfago').disabled = false; }
+}
+
+$('mfago').addEventListener('click', submitCode);
+$('mfacode').addEventListener('keydown', e => { if (e.key === 'Enter') submitCode(); });
+
 sb?.auth.onAuthStateChange((_e, session) => {
   const req = request();
   if (session && req) complete(session.access_token, req);
 });
 
 async function complete(accessToken, req) {
+  // One gate, on the single function every path funnels through — a password,
+  // a provider redirect, and an already-live session all end up here.
+  if (await mfaNeeded()) return askForCode();
+
   $('form').hidden = true;
+  $('mfa').hidden = true;
   $('msg').className = 'msg';
   $('msg').textContent = 'Connecting…';
 

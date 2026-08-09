@@ -10,7 +10,7 @@
 // the password manager and the existing session live) but the code must be
 // minted somewhere the client cannot wrought one.
 
-import { supabase, hashToken, newToken } from './lib/wrought.js';
+import { supabase, hashToken, newToken, mfaSatisfied } from './lib/wrought.js';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -51,6 +51,17 @@ export const handler = async (event) => {
   if (userErr || !userData?.user) {
     return { statusCode: 401, headers: CORS,
       body: JSON.stringify({ error: 'access_denied', error_description: 'Not signed in.' }) };
+  }
+
+  // Two-factor has to hold HERE above everywhere else. The token minted below
+  // outlives this browser session and is what ChatGPT presents on every call
+  // afterwards, and ChatGPT has no way to ask for a code. If a password alone
+  // could reach this line, "connect your assistant" would be a permanent
+  // bypass of the second factor rather than a use of it.
+  if (!(await mfaSatisfied(userData.user, access_token))) {
+    return { statusCode: 401, headers: CORS,
+      body: JSON.stringify({ error: 'mfa_required',
+        error_description: 'Enter the code from your authenticator app to finish connecting.' }) };
   }
 
   // An open redirect here would hand somebody else's authorization code to an

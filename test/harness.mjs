@@ -1664,6 +1664,117 @@ await test('an empty account is never answered by asking them to log it again', 
   assert.match(SERVER_INSTRUCTIONS, /wrought\.fit/);
 });
 
+group('Two-factor, and the ways round it');
+
+// A second factor the browser checks and the server does not is decoration: the
+// password alone still produces a valid session and every endpoint here would
+// take it. These tests are about the gates, not the prompt.
+
+const lib = readFileSync(new URL('../netlify/functions/lib/wrought.js', import.meta.url), 'utf8');
+const MFA_PAGES = ['app.html', 'authorize.html', 'connect.html'];
+
+await test('a token that already cleared the second factor needs no lookup', async () => {
+  const { mfaSatisfied } = await import('../netlify/functions/lib/wrought.js');
+  const jwt = ['x', Buffer.from(JSON.stringify({ aal: 'aal2' })).toString('base64url'), 'y'].join('.');
+  assert.equal(await mfaSatisfied({ id: 'u1' }, jwt), true);
+});
+
+await test('a malformed token is never mistaken for a cleared one', async () => {
+  const { mfaSatisfied } = await import('../netlify/functions/lib/wrought.js');
+  // Garbage must fall through to the factor check, not sail past it.
+  for (const junk of ['', 'not.a.jwt', 'aal2', 'a.b']) {
+    const out = await mfaSatisfied({ id: 'u1' }, junk);
+    assert.equal(typeof out, 'boolean');
+  }
+  const aal1 = ['x', Buffer.from(JSON.stringify({ aal: 'aal1' })).toString('base64url'), 'y'].join('.');
+  assert.equal(typeof await mfaSatisfied({ id: 'u1' }, aal1), 'boolean');
+});
+
+await test('the session-JWT path is gated and the connector path deliberately is not', () => {
+  // ChatGPT holds a token minted after the code was already given, and there is
+  // no way to ask it for a fresh one mid-conversation. Re-checking that path
+  // would break every connector; skipping the JWT path would make 2FA a lie.
+  assert.match(lib, /if \(!\(await mfaSatisfied\(data\.user, token\)\)\) return null;/);
+  const oauthArm = lib.slice(lib.indexOf('wrought_oauth_tokens'), lib.indexOf('fall through to JWT'));
+  assert.ok(!/mfaSatisfied/.test(oauthArm), 'the connector path re-asks for a code it can never get');
+});
+
+await test('connecting an assistant cannot be used to skip the second factor', async () => {
+  const src = readFileSync(new URL('../netlify/functions/oauth-authorize-complete.js', import.meta.url), 'utf8');
+  // The token minted here outlives the browser session. If a password alone
+  // reached it, "connect your assistant" would be a permanent bypass.
+  assert.match(src, /mfaSatisfied/);
+  assert.match(src, /mfa_required/);
+  assert.ok(src.indexOf('mfaSatisfied') < src.indexOf('wrought_oauth_codes'),
+    'the code is minted before the factor is checked');
+});
+
+await test('an outage never silently switches somebody\'s second factor off', () => {
+  // Prefer the last answer actually received, even expired, over assuming there
+  // is no factor because a lookup failed.
+  assert.match(lib, /return hit \? hit\.has : false;/);
+});
+
+await test('every sign-in surface can ask for the code', () => {
+  for (const f of MFA_PAGES) {
+    const src = page(f);
+    assert.match(src, /getAuthenticatorAssuranceLevel/, `${f} never checks the assurance level`);
+    assert.match(src, /mfa\.verify/, `${f} cannot verify a code`);
+    assert.match(src, /id="mfacode"/, `${f} has no code field`);
+  }
+});
+
+await test('only the dashboard can turn two-factor on or off', () => {
+  // Enrolling belongs on the account screen. A connect flow that offers to set
+  // up 2FA mid-authorization is how somebody ends up half-enrolled.
+  assert.match(page('app.html'), /mfa\.enroll/);
+  for (const f of ['authorize.html', 'connect.html']) {
+    assert.ok(!/mfa\.enroll/.test(page(f)), `${f} should not enrol a factor`);
+  }
+});
+
+await test('the hidden attribute beats the stylesheet', () => {
+  // .oauth is display:flex, which outranks [hidden] and left the provider
+  // buttons on screen underneath the two-factor prompt.
+  for (const f of MFA_PAGES) {
+    assert.match(page(f), /\[hidden\]\s*\{\s*display:\s*none\s*!important/,
+      `${f} can show elements it has hidden`);
+  }
+});
+
+group('Offline, and the page you land on');
+
+await test('a failed navigation is never answered with a different page', () => {
+  const sw = readFileSync(new URL('../public/sw.js', import.meta.url), 'utf8');
+  // Tapping the home screen icon and landing on the marketing homepage reads as
+  // having been signed out — the one thing a memory product must never fake.
+  assert.ok(!/caches\.match\('\/index\.html'\)/.test(sw),
+    'the worker still falls back to the homepage');
+  assert.match(sw, /request\.mode === 'navigate'/);
+  assert.match(sw, /status: 503/);
+});
+
+await test('a query string is not a different page', () => {
+  const sw = readFileSync(new URL('../public/sw.js', import.meta.url), 'utf8');
+  // /app.html?merge=1 is /app.html. Without ignoreSearch every link carrying a
+  // query string missed the cache and fell through to the fallback.
+  assert.match(sw, /ignoreSearch: true/);
+});
+
+await test('the installed app opens the app, not the sales page', () => {
+  const manifest = JSON.parse(readFileSync(new URL('../public/site.webmanifest', import.meta.url), 'utf8'));
+  assert.equal(manifest.start_url, '/app.html');
+});
+
+await test('the wordmark is clickable, and does not throw you out of your record', () => {
+  // From inside the dashboard it goes to the dashboard. Being dumped on a sales
+  // pitch from your own log is the complaint, not the fix.
+  assert.match(page('app.html'), /<a class="mark" href="\/app\.html"/);
+  for (const f of ['authorize.html', 'connect.html']) {
+    assert.match(page(f), /<a class="mark" href="\/"/, `${f} has no way home`);
+  }
+});
+
 // ── Report ──────────────────────────────────────────────────────────────────
 
 console.log(results.join('\n'));
