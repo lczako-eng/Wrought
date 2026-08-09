@@ -678,6 +678,21 @@ Rules:
 - If you genuinely cannot classify something, emit one note event carrying their words. Never drop input.
 - No commentary, no advice, no judgement. You are a parser.`;
 
+// The connected model has already read the sentence — and the photograph, which
+// this server never sees. Letting it hand the structured version straight over is
+// both better and cheaper: better because it saw the plate, cheaper because there
+// is no second model and therefore no API key. The contract is identical to
+// parseLog's, so nothing downstream can tell the difference.
+//
+// insertEvents is the gate that matters — it validates the type, truncates the
+// summary and insists detail is an object — so this only has to decide whether
+// there is anything usable here at all, or whether to fall back to parsing.
+export function eventsFromClient(raw) {
+  if (!Array.isArray(raw)) return null;
+  const usable = raw.filter(e => e && typeof e === 'object' && (e.event_type || e.summary));
+  return usable.length ? usable : null;
+}
+
 export async function parseLog(text, profile) {
   const fallback = () => ({
     events: [{

@@ -22,7 +22,16 @@ nothing else.
 
 - **One sentence is a complete log.** Never a form, never "what were the macros".
   A health log that costs more than a sentence is one nobody keeps. `log` takes
-  the user's words verbatim and an LLM structures them server-side.
+  the user's words verbatim and the structured reading of them.
+- **The connected model does the structuring, not us.** ChatGPT has already read
+  the sentence — and the photograph of the plate, which this server never sees,
+  so it is the only thing that *can* turn a picture of dinner into macros. `log`
+  takes an `events` array it fills in; `parseLog` is the fallback for when it
+  does not, and needs `OPENAI_API_KEY`. The founder's objection was the right
+  one: *"I'm not sure why it needs an API key when you're using your own GPT
+  already."* Nothing about the estimate changes — WROUGHT catches it on the way
+  past and keeps it. Do not move parsing back to the server to make it
+  "consistent"; that costs a key, a bill, and the photograph.
 - **The brief is the product.** Logging is table stakes; a hundred apps log.
   Nobody has a thing that reads the week back to you honestly.
 - **The server computes, the model relays.** Every total, average, trend, streak
@@ -269,6 +278,13 @@ describing a different mechanism. What actually reaches a phone:
 instant per user — it serves only those for whom it is currently the send hour.
 A day with nothing logged gets no email; a nightly nag is how a product gets
 muted forever.
+
+**Where the model still runs server-side:** only `writeVerdict` for the 22:00
+email, and `buildPlan`. `/ingest` never needed one — watch data arrives as
+numbers. The founder's answer to the last one is right and is the plan: the
+verdict lives on the website and the phone app, written by the connected model
+when he next talks to it and saved into `wrought_briefs` (which exists for
+exactly that). Do that and the whole thing runs with no API key at all.
 
 **Next builds, in order:**
 1. Web push via PWA — the last notification channel that does not depend on the

@@ -21,7 +21,7 @@ import {
   sayWeight, sayWeightDelta, sayLength, lbToKg, inToCm, kgToLb,
   getProfile, getMemory, getGoals, getWindow, windowStatus,
   dayFacts, rangeFacts, summariseRange, scoreGoals, careFlags,
-  parseLog, insertEvents, writeVerdict, rememberFact,
+  parseLog, eventsFromClient, insertEvents, writeVerdict, rememberFact,
 } from './lib/wrought.js';
 import { PROVIDERS, providerSummary, recommendRoute } from './lib/providers.js';
 import { nutritionTotals, composition, macroMatrix, yearOverYear } from './lib/nutrition.js';
@@ -53,6 +53,8 @@ CAPTURE IN PASSING — THIS IS THE MOST IMPORTANT INSTRUCTION HERE. You are conn
 The user's own words on why: "if I accidentally say I just did 10 push-ups I'll remember that for that day — I don't want to have to flip the page." Nobody opens a fitness app to record ten push-ups. They mention it and it is gone forever. Catching those is the entire difference between a log that reflects a life and a log that reflects the days somebody remembered to open an app.
 
 So: any mention of food, drink, training, movement, bodyweight, measurements, sleep, an injury, a symptom or how they feel physically is a log, whatever the conversation is nominally about. Pass log the text with quiet: true, then CARRY ON WITH WHAT THEY WERE ACTUALLY ASKING. Acknowledge in at most a short clause — "logged the push-ups —" — and never let it derail the thread. Do not ask follow-up questions about it. Do not summarise their day at them. Do not turn a tax question into a coaching session.
+
+YOU STRUCTURE THE LOG, NOT THE SERVER. Pass log both the user's verbatim words as text AND your own structured reading of them as events. You have already read the sentence, and looked at the photograph of the plate if there was one — this server never sees that image, so you are the only one who can turn it into macros. Fill in events every time. Two rules govern it and neither bends: never invent a number they did not give, and always set estimated true on anything you worked out rather than were told. A guessed 500-calorie "lunch" silently poisons a weekly total in a way a null never does, and an estimate presented as a fact is how this product loses the user's trust the first time it is wrong.
 
 VAGUE IS STILL WORTH RECORDING. "Doing my workout", "went for a run", "had lunch" carry no numbers and should still be logged exactly as said. A workout with no detail is a training day, and a training day recorded is worth vastly more than an interrogation that makes them stop telling you things. The server files what is known and leaves the rest null. If they add detail later — "that was legs, about 40 minutes" — call amend_last so it updates that entry rather than creating a second phantom session.
 
@@ -119,6 +121,24 @@ const TOOLS = [
       type: 'object',
       properties: {
         text:  { type: 'string', description: 'The user\'s own words, unedited. Multiple things in one sentence is normal and expected.' },
+        events: {
+          type: 'array',
+          description: 'The structured reading of those words, which YOU should fill in. You have already read the sentence — and the photograph, if there was one, which this server never sees — so you are the right one to do this. Split multiple things into separate entries: "eggs, then a 40 min lift, 182 on the scale" is three. NEVER invent food, exercise or a number they did not give: "had lunch" is a food event with every macro null, not a guessed 500 calories, because a guess silently poisons a weekly total in a way a null never does. Vague is still worth recording — "doing my workout" is a workout event with everything null. Omit this array only if you genuinely cannot structure what they said.',
+          items: {
+            type: 'object',
+            properties: {
+              event_type: { type: 'string', enum: ['food','drink','workout','weight','measurement','sleep','symptom','mood','supplement','note'] },
+              summary:    { type: 'string', description: 'A short natural sentence in the user\'s own register — "two eggs and black coffee". This is what gets read back to them.' },
+              detail: {
+                type: 'object',
+                description: 'Typed payload, by event_type. food/drink: {items:[string], calories, protein_g, carbs_g, sugar_g, fibre_g, fat_g, sat_fat_g, categories:[string]} — sugar_g is added plus free sugars including fruit and juice, and is a SUBSET of carbs_g, never additional to it; categories chosen only from meat, fish, egg, dairy, vegetable, fruit, grain, legume, nuts, fried, sweets, alcohol, ultra_processed, describing what the meal was. workout: {kind:"strength"|"cardio"|"mobility"|"sport", minutes, muscles:[chest|back|shoulders|arms|legs|glutes|core|full body], exercises:[{name, sets, reps, weight_kg}]}. weight: {value_kg, reported}. measurement: {metric:"waist"|"chest"|"arm"|"thigh"|"hips"|"neck", value_cm}. sleep: {minutes, quality}. symptom/mood: {note, severity}. supplement: {items:[string]}. note: {note}. Store weights in kg and lengths in cm, converting if they spoke in lb or inches, but keep what they actually said in the summary. Leave every unknown null.',
+              },
+              estimated:  { type: 'boolean', description: 'True if ANY number in detail was inferred rather than stated by the user. Macros you worked out from a description or a photo are always estimated. This is what lets the product say "roughly" instead of presenting a guess as a fact.' },
+              time_hint:  { type: 'string', description: '"HH:MM" 24h local time if they said when, else omit.' },
+            },
+            required: ['event_type', 'summary'],
+          },
+        },
         quiet: { type: 'boolean', description: 'Set true when this was mentioned in passing during a conversation about something else. Suppresses the running totals so you can acknowledge in a clause and get straight back to what they were actually asking about.' },
       },
       required: ['text'],
@@ -361,6 +381,16 @@ const TOOLS = [
       type: 'object',
       properties: {
         text: { type: 'string', description: 'What they said, verbatim — the new detail or the correction.' },
+        event: {
+          type: 'object',
+          description: 'The merged entry: the original mention and this new detail read together as ONE thing, structured the same way as log.events. Supply this when you can still see what was originally logged earlier in the conversation; omit it if you cannot, and the server will merge as best it can. Merge rather than replace — detail arriving late must never wipe something already known — and still never invent a number they did not give.',
+          properties: {
+            event_type: { type: 'string', enum: ['food','drink','workout','weight','measurement','sleep','symptom','mood','supplement','note'] },
+            summary:    { type: 'string' },
+            detail:     { type: 'object' },
+            estimated:  { type: 'boolean' },
+          },
+        },
         type: { type: 'string', enum: ['food','drink','workout','weight','measurement','sleep','symptom','mood','supplement','note'],
                 description: 'Which kind of entry to amend. Omit to amend whatever was logged most recently.' },
       },
@@ -517,7 +547,17 @@ async function log(args, user) {
   if (!text) return { error: 'Nothing to log — pass the user\'s words as text.' };
 
   const profile = await getProfile(user.id);
-  const { events, parsed } = await parseLog(text, profile);
+
+  // The client model already read the sentence, and the photograph this server
+  // will never see. If it handed over the structured version, that reading beats
+  // anything a second model could do from the text alone — and costs nothing.
+  // Parsing here is the fallback, not the path.
+  const supplied = eventsFromClient(args.events);
+  const { events, parsed } = supplied
+    ? { events: supplied, parsed: true }
+    : await parseLog(text, profile);
+  const structuredBy = supplied ? 'client' : parsed ? 'server' : 'none';
+
   const written = await insertEvents(user.id, profile, events, { rawInput: text });
 
   const kinds = [...new Set(written.map(e => e.event_type))];
@@ -527,6 +567,7 @@ async function log(args, user) {
     recorded: written.map(e => ({ id: e.id, type: e.event_type, summary: e.summary, estimated: e.estimated })),
     count: written.length,
     parsed,
+    structured_by: structuredBy,
     running_total_today: {
       food: day.food.say,
       training: day.training.say,
@@ -634,9 +675,23 @@ async function amendLast(args, user) {
   // workout" + "that was legs, 40 minutes" becomes ONE complete entry rather
   // than a vague session and a phantom second one beside it.
   const combined = [prev.raw_input || prev.summary, args.text].filter(Boolean).join('. ');
-  const { events } = await parseLog(combined, profile);
-  const first = events.find(e => e.event_type === prev.event_type) || events[0];
-  if (!first) return { error: 'could_not_parse', say: 'Could not work out what to change.' };
+  const merged = eventsFromClient(args.event ? [args.event] : null);
+  let first = merged?.[0];
+
+  if (!first) {
+    const { events, parsed } = await parseLog(combined, profile);
+    first = parsed ? events.find(e => e.event_type === prev.event_type) || events[0] : null;
+    // With neither a client-supplied merge nor a parser, parseLog hands back a
+    // note carrying the raw words — and writing that over the entry would turn a
+    // logged workout into a note, losing the session. Keep the original type and
+    // let the new words extend the summary instead.
+    if (!first) first = {
+      event_type: prev.event_type,
+      summary: `${prev.summary} — ${args.text}`,
+      detail: prev.detail || {},
+      estimated: prev.estimated,
+    };
+  }
 
   const { error } = await supabase.from('wrought_events').update({
     event_type: first.event_type,

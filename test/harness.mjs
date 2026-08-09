@@ -22,6 +22,7 @@ import {
   localDateFor, addDays, daysBetween, clockString, humanDuration,
   kgToLb, lbToKg, cmToIn, inToCm, sayWeight,
   windowStatus, weightTrend, trainingMatrix, summariseRange, careFlags, scoreGoals,
+  eventsFromClient,
 } from '../netlify/functions/lib/wrought.js';
 
 let passed = 0, failed = 0;
@@ -938,6 +939,70 @@ await test('bodyweight work does not poison the volume total', () => {
   const t = sessionTotals([{ exercise: 'Pull-up', reps: 10, weight_kg: null }]);
   assert.equal(t.volume_kg, 0);
   assert.equal(t.reps, 10);
+});
+
+// ── The client does the reading ─────────────────────────────────────────────
+// Structuring moved to the connected model, which has already read the sentence
+// and seen the photograph this server never will. That makes the tool schema an
+// instruction surface rather than documentation: if the "never invent a number"
+// rule falls out of it during some future tidy-up, nothing fails loudly — the
+// weekly totals just quietly fill with guesses. Hence these.
+
+group('Structuring, done by the model that read the words');
+
+await test('a client-supplied reading is used as given', () => {
+  const events = eventsFromClient([
+    { event_type: 'food', summary: 'two eggs and black coffee', detail: { calories: 220 }, estimated: true },
+  ]);
+  assert.equal(events.length, 1);
+  assert.equal(events[0].event_type, 'food');
+  assert.equal(events[0].estimated, true);
+});
+
+await test('nothing usable falls back rather than logging an empty entry', () => {
+  assert.equal(eventsFromClient(null), null);
+  assert.equal(eventsFromClient([]), null);
+  assert.equal(eventsFromClient('food'), null);
+  assert.equal(eventsFromClient([null, 'x', 42]), null);
+  assert.equal(eventsFromClient([{ note: 'no type, no summary' }]), null);
+});
+
+await test('a usable entry survives junk beside it', () => {
+  const events = eventsFromClient([null, { event_type: 'workout', summary: '10 push-ups' }, 'rubbish']);
+  assert.equal(events.length, 1);
+  assert.equal(events[0].summary, '10 push-ups');
+});
+
+await test('log accepts a structured reading alongside the verbatim words', () => {
+  const log = TOOLS.find(t => t.name === 'log');
+  const events = log.inputSchema.properties.events;
+  assert.equal(events.type, 'array');
+  assert.deepEqual(events.items.required, ['event_type', 'summary']);
+  assert.ok(events.items.properties.event_type.enum.includes('food'));
+  assert.ok(events.items.properties.event_type.enum.includes('workout'));
+  assert.ok(events.items.properties.estimated, 'estimated must stay in the contract');
+  assert.deepEqual(log.inputSchema.required, ['text'],
+    'the user\'s own words stay required — a structured reading never replaces them');
+});
+
+await test('the schema still forbids inventing a number', () => {
+  const events = TOOLS.find(t => t.name === 'log').inputSchema.properties.events;
+  assert.match(events.description, /NEVER invent/i);
+  assert.match(events.description, /null/i);
+  assert.match(events.items.properties.estimated.description, /inferred rather than stated/i);
+});
+
+await test('amend_last takes a merged entry, and still only needs the words', () => {
+  const amend = TOOLS.find(t => t.name === 'amend_last');
+  assert.ok(amend.inputSchema.properties.event, 'amend_last needs the merged-entry contract');
+  assert.match(amend.inputSchema.properties.event.description, /[Mm]erge rather than replace/);
+  assert.deepEqual(amend.inputSchema.required, ['text']);
+});
+
+await test('the doctrine reaches the model that has to follow it', async () => {
+  const body = JSON.parse((await post(rpc('initialize', { protocolVersion: '2025-06-18' }))).body);
+  assert.match(body.result.instructions, /YOU STRUCTURE THE LOG/);
+  assert.match(body.result.instructions, /never invent a number/i);
 });
 
 // ── Report ──────────────────────────────────────────────────────────────────
