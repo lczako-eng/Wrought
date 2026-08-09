@@ -368,9 +368,15 @@ describing a different mechanism. What actually reaches a phone:
    *Show Notification* action puts it on the lock screen. No app, no push
    certificates, no permission grants. Shipped.
 2. **Email at 22:00** via `brief-nightly.js`. Shipped (needs `RESEND_API_KEY`).
-3. **Web push to an installed PWA** — the proper answer, and the next build.
-   iOS supports it from 16.4 for home-screen apps. Needs VAPID keys, a service
-   worker and a manifest.
+3. **Web push to an installed PWA** — the proper answer. `sw.js` and
+   `site.webmanifest` are built and the site offers to install itself: Android
+   gets a real button off `beforeinstallprompt`, iOS gets the honest Share →
+   Add to Home Screen instruction, since nothing can trigger that from script.
+   The worker caches only the shell and never `/api`, `/oauth` or `/mcp` — a
+   cached brief is a wrong brief. **Still needed: VAPID keys and a send
+   endpoint.** The push and notificationclick handlers are already written and
+   deliberately compose nothing; the server sends words it has already computed,
+   so a notification can never disagree with the brief.
 
 `brief-nightly.js` runs **hourly**, not nightly, because 22:00 is a different
 instant per user — it serves only those for whom it is currently the send hour.
@@ -384,9 +390,16 @@ verdict lives on the website and the phone app, written by the connected model
 when he next talks to it and saved into `wrought_briefs` (which exists for
 exactly that). Do that and the whole thing runs with no API key at all.
 
+**The "light app" is the PWA, and that is the right answer.** Installed, it has
+an icon, a splash, a standalone window with no browser chrome, and the lock
+screen — which is the entire reason to want an app here. Native would mean two
+codebases, two store accounts, two review queues and a release cycle to fix a
+typo, in exchange for almost nothing this cannot already do. Revisit only if
+something genuinely needs the OS: HealthKit read access (which does not exist
+for servers anyway), or a widget.
+
 **Next builds, in order:**
-1. Web push via PWA — the last notification channel that does not depend on the
-   user having built a Shortcut.
+1. VAPID keys and the send endpoint — the worker is waiting for them.
 2. Register OAuth apps for Oura / Whoop / Fitbit / Withings, then the pull
    sync function.
 3. **Multi-week programmes.** The last structural piece — routines exist, the

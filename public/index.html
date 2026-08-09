@@ -309,6 +309,12 @@ section > p { margin: 0; color: var(--ash); max-width: 34ch; }
   color: #fff; font-weight: 600;
 }
 
+/* ── Install ───────────────────────────────────────────────────────────── */
+.install { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+.install b { display: block; font-size: 18px; }
+.install p { margin: 4px 0 0; color: var(--ash); font-size: 15px; max-width: 32ch; }
+.install > div { flex: 1 1 200px; min-width: 0; }
+
 /* ── Call to action ────────────────────────────────────────────────────── */
 .cta { text-align: center; }
 .cta > p { margin-inline: auto; }
@@ -562,6 +568,18 @@ footer a { color: var(--ash); }
   </p>
 </section>
 
+<section class="wrap up" id="install" hidden>
+  <div class="card install">
+    <img src="/icon.svg" alt="" width="52" height="52" style="border-radius:13px;flex:0 0 auto">
+    <div>
+      <b>Put it on your home screen</b>
+      <p id="install-ios" hidden>Tap <b>Share</b>, then <b>Add to Home Screen</b>. You get the charts and your nightly read on the lock screen.</p>
+      <p id="install-go-note">The charts, your log, and your nightly read as a notification.</p>
+    </div>
+    <button class="btn a" id="install-go" hidden>Install</button>
+  </div>
+</section>
+
 <section class="wrap up cta">
   <p class="eyebrow">Two minutes, once</p>
   <h2>Paste this into ChatGPT.</h2>
@@ -602,6 +620,44 @@ footer a { color: var(--ash); }
       <span class="nm">${m}</span>
       <div class="cells">${HEAT[m].map(h => `<span class="cell h${h}"></span>`).join('')}</div>
     </div>`).join('');
+})();
+
+// ── Scroll-linked ring ─────────────────────────────────────────────────────
+// Not "fires once when it appears" — the arc is tied to scroll position, so it
+// fills and empties as you move through the section and follows your thumb.
+// That is the difference between an animation that plays at you and one you are
+// driving, and it is the thing that reads as expensive.
+//
+// Driven from a rAF loop rather than the scroll event itself, so it stays on
+// the compositor's schedule instead of firing hundreds of times a second.
+(() => {
+  if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  const arc = document.querySelector('.ring .arc');
+  const card = document.querySelector('.ring-card');
+  if (!arc || !card) return;
+
+  const CIRC = 590.6, TARGET = 141.7;   // full circle, and the day's fill
+  arc.style.transition = 'none';        // scroll IS the timeline now
+
+  let ticking = false;
+  const draw = () => {
+    ticking = false;
+    const r = card.getBoundingClientRect();
+    // 0 as the card enters from the bottom, 1 once it has settled in view.
+    const span = innerHeight * 0.75;
+    const p = Math.max(0, Math.min(1, (innerHeight - r.top) / span));
+    const eased = 1 - Math.pow(1 - p, 2);
+    arc.style.strokeDashoffset = (CIRC - (CIRC - TARGET) * eased).toFixed(1);
+  };
+  const onScroll = () => {
+    if (ticking) return;
+    ticking = true;
+    requestAnimationFrame(draw);
+  };
+
+  addEventListener('scroll', onScroll, { passive: true });
+  addEventListener('resize', onScroll, { passive: true });
+  draw();
 })();
 
 // ── The macro donut ────────────────────────────────────────────────────────
@@ -724,6 +780,47 @@ footer a { color: var(--ash); }
       chip.style.transitionDelay = `${Math.min(i * 55, 600)}ms`;
     });
   });
+})();
+
+// ── Installing it ──────────────────────────────────────────────────────────
+// Registering the worker is what makes the site installable on a phone: an icon
+// on the home screen, a standalone window, and notifications on the lock screen
+// — on both platforms, with no App Store between the fix and the user.
+if ('serviceWorker' in navigator) {
+  addEventListener('load', () => navigator.serviceWorker.register('/sw.js').catch(() => {}));
+}
+
+// Android fires an installable event we can hang a real button on. iOS does not,
+// and there is no way to trigger its Share → Add to Home Screen from script, so
+// there it gets an honest instruction instead of a button that would do nothing.
+(() => {
+  const bar = document.getElementById('install');
+  const btn = document.getElementById('install-go');
+  const tip = document.getElementById('install-ios');
+  if (!bar) return;
+
+  const standalone = matchMedia('(display-mode: standalone)').matches || navigator.standalone;
+  if (standalone) return;                       // already installed
+
+  let deferred = null;
+  addEventListener('beforeinstallprompt', (e) => {
+    e.preventDefault();
+    deferred = e;
+    bar.hidden = false;
+    btn.hidden = false;
+    tip.hidden = true;
+  });
+
+  btn?.addEventListener('click', async () => {
+    if (!deferred) return;
+    deferred.prompt();
+    await deferred.userChoice;
+    deferred = null;
+    bar.hidden = true;
+  });
+
+  const iOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
+  if (iOS) { bar.hidden = false; btn.hidden = true; tip.hidden = false; }
 })();
 
 // ── The connector URL, from wherever this page is really served ────────────
