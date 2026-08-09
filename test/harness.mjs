@@ -17,7 +17,7 @@ import { MOVEMENTS, PROGRAMMES, PATTERNS, movementsFor, pickProgramme, buildProg
 import {
   exerciseKey, loadStep, progressionCall, TIERS,
   restingBurn, energyBalance, planFromRoutine, sessionTotals, earnedRoom,
-  orderPlan, orderInsight, deviceMatrix, weekdayPattern,
+  orderPlan, orderInsight, deviceMatrix, weekdayPattern, ACTIVITY,
 } from '../netlify/functions/lib/training.js';
 import {
   localDateFor, addDays, daysBetween, clockString, humanDuration,
@@ -1116,6 +1116,53 @@ await test('the fast is never graded', () => {
 // instructions, nothing errors — the connector just gets steadily less useful
 // as the model stops recognising ordinary English, which is the hardest kind of
 // regression to notice.
+
+group('Movement that nothing measured');
+
+await test('with no device and no activity level, the burn says it is resting only', () => {
+  const b = energyBalance({
+    profile: { height_cm: 190, birth_year: 1990, sex: 'male' },
+    weightKg: 150, caloriesIn: 1125, activeCalories: 0,
+  });
+  assert.equal(b.active_burn, 0);
+  assert.equal(b.active_source, 'none');
+  // Silence here is the dangerous option: it reads as a bigger deficit than the
+  // day had, and the advice that follows says eat less.
+  assert.match(b.say, /resting burn only/i);
+  assert.match(b.say, /deficit smaller than it looks/i);
+});
+
+await test('an activity level counts the day when no watch does', () => {
+  const p = { height_cm: 190, birth_year: 1990, sex: 'male', activity_level: 'active' };
+  const rest = restingBurn(p, 150).kcal;
+  const b = energyBalance({ profile: p, weightKg: 150, caloriesIn: 1125, activeCalories: 0 });
+  assert.equal(b.active_source, 'activity_level');
+  assert.equal(b.active_burn, Math.round(rest * 0.725));
+  assert.equal(b.calories_out, rest + b.active_burn);
+  assert.doesNotMatch(b.say, /resting burn only/i);
+});
+
+await test('a measurement always beats a multiplier', () => {
+  const p = { height_cm: 190, birth_year: 1990, sex: 'male', activity_level: 'very_active' };
+  const b = energyBalance({ profile: p, weightKg: 150, caloriesIn: 1125, activeCalories: 640 });
+  assert.equal(b.active_source, 'device');
+  assert.equal(b.active_burn, 640);
+});
+
+await test('the multipliers are the standard ones and rise in order', () => {
+  const order = ['sedentary', 'light', 'moderate', 'active', 'very_active'];
+  const mults = order.map(k => ACTIVITY[k].mult);
+  assert.deepEqual(mults, [...mults].sort((a, b) => a - b));
+  assert.equal(ACTIVITY.sedentary.mult, 1.2);
+  assert.equal(ACTIVITY.very_active.mult, 1.9);
+});
+
+await test('the five facts are asked once, together, and never as an opener', () => {
+  assert.match(SERVER_INSTRUCTIONS, /THE FIVE FACTS, ASKED ONCE/);
+  assert.match(SERVER_INSTRUCTIONS, /ONE short message/);
+  assert.match(SERVER_INSTRUCTIONS, /never ask one at a time/i);
+  assert.match(SERVER_INSTRUCTIONS, /never open a conversation with it/i);
+});
 
 group('The phrasebook');
 

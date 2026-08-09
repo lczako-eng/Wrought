@@ -186,6 +186,22 @@ quotes no number and explains nothing — explaining *why* would tell someone
 already under-eating that they had not qualified for a treat. There is a test
 for that exact failure, because the first version had it.
 
+### The five facts, and a day that is not spent lying down
+
+`restingBurn()` answers "what would you burn lying still". Without a watch that
+was the ONLY figure, so calories out counted a working day as zero — and the
+error runs in the dangerous direction, because an overstated deficit tells
+somebody to eat less than they need. `005_wrought_activity.sql` adds
+`activity_level`; standard multipliers in `ACTIVITY` cover the day when nothing
+is measuring it. **A measurement always beats a multiplier** — a device
+overrides it — and with neither, `energy_balance` says on the response that the
+number is resting-only rather than staying quiet.
+
+Height, birth year, sex, a recent weight and activity level are asked **once,
+together, in one message**, the first time a number needs them, and never as an
+opener. Five facts, once, ever — anything more is the interrogation that makes
+people stop using health apps.
+
 ### Fasting — the record, not the plan
 
 `004_wrought_fasting.sql` adds `fast` as an event type; `log_fast` records one.
@@ -319,7 +335,8 @@ self-reporting scale removes the most-abandoned manual entry), then Strava.
    sent: a git bundle with full history. `git clone wrought-full.bundle`, set the
    remote, push. Retry `add_repo` first in any new session.
 2. Run `schema/001_wrought_core.sql`, then `002_wrought_oauth.sql`, then
-   `003_wrought_training.sql`, then `004_wrought_fasting.sql` in Supabase.
+   `003_wrought_training.sql`, `004_wrought_fasting.sql`, and
+   `005_wrought_activity.sql` in Supabase.
 3. Set env vars in Netlify: `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`,
    `OPENAI_API_KEY`, `WROUGHT_SITE_URL=https://wrought.fit`. Inject
    `window.WROUGHT_SUPABASE_URL` and `window.WROUGHT_SUPABASE_ANON` for the pages.

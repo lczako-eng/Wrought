@@ -187,6 +187,17 @@ export function restingBurn(profile, weightKg) {
   };
 }
 
+// Standard activity multipliers over resting burn. Not invented here — this is
+// the arithmetic every dietitian uses, and it is only ever a fallback for when
+// nothing is measuring the day.
+export const ACTIVITY = {
+  sedentary:   { mult: 1.2,   say: 'desk job, little walking' },
+  light:       { mult: 1.375, say: 'on your feet some of the day' },
+  moderate:    { mult: 1.55,  say: 'moving most of the day' },
+  active:      { mult: 1.725, say: 'on your feet all day' },
+  very_active: { mult: 1.9,   say: 'physical job, heavy work' },
+};
+
 export function energyBalance({ profile, weightKg, caloriesIn, activeCalories, foodEstimated }) {
   const rest = restingBurn(profile, weightKg);
 
@@ -197,7 +208,18 @@ export function energyBalance({ profile, weightKg, caloriesIn, activeCalories, f
     };
   }
 
-  const active = Number(activeCalories) || 0;
+  const measured = Number(activeCalories) || 0;
+  const level = ACTIVITY[profile.activity_level];
+
+  // A measurement always beats a multiplier. But with neither, "calories out"
+  // was the resting figure alone — which counts a day of work as nothing and
+  // produces a deficit that is wrong in the dangerous direction, because it
+  // tells somebody to eat less than they need.
+  const active = measured > 0
+    ? measured
+    : level ? Math.round(rest.kcal * (level.mult - 1)) : 0;
+  const activeSource = measured > 0 ? 'device' : level ? 'activity_level' : 'none';
+
   const out = rest.kcal + active;
   const inn = Number(caloriesIn) || 0;
   const net = inn - out;
@@ -214,11 +236,20 @@ export function energyBalance({ profile, weightKg, caloriesIn, activeCalories, f
     projected_kg_per_week: Math.round((net * 7 / 7700) * 100) / 100,
     approximate: true,
     resting_approximate: rest.approximate,
-    say: `Roughly ${inn} in, about ${out} out (${rest.kcal} at rest${active ? ` plus ${active} you moved` : ''}) — ` +
+    active_source: activeSource,
+    say: `Roughly ${inn} in, about ${out} out (${rest.kcal} at rest${
+      activeSource === 'device' ? ` plus ${active} your watch measured`
+      : activeSource === 'activity_level' ? ` plus about ${active} for ${ACTIVITY[profile.activity_level].say}`
+      : ''}) — ` +
          (net < -150 ? `around ${Math.abs(net)} down on the day.`
         : net > 150  ? `around ${net} over.`
         : `about level.`) +
-         (foodEstimated ? ' Food is estimated from what you described, so treat it as a direction, not a measurement.' : ''),
+         (foodEstimated ? ' Food is estimated from what you described, so treat it as a direction, not a measurement.' : '') +
+         // Silence here would be the dangerous kind: a burn counting only the
+         // resting figure looks like a bigger deficit than the day really had.
+         (activeSource === 'none'
+           ? ' NOTE: nothing is counting your movement — this is your resting burn only, so the real figure is higher and the deficit smaller than it looks. Set an activity level or connect a phone to fix it.'
+           : ''),
     caveat: 'Both halves are estimates. Resting burn varies by hundreds of calories between people the same size, and described meals are inferred. Use the weekly trend on the scale to correct it, never a single day.',
   };
 }

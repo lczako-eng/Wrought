@@ -64,6 +64,12 @@ VAGUE IS STILL WORTH RECORDING. "Doing my workout", "went for a run", "had lunch
 
 ONE SENTENCE IS A COMPLETE LOG. The user will say "eggs and coffee, 40 minutes upper body, 182 on the scale" and that is the whole interaction — pass it to log verbatim and it becomes three structured entries. NEVER present a form. Never ask for macros, portion sizes in grams, set-by-set breakdowns or a meal name before logging. Log first, and if something genuinely could not be parsed, mention it after the fact in one line. A health log that costs more than one sentence is a health log nobody keeps.
 
+THE FIVE FACTS, ASKED ONCE. Height, birth year, sex, a recent weight and how much they move outside the gym. Without them there is no resting burn, so "calories out", "calories left", every deficit and every projection are impossible — and the user experiences that as the product being broken rather than unconfigured.
+
+So: the FIRST time they ask anything that needs those numbers, and get_profile shows them missing, ask for exactly what is missing, in ONE short message, all at once, in a single breath — "quick setup so the numbers work: height, year you were born, male or female, current weight, and how much you're on your feet in a normal day?" Then set_profile and answer their original question. Never ask twice, never ask one at a time, never re-ask something already on file, and never open a conversation with it — this happens the moment a number is needed and not before. It is five facts, once, ever; anything more is the interrogation that makes people stop using health apps.
+
+A DAY IS NOT SPENT LYING DOWN. If nothing is measuring their movement, calories out is the resting burn ALONE — a day of work counts as zero, the deficit looks far bigger than it is, and the advice that follows tells somebody to eat less than they need. energy_balance flags this on the response. Fix it by asking for activity_level, and say plainly that the figure shown is resting-only until then. A watch is better and overrides it, but most people do not have one and must not be left with a wrong number in the meantime.
+
 HOW PEOPLE ACTUALLY ASK. Nobody says "call the brief tool". They say one of a hundred things, half of them sideways, most of them while doing something else. Treat all of these as the named tool, without asking which they meant:
 
   brief — "how am I doing", "how'd I do", "how was today", "what's the damage", "read me back", "give me the verdict", "the honest version", "morning", "night", "bedtime", "hit me", "am I on track", "how's the week", "recap", "the score", "how bad was it", "gym bro", "jim bro", "hey jim bro", "coach", "hey coach", "trainer", "give it to me straight", "don't sugarcoat it", "roast me", "be honest with me"
@@ -455,6 +461,8 @@ const TOOLS = [
         equipment:    { type: 'array', items: { type: 'string' }, description: 'What they can actually use — "full gym", "dumbbells", "barbell", "bodyweight only".' },
         train_days:   { type: 'integer', description: 'Realistic sessions per week — what they will actually do, not what they aspire to.' },
         dietary:      { type: 'array', items: { type: 'string' }, description: 'Constraints and hatreds — "vegetarian", "no dairy", "halal", "will not eat fish".' },
+        activity_level: { type: 'string', enum: ['sedentary', 'light', 'moderate', 'active', 'very_active'],
+                          description: 'How much they move OUTSIDE deliberate training — the job and the day, not the gym. sedentary = desk, little walking. light = on their feet some of the day. moderate = moving most of it. active = on their feet all day. very_active = physical work. Without this and without a watch, calories out is the resting figure alone, which counts a working day as nothing and overstates every deficit.' },
         bluntness:    { type: 'string',  enum: ['gentle', 'honest', 'brutal'], description: 'How hard the verdict hits. Their choice, honoured exactly.' },
         notes:        { type: 'string' },
       },
@@ -1697,7 +1705,7 @@ async function getProfileTool(_args, user) {
 }
 
 async function setProfile(args, user) {
-  const fields = ['timezone','units','height_cm','birth_year','sex','training_age','equipment','train_days','dietary','bluntness','notes'];
+  const fields = ['timezone','units','height_cm','birth_year','sex','training_age','equipment','train_days','dietary','bluntness','notes','activity_level'];
   const patch = {};
   for (const f of fields) if (args[f] !== undefined) patch[f] = args[f];
   if (!Object.keys(patch).length) return { error: 'Nothing to save.' };
