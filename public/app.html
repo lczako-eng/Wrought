@@ -1256,6 +1256,35 @@ async function cutConnection(clientId) {
 
 let PROF = null;
 
+// Storage is always centimetres — the doctrine is that display is a preference
+// and the record is metric, so a person switching units mid-year does not end
+// up with a height series in two scales. These two only touch the input.
+function fromCm(cm, imperial) {
+  if (cm == null || cm === '') return '';
+  if (!imperial) return String(Math.round(cm * 10) / 10);
+  const totalIn = cm / 2.54;
+  let ft = Math.floor(totalIn / 12);
+  let inch = Math.round(totalIn - ft * 12);
+  if (inch === 12) { ft += 1; inch = 0; }        // 5'12" is 6 feet
+  return `${ft}'${inch}`;
+}
+
+// Accepts what people actually type: 5'11", 5 11, 5-11, 71, 180.
+function toCm(raw, imperial) {
+  const v = String(raw ?? '').trim();
+  if (!v) return null;
+  if (!imperial) { const n = parseFloat(v); return Number.isFinite(n) ? n : NaN; }
+
+  const fi = v.match(/^(\d+)\s*(?:'|’|ft|feet|-|\s)\s*(\d+(?:\.\d+)?)\s*(?:"|”|in|inch|inches)?$/i);
+  if (fi) return (Number(fi[1]) * 12 + Number(fi[2])) * 2.54;
+
+  const n = parseFloat(v);
+  if (!Number.isFinite(n)) return NaN;
+  // A bare number under 9 can only be feet; anything larger is inches.
+  return (n < 9 ? n * 12 : n) * 2.54;
+}
+
+
 const ZONES = (() => {
   try { return Intl.supportedValuesOf('timeZone'); }
   catch { return ['America/Toronto', 'America/New_York', 'America/Vancouver', 'Europe/London', 'UTC']; }
@@ -1279,6 +1308,7 @@ function opt(v, cur, label) {
 
 function renderProfile(d) {
   const p = d.profile, a = d.account;
+  const imp = p.units === 'imperial';
   const initials = (p.display_name || a.email || '?').trim().slice(0, 1).toUpperCase();
 
   $('prof-body').innerHTML = `
@@ -1314,8 +1344,10 @@ function renderProfile(d) {
       <label>Timezone
         <select id="f-tz">${ZONES.map(z => opt(z, p.timezone)).join('')}</select></label>
 
-      <label>Height (cm)
-        <input id="f-height" type="number" min="50" max="260" step="0.5" value="${p.height_cm ?? ''}" placeholder="—"></label>
+      <label id="f-height-label">${imp ? 'Height (ft &amp; in)' : 'Height (cm)'}
+        <input id="f-height" type="text" inputmode="${imp ? 'text' : 'decimal'}"
+               value="${esc(fromCm(p.height_cm, imp))}"
+               placeholder="${imp ? "5'11 or 71" : '180'}"></label>
 
       <label>Born
         <input id="f-year" type="number" min="1900" max="${new Date().getFullYear()}" value="${p.birth_year ?? ''}" placeholder="—"></label>
@@ -1349,6 +1381,15 @@ function renderProfile(d) {
     <p class="sub dim">${esc(d.note)}</p>`;
 
   $('prof-save').addEventListener('click', saveProfile);
+  // Switching units rewrites the box in the new scale rather than leaving 180
+  // sitting under a label that now says feet.
+  $('f-units').addEventListener('change', () => {
+    const nowImp = $('f-units').value === 'imperial';
+    const cm = toCm($('f-height').value, !nowImp);
+    $('f-height-label').childNodes[0].nodeValue = nowImp ? 'Height (ft & in)' : 'Height (cm)';
+    $('f-height').setAttribute('placeholder', nowImp ? "5'11 or 71" : '180');
+    if (Number.isFinite(cm)) $('f-height').value = fromCm(cm, nowImp);
+  });
   $('avfile').addEventListener('change', uploadAvatar);
   $('avdel')?.addEventListener('click', removeAvatar);
 }
@@ -1368,7 +1409,7 @@ async function saveProfile() {
       bluntness: $('f-blunt').value,
       units: $('f-units').value,
       timezone: $('f-tz').value,
-      height_cm: numOrNull('f-height'),
+      height_cm: toCm($('f-height').value, $('f-units').value === 'imperial'),
       birth_year: numOrNull('f-year'),
       sex: $('f-sex').value.trim() || null,
       activity_level: $('f-act').value || null,

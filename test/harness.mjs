@@ -2494,6 +2494,45 @@ await test('signing out does not pretend to disconnect the assistant', () => {
   assert.match(page('app.html'), /does not disconnect your AI/i);
 });
 
+group('Height in whatever unit you actually think in');
+
+await test('the height field follows the unit setting', () => {
+  // It was hard-labelled "Height (cm)" whatever units somebody picked, so an
+  // imperial user typing 5'11 got nothing and typing 180 got a lie.
+  const src = page('app.html');
+  assert.match(src, /imp \? 'Height \(ft &amp; in\)' : 'Height \(cm\)'/);
+  assert.match(src, /toCm\(\$\('f-height'\)\.value/);
+  // Switching units rewrites the box rather than leaving a number under the
+  // wrong label.
+  assert.match(src, /\$\('f-units'\)\.addEventListener\('change'/);
+});
+
+await test('feet and inches parse the way people write them', () => {
+  const src = page('app.html');
+  const fns = src.match(/function fromCm[\s\S]*?\n}\n/)[0] + src.match(/function toCm[\s\S]*?\n}\n/)[0];
+  const { toCm, fromCm } = new Function(`${fns};return {toCm,fromCm};`)();
+
+  for (const written of ["5'11", '5 11', '5-11', '71', "5'11\"", '5’11']) {
+    assert.equal(Math.round(toCm(written, true) * 10) / 10, 180.3, `${written} did not parse`);
+  }
+  assert.equal(Math.round(toCm('6', true) * 10) / 10, 182.9);      // bare, under 9 → feet
+  assert.equal(toCm('180', false), 180);                            // metric stays metric
+  assert.equal(toCm('', true), null);
+  assert.ok(Number.isNaN(toCm('nonsense', true)));
+});
+
+await test('the record stays metric whatever the display says', () => {
+  // Display is a preference; storage is not. Otherwise somebody who switches
+  // units mid-year ends up with a height series in two scales.
+  const src = page('app.html');
+  assert.match(src, /Storage is always centimetres/);
+  const { fromCm } = new Function(`${src.match(/function fromCm[\s\S]*?\n}\n/)[0]};return {fromCm};`)();
+  assert.equal(fromCm(180, false), '180');
+  assert.equal(fromCm(180, true), "5'11");
+  assert.equal(fromCm(182.9, true), "6'0");   // must not render 5'12"
+  assert.equal(fromCm(null, true), '');
+});
+
 // ── Report ──────────────────────────────────────────────────────────────────
 
 console.log(results.join('\n'));
