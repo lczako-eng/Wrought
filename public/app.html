@@ -78,6 +78,7 @@ header {
    two-factor prompt. */
 [hidden] { display: none !important; }
 .mark { display: flex; align-items: center; color: inherit; text-decoration: none; }
+.mark img { border-radius: 7px; display: block; margin-right: 9px; }
 .mark .name {
   font-family: var(--stamp);
   font-weight: 900; font-stretch: 75%; font-size: 16px; letter-spacing: .04em;
@@ -365,6 +366,38 @@ table.matrix td.rh.cold { color: var(--heat-3); }
 .empty { color: var(--ash-dim); font-size: 13.5px; padding: 14px 0; }
 
 
+
+
+/* ── First run ────────────────────────────────────────────────────────────
+   The screen a brand new account actually sees. It has to look like the
+   product rather than like the product failing to load, because this is where
+   somebody decides whether the thing works. */
+.firstrun { padding-top: 26px; }
+.fr-top { display: flex; gap: 18px; align-items: flex-start; }
+.fr-mark { border-radius: 13px; flex: none; box-shadow: 0 16px 34px -18px rgba(242,100,25,.65); }
+.fr-h { margin: 6px 0 8px; font-size: 25px; letter-spacing: -.02em; text-transform: none; color: var(--bright); }
+.fr-cards { display: flex; flex-direction: column; gap: 12px; margin: 24px 0 18px; }
+.fr-card {
+  display: flex; gap: 14px; align-items: flex-start;
+  background: var(--scale); border: 1px solid var(--edge); border-radius: 13px; padding: 16px 18px;
+}
+.fr-card b { display: block; font-size: 16px; color: var(--bright); }
+.fr-card p { margin: 5px 0 0; font-size: 14px; color: var(--ash); line-height: 1.55; }
+.fr-card .ghost, .fr-card .fr-eg { margin-top: 12px; }
+.fr-tick {
+  width: 22px; height: 22px; border-radius: 50%; flex: none; margin-top: 2px;
+  border: 1.5px solid var(--edge-lit); display: block;
+}
+.fr-card.done .fr-tick { background: var(--moss); border-color: var(--moss); position: relative; }
+.fr-card.done .fr-tick::after {
+  content: ''; position: absolute; left: 7px; top: 3px;
+  width: 5px; height: 10px; border: solid var(--iron); border-width: 0 2px 2px 0; transform: rotate(45deg);
+}
+.fr-card.done b, .fr-card.done p { opacity: .55; }
+.fr-eg {
+  display: inline-block; font-family: var(--mono); font-size: 13px; color: var(--heat-4);
+  background: var(--iron); border: 1px solid var(--edge-lit); border-radius: 9px; padding: 9px 12px;
+}
 
 /* ── Profile ──────────────────────────────────────────────────────────────
    A place to look, not a form. Two columns where there is room, one on a
@@ -677,7 +710,7 @@ a.ghost { display: inline-block; }
 <div id="app" hidden>
   <header>
     <div class="wrap bar">
-      <a class="mark" href="/app.html" aria-label="WROUGHT dashboard"><span class="name">Wrought</span></a>
+      <a class="mark" href="/app.html" aria-label="WROUGHT dashboard"><img src="/icon.svg" alt="" width="26" height="26"><span class="name">Wrought</span></a>
       <nav class="ranges views" role="group" aria-label="View">
         <button class="range view" data-view="record" aria-pressed="true">Record</button>
         <button class="range view" data-view="log" aria-pressed="false">Log</button>
@@ -1096,6 +1129,19 @@ function renderAccount(user, ids, factors) {
     </section>
 
     <section class="panel">
+      <h2>This browser</h2>
+      <p class="sub">Signed in as ${esc(user.email || 'this account')}. It stays signed in on
+      purpose — an inbox or a password between you and your own week, every time, is how
+      people stop looking.</p>
+      <p class="sub dim">Signing out here does not disconnect your AI. That holds its own
+      token and keeps working — see Connected assistants above.</p>
+      <div class="btnrow">
+        <button class="ghost" id="signout">Sign out</button>
+        <button class="ghost" id="switch">Switch account</button>
+      </div>
+    </section>
+
+    <section class="panel">
       <h2>Already signed in twice?</h2>
       <p class="sub">If your AI connected under one address and this dashboard under another,
       you have two accounts and half your training is in each. This puts them back together:
@@ -1127,11 +1173,23 @@ function renderAccount(user, ids, factors) {
   loadConnections();
   loadPush();
   loadDevices();
+  $('signout')?.addEventListener('click', () => leave(false));
+  // Switching is signing out and being handed the sign-in screen rather than
+  // the homepage — somebody juggling two accounts does that repeatedly, and
+  // being bounced to a sales page each time is the wrong end of the product.
+  $('switch')?.addEventListener('click', () => leave(true));
   $('mfa-on')?.addEventListener('click', startEnrol);
   $('mfa-off')?.addEventListener('click', () => dropFactor(factors));
   $('mfa-confirm')?.addEventListener('click', confirmEnrol);
   $('mfa-code')?.addEventListener('keydown', e => { if (e.key === 'Enter') confirmEnrol(); });
   stagger();
+}
+
+async function leave(switching) {
+  if (!switching && !confirm('Sign out of this browser? Your AI stays connected and nothing you logged is touched.')) return;
+  await sb.auth.signOut();
+  // Straight back to the gate, not to the marketing page.
+  location.href = '/app.html';
 }
 
 // ── Connected assistants ───────────────────────────────────────────────────
@@ -2570,6 +2628,73 @@ async function load(token) {
 // number, which is the point — you should know how the day went in the moment
 // before you start reading. The gap goes in the middle because that is the
 // thing being asked about; the two sides sit underneath as the working.
+function isFirstRun(d) {
+  const s = d.summary || {};
+  const logged = (s.days_logged || 0) > 0;
+  const trained = (s.training_days || 0) > 0;
+  const device = (d.device_matrix?.rows || []).length > 0;
+  return !logged && !trained && !device;
+}
+
+function firstRun(d) {
+  const p = d.today || {};
+  // Which of the three are already done, so this is a live checklist rather
+  // than a leaflet. Anything unknown is shown as still to do.
+  const knowsBody = !!(p.balance && p.balance.resting_kcal);
+  const hasDevice = (d.device_matrix?.rows || []).length > 0;
+
+  const card = (done, title, body, action) => `
+    <div class="fr-card${done ? ' done' : ''}">
+      <span class="fr-tick" aria-hidden="true"></span>
+      <div>
+        <b>${title}</b>
+        <p>${body}</p>
+        ${done ? '' : action}
+      </div>
+    </div>`;
+
+  return `
+  <section class="panel firstrun">
+    <div class="fr-top">
+      <img src="/icon.svg" alt="" width="56" height="56" class="fr-mark">
+      <div>
+        <span class="stamp">Nothing logged yet</span>
+        <h2 class="fr-h">This fills itself in</h2>
+        <p class="sub">Everything below builds from what you say to your AI and what your
+        watch sends. Two of these take a minute; the third is the whole product.</p>
+      </div>
+    </div>
+
+    <div class="fr-cards">
+      ${card(knowsBody, 'Tell it about you',
+        'Height, born, sex, and how much you move outside the gym. Five facts, once, ever — without them it refuses to guess your calories out, which is why the top of this page is blank.',
+        '<button class="ghost" data-go="account">Fill them in</button>')}
+
+      ${card(false, 'Say something to your AI',
+        'No forms. "eggs and coffee, 84.2 on the scale" or "bench 3x8 at 80, 45 minutes". It catches the numbers and files them here.',
+        '<span class="fr-eg">how&rsquo;s my week looking?</span>')}
+
+      ${card(hasDevice, 'Let the watch do the boring half',
+        'Sleep, steps, resting heart rate — things nobody should type. One connection picks up your Apple Watch and everything else on the phone.',
+        '<a class="ghost" href="/connect.html">Connect the phone</a>')}
+    </div>
+
+    <p class="sub dim">Want to see it with a few months in it first?
+      <a href="/app.html?demo=1">Open the demo</a> — same screen, same code, borrowed numbers.</p>
+  </section>`;
+}
+
+function wireFirstRun() {
+  document.querySelectorAll('[data-go]').forEach(b => b.addEventListener('click', () => {
+    document.querySelectorAll('.range.view').forEach(x => x.setAttribute('aria-pressed', 'false'));
+    const tab = document.querySelector(`.range.view[data-view="${b.dataset.go}"]`);
+    tab?.setAttribute('aria-pressed', 'true');
+    view = b.dataset.go;
+    $('rangebtns').style.display = 'none';
+    refresh();
+  }));
+}
+
 function hero(d) {
   const b = d.today?.balance;
   if (!b?.known) {
@@ -2612,6 +2737,13 @@ function hero(d) {
 
 function render(d) {
   const s = d.summary, wu = d.weight_unit, out = [];
+
+  // A brand new account has nothing to draw, and drawing it anyway produces
+  // nine panels all saying "not enough data yet" — which reads as broken
+  // software rather than an empty log, on the one screen somebody judges the
+  // whole product by. So the first run gets its own page: what the product is
+  // waiting for, and a way to see it working immediately.
+  if (isFirstRun(d)) { $('content').innerHTML = firstRun(d); wireFirstRun(); stagger(); return; }
 
   for (const f of (d.care_flags || [])) {
     out.push(callout('care', 'Worth pausing on', esc(f.detail)));

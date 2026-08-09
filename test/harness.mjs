@@ -2460,6 +2460,40 @@ await test('an unreachable settings call leaves the buttons showing', () => {
   assert.match(src, /hiding a working door locks somebody out/i);
 });
 
+group('A new account looks like the product, not like it failed');
+
+await test('a first run gets its own screen, not nine empty panels', () => {
+  // Nine panels all saying "not enough data yet" reads as broken software
+  // rather than an empty log — on the one screen somebody judges the product by.
+  const src = page('app.html');
+  assert.match(src, /function isFirstRun\(d\)/);
+  assert.match(src, /if \(isFirstRun\(d\)\) \{/);
+  // And it is only the first run: any logging, training or device data at all
+  // and the real dashboard renders.
+  assert.match(src, /return !logged && !trained && !device;/);
+});
+
+await test('the dashboard carries the mark like every other page', () => {
+  assert.match(page('app.html'), /<a class="mark" href="\/app\.html"[^>]*>\s*<img src="\/icon\.svg"/);
+});
+
+await test('you can sign out and switch accounts', () => {
+  // There was no way to sign out at all, which is why it felt like being
+  // auto-signed-in with no say in it.
+  const src = page('app.html');
+  assert.match(src, /id="signout"/);
+  assert.match(src, /id="switch"/);
+  assert.match(src, /sb\.auth\.signOut\(\)/);
+  // Switching lands on the sign-in screen, not the marketing homepage.
+  assert.match(src, /location\.href = '\/app\.html';/);
+});
+
+await test('signing out does not pretend to disconnect the assistant', () => {
+  // They are separate sessions, and saying otherwise sends somebody hunting
+  // for a connector that is still working perfectly.
+  assert.match(page('app.html'), /does not disconnect your AI/i);
+});
+
 // ── Report ──────────────────────────────────────────────────────────────────
 
 console.log(results.join('\n'));

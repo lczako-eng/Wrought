@@ -566,6 +566,31 @@ below last one.
   because something has been adding up. It stays silent until both years have
   30+ logged days.
 
+### The empty dashboard — the screen that decides everything
+
+A brand new account has nothing to draw, and drawing it anyway produced nine
+panels all saying *"not enough data yet"*. The founder's reaction was the right
+one: *"what is this garbage... no symbols no nothing."* On the one screen
+somebody judges the whole product by, an honest empty state read as broken
+software.
+
+`isFirstRun()` + `firstRun()` in `app.html`. When nothing has been logged,
+trained or pushed, the Record view is replaced by its own screen: the mark, what
+the product is waiting for, and three things to do — the five facts, a sentence
+to the AI, the phone — each ticking itself off as it becomes true. Plus a link
+to `?demo=1`, so somebody can see it full of data in one tap rather than taking
+it on faith.
+
+**Any data at all and the real dashboard returns.** This is a first-run state,
+not a permanent shell.
+
+Sign out and switch account live at the bottom of Account, and both land back on
+the sign-in screen rather than the marketing page. There was no sign-out at all
+before, which is why staying signed in felt like having no say in it. The panel
+says out loud that signing out does **not** disconnect the assistant — they are
+separate sessions, and pretending otherwise sends somebody hunting for a
+connector that is working perfectly.
+
 ### The log must be readable
 
 `api-log.js` + the Log view in `app.html`. Everything else on the dashboard is
@@ -655,7 +680,7 @@ self-reporting scale removes the most-abandoned manual entry), then Strava.
 
 ## Conventions
 
-- `npm test` runs `test/harness.mjs` — 258 offline tests, no network, no database.
+- `npm test` runs `test/harness.mjs` — 265 offline tests, no network, no database.
   Run it before every push. It covers the JSON-RPC envelope (which fails as an
   uninformative "could not connect" inside ChatGPT) and all the arithmetic
   (which fails as a confidently wrong number in somebody's verdict).
