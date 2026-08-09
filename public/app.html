@@ -104,6 +104,19 @@ main { padding-block: 26px 90px; display: flex; flex-direction: column; gap: 22p
 @keyframes rise { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
 @keyframes grow { from { transform: scaleY(0); } to { transform: none; } }
 @keyframes sweep { from { stroke-dashoffset: var(--circ); } }
+@keyframes draw  { from { stroke-dashoffset: 1; } }
+
+/* pathLength="1" normalises every series to the same dash maths, so a 7-day
+   line and a 365-day line draw in over the same beat. */
+svg.ser .series { stroke-dasharray: 1; animation: draw 900ms var(--ease) both; }
+svg.ser { touch-action: pan-y; cursor: crosshair; }
+svg.ser .scrub { stroke: var(--edge-lit); stroke-width: 1; transition: opacity var(--quick) var(--ease); }
+svg.ser .cursor { transition: opacity var(--quick) var(--ease); }
+.chart-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.readout {
+  margin: 0; font-family: var(--mono); font-size: 12px; color: var(--bright);
+  font-variant-numeric: tabular-nums; min-height: 1.2em;
+}
 
 .panel {
   /* Layered rather than outlined: depth carries the separation, so the page
@@ -164,7 +177,7 @@ main { padding-block: 26px 90px; display: flex; flex-direction: column; gap: 22p
 .range { transition: background var(--quick) var(--ease), color var(--quick) var(--ease), border-color var(--quick) var(--ease); }
 
 @media (prefers-reduced-motion: reduce) {
-  .panel, .tile, .hero .fill { animation: none !important; }
+  .panel, .tile, .hero .fill, svg.ser .series { animation: none !important; }
   * { transition: none !important; }
 }
 .sub { color: var(--ash); font-size: 13.5px; margin: 0; }
@@ -1052,6 +1065,7 @@ function render(d) {
 function stagger(root = $('content')) {
   const bits = root.querySelectorAll('.panel, .tile');
   bits.forEach((el, i) => { el.style.animationDelay = `${Math.min(i * 45, 450)}ms`; });
+  wireCharts(root);
 }
 
 const tile = (k, v, s, cls = '') =>
@@ -1134,15 +1148,82 @@ function chart(title, sub, series, colour, unit) {
   const last = series.reduce((a, p, i) => (p.value != null ? i : a), -1);
   const ticks = [min, (min + max) / 2, max];
 
-  return `<section class="panel"><h2>${esc(title)}</h2><p class="sub">${esc(sub)}</p>
-    <svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(title)} over time">
+  // Everything the scrubber needs to turn a finger position back into a day.
+  // Carried on the element rather than closed over, because the panel is
+  // rebuilt from an HTML string every time the range changes.
+  const geo = JSON.stringify({ W, H, l: P.l, r: P.r, t: P.t, b: P.b, min, max, unit: unit || '' });
+  const data = JSON.stringify(series.map(p => [p.date, p.value]));
+
+  return `<section class="panel"><h2>${esc(title)}</h2>
+    <div class="chart-head">
+      <p class="sub">${esc(sub)}</p>
+      <p class="readout" aria-live="polite"></p>
+    </div>
+    <svg class="ser" viewBox="0 0 ${W} ${H}" data-geo="${esc(geo)}" data-series="${esc(data)}"
+         role="img" aria-label="${esc(title)} over time">
       ${ticks.map(t => `<line class="gridline" x1="${P.l}" y1="${y(t).toFixed(1)}" x2="${W - P.r}" y2="${y(t).toFixed(1)}"/>
         <text class="axis" x="${P.l - 6}" y="${(y(t) + 3.5).toFixed(1)}" text-anchor="end">${Math.round(t)}</text>`).join('')}
-      <path d="${path.trim()}" fill="none" stroke="${colour}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+      <line class="scrub" x1="0" y1="${P.t}" x2="0" y2="${H - P.b}" opacity="0"/>
+      <path class="series" pathLength="1" d="${path.trim()}" fill="none" stroke="${colour}"
+            stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
       ${last >= 0 ? `<circle cx="${x(last).toFixed(1)}" cy="${y(series[last].value).toFixed(1)}" r="3.5" fill="${colour}"/>` : ''}
+      <circle class="cursor" r="4.5" fill="${colour}" opacity="0"/>
       <text class="axis" x="${P.l}" y="${H - 4}">${esc(series[0].date.slice(5))}</text>
       <text class="axis" x="${W - P.r}" y="${H - 4}" text-anchor="end">${esc(series[series.length - 1].date.slice(5))}</text>
     </svg></section>`;
+}
+
+// Dragging across a chart should tell you what that day actually was. Without
+// it a line is a shape; with it the shape is made of days you can name, which
+// is the difference between a graph and a record.
+function wireCharts(root = $('content')) {
+  for (const svg of root.querySelectorAll('svg.ser')) {
+    let geo, series;
+    try {
+      geo = JSON.parse(svg.dataset.geo);
+      series = JSON.parse(svg.dataset.series);
+    } catch { continue; }
+
+    const readout = svg.closest('.panel')?.querySelector('.readout');
+    const line = svg.querySelector('.scrub');
+    const dot  = svg.querySelector('.cursor');
+    const N = series.length - 1;
+    const span = geo.W - geo.l - geo.r;
+    const yOf = v => geo.t + (1 - (v - geo.min) / (geo.max - geo.min)) * (geo.H - geo.t - geo.b);
+
+    const move = e => {
+      const box = svg.getBoundingClientRect();
+      const px = ((e.touches?.[0]?.clientX ?? e.clientX) - box.left) / box.width * geo.W;
+      let i = Math.round(((px - geo.l) / span) * N);
+      i = Math.max(0, Math.min(N, i));
+      // Empty days are real and must not be papered over, so the nearest
+      // logged day wins rather than the gap being drawn as a zero.
+      if (series[i][1] == null) {
+        let near = -1;
+        for (let k = 0; k <= N; k++) if (series[k][1] != null && (near < 0 || Math.abs(k - i) < Math.abs(near - i))) near = k;
+        if (near < 0) return;
+        i = near;
+      }
+      const [date, value] = series[i];
+      const cx = geo.l + (i / N) * span;
+      line.setAttribute('x1', cx); line.setAttribute('x2', cx); line.setAttribute('opacity', '1');
+      dot.setAttribute('cx', cx); dot.setAttribute('cy', yOf(value)); dot.setAttribute('opacity', '1');
+      if (readout) readout.textContent = `${date} · ${Math.round(value * 10) / 10}${geo.unit}`;
+    };
+    const clear = () => {
+      line.setAttribute('opacity', '0'); dot.setAttribute('opacity', '0');
+      if (readout) readout.textContent = '';
+    };
+
+    // Pointer events cover mouse and touch alike, and touch-action: pan-y lets
+    // a vertical swipe still scroll the page — swallowing touchmove here would
+    // trap the finger on the chart, which is a worse bug than having no
+    // scrubber at all.
+    svg.addEventListener('pointermove', move);
+    svg.addEventListener('pointerdown', move);
+    svg.addEventListener('pointerleave', clear);
+    svg.addEventListener('pointercancel', clear);
+  }
 }
 
 function bars(title, sub, series) {
