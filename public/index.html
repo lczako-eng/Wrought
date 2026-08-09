@@ -273,11 +273,19 @@ table.heat td.rh.dead { color: var(--heat-3); }
 
 /* ── Close ─────────────────────────────────────────────────────────────── */
 .close { padding-block: 46px 30px; border-top: 1px solid var(--edge); }
+/* The single most important string on the page — the whole call to action is
+   "paste this" — so it is a button that copies itself rather than something to
+   select by hand on a phone. */
 .url {
-  display: block; background: var(--scale); border: 1px solid var(--edge-lit);
-  padding: 16px 18px; color: var(--heat-4); border-radius: 2px;
+  display: block; width: 100%; text-align: left; cursor: pointer;
+  font-family: var(--mono, ui-monospace, monospace);
+  background: var(--scale); border: 1px solid var(--edge-lit);
+  padding: 16px 18px; color: var(--heat-4); border-radius: 10px;
   font-size: clamp(13px, 3.2vw, 17px); word-break: break-all; margin-block: 18px;
+  transition: border-color .2s ease, background .2s ease, color .2s ease;
 }
+.url:hover { border-color: var(--heat-3); }
+.url.copied { color: var(--moss); border-color: var(--moss); }
 .acts { display: flex; gap: 10px; flex-wrap: wrap; }
 .btn {
   font: inherit; font-size: 13px; letter-spacing: .1em; text-transform: uppercase;
@@ -291,8 +299,20 @@ table.heat td.rh.dead { color: var(--heat-3); }
 footer { padding-block: 26px 70px; color: var(--ash-dim); font-size: 11.5px; line-height: 1.65; }
 footer a { color: var(--ash); }
 
+/* ── Arriving ─────────────────────────────────────────────────────────────
+   The page is a series of claims, and a claim that fades up as you reach it
+   gets read; a wall of them delivered at once gets skimmed. Everything below
+   is progressive — with no JavaScript, or with reduced motion asked for, the
+   whole page is simply there, which is the state that has to be correct. */
+.reveal { opacity: 0; transform: translateY(16px); }
+.reveal.seen {
+  opacity: 1; transform: none;
+  transition: opacity .7s cubic-bezier(.22,.61,.36,1), transform .7s cubic-bezier(.22,.61,.36,1);
+}
+
 @media (prefers-reduced-motion: reduce) {
   .ignite { animation: none; opacity: 1; }
+  .reveal, .reveal.seen { opacity: 1; transform: none; transition: none; }
 }
 </style>
 </head>
@@ -589,7 +609,7 @@ footer a { color: var(--ash); }
   <section class="close">
     <p class="faint">TWO MINUTES, ONCE</p>
     <h2 style="margin-top:10px">Paste this into ChatGPT or Claude.</h2>
-    <code class="url">https://wrought.fit/mcp</code>
+    <button class="url" id="mcpurl" type="button" title="Copy">https://wrought.fit/mcp</button>
     <p class="dim" style="margin-bottom:20px">
       No app to download and abandon by February. Sign in once and it's simply there —
       tomorrow morning, and every morning after.
@@ -652,6 +672,54 @@ footer a { color: var(--ash); }
 
   document.getElementById('hero-grid').innerHTML =
     `<thead>${head}</thead><tbody>${rows}</tbody>`;
+})();
+
+// The connector URL is written from wherever the page is actually served, not
+// from the domain we hope to be on. Hard-coding wrought.fit while the site
+// lives at a netlify.app address hands every visitor a URL that fails with a
+// message telling them nothing.
+(() => {
+  const el = document.getElementById('mcpurl');
+  if (!el) return;
+  const url = `${location.origin}/mcp`;
+  el.textContent = url;
+  el.addEventListener('click', async () => {
+    try { await navigator.clipboard.writeText(url); } catch { return; }
+    const was = el.textContent;
+    el.textContent = 'Copied — now paste it into ChatGPT or Claude';
+    el.classList.add('copied');
+    setTimeout(() => { el.textContent = was; el.classList.remove('copied'); }, 2200);
+  });
+})();
+
+// Sections arrive as you reach them. Applied from script rather than markup on
+// purpose: if this file never runs, nothing is ever given the hiding class, so
+// the page stays fully readable instead of being invisible forever — the one
+// failure mode a scroll animation must not have.
+(() => {
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const bits = document.querySelectorAll('.sheet > section, .sheet > footer');
+  if (reduce || !('IntersectionObserver' in window)) return;
+
+  bits.forEach(el => el.classList.add('reveal'));
+  const io = new IntersectionObserver((entries) => {
+    for (const e of entries) {
+      if (!e.isIntersecting) continue;
+      e.target.classList.add('seen');
+      io.unobserve(e.target);
+    }
+  }, { rootMargin: '0px 0px -12% 0px', threshold: 0.06 });
+
+  bits.forEach(el => io.observe(el));
+
+  // Anything already on screen at load should not wait for a scroll that may
+  // never come — on a short viewport the first section can sit inside the
+  // margin and would otherwise stay hidden.
+  requestAnimationFrame(() => {
+    bits.forEach(el => {
+      if (el.getBoundingClientRect().top < innerHeight) el.classList.add('seen');
+    });
+  });
 })();
 </script>
 </body>

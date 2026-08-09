@@ -231,7 +231,7 @@
     no app, no push certificates, no permissions to grant.
   </p>
 
-<pre>Get Contents of URL  →  https://wrought.fit/ingest
+<pre id="shortcutblock">Get Contents of URL  →  https://wrought.fit/ingest
 Get Dictionary Value →  notification      (from Contents of URL)
 Show Notification    →  Wrought           (body: Dictionary Value)</pre>
 
@@ -304,6 +304,10 @@ const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;
 // preview deploy without anybody editing this file.
 $('mcpurl').textContent    = `${location.origin}/mcp`;
 $('ingesturl').textContent = `${location.origin}/ingest`;
+// The worked example carries the URL too, and a stale domain in a block
+// somebody copies verbatim is worse than one in prose they only read.
+const block = $('shortcutblock');
+if (block) block.textContent = block.textContent.replaceAll('https://wrought.fit', location.origin);
 
 let token = null;
 
