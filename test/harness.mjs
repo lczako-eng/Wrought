@@ -2176,6 +2176,20 @@ await test('it never prints a value, only whether one is set', async () => {
   }
 });
 
+await test('a check that could not run is not reported as a missing migration', () => {
+  // Treating every error as "not run" sends somebody back to the SQL editor to
+  // fix something that is not broken — and PostgREST says the same thing for
+  // "you never ran this" and "I have not reloaded since you did".
+  const src = readFileSync(new URL('../netlify/functions/api-status.js', import.meta.url), 'utf8');
+  assert.match(src, /schema cache/);
+  assert.match(src, /'stale'/);
+  assert.match(src, /m\.run === false/);
+  // Only a definite false counts toward the "still to run" list.
+  assert.match(src, /migrations\.filter\(m => m\.run === false\)/);
+  // And the page renders three states, not two.
+  assert.match(src, /li\.q::before/);
+});
+
 await test('the trailing slash is caught by name', async () => {
   // It answers "Invalid path specified in request URL" and nothing anywhere
   // explains why. It has already cost this project an evening.

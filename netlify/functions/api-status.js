@@ -40,17 +40,36 @@ const MIGRATIONS = [
   { file: '011_wrought_membership.sql',  probe: t('wrought_memberships'),           gives: 'plans, trials, codes and the admin people list' },
 ];
 
+// A probe that treats EVERY error as "not run" lies twice over: a timeout reads
+// as a missing migration, and PostgREST's schema cache lagging behind fresh DDL
+// reads as SQL that never ran. Both send somebody back to the SQL editor to fix
+// something that is not broken.
+//
+// So the three answers are kept apart: it is there, it is genuinely absent, or
+// we could not tell.
+const MISSING = /does not exist|could not find the (table|column|relation)|schema cache/i;
+
+function verdict(error) {
+  if (!error) return true;
+  if (MISSING.test(error.message || '')) {
+    // PostgREST says the same thing for "you never ran this" and "I have not
+    // reloaded since you did". The second resolves itself within a minute.
+    return /schema cache/i.test(error.message) ? 'stale' : false;
+  }
+  return 'unknown';
+}
+
 function t(table) {
   return async () => {
     const { error } = await supabase.from(table).select('*', { count: 'exact', head: true }).limit(1);
-    return !error;
+    return verdict(error);
   };
 }
 
 function col(table, column) {
   return async () => {
     const { error } = await supabase.from(table).select(column, { head: true }).limit(1);
-    return !error;
+    return verdict(error);
   };
 }
 
@@ -60,6 +79,7 @@ function fn(name) {
     // different answers. Only the first means the migration has not run.
     const { error } = await supabase.rpc(name, { keep: null, absorb: null });
     if (!error) return true;
+    if (/schema cache/i.test(error.message || '')) return 'stale';
     return !/could not find the function|does not exist/i.test(error.message || '');
   };
 }
@@ -97,17 +117,21 @@ export const handler = async (event) => {
     } catch { /* reported as unreachable below */ }
   }
 
-  const missingMigrations = migrations.filter(m => !m.run).map(m => m.file);
+  // Only a definite `false` counts as missing. 'stale' and 'unknown' are not
+  // instructions to go and run something again.
+  const missingMigrations = migrations.filter(m => m.run === false).map(m => m.file);
+  const unsure = migrations.filter(m => m.run === 'stale' || m.run === 'unknown');
   const missingHardEnv = env.filter(e => e.hard && !e.set).map(e => e.key);
 
   const ready = reachable && !missingHardEnv.length && !trailingSlash
-    && !migrations.slice(0, 3).some(m => !m.run);
+    && !migrations.slice(0, 3).some(m => m.run === false);
 
   const say = trailingSlash
     ? 'SUPABASE_URL has a trailing slash. Remove it — Supabase answers "Invalid path specified in request URL" and nothing explains why.'
     : missingHardEnv.length ? `Not configured: ${missingHardEnv.join(' and ')} ${missingHardEnv.length === 1 ? 'is' : 'are'} not set.`
     : !reachable ? 'Cannot reach the database. Check SUPABASE_URL and the service role key.'
     : missingMigrations.length ? `Working. Still to run: ${missingMigrations.join(', ')}.`
+    : unsure.length ? `Everything is set up. ${unsure.length} check${unsure.length === 1 ? '' : 's'} could not be confirmed just now — reload in a moment.`
     : 'Everything is set up.';
 
   const body = {
@@ -117,7 +141,7 @@ export const handler = async (event) => {
     migrations,
     // Presence only. A value never appears here, on purpose.
     environment: env.map(e => ({ key: e.key, set: e.set, needed_for: e.needed })),
-    next: nextStep({ trailingSlash, missingHardEnv, reachable, migrations, env }),
+    next: nextStep({ trailingSlash, missingHardEnv, reachable, migrations, env, unsure }),
   };
 
   const wantsHtml = /text\/html/.test(event.headers?.accept || event.headers?.Accept || '');
@@ -132,12 +156,13 @@ export const handler = async (event) => {
 
 // One thing to do next, not a list. A checklist with eleven open items is a
 // checklist nobody starts.
-function nextStep({ trailingSlash, missingHardEnv, reachable, migrations, env }) {
+function nextStep({ trailingSlash, missingHardEnv, reachable, migrations, env, unsure = [] }) {
   if (trailingSlash) return 'Remove the trailing slash from SUPABASE_URL in Netlify, then redeploy.';
   if (missingHardEnv.length) return `Set ${missingHardEnv.join(' and ')} in Netlify, then redeploy.`;
   if (!reachable) return 'Check SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY against the Supabase project settings.';
-  const nextMigration = migrations.find(m => !m.run);
+  const nextMigration = migrations.find(m => m.run === false);
   if (nextMigration) return `Run schema/${nextMigration.file} in the Supabase SQL editor — it gives you ${nextMigration.gives}.`;
+  if (unsure.length) return 'Reload this page in a moment — a check could not be confirmed, which usually means Supabase has not refreshed since the last SQL ran.';
   if (!env.find(e => e.key === 'WROUGHT_VAPID_PUBLIC')?.set) {
     return 'Optional: run node scripts/vapid.mjs and set the three VAPID variables to turn on notifications.';
   }
@@ -146,7 +171,10 @@ function nextStep({ trailingSlash, missingHardEnv, reachable, migrations, env })
 
 function page(d) {
   const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
-  const row = (ok, name, note) => `<li class="${ok ? 'y' : 'n'}"><b>${esc(name)}</b><span>${esc(note)}</span></li>`;
+  // Three states, not two. A tick, a cross, and "could not tell" — which must
+  // not look like a cross, or somebody re-runs SQL that already ran.
+  const row = (ok, name, note) =>
+    `<li class="${ok === true ? 'y' : ok === false ? 'n' : 'q'}"><b>${esc(name)}</b><span>${esc(note)}</span></li>`;
 
   return `<!doctype html><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -172,6 +200,7 @@ li{display:flex;align-items:baseline;gap:10px;padding:9px 0;border-top:1px solid
 li:first-child{border-top:0}
 li::before{content:'\\2717';color:var(--no);font-weight:700;width:14px;flex:none}
 li.y::before{content:'\\2713';color:var(--ok)}
+li.q::before{content:'?';color:var(--dim);font-weight:700}
 li b{font-weight:600;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13px}
 li span{color:var(--faint);font-size:13px;margin-left:auto;text-align:right}
 a{color:var(--no)}
@@ -187,7 +216,8 @@ p.foot{color:var(--faint);font-size:12.5px;margin-top:30px;line-height:1.55}
 
 <h2>Migrations</h2>
 <ul>${d.migrations.length
-  ? d.migrations.map(m => row(m.run, m.file, m.run ? '' : m.gives)).join('')
+  ? d.migrations.map(m => row(m.run === true ? true : m.run === false ? false : null, m.file,
+      m.run === true ? '' : m.run === false ? m.gives : 'could not check just now')).join('')
   : '<li class="n"><b>could not check</b><span>database unreachable</span></li>'}</ul>
 
 <h2>Environment</h2>
