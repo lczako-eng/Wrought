@@ -157,7 +157,17 @@ async function save(user, body) {
   }
 
   const { error } = await supabase.from('wrought_profile').upsert(patch, { onConflict: 'user_id' });
-  if (error) return json(500, { error: error.message });
+  if (error) {
+    // Name the migration. Every other endpoint here does, and a raw Postgres
+    // "column does not exist" sends somebody reading the wrong file.
+    const missing = /column .*(display_name|avatar_path).* does not exist/i.test(error.message || '');
+    return json(500, {
+      error: missing ? 'migration_010_not_run' : 'save_failed',
+      message: missing
+        ? 'The profile columns are not installed. Run schema/010_wrought_profile_web.sql in Supabase.'
+        : error.message,
+    });
+  }
 
   return json(200, { ok: true, say: 'Saved.' });
 }
