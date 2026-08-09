@@ -2116,6 +2116,37 @@ await test('avatars and progress photos are separate buckets', () => {
   assert.match(b, /BUCKET = 'wrought-photos'/);
 });
 
+group('Setting a phone up without flying blind');
+
+await test('the key endpoint answers "did anything arrive"', () => {
+  // The question somebody actually has at eleven at night with a half-built
+  // Shortcut. Setting it up blind and finding out tomorrow is how people give
+  // up on it tonight.
+  const src = readFileSync(new URL('../netlify/functions/api-key.js', import.meta.url), 'utf8');
+  assert.match(src, /wrought_metrics/);
+  assert.match(src, /minutes_ago/);
+  assert.match(src, /Nothing has arrived yet/);
+});
+
+await test('a plaintext key is still never recoverable', () => {
+  // The status additions must not have turned the list into a way to read a key
+  // back. It exists exactly once, on the screen it was minted on.
+  const src = readFileSync(new URL('../netlify/functions/api-key.js', import.meta.url), 'utf8');
+  const listArm = src.slice(src.indexOf("httpMethod === 'GET'"), src.indexOf("httpMethod === 'POST'"));
+  assert.ok(!/token_hash|token\b/.test(listArm), 'the key list leaks a token');
+  assert.match(src, /select\('id, label, last_used_at, revoked, created_at'\)/);
+});
+
+await test('the setup page polls only while somebody is watching', () => {
+  // A tab left open for a week must not hit the server every ten seconds
+  // forever.
+  const page = readFileSync(new URL('../public/connect.html', import.meta.url), 'utf8');
+  assert.match(page, /visibilitychange/);
+  assert.match(page, /clearInterval\(watchTimer\)/);
+  assert.ok(!/setInterval\(checkArrived, 10000\);\s*\n\s*(?!\})/.test(page.replace(/if \(e\.target\.checked\)[^\n]*/g, '')),
+    'polling starts without being asked for');
+});
+
 // ── Report ──────────────────────────────────────────────────────────────────
 
 console.log(results.join('\n'));

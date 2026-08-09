@@ -50,6 +50,15 @@
   .or{display:flex;align-items:center;gap:12px;margin:2px 0 13px;
     color:var(--dim);font-size:12px;text-transform:uppercase;letter-spacing:.08em}
   .or::before,.or::after{content:'';flex:1;height:1px;background:var(--line)}
+  .watchbox{display:inline-flex;align-items:center;gap:8px;margin-left:12px;
+    font-size:13px;color:var(--muted);cursor:pointer}
+  .watchbox input{width:auto;margin:0}
+  .arrived-yes{border:1px solid #3d6b46;background:#16211a;border-radius:10px;padding:14px;margin:0 0 12px}
+  .arrived-no{border:1px solid var(--line);background:var(--panel2);border-radius:10px;padding:14px;margin:0 0 12px}
+  .arrived-yes b{color:#8ccf9a}
+  .landed{display:flex;flex-wrap:wrap;gap:6px;margin:10px 0 0}
+  .landed span{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;
+    background:var(--panel);border:1px solid var(--line);border-radius:7px;padding:5px 9px}
   .keybox{background:#0d0d10;border:1px solid var(--ember);border-radius:9px;padding:14px;
     font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13px;
     word-break:break-all;margin:12px 0}
@@ -203,6 +212,16 @@
     </div>
     <div id="keyout"></div>
     <p class="msg" id="msg"></p>
+
+    <!-- The question somebody actually has at eleven at night with a half-built
+         Shortcut: did anything arrive? Setting this up blind and finding out
+         tomorrow morning is how people give up on it tonight. -->
+    <div id="arrived" hidden>
+      <h3 style="margin:22px 0 8px">Is it working?</h3>
+      <div id="arrived-body"></div>
+      <button class="ghost" id="recheck">Check again</button>
+      <label class="watchbox"><input type="checkbox" id="watch"> Keep checking every 10 seconds</label>
+    </div>
   </div>
 
   <h3>Option A — the Shortcut (free, five taps)</h3>
@@ -401,6 +420,7 @@ async function signedIn(t) {
   $('signin').hidden = true;
   $('minter').hidden = false;
   $('keyintro').textContent = 'Generate a key for each phone. The key is shown once and cannot be recovered.';
+  checkArrived();
 }
 
 // Email and password, same as the dashboard. Accounts are created there; this
@@ -474,9 +494,66 @@ $('dl')?.addEventListener('click', async () => {
   $('msg').textContent = 'Downloaded.';
 });
 
+// Polling, but only while somebody is actually watching. A page left open in a
+// tab for a week should not be hitting the server every ten seconds forever.
+let watchTimer = null;
+
+function stopWatching() {
+  if (watchTimer) { clearInterval(watchTimer); watchTimer = null; }
+}
+document.addEventListener('visibilitychange', () => { if (document.hidden) stopWatching(); });
+
+function renderArrived(r) {
+  const box = $('arrived-body');
+  $('arrived').hidden = false;
+
+  if (!r || !r.ever) {
+    box.innerHTML = `<div class="arrived-no">
+      <b>Nothing yet.</b>
+      <p class="msg" style="margin:6px 0 0">Run the Shortcut once by hand — do not wait for 11pm to
+      find out whether it works. Then press Check again.</p></div>`;
+    return;
+  }
+
+  // "apple_health" is a database value. In a sentence somebody reads it should
+  // be the name of the thing on their phone.
+  const pretty = { apple_health: 'Apple Health', health_connect: 'Health Connect',
+                   withings: 'Withings', strava: 'Strava', oura: 'Oura', whoop: 'Whoop',
+                   fitbit: 'Fitbit', manual: 'entered by hand' };
+  const from = (r.sources || []).map(x => pretty[x] || x);
+
+  const when = r.minutes_ago == null ? ''
+    : r.minutes_ago < 1 ? 'seconds ago'
+    : r.minutes_ago === 1 ? 'a minute ago'
+    : r.minutes_ago < 60 ? `${r.minutes_ago} minutes ago`
+    : `${Math.round(r.minutes_ago / 60)} hours ago`;
+
+  box.innerHTML = `<div class="arrived-yes">
+    <b>Data is arriving.</b>
+    <p class="msg" style="margin:6px 0 0">${r.ever} reading${r.ever === 1 ? '' : 's'} in total,
+    the last ${esc(when)}${from.length ? ` from ${esc(from.join(', '))}` : ''}.</p>
+    <div class="landed">${(r.sample || []).map(x =>
+      `<span>${esc(x.metric)} ${esc(String(x.value))}${esc(x.unit === 'count' ? '' : ' ' + x.unit)}</span>`).join('')}</div>
+  </div>`;
+}
+
+async function checkArrived() {
+  if (!token) return;
+  const res = await fetch('/.netlify/functions/api-key', { headers: { Authorization: `Bearer ${token}` } });
+  if (!res.ok) return;
+  renderArrived((await res.json()).received);
+}
+
+$('recheck')?.addEventListener('click', checkArrived);
+$('watch')?.addEventListener('change', (e) => {
+  stopWatching();
+  if (e.target.checked) { checkArrived(); watchTimer = setInterval(checkArrived, 10000); }
+});
+
 $('list').addEventListener('click', async () => {
   const res = await fetch('/.netlify/functions/api-key', { headers: { Authorization: `Bearer ${token}` } });
   const out = await res.json();
+  renderArrived(out.received);
   const keys = out.keys || [];
   $('keyout').innerHTML = keys.length
     ? `<p class="msg">${keys.length} active key${keys.length === 1 ? '' : 's'}:</p>` +

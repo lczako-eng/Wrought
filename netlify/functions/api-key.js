@@ -15,6 +15,19 @@ const CORS = {
   'Cache-Control': 'no-store',
 };
 
+// Plain English rather than a timestamp. "4 minutes ago" tells somebody their
+// Shortcut works; "2026-08-09T23:04:11Z" makes them do arithmetic.
+function minutesWord(ms) {
+  const m = Math.round(ms / 60000);
+  if (m < 1) return 'seconds ago';
+  if (m === 1) return 'a minute ago';
+  if (m < 60) return `${m} minutes ago`;
+  const h = Math.round(m / 60);
+  if (h < 24) return `${h} hour${h === 1 ? '' : 's'} ago`;
+  const d = Math.round(h / 24);
+  return `${d} day${d === 1 ? '' : 's'} ago`;
+}
+
 export const handler = async (event) => {
   if (event.httpMethod === 'OPTIONS') return { statusCode: 204, headers: CORS, body: '' };
   if (!supabase) return { statusCode: 500, headers: CORS, body: JSON.stringify({ error: 'server_not_configured' }) };
@@ -23,12 +36,50 @@ export const handler = async (event) => {
   if (!user) return { statusCode: 401, headers: CORS, body: JSON.stringify({ error: 'sign_in_required' }) };
 
   // List — hashes only, never a plaintext key. There is no way to recover one.
+  //
+  // It also answers the question somebody actually has at eleven at night with a
+  // half-built Shortcut: DID ANYTHING ARRIVE? Setting this up blind and finding
+  // out tomorrow is how people give up on it tonight.
   if (event.httpMethod === 'GET') {
-    const { data } = await supabase.from('wrought_ingest_keys')
-      .select('id, label, last_used_at, revoked, created_at')
-      .eq('user_id', user.id).eq('revoked', false)
-      .order('created_at', { ascending: false });
-    return { statusCode: 200, headers: CORS, body: JSON.stringify({ keys: data || [] }) };
+    const [{ data: keys }, { data: recent }, { count: total }] = await Promise.all([
+      supabase.from('wrought_ingest_keys')
+        .select('id, label, last_used_at, revoked, created_at')
+        .eq('user_id', user.id).eq('revoked', false)
+        .order('created_at', { ascending: false }),
+      supabase.from('wrought_metrics')
+        .select('metric, value, unit, measured_at, source, created_at')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false }).limit(40),
+      supabase.from('wrought_metrics')
+        .select('id', { count: 'exact', head: true }).eq('user_id', user.id),
+    ]);
+
+    const rows = recent || [];
+    const landed = rows[0]?.created_at || null;
+    // What actually came through, deduplicated by metric — "steps, sleep,
+    // resting hr" is the sentence somebody needs, not forty rows.
+    const kinds = [...new Set(rows.map(r => r.metric))];
+
+    return {
+      statusCode: 200, headers: CORS,
+      body: JSON.stringify({
+        keys: keys || [],
+        received: {
+          ever: total || 0,
+          last_at: landed,
+          minutes_ago: landed ? Math.max(0, Math.round((Date.now() - new Date(landed).getTime()) / 60000)) : null,
+          metrics: kinds,
+          sources: [...new Set(rows.map(r => r.source))],
+          sample: rows.slice(0, 8).map(r => ({
+            metric: r.metric, value: r.value, unit: r.unit,
+            measured_at: r.measured_at, source: r.source,
+          })),
+        },
+        say: total
+          ? `${total} reading${total === 1 ? '' : 's'} received${landed ? `, most recently ${minutesWord(Date.now() - new Date(landed).getTime())}` : ''}.`
+          : 'Nothing has arrived yet. Run the Shortcut once by hand and refresh this.',
+      }),
+    };
   }
 
   if (event.httpMethod === 'POST') {
