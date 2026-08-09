@@ -2438,6 +2438,28 @@ await test('every sign-in page loads it before its module', () => {
   }
 });
 
+group('A door that does not open is not offered');
+
+await test('provider buttons are hidden when Supabase has them off', () => {
+  // signInWithOAuth NAVIGATES, so a disabled provider answers with raw JSON on
+  // Supabase's own domain — "Unsupported provider: provider is not enabled" —
+  // and no error handling on our page ever runs. The only fix is the button
+  // not being there.
+  for (const f of AUTH_PAGES) {
+    const src = page(f);
+    assert.match(src, /auth\/v1\/settings/, `${f} never asks which providers are on`);
+    assert.match(src, /external\[b\.dataset\.provider\] === false/, `${f} does not hide dead providers`);
+  }
+});
+
+await test('an unreachable settings call leaves the buttons showing', () => {
+  // Hiding a working door locks somebody out, which is the worse of the two
+  // mistakes — so the failure direction is deliberate.
+  const src = page('app.html');
+  assert.match(src, /if \(!external\) return;/);
+  assert.match(src, /hiding a working door locks somebody out/i);
+});
+
 // ── Report ──────────────────────────────────────────────────────────────────
 
 console.log(results.join('\n'));

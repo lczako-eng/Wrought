@@ -449,6 +449,33 @@ async function submitAuth() {
 // difference. Both land on the same account as the password door, because a
 // person is one training history, not one email address.
 const PROVIDER_NAME = { apple: 'Apple', google: 'Google' };
+// Which doors actually open. signInWithOAuth NAVIGATES to Supabase, so a
+// provider that is not enabled answers with raw JSON on Supabase's own domain
+// — "Unsupported provider: provider is not enabled" — and no amount of error
+// handling on this page ever runs. The only fix is to not offer the button.
+//
+// /auth/v1/settings is public and says which providers are on. If it cannot be
+// reached the buttons stay: hiding a working door locks somebody out, which is
+// the worse of the two mistakes.
+async function hideDeadProviders() {
+  if (!sb) return;
+  let external = null;
+  try {
+    const r = await fetch(`${SUPABASE_URL}/auth/v1/settings`, { headers: { apikey: SUPABASE_ANON } });
+    if (r.ok) external = (await r.json())?.external || null;
+  } catch { /* leave them showing */ }
+  if (!external) return;
+
+  let hidden = 0;
+  for (const b of document.querySelectorAll('.oauth')) {
+    if (external[b.dataset.provider] === false) { b.hidden = true; hidden++; }
+  }
+  // With no providers left, the "or with an email" divider is dividing nothing.
+  const all = document.querySelectorAll('.oauth').length;
+  if (hidden === all) document.querySelector('.or')?.setAttribute('hidden', '');
+}
+hideDeadProviders();
+
 document.querySelectorAll('.oauth').forEach(b => b.addEventListener('click', async () => {
   if (!sb) return;
   const provider = b.dataset.provider;
