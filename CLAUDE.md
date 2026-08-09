@@ -122,6 +122,25 @@ partner is present tense and writes down what actually happened.
 - **Routines cover sport.** A training log that cannot hold Tuesday five-a-side
   is not a training log.
 
+### The library — curated, and never a weight
+
+`lib/library.js` + the `programmes` tool. The founder's complaint was a filing
+problem, not a knowledge one: *"I have an S tier workout list of exercises rated
+really highly, but I'm turning pages all the time, can't find half this shit."*
+A list you scroll is not a library; this is one you ask a question of.
+
+- **Programmes are ordered over PATTERNS, not named lifts.** Movement names get
+  chosen at the last moment against what the person actually owns, which is why
+  "dumbbells only" needs no separate library.
+- **Not one weight anywhere**, in a movement or a built session — tested. Loads
+  come from `progressionCall()` against real history, or as an RPE. A library is
+  exactly where a guessed working weight would look most reasonable.
+- **Days available is a hard ceiling**, never ambition. Prescribing six sessions
+  to somebody with three is how a programme gets abandoned in week two.
+- **Tier gates the movements themselves**, not just the volume — a beginner can
+  never be offered an advanced lift, and gets every movement explained while an
+  advanced lifter is left alone. Both tested.
+
 ### The rack screen — trainer mode
 
 `api-session.js` + the Trainer tab. The coaching always existed in the tools;

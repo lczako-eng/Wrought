@@ -31,6 +31,7 @@ import {
   restingBurn, energyBalance, planFromRoutine, sessionTotals, earnedRoom,
   orderPlan, orderInsight, deviceMatrix, weekdayPattern,
 } from './lib/training.js';
+import { PROGRAMMES, movementsFor, pickProgramme, buildProgramme } from './lib/library.js';
 
 const PROTOCOL_VERSION = '2025-06-18';
 
@@ -471,6 +472,21 @@ const TOOLS = [
       },
     },
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+  },
+  {
+    name: 'programmes',
+    title: 'Proven programmes and the movement library',
+    description: 'A curated library rather than an invented session: named programmes (full body 3-day, upper/lower 4-day, push/pull/legs 6-day, minimal 2-day) built from movements chosen for pattern coverage and how well they load. Call with no arguments to get the one that fits their days, tier and equipment, with the reasoning. Use for "give me a proper programme", "what should I be running", "is there a template", or when somebody has no routines saved yet. NO WEIGHTS are returned and none should be invented — loads come from their own history via the session tools, or as an RPE. Pass adopt to save the programme as routines they can then start by name.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        days:      { type: 'integer', description: 'Sessions per week they can realistically do. Defaults to their profile. Never returns a programme demanding more days than this.' },
+        adopt:     { type: 'boolean', description: 'true saves the programme\'s sessions as named routines. Ask before doing this — it replaces any routine sharing a name.' },
+        programme: { type: 'string', description: 'Pick a specific one by id: full-body-3, upper-lower-4, push-pull-legs-6, minimal-2. Omit to be matched.' },
+        pattern:   { type: 'string', description: 'Instead of a programme, list the good movements for one pattern: squat, hinge, horizontal push, vertical push, horizontal pull, vertical pull, lunge, carry, core, conditioning. Use for "what is a good back exercise" or when they want to swap something out mid-session.' },
+      },
+    },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
   },
   {
     name: 'log_fast',
@@ -1719,6 +1735,84 @@ async function setEatingWindow(args, user) {
   };
 }
 
+async function programmes(args, user) {
+  const profile = await getProfile(user.id);
+  const tier = profile.training_age === 'beginner' ? 'beginner'
+             : profile.training_age === 'advanced' ? 'advanced' : 'intermediate';
+
+  // Asking about one pattern is the mid-session case — the bench is taken and
+  // they want the next best thing — so it answers narrowly and gets out.
+  if (args.pattern) {
+    const list = movementsFor(String(args.pattern).toLowerCase(), { equipment: profile.equipment, tier });
+    if (!list.length) {
+      return {
+        pattern: args.pattern,
+        movements: [],
+        say: `Nothing in the library matches "${args.pattern}" for the kit on file.`,
+        note: 'Do not invent a movement to fill the gap. Ask what equipment they actually have.',
+      };
+    }
+    return {
+      pattern: args.pattern,
+      movements: list.map(m => ({ name: m.name, tier: m.tier, muscles: m.muscles, equipment: m.equipment, cue: m.cue })),
+      say: `${list.length} good option${list.length === 1 ? '' : 's'} for ${args.pattern}: ${list.map(m => m.name).join(', ')}.`,
+      note: 'These are movements, not a prescription. No weight is attached to any of them and none should be suggested from here.',
+      next_actions: ['log_set once they have done it', 'save_routine if they want it kept'],
+    };
+  }
+
+  const chosen = args.programme
+    ? (PROGRAMMES.find(p => p.id === args.programme)
+        ? buildProgramme(PROGRAMMES.find(p => p.id === args.programme), { tier, equipment: profile.equipment })
+        : null)
+    : pickProgramme({ days: args.days ?? profile.train_days, tier, equipment: profile.equipment });
+
+  if (!chosen) return { error: 'no_such_programme', say: 'No programme by that name. Call with no arguments to be matched to one.' };
+
+  if (!args.adopt) {
+    return {
+      programme: chosen,
+      available: PROGRAMMES.map(p => ({ id: p.id, name: p.name, days: p.days, tier: p.tier })),
+      say: `${chosen.name} — ${chosen.days} days a week, about ${chosen.est_minutes} minutes. ${chosen.why}`,
+      note: 'Read back the session names and roughly what each covers, not all thirty exercises. Offer to adopt it — that saves the sessions as routines they can start by name. No weights appear here and none should be invented; the first time they run a lift, the session tools work the load out from what they actually do.',
+      next_actions: ['programmes with adopt: true if they want it saved', 'start_session once adopted'],
+    };
+  }
+
+  // Adopting writes one routine per session. Same-name routines are updated
+  // rather than duplicated — two indistinguishable "Upper A"s is worse than
+  // none, and the unique index would refuse the second anyway.
+  const saved = [];
+  for (const s of chosen.sessions) {
+    const row = {
+      user_id: user.id,
+      name: s.name,
+      kind: s.kind,
+      tier: chosen.tier,
+      exercises: s.exercises,
+      equipment: profile.equipment || null,
+      est_minutes: chosen.est_minutes,
+      notes: `From ${chosen.name}.`,
+      active: true,
+      updated_at: new Date().toISOString(),
+    };
+    const { data: existing } = await supabase.from('wrought_routines')
+      .select('id').eq('user_id', user.id).eq('active', true).ilike('name', s.name).maybeSingle();
+
+    if (existing) await supabase.from('wrought_routines').update(row).eq('id', existing.id);
+    else await supabase.from('wrought_routines').insert([row]);
+    saved.push(s.name);
+  }
+
+  return {
+    adopted: chosen.name,
+    routines: saved,
+    say: `Saved ${saved.length} routines: ${saved.join(', ')}. Say the name and I'll run the session.`,
+    note: 'Still no weights anywhere in this. The first working set of each lift gets prescribed from their history, or as an RPE if there is none.',
+    next_actions: ['start_session with one of the names', 'list_routines to see them all'],
+  };
+}
+
 async function logFast(args, user) {
   const from = String(args.from || '').trim();
   if (!/^\d{1,2}:\d{2}$/.test(from)) return { error: 'from must be HH:MM, 24-hour.' };
@@ -1911,6 +2005,7 @@ const IMPL = {
   set_goal: setGoal,
   set_eating_window: setEatingWindow,
   log_fast: logFast,
+  programmes,
   connect_device: connectDevice,
   remember, recall,
 };

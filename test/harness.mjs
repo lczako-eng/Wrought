@@ -13,6 +13,7 @@ import { handler, TOOLS, handleRpc } from '../netlify/functions/mcp.js';
 import { canonicalMetric, normalise, normaliseWorkout } from '../netlify/functions/ingest.js';
 import { PROVIDERS, LIVE_PROVIDERS, providerSummary, recommendRoute } from '../netlify/functions/lib/providers.js';
 import { nutritionTotals, composition, macroMatrix, yearOverYear } from '../netlify/functions/lib/nutrition.js';
+import { MOVEMENTS, PROGRAMMES, PATTERNS, movementsFor, pickProgramme, buildProgramme } from '../netlify/functions/lib/library.js';
 import {
   exerciseKey, loadStep, progressionCall, TIERS,
   restingBurn, energyBalance, planFromRoutine, sessionTotals, earnedRoom,
@@ -1057,6 +1058,72 @@ await test('the fast is never graded', () => {
   const tool = TOOLS.find(t => t.name === 'log_fast');
   assert.ok(tool, 'log_fast must be in the toolset');
   assert.deepEqual(tool.inputSchema.required, ['from']);
+});
+
+// ── The library ─────────────────────────────────────────────────────────────
+// A curated list is only safe if it stays curated. The two things that would
+// quietly ruin it: a weight appearing anywhere in it, and a beginner being
+// handed advanced movements. Neither would throw — a novice would just find
+// themselves under a front squat with a number beside it.
+
+group('Programme library — curated, and never a weight');
+
+await test('no movement and no built session carries a load', () => {
+  for (const m of MOVEMENTS) {
+    assert.ok(!('load_kg' in m) && !('weight' in m), `${m.name} must not carry a weight`);
+  }
+  for (const p of PROGRAMMES) {
+    const built = buildProgramme(p, { tier: 'advanced' });
+    for (const s of built.sessions) {
+      for (const e of s.exercises) {
+        assert.equal(e.load_kg, null, `${e.name} in ${p.id} must not prescribe a weight`);
+      }
+    }
+  }
+});
+
+await test('a beginner is never offered an advanced movement', () => {
+  for (const pattern of PATTERNS) {
+    for (const m of movementsFor(pattern, { tier: 'beginner' })) {
+      assert.equal(m.tier, 'beginner', `${m.name} is ${m.tier} and must not reach a beginner`);
+    }
+  }
+});
+
+await test('a programme never demands more days than they have', () => {
+  for (const days of [2, 3, 4, 5, 6]) {
+    const p = pickProgramme({ days, tier: 'advanced' });
+    assert.ok(p, `nothing matched for ${days} days`);
+    assert.ok(p.days <= days, `${p.id} wants ${p.days} days but they have ${days}`);
+  }
+});
+
+await test('two days available does not return a six-day split', () => {
+  assert.equal(pickProgramme({ days: 2, tier: 'advanced' }).days, 2);
+});
+
+await test('equipment filters what gets programmed', () => {
+  const built = buildProgramme(PROGRAMMES[0], { tier: 'intermediate', equipment: ['dumbbell', 'bench'] });
+  const names = built.sessions.flatMap(s => s.exercises.map(e => e.name));
+  assert.ok(names.length, 'a dumbbell-only session should still fill');
+  for (const n of names) {
+    const m = MOVEMENTS.find(x => x.name === n);
+    assert.ok(m.equipment.some(r => ['dumbbell', 'bench', 'bodyweight'].some(o => r.includes(o) || o.includes(r))),
+      `${n} needs kit they do not have`);
+  }
+});
+
+await test('a beginner gets the movement explained, an advanced lifter does not', () => {
+  const novice = buildProgramme(PROGRAMMES[0], { tier: 'beginner' });
+  const expert = buildProgramme(PROGRAMMES[0], { tier: 'advanced' });
+  assert.ok(novice.sessions[0].exercises.every(e => e.cue), 'beginners get told why');
+  assert.ok(expert.sessions[0].exercises.every(e => e.cue === null), 'advanced lifters get left alone');
+});
+
+await test('the tool says out loud that it prescribes no weight', () => {
+  const t = TOOLS.find(x => x.name === 'programmes');
+  assert.ok(t, 'programmes must be in the toolset');
+  assert.match(t.description, /NO WEIGHTS/);
 });
 
 // ── The rack screen ─────────────────────────────────────────────────────────
