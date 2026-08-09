@@ -58,10 +58,12 @@ Apple US$99/year).
 | `SUPABASE_URL` | everything — **no trailing slash**, or Kong answers "Invalid path specified in request URL" and nothing explains why |
 | `SUPABASE_SERVICE_ROLE_KEY` | everything |
 | `WROUGHT_SITE_URL` | `https://wrought.fit` — OAuth redirects are built from it |
+| `SUPABASE_ANON_KEY` | signing in on the website. The publishable key, not the secret one |
 | `WROUGHT_ADMIN_EMAILS` | the Admin tab. Comma separated, matched case-insensitively against the **verified** session email |
 
-And inject `window.WROUGHT_SUPABASE_URL` / `window.WROUGHT_SUPABASE_ANON` for
-the pages.
+Nothing else to inject. `/config.js` serves the two public values to the pages
+from these variables, so there is no snippet to paste into Netlify's build
+settings.
 
 **At this point the product works.** Everything below is optional.
 

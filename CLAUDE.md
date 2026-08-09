@@ -655,7 +655,7 @@ self-reporting scale removes the most-abandoned manual entry), then Strava.
 
 ## Conventions
 
-- `npm test` runs `test/harness.mjs` — 253 offline tests, no network, no database.
+- `npm test` runs `test/harness.mjs` — 258 offline tests, no network, no database.
   Run it before every push. It covers the JSON-RPC envelope (which fails as an
   uninformative "could not connect" inside ChatGPT) and all the arithmetic
   (which fails as a confidently wrong number in somebody's verdict).
@@ -680,9 +680,10 @@ self-reporting scale removes the most-abandoned manual entry), then Strava.
    `010_wrought_profile_web.sql` and `011_wrought_membership.sql` in Supabase. Full checklist in `docs/SETUP.md`.
 3. Set env vars in Netlify: `SUPABASE_URL` (**no trailing slash** — Kong answers
    "Invalid path specified in request URL" and nothing says why),
-   `SUPABASE_SERVICE_ROLE_KEY`, `WROUGHT_SITE_URL=https://wrought.fit`,
-   `WROUGHT_ADMIN_EMAILS=laszlobrianczako@gmail.com`. Inject
-   `window.WROUGHT_SUPABASE_URL` and `window.WROUGHT_SUPABASE_ANON` for the pages.
+   `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_ANON_KEY`,
+   `WROUGHT_SITE_URL=https://wrought.fit`,
+   `WROUGHT_ADMIN_EMAILS=laszlobrianczako@gmail.com`. Nothing to inject —
+   `/config.js` serves the two public values to the pages from these.
 4. **Sign-in providers** — `docs/SIGN_IN.md` has the full walkthrough. In
    Supabase: turn ON *manual linking*, add `https://wrought.fit/**` to the
    redirect URLs, set the Site URL, and configure the Google provider (free) and

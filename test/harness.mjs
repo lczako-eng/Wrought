@@ -2378,6 +2378,52 @@ await test('schema/ALL.sql is current', async () => {
   }
 });
 
+group('The browser gets its keys without a manual step');
+
+await test('config.js serves both public values from the environment', async () => {
+  const { handler: config } = await import('../netlify/functions/config.js');
+  process.env.SUPABASE_URL = 'https://abc.supabase.co/';
+  process.env.SUPABASE_ANON_KEY = 'anon-publishable-key';
+  try {
+    const res = await config();
+    assert.equal(res.headers['Content-Type'], 'application/javascript; charset=utf-8');
+    // The trailing slash is stripped here too, or Supabase answers "Invalid
+    // path specified in request URL" from the browser this time.
+    assert.match(res.body, /window\.WROUGHT_SUPABASE_URL = "https:\/\/abc\.supabase\.co"/);
+    assert.match(res.body, /window\.WROUGHT_SUPABASE_ANON = "anon-publishable-key"/);
+  } finally {
+    delete process.env.SUPABASE_URL; delete process.env.SUPABASE_ANON_KEY;
+  }
+});
+
+await test('the service role key never reaches the browser', async () => {
+  const { handler: config } = await import('../netlify/functions/config.js');
+  process.env.SUPABASE_SERVICE_ROLE_KEY = 'service-role-must-never-ship';
+  try {
+    const res = await config();
+    assert.ok(!res.body.includes('service-role-must-never-ship'));
+    const src = readFileSync(new URL('../netlify/functions/config.js', import.meta.url), 'utf8');
+    assert.ok(!/SERVICE_ROLE/.test(src.replace(/^\s*\/\/.*$/gm, '')), 'config.js touches the service role key');
+  } finally { delete process.env.SUPABASE_SERVICE_ROLE_KEY; }
+});
+
+await test('it says which variable is missing rather than failing silently', async () => {
+  const { handler: config } = await import('../netlify/functions/config.js');
+  const res = await config();
+  assert.match(res.body, /console\.warn/);
+  assert.match(res.body, /SUPABASE_URL|SUPABASE_ANON_KEY/);
+});
+
+await test('every sign-in page loads it before its module', () => {
+  // Order matters: the module reads these off window as its first statements.
+  for (const f of ['app.html', 'authorize.html', 'connect.html']) {
+    const src = page(f);
+    assert.ok(src.indexOf('/config.js') > 0, `${f} never loads config.js`);
+    assert.ok(src.indexOf('/config.js') < src.indexOf('<script type="module">'),
+      `${f} loads config.js after the module that needs it`);
+  }
+});
+
 // ── Report ──────────────────────────────────────────────────────────────────
 
 console.log(results.join('\n'));

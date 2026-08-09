@@ -18,6 +18,13 @@
   to = "/.netlify/functions/mcp"
   status = 200
 
+# The two public Supabase values, so the environment variables alone are enough
+# and nobody has to find snippet injection in the build settings.
+[[redirects]]
+  from = "/config.js"
+  to = "/.netlify/functions/config"
+  status = 200
+
 # "Is this thing actually set up?" — one look instead of a tour of broken
 # screens. Presence only; never a value.
 [[redirects]]

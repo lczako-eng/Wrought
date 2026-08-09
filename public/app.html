@@ -697,6 +697,9 @@ a.ghost { display: inline-block; }
   <main class="wrap" id="content"></main>
 </div>
 
+<!-- The two public Supabase values, from the deploy environment.
+     Must load before the module below, which reads them off window. -->
+<script src="/config.js"></script>
 <script type="module">
 import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm';
 

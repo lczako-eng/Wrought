@@ -67,6 +67,7 @@ function fn(name) {
 const ENV = [
   { key: 'SUPABASE_URL',              needed: 'everything', hard: true },
   { key: 'SUPABASE_SERVICE_ROLE_KEY', needed: 'everything', hard: true },
+  { key: 'SUPABASE_ANON_KEY',         needed: 'signing in on the website', hard: true },
   { key: 'WROUGHT_SITE_URL',          needed: 'OAuth redirects and device callbacks' },
   { key: 'WROUGHT_ADMIN_EMAILS',      needed: 'the Admin tab' },
   { key: 'WROUGHT_VAPID_PUBLIC',      needed: 'notifications' },
