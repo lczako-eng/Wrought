@@ -2533,6 +2533,41 @@ await test('the record stays metric whatever the display says', () => {
   assert.equal(fromCm(null, true), '');
 });
 
+group('The mark, everywhere a client might look for it');
+
+await test('the handshake carries the icon and the site', async () => {
+  // A client that has just completed a handshake should not have to fetch a
+  // second document to find out what the thing it is talking to looks like.
+  const res = await handleRpc({ id: 1, method: 'initialize', params: {} }, null);
+  const info = res.result.serverInfo;
+  assert.equal(info.websiteUrl, 'https://wrought.fit');
+  assert.ok(Array.isArray(info.icons) && info.icons.length >= 2);
+  for (const i of info.icons) {
+    // Absolute, or a client resolving it against its own origin gets nothing.
+    assert.match(i.src, /^https:\/\/wrought\.fit\//);
+    assert.ok(i.mimeType);
+  }
+});
+
+await test('the OAuth metadata and the manifest agree with it', async () => {
+  const { handler: meta } = await import('../netlify/functions/oauth-metadata.js');
+  const res = await meta({ httpMethod: 'GET', headers: {}, path: '/.well-known/oauth-authorization-server' });
+  const body = JSON.parse(res.body);
+  assert.match(body.logo_uri || '', /icon-192\.png$/);
+
+  const manifest = JSON.parse(readFileSync(new URL('../public/.well-known/mcp.json', import.meta.url), 'utf8'));
+  assert.ok(manifest.icons?.length);
+  // Same file in both, so a directory and a client never render two marks.
+  assert.equal(manifest.icons[0].src, 'https://wrought.fit/icon.svg');
+});
+
+await test('the icon is served cross-origin or a listing renders nothing', () => {
+  // Directories and clients fetch it from their own domain.
+  const toml = readFileSync(new URL('../netlify.toml', import.meta.url), 'utf8');
+  const iconBlock = toml.slice(toml.indexOf('for = "/icon.svg"'), toml.indexOf('for = "/llms.txt"'));
+  assert.match(iconBlock, /Access-Control-Allow-Origin = "\*"/);
+});
+
 // ── Report ──────────────────────────────────────────────────────────────────
 
 console.log(results.join('\n'));

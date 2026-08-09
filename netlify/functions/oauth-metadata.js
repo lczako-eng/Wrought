@@ -35,6 +35,9 @@ export const handler = async (event) => {
         bearer_methods_supported: ['header'],
         resource_name: 'WROUGHT',
         resource_documentation: `${base}/connect.html`,
+        // Some clients render the connector's badge from here rather than from
+        // the handshake, so the mark is published in every place one might look.
+        logo_uri: `${base}/icon-192.png`,
       }
     : {
         issuer: base,
@@ -49,6 +52,10 @@ export const handler = async (event) => {
         // is the only thing binding the code to whoever requested it.
         code_challenge_methods_supported: ['S256'],
         token_endpoint_auth_methods_supported: ['none'],
+        service_documentation: `${base}/connect.html`,
+        op_policy_uri: `${base}/privacy.html`,
+        op_tos_uri: `${base}/terms.html`,
+        logo_uri: `${base}/icon-192.png`,
       };
 
   return { statusCode: 200, headers: CORS, body: JSON.stringify(body) };

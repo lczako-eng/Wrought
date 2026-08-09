@@ -2361,7 +2361,22 @@ export async function handleRpc(msg, authUser) {
       return rpcResult(id, {
         protocolVersion: params.protocolVersion || PROTOCOL_VERSION,
         capabilities: { tools: { listChanged: false } },
-        serverInfo: { name: 'wrought', title: 'WROUGHT — training and nutrition memory', version: '1.0.0' },
+        // icons and websiteUrl ride on serverInfo because that is the one
+        // place every client already reads. /.well-known/mcp.json carries the
+        // same thing for directories, but a client that has just completed a
+        // handshake should not have to go and fetch a second document to find
+        // out what the thing it is talking to looks like.
+        serverInfo: {
+          name: 'wrought',
+          title: 'WROUGHT — training and nutrition memory',
+          version: '1.0.0',
+          websiteUrl: 'https://wrought.fit',
+          icons: [
+            { src: 'https://wrought.fit/icon.svg',     mimeType: 'image/svg+xml', sizes: ['any'] },
+            { src: 'https://wrought.fit/icon-512.png', mimeType: 'image/png',     sizes: ['512x512'] },
+            { src: 'https://wrought.fit/icon-192.png', mimeType: 'image/png',     sizes: ['192x192'] },
+          ],
+        },
         instructions: SERVER_INSTRUCTIONS,
       });
 
