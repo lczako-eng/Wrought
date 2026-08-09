@@ -9,6 +9,7 @@
 // fails as a confidently wrong number in somebody's nightly verdict.
 
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { handler, TOOLS, handleRpc, SERVER_INSTRUCTIONS } from '../netlify/functions/mcp.js';
 import { canonicalMetric, normalise, normaliseWorkout } from '../netlify/functions/ingest.js';
 import { PROVIDERS, LIVE_PROVIDERS, providerSummary, recommendRoute } from '../netlify/functions/lib/providers.js';
@@ -1491,6 +1492,69 @@ await test('api-session passes CORS preflight', async () => {
   const res = await session({ httpMethod: 'OPTIONS', headers: {} });
   assert.equal(res.statusCode, 204);
   assert.equal(res.headers['Access-Control-Allow-Origin'], '*');
+});
+
+group('Sign-in — a password, not a link');
+
+// The founder's instruction was flat: "I don't wanna send a link anymore. It
+// needs to be a login takes people info logged in." A magic link is fewer moving
+// parts to build and puts an inbox between somebody and their own data every
+// single time — on a phone, in a gym, that is the difference between opening it
+// and not bothering. These tests exist because the OTP call is a one-line
+// revert that nothing else would notice.
+
+const page = f => readFileSync(new URL(`../public/${f}`, import.meta.url), 'utf8');
+const AUTH_PAGES = ['app.html', 'authorize.html', 'connect.html'];
+
+await test('no page falls back to emailing a sign-in link', () => {
+  for (const f of AUTH_PAGES) {
+    assert.ok(!/signInWithOtp/.test(page(f)), `${f} still sends a magic link`);
+    assert.ok(/signInWithPassword/.test(page(f)), `${f} has no password sign-in`);
+  }
+});
+
+await test('every sign-in form actually has a password field', () => {
+  for (const f of AUTH_PAGES) {
+    assert.ok(/id="pass"[^>]*type="password"/.test(page(f)), `${f} has no password input`);
+  }
+});
+
+await test('the dashboard and the connect screen can both make an account', () => {
+  // connect.html deliberately cannot — it hands out device keys for an account
+  // that already exists, and a second copy of the signup flow is a second thing
+  // to drift. It has to point somewhere, though.
+  for (const f of ['app.html', 'authorize.html']) {
+    assert.ok(/signUp\(/.test(page(f)), `${f} cannot create an account`);
+  }
+  assert.ok(!/signUp\(/.test(page('connect.html')));
+  assert.match(page('connect.html'), /app\.html/);
+});
+
+await test('a wrong password and an unknown address read the same', () => {
+  // Supabase answers "Invalid login credentials" to both. Telling them apart
+  // would let a stranger test whether somebody has an account on a health
+  // product, so every page has to flatten it back out.
+  for (const f of AUTH_PAGES) {
+    const src = page(f);
+    assert.match(src, /invalid login/i, `${f} does not flatten the credential error`);
+    const shown = src.replace(/^\s*\/\/.*$/gm, '');   // the comments explain why
+    assert.ok(!/no account with that email|never registered|not found/i.test(shown),
+      `${f} leaks whether an address is registered`);
+  }
+});
+
+await test('nothing still promises there is no password', () => {
+  for (const f of [...AUTH_PAGES, 'index.html']) {
+    const prose = page(f).replace(/^\s*\/\/.*$/gm, '');   // comments may discuss it
+    assert.ok(!/no password|passwordless|tap the link/i.test(prose),
+      `${f} still promises a passwordless sign-in`);
+  }
+});
+
+await test('reset still goes by email, because it has to', () => {
+  for (const f of ['app.html', 'authorize.html']) {
+    assert.match(page(f), /resetPasswordForEmail/, `${f} strands anyone who forgets`);
+  }
 });
 
 // ── Report ──────────────────────────────────────────────────────────────────

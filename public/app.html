@@ -445,6 +445,13 @@ table.matrix td.rh.cold { color: var(--heat-3); }
   background: var(--heat-3); border: 0; color: #1A0A02;
   font-weight: 700; font-size: 16px; cursor: pointer;
 }
+.gate button:disabled { opacity: .55; cursor: default; }
+.gate-alt {
+  margin: 0; display: flex; justify-content: space-between; gap: 12px;
+  font-size: 13.5px; color: var(--ash-dim);
+}
+.gate-alt a { color: var(--heat-3); text-decoration: none; }
+.gate-alt a:hover { text-decoration: underline; }
 .gate-note {
   margin: 6px 0 0; color: var(--ash-dim); font-size: 13.5px; line-height: 1.55;
 }
@@ -467,14 +474,21 @@ table.matrix td.rh.cold { color: var(--heat-3); }
     <h1 class="gate-h">WROUGHT</h1>
     <p class="gate-sub">Your record — the same account your AI writes to.</p>
 
+    <input id="name" type="text" placeholder="Your name" autocomplete="name" hidden>
     <input id="email" type="email" placeholder="you@example.com"
-           autocomplete="email" inputmode="email" enterkeyhint="go">
-    <button id="send">Continue</button>
+           autocomplete="email" inputmode="email" enterkeyhint="next">
+    <input id="pass" type="password" placeholder="Password"
+           autocomplete="current-password" enterkeyhint="go">
+    <button id="send">Sign in</button>
+    <p class="gate-alt">
+      <span id="swap-line">New here? <a href="#" id="swap">Create an account</a></span>
+      <a href="#" id="forgot">Forgotten?</a>
+    </p>
     <p class="msg" id="msg"></p>
 
     <p class="gate-note">
-      <b>No password.</b> Put your email in and we send a link that signs you in.
-      First time here, that link creates your account.
+      The same account your AI writes to. Sign in once on this phone and it stays
+      signed in — no inbox in the way every time you want to look at your own week.
     </p>
   </div>
 </div>
@@ -532,13 +546,88 @@ async function boot() {
   maybeAdmin(data.session.access_token);
 }
 
-$('send')?.addEventListener('click', async () => {
+// Email and password. A magic link is fewer moving parts, but it puts an inbox
+// between somebody and their own data every single time — and on a phone, in a
+// gym, that is the difference between opening the app and not bothering. Reset
+// still goes by email, because it has to.
+let mode = 'in';   // 'in' = sign in, 'up' = create account
+
+function swap(e) {
+  e.preventDefault();
+  setMode(mode === 'in' ? 'up' : 'in');
+  // Only a deliberate swap clears the message. setMode itself must not, because
+  // the one place it is called in code is straight after telling somebody their
+  // account was made — and clearing there wipes that line the instant it appears.
+  $('msg').textContent = '';
+}
+
+function setMode(next) {
+  mode = next;
+  const up = mode === 'up';
+  $('name').hidden = !up;
+  $('pass').setAttribute('autocomplete', up ? 'new-password' : 'current-password');
+  $('send').textContent = up ? 'Create account' : 'Sign in';
+  $('swap-line').innerHTML = up
+    ? 'Already have one? <a href="#" id="swap">Sign in</a>'
+    : 'New here? <a href="#" id="swap">Create an account</a>';
+  document.getElementById('swap').addEventListener('click', swap);
+}
+
+document.getElementById('swap')?.addEventListener('click', swap);
+
+document.getElementById('forgot')?.addEventListener('click', async (e) => {
+  e.preventDefault();
   const email = $('email').value.trim();
-  if (!email) return;
-  $('msg').textContent = 'Sending…';
-  const { error } = await sb.auth.signInWithOtp({ email, options: { emailRedirectTo: location.href } });
-  $('msg').textContent = error ? error.message : 'Check your email — the link signs you in.';
+  if (!email) { $('msg').textContent = 'Put your email in first and I will send a reset.'; return; }
+  const { error } = await sb.auth.resetPasswordForEmail(email, { redirectTo: location.href });
+  $('msg').textContent = error ? error.message : 'Reset sent — check your email.';
 });
+
+async function submitAuth() {
+  const email = $('email').value.trim();
+  const password = $('pass').value;
+  if (!email || !password) { $('msg').textContent = 'Email and password, both.'; return; }
+  if (mode === 'up' && password.length < 8) {
+    $('msg').textContent = 'Eight characters or more, please.';
+    return;
+  }
+
+  $('send').disabled = true;
+  $('msg').textContent = mode === 'up' ? 'Creating…' : 'Signing in…';
+
+  const res = mode === 'up'
+    ? await sb.auth.signUp({ email, password, options: { data: { name: $('name').value.trim() || null } } })
+    : await sb.auth.signInWithPassword({ email, password });
+
+  $('send').disabled = false;
+
+  if (res.error) {
+    // Supabase returns "Invalid login credentials" for a wrong password AND for
+    // an address that has never registered. Telling them apart would let a
+    // stranger test whether somebody has an account here, so the message stays
+    // flat and points at the way forward instead.
+    $('msg').textContent = /invalid login/i.test(res.error.message)
+      ? 'That email and password do not match. Try again, or create an account.'
+      : res.error.message;
+    return;
+  }
+
+  // With email confirmation on in Supabase, signUp returns a user but no
+  // session until they click a link. Say so plainly rather than appearing to
+  // hang on a screen that looks like it worked.
+  if (mode === 'up' && !res.data.session) {
+    setMode('in');
+    $('msg').textContent = 'Account made. Confirm it from your email, then sign in.';
+    return;
+  }
+
+  $('gate').hidden = true;
+  boot();
+}
+
+$('send')?.addEventListener('click', submitAuth);
+$('pass')?.addEventListener('keydown', e => { if (e.key === 'Enter') submitAuth(); });
+$('email')?.addEventListener('keydown', e => { if (e.key === 'Enter') $('pass').focus(); });
 
 document.querySelectorAll('.range[data-days]').forEach(b => b.addEventListener('click', async () => {
   document.querySelectorAll('.range[data-days]').forEach(x => x.setAttribute('aria-pressed', 'false'));

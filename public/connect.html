@@ -163,7 +163,10 @@
     <p class="muted" id="keyintro">Sign in to mint a key for this phone.</p>
     <div id="signin">
       <input id="email" type="email" placeholder="you@example.com" autocomplete="email">
-      <button id="send">Email me a link</button>
+      <input id="pass" type="password" placeholder="Password" autocomplete="current-password">
+      <button id="send">Sign in</button>
+      <p class="msg">No account yet? <a href="/app.html">Make one on the dashboard</a> — this
+      page hands out device keys for an account that already exists.</p>
     </div>
     <div id="minter" hidden>
       <button id="mint">Generate a key</button>
@@ -329,13 +332,26 @@ function signedIn(t) {
   $('keyintro').textContent = 'Generate a key for each phone. The key is shown once and cannot be recovered.';
 }
 
-$('send').addEventListener('click', async () => {
+// Email and password, same as the dashboard. Accounts are created there; this
+// page only ever signs an existing one in, so there is no second copy of the
+// create-account flow to drift out of step with the first.
+async function submitAuth() {
   const email = $('email').value.trim();
-  if (!email) return;
-  $('msg').textContent = 'Sending…';
-  const { error } = await sb.auth.signInWithOtp({ email, options: { emailRedirectTo: location.href } });
-  $('msg').textContent = error ? error.message : 'Check your email — the link brings you back here signed in.';
-});
+  const password = $('pass').value;
+  if (!email || !password) { $('msg').textContent = 'Email and password, both.'; return; }
+  $('send').disabled = true;
+  $('msg').textContent = 'Signing in…';
+  const { error } = await sb.auth.signInWithPassword({ email, password });
+  $('send').disabled = false;
+  if (!error) { $('msg').textContent = ''; return; }   // onAuthStateChange takes it from here
+  $('msg').textContent = /invalid login/i.test(error.message)
+    ? 'That email and password do not match.'
+    : error.message;
+}
+
+$('send').addEventListener('click', submitAuth);
+$('pass').addEventListener('keydown', e => { if (e.key === 'Enter') submitAuth(); });
+$('email').addEventListener('keydown', e => { if (e.key === 'Enter') $('pass').focus(); });
 
 sb?.auth.onAuthStateChange((_e, session) => { if (session) signedIn(session.access_token); });
 

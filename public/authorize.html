@@ -30,6 +30,9 @@
   button:disabled{opacity:.55;cursor:default}
   .msg{color:var(--muted);font-size:13.5px;margin-top:15px;min-height:20px}
   .msg.err{color:#e8734c}
+  .alt{margin:13px 0 0;font-size:13px;color:var(--dim);display:flex;justify-content:space-between;gap:12px}
+  .alt a{color:#F26419;text-decoration:none}
+  .alt a:hover{text-decoration:underline}
   .grants{border-top:1px solid var(--line);margin-top:22px;padding-top:18px;
     color:var(--dim);font-size:12.5px;line-height:1.55}
   .grants b{color:var(--muted);font-weight:600}
@@ -48,12 +51,18 @@
     <p class="who"><b id="client">An AI assistant</b> wants to read and write your WROUGHT log.</p>
 
     <div id="form">
+      <input id="name" type="text" placeholder="Your name" autocomplete="name" hidden>
       <input id="email" type="email" placeholder="you@example.com" autocomplete="email">
-      <button id="send">Continue with email</button>
+      <input id="pass" type="password" placeholder="Password" autocomplete="current-password">
+      <button id="send">Sign in</button>
+      <p class="alt">
+        <span id="swap-line">New here? <a href="#" id="swap">Create an account</a></span>
+        <a href="#" id="forgot">Forgotten?</a>
+      </p>
     </div>
     <p class="first">
-      <b>First time?</b> This creates your WROUGHT account — no password to invent and
-      none to forget. The same account opens your dashboard and charts at
+      <b>First time?</b> Creating an account here connects it at the same time. The
+      same email and password open your dashboard and charts at
       <a href="https://wrought.fit">wrought.fit</a>.
     </p>
     <p class="msg" id="msg"></p>
@@ -108,28 +117,101 @@ async function start() {
   // A friendly name beats a raw client id in the one sentence anybody reads.
   try {
     const host = new URL(req.redirect_uri).hostname.replace(/^www\./, '');
-    $('client').textContent = host.includes('openai') ? 'ChatGPT'
+    $('client').textContent = host.includes('openai') || host.includes('chatgpt') ? 'ChatGPT'
       : host.includes('anthropic') || host.includes('claude') ? 'Claude'
       : host;
   } catch { /* the default text is fine */ }
 
-  // Coming back from the email link, the session is already live — finish
-  // immediately rather than asking for an address a second time.
+  // Already signed in on this browser — finish immediately rather than asking
+  // somebody to type a password they gave the same site an hour ago.
   const { data } = await sb.auth.getSession();
   if (data.session) return complete(data.session.access_token, req);
 }
 
-$('send').addEventListener('click', async () => {
+// Email and password, matching the dashboard. A magic link put an inbox in the
+// middle of connecting an assistant: leave ChatGPT, find the mail app, wait,
+// come back. Most people did not come back.
+let mode = 'in';   // 'in' = sign in, 'up' = create account
+
+function swap(e) {
+  e.preventDefault();
+  setMode(mode === 'in' ? 'up' : 'in');
+  // Only a deliberate swap clears the message. setMode itself must not — the one
+  // place it is called in code is straight after telling somebody their account
+  // was made, and clearing there wipes that line the instant it appears.
+  $('msg').className = 'msg';
+  $('msg').textContent = '';
+}
+
+function setMode(next) {
+  mode = next;
+  const up = mode === 'up';
+  $('name').hidden = !up;
+  $('pass').setAttribute('autocomplete', up ? 'new-password' : 'current-password');
+  $('send').textContent = up ? 'Create account and connect' : 'Sign in';
+  $('swap-line').innerHTML = up
+    ? 'Already have one? <a href="#" id="swap">Sign in</a>'
+    : 'New here? <a href="#" id="swap">Create an account</a>';
+  document.getElementById('swap').addEventListener('click', swap);
+}
+
+document.getElementById('swap').addEventListener('click', swap);
+
+$('forgot').addEventListener('click', async (e) => {
+  e.preventDefault();
+  if (!sb) return;
   const email = $('email').value.trim();
-  if (!email) return;
+  if (!email) { $('msg').className = 'msg'; $('msg').textContent = 'Put your email in first and I will send a reset.'; return; }
+  const { error } = await sb.auth.resetPasswordForEmail(email, { redirectTo: location.href });
+  if (error) return fail(error.message);
+  $('msg').className = 'msg';
+  $('msg').textContent = 'Reset sent — check your email.';
+});
+
+async function submitAuth() {
+  if (!sb) return fail('This deploy is missing its Supabase keys.');
+  const email = $('email').value.trim();
+  const password = $('pass').value;
+  if (!email || !password) { $('msg').className = 'msg'; $('msg').textContent = 'Email and password, both.'; return; }
+  if (mode === 'up' && password.length < 8) {
+    $('msg').className = 'msg';
+    $('msg').textContent = 'Eight characters or more, please.';
+    return;
+  }
+
   $('send').disabled = true;
   $('msg').className = 'msg';
-  $('msg').textContent = 'Sending…';
-  const { error } = await sb.auth.signInWithOtp({ email, options: { emailRedirectTo: location.href } });
+  $('msg').textContent = mode === 'up' ? 'Creating…' : 'Signing in…';
+
+  const res = mode === 'up'
+    ? await sb.auth.signUp({ email, password, options: { data: { name: $('name').value.trim() || null } } })
+    : await sb.auth.signInWithPassword({ email, password });
+
   $('send').disabled = false;
-  if (error) return fail(error.message);
-  $('msg').textContent = 'Check your email. The link brings you straight back here and finishes the connection.';
-});
+
+  if (res.error) {
+    // Supabase answers "Invalid login credentials" both for a wrong password and
+    // for an address that has never registered. Separating the two would let a
+    // stranger test whether somebody has an account here, so the wording stays
+    // flat and points at the way forward instead.
+    return fail(/invalid login/i.test(res.error.message)
+      ? 'That email and password do not match. Try again, or create an account.'
+      : res.error.message);
+  }
+
+  // With email confirmation still on in Supabase, signUp returns a user but no
+  // session until a link is clicked. Say so rather than sitting on a screen that
+  // looks like it worked. onAuthStateChange finishes the connection otherwise.
+  if (mode === 'up' && !res.data.session) {
+    setMode('in');
+    $('msg').className = 'msg';
+    $('msg').textContent = 'Account made. Confirm it from your email, then sign in here to finish connecting.';
+  }
+}
+
+$('send').addEventListener('click', submitAuth);
+$('pass').addEventListener('keydown', e => { if (e.key === 'Enter') submitAuth(); });
+$('email').addEventListener('keydown', e => { if (e.key === 'Enter') $('pass').focus(); });
 
 sb?.auth.onAuthStateChange((_e, session) => {
   const req = request();

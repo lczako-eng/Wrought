@@ -66,6 +66,19 @@ nothing else.
 - **Auth**: OAuth 2.1 (PKCE, dynamic client registration) so "Sign in with
   Wrought" appears in ChatGPT/Claude. Supabase session JWTs also accepted as a
   fallback. Everything secret is stored SHA-256 hashed.
+- **People sign in with an email and a password, not a link.** The founder was
+  flat about it: *"I don't wanna send a link anymore. It needs to be a login
+  takes people info logged in."* A magic link is less to build and it is the
+  wrong trade — it puts an inbox between somebody and their own data every
+  single time, and on a phone in a gym that is the difference between opening it
+  and not bothering. `app.html` and `authorize.html` both sign in and create
+  accounts; `connect.html` only signs in, because a second copy of a signup flow
+  is a second thing to drift. **The credential error stays flat** — Supabase says
+  "Invalid login credentials" for a wrong password and for an address that never
+  registered alike, and separating them would let a stranger test whether
+  somebody has an account on a health product. Reset still goes by email,
+  because it has to. All of it has tests; the OTP call is a one-line revert that
+  nothing else would notice.
 - **Ingest**: `/ingest`, bearer key from `wrought_ingest_keys`, idempotent via
   unique indexes. Accepts native shape and Health Auto Export's shape.
 
@@ -347,7 +360,7 @@ self-reporting scale removes the most-abandoned manual entry), then Strava.
 
 ## Conventions
 
-- `npm test` runs `test/harness.mjs` — 108 offline tests, no network, no database.
+- `npm test` runs `test/harness.mjs` — 171 offline tests, no network, no database.
   Run it before every push. It covers the JSON-RPC envelope (which fails as an
   uninformative "could not connect" inside ChatGPT) and all the arithmetic
   (which fails as a confidently wrong number in somebody's verdict).
@@ -368,10 +381,17 @@ self-reporting scale removes the most-abandoned manual entry), then Strava.
 2. Run `schema/001_wrought_core.sql`, then `002_wrought_oauth.sql`, then
    `003_wrought_training.sql`, `004_wrought_fasting.sql`, and
    `005_wrought_activity.sql` in Supabase.
-3. Set env vars in Netlify: `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`,
-   `OPENAI_API_KEY`, `WROUGHT_SITE_URL=https://wrought.fit`. Inject
+3. Set env vars in Netlify: `SUPABASE_URL` (**no trailing slash** — Kong answers
+   "Invalid path specified in request URL" and nothing says why),
+   `SUPABASE_SERVICE_ROLE_KEY`, `WROUGHT_SITE_URL=https://wrought.fit`,
+   `WROUGHT_ADMIN_EMAILS=laszlobrianczako@gmail.com`. Inject
    `window.WROUGHT_SUPABASE_URL` and `window.WROUGHT_SUPABASE_ANON` for the pages.
-4. Domain bought: **wrought.fit** (renews ~C$70 Aug 2027).
+4. **Supabase → Authentication → Providers → Email → turn OFF "Confirm email."**
+   Without this, `signUp` still sends a confirmation link, which is exactly what
+   the password change was meant to get rid of. The pages handle it either way
+   and say so rather than hanging, but the founder's ask is only actually met
+   with it off.
+5. Domain bought: **wrought.fit** (renews ~C$70 Aug 2027).
 
 ### Notifications — MCP cannot push, so the phone carries it
 
