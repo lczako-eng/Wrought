@@ -12,7 +12,8 @@ import {
   localDateFor, addDays, humanDuration, kgToLb, daysBetween,
   rangeFacts, summariseRange, dayFacts, careFlags, scoreGoals, supabase,
 } from './lib/wrought.js';
-import { orderInsight, earnedRoom, energyBalance, exerciseKey, deviceMatrix, weekdayPattern, focusCall } from './lib/training.js';
+import { orderInsight, earnedRoom, energyBalance, exerciseKey, deviceMatrix, weekdayPattern, focusCall, lastSession } from './lib/training.js';
+import { blockPosition } from './lib/library.js';
 import { nutritionTotals, composition, macroMatrix, yearOverYear } from './lib/nutrition.js';
 
 const CORS = {
@@ -43,7 +44,7 @@ export const handler = async (event) => {
     getGoals(user.id),
     getWindow(user.id),
     supabase.from('wrought_sets')
-      .select('exercise, exercise_key, reps, weight_kg, rpe, position, session_id, local_date, note')
+      .select('exercise, exercise_key, reps, weight_kg, rpe, position, set_number, muscles, session_id, local_date, note')
       .eq('user_id', user.id).gte('local_date', from).lte('local_date', to)
       .order('logged_at', { ascending: false }).limit(3000)
       .then(r => r.data || []),
@@ -67,6 +68,31 @@ export const handler = async (event) => {
       .order('local_date', { ascending: false }).limit(1).maybeSingle()
       .then(r => r.data),
   ]);
+
+  // The running block, and how far through it they are. A missed week is a
+  // missed week rather than a skipped one, so this counts sessions rather than
+  // reading a date off the calendar.
+  let blockView = null;
+  const { data: blockRow } = await supabase.from('wrought_blocks')
+    .select('id, name, weeks, days_per_week, plan').eq('user_id', user.id).eq('status', 'active').maybeSingle();
+  if (blockRow) {
+    const { count } = await supabase.from('wrought_sessions')
+      .select('id', { count: 'exact', head: true }).eq('block_id', blockRow.id).eq('status', 'done');
+    const pos = blockPosition(blockRow.plan, count || 0);
+    const wk = blockRow.plan?.schedule?.[pos.week - 1];
+    const nextUp = wk?.sessions?.[pos.day - 1];
+    blockView = {
+      running: !pos.complete,
+      name: blockRow.name,
+      week: pos.week, of_weeks: blockRow.weeks,
+      session: pos.day, of_week: blockRow.days_per_week,
+      sessions_done: pos.done, sessions_total: pos.total, percent: pos.pct,
+      this_week_is: pos.intent,
+      deload_weeks: blockRow.plan?.deload_weeks || [],
+      up_next: nextUp ? { name: nextUp.name, exercises: nextUp.exercises.map(e => ({ name: e.name, sets: e.sets, reps: e.reps })) } : null,
+      say: pos.say,
+    };
+  }
 
   const summary  = summariseRange(range, profile);
   const flags    = careFlags(range, profile);
@@ -172,6 +198,12 @@ export const handler = async (event) => {
       goals: scoreGoals(goals, today, summary, profile),
       eating_window: windowStatus(win, profile.timezone),
       lifts,
+      // The session itself, set by set. Everything else here is arithmetic
+      // ABOUT training; this is the training.
+      last_session: lastSession(sessions, setRows, { today: to, imperial }),
+      // Where they are in the running block, if there is one. Counted from
+      // sessions finished, never from the calendar.
+      block: blockView,
       exercise_order: orderInsight(setRows),
       focus: focusCall(range.days, { today: to }),
       nutrition: {

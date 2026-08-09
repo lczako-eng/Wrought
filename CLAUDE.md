@@ -242,6 +242,112 @@ mentioned, and a care flag silences the whole voice instantly. Tested, because a
 persona that can outrank the flags is exactly how this feature would turn into
 the thing the flags exist to prevent.
 
+### Last night — the screen somebody actually opens
+
+`lastSession()` in `lib/training.js` + the top of the Record view. The founder
+asked for this before anything else and had to ask twice: *"how many reps you
+did last night your workout that you've done your matrix... what are you
+targeting?"*
+
+Everything else on the dashboard is arithmetic ABOUT training — averages,
+matrices, trends. **This is the training**, set by set, in the order it
+happened, and it is what somebody opens the app to see the morning after. A
+weekly average cannot tell you that you got 8 on the last set when you got 6
+last time, and that single fact is the whole reason anybody keeps a log.
+
+**Every lift is set against the last time it was done**, because a number with
+nothing beside it is trivia. "92.5 for 6" means nothing; "92.5 for 6, up from 90
+for 6" is the point. Same weight for more reps counts as UP — calling that "no
+change" is how somebody stops believing the readout. Bodyweight work is carried
+with a null weight rather than a zero, which the Lifts panel got wrong once
+already.
+
+### Blocks — a plan with an end, and a deload nobody has to choose
+
+`buildBlock()` / `blockPosition()` in `lib/library.js`, `008_wrought_blocks.sql`,
+and the `start_block` / `block_status` / `end_block` tools. Routines existed and
+per-exercise progression already worked, so a block is an ordered schedule over
+them plus a rule for how the volume moves. It adds the two things nobody does
+for themselves:
+
+- **A deload scheduled BEFORE it is needed.** Anybody who waits until they feel
+  like they need one takes it a fortnight late, as an injury or a month off. It
+  is the most skipped thing in training and the only fix is that something else
+  already put it in the calendar. Every block length ends on one. A deload keeps
+  the same lifts and reps at about half the sets — cutting reps too would make
+  it a different session and lose the practice.
+- **An end.** "Week 4 of 8" is a reason to show up on the days nobody wants to.
+  A plan that finishes is finishable; an endless one is quit. When it completes,
+  **say so** — that is the only reward the structure had to give.
+
+**Position counts sessions finished, never dates.** Advancing by the calendar
+would punish a chest infection by deleting the training, and the block would
+read as finished having never happened. `wrought_sessions.block_id` is stamped
+at `start_session`. The plan is frozen at the moment it starts, exactly as
+sessions freeze their routine. **Still not one weight anywhere** — tested.
+
+### Notifications — the worker finally has something sending to it
+
+`lib/push.js`, `007_wrought_push.sql`, `api-push.js`, and the send folded into
+`brief-nightly.js`. **No dependency**: web push is a fully specified,
+deterministic algorithm (RFC 8291 payload encryption, RFC 8292 VAPID), both
+publishing test vectors, so it can be checked against the specification itself
+offline rather than trusted because a package is popular. **The harness runs RFC
+8291's vector on every push** — it matches byte for byte.
+
+The push service routes the message and can never read it: the payload is
+encrypted to a key pair only the browser holds. That matters more here than most
+places, because the message is a line about somebody's eating and it passes
+through infrastructure belonging to a company that is not us.
+
+`scripts/vapid.mjs` generates the one key pair, once. **Regenerating silently
+kills every existing subscription** — nobody gets an error, notifications just
+stop. `brief_hour` is per user and per timezone; a notification at the wrong
+hour is how somebody mutes an app for good, and they never come back on. A day
+with nothing logged still gets nothing.
+
+### Progress photos — the one place this product could be cruel
+
+`009_wrought_photos.sql` + `api-photos.js` + the Photos tab. The scale is a bad
+instrument over months — it moves with salt, sleep and the hour of the day, and
+cannot tell three kilos of muscle from three kilos of anything else. Two
+photographs eight weeks apart answer what the number keeps getting wrong, and
+for somebody who has done everything right and watched a flat line it is the
+only place the work becomes visible.
+
+**NOTHING EVER READS THE IMAGE.** No body-fat estimate, no pose scoring, no
+analysis, ever. A number invented from a photograph of somebody's torso would
+break the estimates-are-labelled doctrine exactly where it does the most harm,
+and there is no honest version of it. There is a test that greps for the attempt.
+
+Private bucket, objects namespaced by user id with the storage policy checking
+that first path segment, and every URL signed and expiring within the hour — a
+leaked row id is not enough to fetch anything. The comparison line is
+deliberately flat: no "look how far you've come", no score. **No sharing
+feature, now or later.** Export hands them their own files; what they do next is
+their business.
+
+### Pull APIs — the fidelity upgrade, still never the entry price
+
+`lib/pull.js` + `api-device.js`. Withings, Strava, Oura, Whoop, Fitbit. **Apple
+Health and Health Connect remain the answer to "how do I connect my watch"** —
+two doors, dozens of apps, no partnerships and no keys. This is for the handful
+worth pulling at higher resolution.
+
+**Withings first**, and the order is not arbitrary: bodyweight is the number
+people most reliably stop logging by hand, so a scale that reports itself
+removes the most-abandoned manual entry in the product. Strava second, being the
+best-documented API in the category.
+
+Each provider needs an OAuth app registered by the operator, and until then the
+button **says which environment variable is missing** — "connect Oura" leading
+to somebody else's error page is worse than a greyed-out button with a reason on
+it. The callback state is HMAC-signed and expires in ten minutes: unsigned,
+anybody could craft a callback attaching their provider account to a stranger's
+record, which reads as an integration bug and is actually a way to write into
+somebody else's health log. Readings land in `wrought_metrics` with `source_ref`
+set, so the existing unique index means syncing twice cannot double a day.
+
 ### The library — curated, and never a weight
 
 `lib/library.js` + the `programmes` tool. The founder's complaint was a filing
@@ -451,7 +557,7 @@ self-reporting scale removes the most-abandoned manual entry), then Strava.
 
 ## Conventions
 
-- `npm test` runs `test/harness.mjs` — 194 offline tests, no network, no database.
+- `npm test` runs `test/harness.mjs` — 222 offline tests, no network, no database.
   Run it before every push. It covers the JSON-RPC envelope (which fails as an
   uninformative "could not connect" inside ChatGPT) and all the arithmetic
   (which fails as a confidently wrong number in somebody's verdict).
@@ -471,7 +577,8 @@ self-reporting scale removes the most-abandoned manual entry), then Strava.
    remote, push. Retry `add_repo` first in any new session.
 2. Run `schema/001_wrought_core.sql`, then `002_wrought_oauth.sql`, then
    `003_wrought_training.sql`, `004_wrought_fasting.sql`,
-   `005_wrought_activity.sql` and `006_wrought_identity.sql` in Supabase.
+   `005_wrought_activity.sql`, `006_wrought_identity.sql`, `007_wrought_push.sql`,
+   `008_wrought_blocks.sql` and `009_wrought_photos.sql` in Supabase.
 3. Set env vars in Netlify: `SUPABASE_URL` (**no trailing slash** — Kong answers
    "Invalid path specified in request URL" and nothing says why),
    `SUPABASE_SERVICE_ROLE_KEY`, `WROUGHT_SITE_URL=https://wrought.fit`,
@@ -532,14 +639,16 @@ something genuinely needs the OS: HealthKit read access (which does not exist
 for servers anyway), or a widget.
 
 **Next builds, in order:**
-1. VAPID keys and the send endpoint — the worker is waiting for them.
-2. Register OAuth apps for Oura / Whoop / Fitbit / Withings, then the pull
-   sync function.
-3. **Multi-week programmes.** The last structural piece — routines exist, the
-   per-exercise progression already works, so a programme is an ordered
-   schedule over them. Everything after this is polish.
-4. Progress photos with dated comparison.
-5. Connector directory submissions — full checklist in `docs/SUBMISSION.md`.
+1. **Deploy, then use it for a fortnight.** Everything on the list below is
+   downstream of the site being live and the founder having actually trained
+   with it. A week of real use finds the bugs no test does.
+2. **Register the OAuth apps** — Withings first, then Strava. The code is done
+   and waiting on credentials; each provider's button already names the
+   environment variable it needs.
+3. **Connector directory submissions** — checklist in `docs/SUBMISSION.md`.
+   Community registries first, then Claude, then ChatGPT.
+4. Strava webhooks, so a run lands seconds after it finishes rather than at the
+   next sync.
 
 ### Getting listed — the connector connector
 

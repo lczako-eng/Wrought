@@ -7,7 +7,7 @@
 // the loading, it will cheerfully add 20kg to someone's squat one day and the
 // product will have hurt them.
 
-import { supabase, daysBetween } from './wrought.js';
+import { supabase, daysBetween, kgToLb } from './wrought.js';
 
 // ── Matching an exercise across time ────────────────────────────────────────
 // "Barbell Bench Press", "bench press", "Bench (BB)" and "benching" are one
@@ -684,6 +684,138 @@ export function planFromRoutine(routine) {
     muscles: e.muscles || [],
     cue: e.cue || null,
   }));
+}
+
+// ── Last night ──────────────────────────────────────────────────────────────
+// The founder asked for this before anything else on the dashboard: "how many
+// reps you did last night, your workout that you've done, what are you
+// targeting."
+//
+// Everything else on the Record view is arithmetic ABOUT training — averages,
+// matrices, trends. This is the session itself, set by set, and it is what
+// somebody actually opens the app to see the morning after. A weekly average
+// cannot tell you that you got 8 on the last set when you got 6 last time, and
+// that single fact is the entire reason anybody keeps a training log.
+//
+// Every lift is set against the last time it was done, because a number with
+// nothing beside it is trivia. "92.5 for 6" means nothing; "92.5 for 6, up from
+// 90 for 6" is the whole point.
+
+export function lastSession(sessions = [], sets = [], { today = null, imperial = false } = {}) {
+  const done = sessions.filter(s => s.local_date).slice();
+  if (!done.length) {
+    return { known: false, say: 'No finished session yet — this fills in after the first one.' };
+  }
+
+  // sessions arrive newest first from the endpoint; do not trust that.
+  done.sort((a, b) => String(b.ended_at || b.local_date).localeCompare(String(a.ended_at || a.local_date)));
+  const s = done[0];
+
+  const mine = sets.filter(x => x.session_id === s.id);
+  // A session with no sets attached is a cardio or sport entry, not a bug.
+  const totals = sessionTotals(mine);
+
+  const conv = kg => (kg == null ? null : imperial ? kgToLb(kg) : Math.round(kg * 10) / 10);
+  const unit = imperial ? 'lb' : 'kg';
+
+  // Group into exercises in the order they were actually performed. `position`
+  // is stored on every set precisely so this is answerable.
+  const order = [];
+  const byKey = new Map();
+  for (const x of mine) {
+    const k = x.exercise_key || exerciseKey(x.exercise);
+    if (!byKey.has(k)) { byKey.set(k, { key: k, name: x.exercise, sets: [], position: x.position ?? null }); order.push(k); }
+    const e = byKey.get(k);
+    e.sets.push(x);
+    if (e.position == null) e.position = x.position ?? null;
+  }
+  order.sort((a, b) => (byKey.get(a).position ?? 99) - (byKey.get(b).position ?? 99));
+
+  // The same lift, the last time before this session. This is the comparison
+  // that makes the whole screen worth opening.
+  const previous = new Map();
+  for (const x of sets) {
+    if (x.session_id === s.id) continue;
+    if (x.local_date > s.local_date) continue;
+    const k = x.exercise_key || exerciseKey(x.exercise);
+    const cur = previous.get(k);
+    if (!cur || x.local_date > cur.date) previous.set(k, { date: x.local_date, sets: [] });
+    if (previous.get(k).date === x.local_date) previous.get(k).sets.push(x);
+  }
+
+  const exercises = order.map((k) => {
+    const e = byKey.get(k);
+    const top = e.sets.reduce((a, x) =>
+      (Number(x.weight_kg) || 0) > (Number(a.weight_kg) || 0) ? x : a, e.sets[0]);
+    const volume = e.sets.reduce((a, x) => a + (Number(x.reps) || 0) * (Number(x.weight_kg) || 0), 0);
+
+    const prev = previous.get(k);
+    const prevTop = prev?.sets.length
+      ? prev.sets.reduce((a, x) => (Number(x.weight_kg) || 0) > (Number(a.weight_kg) || 0) ? x : a, prev.sets[0])
+      : null;
+
+    // Weight first, reps as the tiebreak. Same weight for more reps IS progress
+    // and calling it "no change" is how somebody stops believing the readout.
+    let verdict = null;
+    if (prevTop) {
+      const dw = (Number(top.weight_kg) || 0) - (Number(prevTop.weight_kg) || 0);
+      const dr = (Number(top.reps) || 0) - (Number(prevTop.reps) || 0);
+      if (Math.abs(dw) > 0.01) verdict = dw > 0 ? 'up' : 'down';
+      else if (dr !== 0) verdict = dr > 0 ? 'up' : 'down';
+      else verdict = 'same';
+    }
+
+    return {
+      name: e.name, key: k,
+      position: e.position,
+      sets: e.sets
+        .slice()
+        .sort((a, b) => (a.set_number ?? 0) - (b.set_number ?? 0))
+        .map(x => ({ reps: x.reps ?? null, weight: conv(x.weight_kg), rpe: x.rpe ?? null })),
+      set_count: e.sets.length,
+      reps: e.sets.reduce((a, x) => a + (Number(x.reps) || 0), 0),
+      volume: Math.round(imperial ? kgToLb(volume) : volume),
+      top_set: { weight: conv(top.weight_kg), reps: top.reps ?? null },
+      // Bodyweight work has no weight and must not be reported as zero.
+      loaded: top.weight_kg != null,
+      last_time: prevTop
+        ? { date: prev.date, weight: conv(prevTop.weight_kg), reps: prevTop.reps ?? null,
+            days_ago: daysBetween(prev.date, s.local_date) }
+        : null,
+      verdict,
+      say: prevTop
+        ? (verdict === 'up'   ? 'up on last time'
+        :  verdict === 'down' ? 'down on last time'
+        :                       'matched last time')
+        : 'first time logged',
+    };
+  });
+
+  const muscles = [...new Set(mine.flatMap(x => x.muscles || []))];
+  const minutes = s.ended_at && s.started_at
+    ? Math.max(1, Math.round((new Date(s.ended_at) - new Date(s.started_at)) / 60000))
+    : null;
+  const ago = today ? daysBetween(s.local_date, today) : null;
+
+  const when = ago === 0 ? 'Today' : ago === 1 ? 'Last night' : ago == null ? s.local_date : `${ago} days ago`;
+  const up = exercises.filter(e => e.verdict === 'up').length;
+
+  return {
+    known: true,
+    name: s.name, kind: s.kind, date: s.local_date, days_ago: ago, minutes,
+    when,
+    totals: {
+      sets: totals.sets, reps: totals.reps,
+      volume: Math.round(imperial ? kgToLb(totals.volume_kg) : totals.volume_kg),
+      unit, exercises: exercises.length,
+    },
+    muscles,
+    exercises,
+    // Computed here so the page and the assistant read the same sentence.
+    say: totals.sets
+      ? `${when}: ${s.name}, ${totals.sets} set${totals.sets === 1 ? '' : 's'}, ${totals.reps} reps${minutes ? ` in ${minutes} min` : ''}.${up ? ` ${up} lift${up === 1 ? '' : 's'} up on last time.` : ''}`
+      : `${when}: ${s.name}${minutes ? `, ${minutes} min` : ''}.`,
+  };
 }
 
 export function sessionTotals(sets) {

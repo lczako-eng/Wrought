@@ -317,3 +317,139 @@ export function buildProgramme(programme, { tier = 'intermediate', equipment = n
     note: 'No weights are prescribed here on purpose — they come from your own history the first time you run each lift, or as an RPE if there is no history yet.',
   };
 }
+
+// ── Multi-week blocks ───────────────────────────────────────────────────────
+// A programme says what a week looks like. A BLOCK says what happens to that
+// week over two months, and it is the last structural piece of the training
+// side: routines exist, per-exercise progression already works against real
+// history, so a block is an ordered schedule over them plus a rule for how the
+// volume moves.
+//
+// Why this rather than "just run the programme":
+//
+//   - Nobody progresses by doing the identical session forever. The load goes
+//     up because progressionCall says so, but SETS have to move too, and a
+//     person deciding that week to week decides it badly — always upward, never
+//     down, until something gives.
+//   - A deload has to be scheduled BEFORE it is needed. Anybody who waits until
+//     they feel like they need one takes it a fortnight late, in the form of an
+//     injury or a month off. It is the single most skipped thing in training,
+//     and the only fix is that something else put it in the calendar.
+//   - "Week 4 of 8" is a reason to show up on the days nobody wants to. A plan
+//     with an end is finishable; an endless one is quit.
+//
+// STILL NOT ONE WEIGHT ANYWHERE. Every load comes from progressionCall against
+// what the person actually lifted, or as an RPE. A block that prescribed
+// percentages of a max would be inventing a stranger's working weight in the
+// place it would look most authoritative.
+
+// Sets multiply, reps hold. Moving both at once means an unreadable week where
+// nobody knows which change did anything.
+const RAMP = {
+  // Accumulate, then take it away. The last week is deliberately easy and is
+  // the whole reason the block works.
+  4:  [1.0, 1.12, 1.25, 0.6],
+  6:  [1.0, 1.1, 1.2, 1.3, 1.4, 0.6],
+  8:  [1.0, 1.1, 1.2, 0.65, 1.15, 1.25, 1.35, 0.6],
+  12: [1.0, 1.1, 1.2, 0.65, 1.15, 1.25, 1.35, 0.65, 1.3, 1.4, 1.5, 0.6],
+};
+
+export const BLOCK_LENGTHS = Object.keys(RAMP).map(Number).sort((a, b) => a - b);
+
+const weekIntent = (factor, i, total) =>
+  factor < 0.8 ? 'deload'
+  : i === 0 ? 'introduce'
+  : i === total - 1 ? 'peak'
+  : factor >= 1.3 ? 'push'
+  : 'build';
+
+const WEEK_SAY = {
+  introduce: 'Learn the sessions. Leave two in the tank on everything — this week is a measurement, not a test.',
+  build:     'Same movements, a little more of them. The load comes from what you did last time.',
+  push:      'The heaviest week of the block. Full effort on the top set of each lift, and stop the set when the speed goes.',
+  peak:      'Everything you have. This is the week the block was building towards.',
+  deload:    'Deliberately easy. Same lifts, about half the sets, nothing near failure. This is not a week off and it is not optional — skipping it is how the next block gets cut short.',
+};
+
+// weeks is a hard ceiling in the same way days are: asking for eight when the
+// person said four gets four.
+export function buildBlock(programme, { tier = 'intermediate', equipment = null, weeks = 8, startDate = null } = {}) {
+  const built = buildProgramme(programme, { tier, equipment });
+
+  const length = BLOCK_LENGTHS.includes(Number(weeks))
+    ? Number(weeks)
+    : BLOCK_LENGTHS.reduce((best, w) => Math.abs(w - weeks) < Math.abs(best - weeks) ? w : best, 8);
+  const ramp = RAMP[length];
+
+  const schedule = ramp.map((factor, i) => {
+    const intent = weekIntent(factor, i, length);
+    return {
+      week: i + 1,
+      intent,
+      // Round to whole sets and never below one. A "0.6 sets" week is nothing,
+      // and floor() on a 2-set accessory would quietly delete it.
+      sessions: built.sessions.map(s => ({
+        name: s.name,
+        kind: s.kind,
+        exercises: s.exercises.map(e => ({
+          ...e,
+          sets: Math.max(1, Math.round(e.sets * factor)),
+          // On a deload the reps stay and the effort drops. Cutting reps as
+          // well makes it a different session and loses the practice.
+          rpe_cap: intent === 'deload' ? 6 : intent === 'peak' ? 9 : 8,
+        })),
+      })),
+      say: WEEK_SAY[intent],
+    };
+  });
+
+  const totalSets = schedule.reduce((a, w) =>
+    a + w.sessions.reduce((b, s) => b + s.exercises.reduce((c, e) => c + e.sets, 0), 0), 0);
+
+  return {
+    ...built,
+    weeks: length,
+    days_per_week: built.days,
+    starts_on: startDate,
+    schedule,
+    total_sessions: length * built.days,
+    total_sets: totalSets,
+    deload_weeks: schedule.filter(w => w.intent === 'deload').map(w => w.week),
+    note: built.note,
+    say: `${built.name} over ${length} weeks — ${length * built.days} sessions, ${built.days} a week, with the easy week${schedule.filter(w => w.intent === 'deload').length === 1 ? '' : 's'} already in at week ${schedule.filter(w => w.intent === 'deload').map(w => w.week).join(' and ')}.`,
+  };
+}
+
+// Where somebody actually is, from the sessions they have done rather than from
+// the calendar. Missing a week does not skip a week — that would punish a chest
+// infection by deleting the training, and the block would end up "finished"
+// having never happened.
+export function blockPosition(block, doneCount = 0) {
+  const perWeek = block.days_per_week || 1;
+  const total = block.total_sessions || (block.weeks * perWeek);
+  const done = Math.max(0, Math.min(Number(doneCount) || 0, total));
+
+  if (done >= total) {
+    return {
+      complete: true, week: block.weeks, day: perWeek, done, total,
+      pct: 100,
+      say: `${block.name} finished — all ${total} sessions. Take a week easy, then start the next block a rung up.`,
+    };
+  }
+
+  const week = Math.floor(done / perWeek) + 1;
+  const day = (done % perWeek) + 1;
+  const wk = block.schedule?.[week - 1];
+  const next = wk?.sessions?.[day - 1];
+
+  return {
+    complete: false,
+    week, day, done, total,
+    pct: Math.round((done / total) * 100),
+    intent: wk?.intent || null,
+    next_session: next ? { name: next.name, exercises: next.exercises.length, sets: next.exercises.reduce((a, e) => a + e.sets, 0) } : null,
+    say: next
+      ? `Week ${week} of ${block.weeks}, session ${day} of ${perWeek}: ${next.name}. ${wk.say}`
+      : `Week ${week} of ${block.weeks}.`,
+  };
+}

@@ -37,6 +37,31 @@
   to = "/.netlify/functions/api-session"
   status = 200
 
+# The nightly read on a lock screen. An MCP server can never speak first, so
+# the phone has to carry it.
+[[redirects]]
+  from = "/api/push"
+  to = "/.netlify/functions/api-push"
+  status = 200
+
+# The direct cloud APIs — a fidelity upgrade, never the entry price. The two
+# doors (Apple Health, Health Connect) stay the answer to "connect my watch".
+[[redirects]]
+  from = "/api/device"
+  to = "/.netlify/functions/api-device"
+  status = 200
+
+[[redirects]]
+  from = "/api/device/*"
+  to = "/.netlify/functions/api-device"
+  status = 200
+
+# Progress photos. Private bucket, signed URLs, and nothing ever reads the image.
+[[redirects]]
+  from = "/api/photos"
+  to = "/.netlify/functions/api-photos"
+  status = 200
+
 # Two accounts back into one. Needs a live token for BOTH — see api-merge.js.
 [[redirects]]
   from = "/api/merge"

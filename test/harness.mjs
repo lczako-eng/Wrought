@@ -10,6 +10,7 @@
 
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+import crypto from 'node:crypto';
 import { handler, TOOLS, handleRpc, SERVER_INSTRUCTIONS } from '../netlify/functions/mcp.js';
 import { canonicalMetric, normalise, normaliseWorkout } from '../netlify/functions/ingest.js';
 import { PROVIDERS, LIVE_PROVIDERS, providerSummary, recommendRoute } from '../netlify/functions/lib/providers.js';
@@ -1773,6 +1774,287 @@ await test('the wordmark is clickable, and does not throw you out of your record
   for (const f of ['authorize.html', 'connect.html']) {
     assert.match(page(f), /<a class="mark" href="\/"/, `${f} has no way home`);
   }
+});
+
+group('Last night — the screen you open the morning after');
+
+const { lastSession } = await import('../netlify/functions/lib/training.js');
+
+const SESS = [{ id: 's2', name: 'Push', kind: 'strength', local_date: '2026-08-08',
+                started_at: '2026-08-08T18:00:00Z', ended_at: '2026-08-08T18:52:00Z', status: 'done' },
+              { id: 's1', name: 'Push', kind: 'strength', local_date: '2026-08-04',
+                started_at: '2026-08-04T18:00:00Z', ended_at: '2026-08-04T18:48:00Z', status: 'done' }];
+const SETS = [
+  { session_id: 's2', exercise: 'Bench Press', exercise_key: 'bench_press', set_number: 1, position: 1, reps: 6, weight_kg: 92.5, local_date: '2026-08-08', muscles: ['chest'] },
+  { session_id: 's2', exercise: 'Press-up',    exercise_key: 'press_up',    set_number: 1, position: 2, reps: 20, weight_kg: null, local_date: '2026-08-08', muscles: ['chest'] },
+  { session_id: 's1', exercise: 'Bench Press', exercise_key: 'bench_press', set_number: 1, position: 1, reps: 6, weight_kg: 90,   local_date: '2026-08-04', muscles: ['chest'] },
+];
+
+await test('it reads back the session, not an average of the week', () => {
+  const out = lastSession(SESS, SETS, { today: '2026-08-09' });
+  assert.equal(out.known, true);
+  assert.equal(out.when, 'Last night');
+  assert.equal(out.totals.sets, 2);
+  assert.equal(out.totals.reps, 26);
+  assert.equal(out.minutes, 52);
+});
+
+await test('every lift is set against the last time it was done', () => {
+  // A number with nothing beside it is trivia. "92.5 for 6" means nothing;
+  // "92.5 for 6, up from 90 for 6" is the whole reason to keep a log.
+  const out = lastSession(SESS, SETS, { today: '2026-08-09' });
+  const bench = out.exercises.find(e => e.key === 'bench_press');
+  assert.equal(bench.verdict, 'up');
+  assert.equal(bench.last_time.weight, 90);
+  assert.equal(bench.last_time.days_ago, 4);
+});
+
+await test('same weight for more reps is progress, not "no change"', () => {
+  const sets = [
+    { session_id: 's2', exercise: 'Bench Press', exercise_key: 'bench_press', set_number: 1, position: 1, reps: 8, weight_kg: 90, local_date: '2026-08-08' },
+    { session_id: 's1', exercise: 'Bench Press', exercise_key: 'bench_press', set_number: 1, position: 1, reps: 6, weight_kg: 90, local_date: '2026-08-04' },
+  ];
+  assert.equal(lastSession(SESS, sets, { today: '2026-08-09' }).exercises[0].verdict, 'up');
+});
+
+await test('bodyweight work is never reported as zero', () => {
+  // The Lifts panel dropped these once already by filtering on weight.
+  const out = lastSession(SESS, SETS, { today: '2026-08-09' });
+  const push = out.exercises.find(e => e.key === 'press_up');
+  assert.ok(push, 'bodyweight exercise dropped from the session');
+  assert.equal(push.loaded, false);
+  assert.equal(push.top_set.weight, null);
+  assert.equal(push.sets[0].reps, 20);
+});
+
+await test('exercises come back in the order they were actually done', () => {
+  const out = lastSession(SESS, SETS, { today: '2026-08-09' });
+  assert.deepEqual(out.exercises.map(e => e.position), [1, 2]);
+});
+
+await test('no session yet says so instead of inventing one', () => {
+  const out = lastSession([], [], { today: '2026-08-09' });
+  assert.equal(out.known, false);
+  assert.match(out.say, /no finished session/i);
+});
+
+group('Multi-week blocks');
+
+const { buildBlock, blockPosition, BLOCK_LENGTHS } = await import('../netlify/functions/lib/library.js');
+const BASE = PROGRAMMES.find(p => p.days === 3);
+
+await test('a block schedules the deload before anybody feels they need one', () => {
+  // The most skipped thing in training. Anybody who waits until they feel like
+  // they need one takes it a fortnight late, as an injury or a month off.
+  for (const weeks of BLOCK_LENGTHS) {
+    const b = buildBlock(BASE, { tier: 'beginner', weeks });
+    assert.ok(b.deload_weeks.length >= 1, `${weeks}-week block has no deload`);
+    assert.ok(b.deload_weeks.includes(weeks), `${weeks}-week block does not end easy`);
+  }
+});
+
+await test('a deload is lighter but is still the same session', () => {
+  const b = buildBlock(BASE, { tier: 'beginner', weeks: 8 });
+  const build = b.schedule[2].sessions[0].exercises;
+  const deload = b.schedule[3].sessions[0].exercises;
+  assert.equal(deload.length, build.length, 'the deload dropped exercises');
+  assert.ok(deload[0].sets < build[0].sets, 'the deload is not lighter');
+  assert.equal(deload[0].reps, build[0].reps, 'cutting reps makes it a different session');
+  assert.ok(deload.every(e => e.sets >= 1), 'an exercise was rounded away to nothing');
+  assert.equal(deload[0].rpe_cap, 6);
+});
+
+await test('a block still prescribes no weight anywhere', () => {
+  // The one place an invented working weight would look most authoritative.
+  const b = buildBlock(BASE, { tier: 'intermediate', weeks: 12 });
+  const json = JSON.stringify(b);
+  assert.ok(!/"load_kg":\s*[0-9]/.test(json), 'a block prescribed a load');
+  assert.ok(!/"weight[^"]*":\s*[0-9]/.test(json), 'a block prescribed a weight');
+});
+
+await test('weeks are a ceiling, like days', () => {
+  assert.equal(buildBlock(BASE, { weeks: 4 }).weeks, 4);
+  assert.equal(buildBlock(BASE, { weeks: 999 }).weeks, 12);
+});
+
+await test('missing a week does not skip a week', () => {
+  // Position counts sessions finished, never the calendar. Advancing by date
+  // would punish a chest infection by deleting the training, and the block
+  // would read as finished having never happened.
+  const b = buildBlock(BASE, { weeks: 8 });
+  assert.equal(blockPosition(b, 0).week, 1);
+  assert.equal(blockPosition(b, 3).week, 2);
+  assert.equal(blockPosition(b, 3).day, 1);
+  assert.equal(blockPosition(b, 7).week, 3);
+});
+
+await test('finishing is said out loud', () => {
+  // "Week 8 of 8, done" is the reason somebody showed up on the days they did
+  // not want to. Swallowing it wastes the only reward the structure had.
+  const b = buildBlock(BASE, { weeks: 8 });
+  const end = blockPosition(b, b.total_sessions);
+  assert.equal(end.complete, true);
+  assert.equal(end.pct, 100);
+  assert.match(end.say, /finished/i);
+});
+
+await test('the block tools are declared and the phrasebook knows them', () => {
+  for (const name of ['start_block', 'block_status', 'end_block']) {
+    assert.ok(TOOLS.some(t => t.name === name), `${name} is not declared`);
+  }
+  assert.match(SERVER_INSTRUCTIONS, /A PLAN WITH AN END/);
+  assert.match(SERVER_INSTRUCTIONS, /what should I be running/);
+});
+
+group('Web push — checked against the spec, not against a library');
+
+const { encryptPayload, vapidHeader } = await import('../netlify/functions/lib/push.js');
+
+await test('payload encryption matches RFC 8291 byte for byte', () => {
+  // The published test vector. This is why there is no dependency here: the
+  // algorithm can be checked against the specification itself, offline.
+  const out = encryptPayload({
+    payload: 'When I grow up, I want to be a watermelon',
+    p256dh: 'BCVxsr7N_eNgVRqvHtD0zTZsEc6-VV-JvLexhqUzORcxaOzi6-AYWXvTBHm4bjyPjs7Vd8pZGH6SRpkNtoIAiw4',
+    auth: 'BTBZMqHH6r4Tts7J_aSIgg',
+    senderKeys: {
+      publicKey: 'BP4z9KsN6nGRTbVYI_c7VJSPQTBtkgcy27mlmlMoZIIgDll6e3vCYLocInmYWAmS6TlzAC8wEqKK6PBru3jl7A8',
+      privateKey: 'yfWPiYE-n46HLnH0KqZOF1fJJU3MYrct3AELtAQ-oRw',
+    },
+    salt: 'DGv6ra1nlYgDCS1FRnbzlw',
+  });
+  assert.equal(out.toString('base64url'),
+    'DGv6ra1nlYgDCS1FRnbzlwAAEABBBP4z9KsN6nGRTbVYI_c7VJSPQTBtkgcy27mlmlMoZIIgDll6e3vCYLocInmYWAmS6TlzAC8wEqKK6PBru3jl7A_yl95bQpu6cVPTpK4Mqgkf1CXztLVBSt2Ks3oZwbuwXPXLWyouBWLVWGNWQexSgSxsj_Qulcy4a-fN');
+});
+
+await test('two sends of the same words are never the same bytes', () => {
+  // A reused salt or key pair leaks the plaintext of every message sent under
+  // it. Real sends must generate both fresh.
+  const args = { payload: 'same words', p256dh: 'BCVxsr7N_eNgVRqvHtD0zTZsEc6-VV-JvLexhqUzORcxaOzi6-AYWXvTBHm4bjyPjs7Vd8pZGH6SRpkNtoIAiw4', auth: 'BTBZMqHH6r4Tts7J_aSIgg' };
+  assert.notEqual(encryptPayload(args).toString('base64'), encryptPayload(args).toString('base64'));
+});
+
+await test('the VAPID signature is raw r||s, not DER', () => {
+  // Every push service rejects a DER signature with a 401 that says nothing.
+  const { publicKey, privateKey } = (() => {
+    const c = crypto.generateKeyPairSync('ec', { namedCurve: 'prime256v1' });
+    const pub = c.publicKey.export({ format: 'jwk' });
+    return {
+      publicKey: Buffer.concat([Buffer.from([4]), Buffer.from(pub.x, 'base64url'), Buffer.from(pub.y, 'base64url')]).toString('base64url'),
+      privateKey: c.privateKey.export({ format: 'jwk' }).d,
+    };
+  })();
+  const h = vapidHeader({ endpoint: 'https://fcm.googleapis.com/fcm/send/abc', publicKey, privateKey, subject: 'mailto:a@b.com' });
+  const jwt = h.Authorization.match(/t=([^,]+)/)[1];
+  const [head, body, sig] = jwt.split('.');
+  assert.equal(Buffer.from(sig, 'base64url').length, 64);
+  assert.equal(JSON.parse(Buffer.from(head, 'base64url').toString()).alg, 'ES256');
+  // The audience is the push service's ORIGIN, never the full endpoint.
+  assert.equal(JSON.parse(Buffer.from(body, 'base64url').toString()).aud, 'https://fcm.googleapis.com');
+});
+
+await test('nothing is sent when the keys are not set', async () => {
+  const { sendPush } = await import('../netlify/functions/lib/push.js');
+  const out = await sendPush({ endpoint: 'https://x/y', p256dh: 'a', auth: 'b' }, { title: 'x' });
+  assert.equal(out.ok, false);
+  assert.equal(out.reason, 'vapid_not_configured');
+});
+
+await test('the notification never writes its own words', () => {
+  // The server sends what it already computed, so a notification can never
+  // disagree with the brief it came from.
+  const sw = readFileSync(new URL('../public/sw.js', import.meta.url), 'utf8');
+  const nightly = readFileSync(new URL('../netlify/functions/brief-nightly.js', import.meta.url), 'utf8');
+  assert.match(sw, /data\.body \|\|/);
+  assert.match(nightly, /firstSentence\(out\.verdict\)/);
+});
+
+await test('the send hour is the user\'s own, not ours', () => {
+  const nightly = readFileSync(new URL('../netlify/functions/brief-nightly.js', import.meta.url), 'utf8');
+  assert.match(nightly, /profile\.brief_hour/);
+  assert.match(nightly, /localMinutesFor\(profile\.timezone/);
+});
+
+group('Progress photos — the one place this could be cruel');
+
+await test('nothing anywhere estimates anything from a photograph', () => {
+  // A number invented from a picture of somebody's torso would break the
+  // estimates-are-labelled doctrine exactly where it does the most harm.
+  const api = readFileSync(new URL('../netlify/functions/api-photos.js', import.meta.url), 'utf8');
+  const sql = readFileSync(new URL('../schema/009_wrought_photos.sql', import.meta.url), 'utf8');
+  // The promise is in the copy; this checks the code cannot break it. Nothing
+  // is sent to a model, nothing derives a body figure, nothing scores a pose.
+  for (const tell of ['openai', 'vision', 'classify', 'body_fat', 'bodyfat', 'pose_score', 'detect']) {
+    assert.ok(!new RegExp(tell, 'i').test(api), `api-photos reaches for ${tell}`);
+  }
+  assert.match(api, /body composition is estimated from a photograph/);
+  assert.match(sql, /public, file_size_limit/);
+});
+
+await test('the bucket is private and namespaced by user', () => {
+  const sql = readFileSync(new URL('../schema/009_wrought_photos.sql', import.meta.url), 'utf8');
+  // A public bucket means every object is one guessed path from the open web.
+  assert.match(sql, /'wrought-photos', false/);
+  assert.match(sql, /set public = false/);
+  assert.match(sql, /storage\.foldername\(name\)\)\[1\] = auth\.uid\(\)::text/);
+});
+
+await test('links to a photograph expire', async () => {
+  const api = readFileSync(new URL('../netlify/functions/api-photos.js', import.meta.url), 'utf8');
+  assert.match(api, /createSignedUrls/);
+  assert.ok(!/getPublicUrl/.test(api), 'a permanent public URL is handed out');
+  const { handler: photos } = await import('../netlify/functions/api-photos.js');
+  assert.equal((await photos({ httpMethod: 'OPTIONS', headers: {} })).statusCode, 204);
+  assert.equal(JSON.parse((await photos({ httpMethod: 'GET', headers: {} })).body).error, 'server_not_configured');
+});
+
+group('Direct device APIs — the fidelity upgrade');
+
+const { PULL, PULL_PROVIDERS, connectUrl, credentialsFor } = await import('../netlify/functions/lib/pull.js');
+
+await test('Withings comes first, because a scale reports the number people stop logging', () => {
+  assert.equal(PULL_PROVIDERS[0], 'withings');
+  assert.equal(PULL_PROVIDERS[1], 'strava');
+});
+
+await test('an unregistered provider says which variable is missing', () => {
+  // "Connect Oura" that leads to somebody else's error page is worse than a
+  // greyed-out button with a reason on it.
+  for (const id of PULL_PROVIDERS) {
+    assert.equal(credentialsFor(id), null);
+    const out = connectUrl(id, { site: 'https://wrought.fit', state: 'x' });
+    assert.equal(out.error, 'not_configured');
+    assert.match(out.message, new RegExp(PULL[id].idEnv));
+  }
+});
+
+await test('the callback state is signed and expires', async () => {
+  // Unsigned, anybody could craft a callback attaching their provider account
+  // to somebody else's record — which reads as an integration bug and is
+  // actually a way to write into a stranger's health log.
+  const src = readFileSync(new URL('../netlify/functions/api-device.js', import.meta.url), 'utf8');
+  assert.match(src, /createHmac\('sha256'/);
+  assert.match(src, /timingSafeEqual/);
+  assert.match(src, /10 \* 60 \* 1000/);
+});
+
+await test('a pulled reading cannot double a day', () => {
+  // Straight into the same table the Shortcut writes to, with source_ref set,
+  // so the existing unique index deduplicates.
+  const src = readFileSync(new URL('../netlify/functions/api-device.js', import.meta.url), 'utf8');
+  assert.match(src, /onConflict: 'user_id,source,metric,measured_at'/);
+  assert.match(src, /ignoreDuplicates: true/);
+});
+
+await test('Withings scaling is applied, or a 71kg person weighs seventy-one thousand', () => {
+  const src = readFileSync(new URL('../netlify/functions/lib/pull.js', import.meta.url), 'utf8');
+  assert.match(src, /Math\.pow\(10, Number\(m\.unit\)\)/);
+});
+
+await test('a rotating refresh token is kept when none comes back', () => {
+  // The difference between a connection that lasts and one that dies quietly.
+  const src = readFileSync(new URL('../netlify/functions/api-device.js', import.meta.url), 'utf8');
+  assert.match(src, /t\.refresh_token \|\| conn\.refresh_token/);
 });
 
 // ── Report ──────────────────────────────────────────────────────────────────

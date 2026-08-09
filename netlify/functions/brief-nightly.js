@@ -26,6 +26,7 @@ import {
   getProfile, getGoals, getMemory, humanDuration,
   dayFacts, rangeFacts, summariseRange, scoreGoals, careFlags, writeVerdict,
 } from './lib/wrought.js';
+import { sendPush, vapidConfigured } from './lib/push.js';
 
 const SEND_HOUR = 22;
 
@@ -103,18 +104,64 @@ async function email(to, subject, text) {
   } catch { return false; }
 }
 
+// The lock screen, which is the reason the PWA is worth installing. Nothing
+// here composes a sentence: the verdict was computed already, and a notification
+// that phrased things its own way could disagree with the brief it came from.
+async function push(userId, profile, out) {
+  if (!vapidConfigured()) return 0;
+  if (profile.push_enabled === false) return 0;
+
+  const { data: subs } = await supabase.from('wrought_push_subs')
+    .select('endpoint, p256dh, auth').eq('user_id', userId);
+  if (!subs?.length) return 0;
+
+  const message = {
+    title: 'WROUGHT',
+    // First sentence only. A lock screen truncates anyway, and a verdict cut
+    // mid-clause reads as harsher than it is.
+    body: firstSentence(out.verdict),
+    tag: `wrought-${out.date}`,
+    url: '/app.html',
+  };
+
+  const results = await Promise.all(subs.map(s => sendPush(s, message)));
+
+  const dead = subs.filter((_, i) => results[i].gone).map(s => s.endpoint);
+  if (dead.length) {
+    await supabase.from('wrought_push_subs').delete().eq('user_id', userId).in('endpoint', dead);
+  }
+  const live = subs.filter((_, i) => results[i].ok).map(s => s.endpoint);
+  if (live.length) {
+    await supabase.from('wrought_push_subs')
+      .update({ last_sent_at: new Date().toISOString(), failures: 0 }).in('endpoint', live);
+  }
+  return results.filter(r => r.ok).length;
+}
+
+function firstSentence(text) {
+  const t = String(text || '').trim();
+  const cut = t.search(/[.!?](\s|$)/);
+  const one = cut > 0 ? t.slice(0, cut + 1) : t;
+  return one.length > 160 ? `${one.slice(0, 157)}\u2026` : one;
+}
+
 export const handler = async () => {
   if (!supabase) return { statusCode: 500, body: 'not configured' };
 
   const now = new Date();
   const users = await activeUsers();
 
-  let considered = 0, built = 0, mailed = 0, skipped = 0;
+  let considered = 0, built = 0, mailed = 0, pushed = 0, skipped = 0;
 
   for (const userId of users) {
     const profile = await getProfile(userId);
     // Only the people for whom it is actually ten o'clock right now.
-    if (Math.floor(localMinutesFor(profile.timezone, now) / 60) !== SEND_HOUR) continue;
+    // Their hour, not ours. Somebody who trains at five in the morning wants
+    // the read at a different time than somebody who eats at nine at night, and
+    // a notification at the wrong hour is how notifications get turned off for
+    // good — after which they never come back on.
+    const hour = Number.isInteger(profile.brief_hour) ? profile.brief_hour : SEND_HOUR;
+    if (Math.floor(localMinutesFor(profile.timezone, now) / 60) !== hour) continue;
     considered++;
 
     const date = localDateFor(profile.timezone, now);
@@ -133,6 +180,7 @@ export const handler = async () => {
 
       const { data: auth } = await supabase.auth.admin.getUserById(userId);
       if (await email(auth?.user?.email, `Wrought — ${out.date}`, out.verdict)) mailed++;
+      pushed += await push(userId, profile, out);
     } catch {
       skipped++;
     }
@@ -140,6 +188,6 @@ export const handler = async () => {
 
   return {
     statusCode: 200,
-    body: JSON.stringify({ users: users.length, at_send_hour: considered, built, mailed, skipped }),
+    body: JSON.stringify({ users: users.length, at_send_hour: considered, built, mailed, pushed, skipped }),
   };
 };

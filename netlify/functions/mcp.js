@@ -31,7 +31,7 @@ import {
   restingBurn, energyBalance, planFromRoutine, sessionTotals, earnedRoom,
   orderPlan, orderInsight, deviceMatrix, weekdayPattern,
 } from './lib/training.js';
-import { PROGRAMMES, GOALS, movementsFor, pickProgramme, buildProgramme } from './lib/library.js';
+import { PROGRAMMES, GOALS, movementsFor, pickProgramme, buildProgramme, buildBlock, blockPosition, BLOCK_LENGTHS } from './lib/library.js';
 
 const PROTOCOL_VERSION = '2025-06-18';
 
@@ -66,6 +66,12 @@ ONE SENTENCE IS A COMPLETE LOG. The user will say "eggs and coffee, 40 minutes u
 
 NEVER SUBSTITUTE A PLAUSIBLE NUMBER FOR A MISSING ONE. Asked "how many calories do I have left" with no target on file, the tempting answer is "if we use 2,500 a day…". Nothing set 2,500. It is a made-up number wearing the clothes of a real one, it becomes the basis of every day after it, and it means the setup question never gets asked because the gap never shows. Responses carry setup_needed when something is missing — when you see it, ASK, do not fill in. This applies to calorie targets, resting burn, activity and body weight alike. "I don't know yet, tell me X" is a better answer than a confident invention, and it is the only one this product is allowed to give.
 
+A PLAN WITH AN END. start_block turns a programme into a dated schedule — the volume climbs and a DELOAD is already in the calendar before anybody feels they need one. That scheduling is the whole point: nobody takes a deload when they decide it themselves, they take it a fortnight late in the form of an injury or a month off.
+
+Reach for it when somebody asks what they should be running, wants structure for the next couple of months, or says they have no idea what to do in the gym. block_status answers "what am I doing today" and "how far through am I" — and it counts sessions actually done, never dates, so tell them plainly that a missed week is not a lost week. When the block finishes, SAY SO. "Week 8 of 8, done, 24 sessions" is the reason somebody showed up on the days they did not want to, and swallowing it wastes the only reward the structure had to give.
+
+On a deload week, do not let them talk you into adding sets back. The week is easy on purpose and it is not a week off — same lifts, about half the volume, nothing near failure.
+
 ONE PERSON, ONE ACCOUNT, SEVERAL DOORS. get_profile returns account.email — the address WROUGHT knows this conversation by. It may not be the address you know the user by, and that is fine: they can sign in with Apple, with Google, or with a password, and all of it reaches the same record.
 
 What is NOT fine is two accounts. If get_profile comes back with nothing logged and a fork_check note on it, do not treat the person as brand new until you have checked. Someone who says "I logged that yesterday" or "where did my week go" over an empty account is almost never mistaken — they are signed in here under one address while their history sits under another. Say so plainly, name the address this connector is attached to, and send them to wrought.fit, Account, where the merge brings the two together. Nothing is lost, duplicates stay single, and this connection keeps working afterwards with nothing to reconnect.
@@ -79,6 +85,7 @@ So: the FIRST time they ask anything that needs those numbers, and get_profile s
 A DAY IS NOT SPENT LYING DOWN. If nothing is measuring their movement, calories out is the resting burn ALONE — a day of work counts as zero, the deficit looks far bigger than it is, and the advice that follows tells somebody to eat less than they need. energy_balance flags this on the response. Fix it by asking for activity_level, and say plainly that the figure shown is resting-only until then. A watch is better and overrides it, but most people do not have one and must not be left with a wrong number in the meantime.
 
 HOW PEOPLE ACTUALLY ASK. Nobody says "call the brief tool". They say one of a hundred things, half of them sideways, most of them while doing something else. Treat all of these as the named tool, without asking which they meant:
+"what should I be running", "give me a plan", "what am I doing for the next two months", "I need a programme to follow" mean start_block; "what am I doing today", "what week am I on", "how far through am I" mean block_status.
 
   brief — "how am I doing", "how'd I do", "how was today", "what's the damage", "read me back", "give me the verdict", "the honest version", "morning", "night", "bedtime", "hit me", "am I on track", "how's the week", "recap", "the score", "how bad was it", "gym bro", "jim bro", "hey jim bro", "coach", "hey coach", "trainer", "give it to me straight", "don't sugarcoat it", "roast me", "be honest with me"
   whats_next — "what should I eat", "what now", "can I have a snack", "I'm hungry", "is there room", "should I train", "what do I need", "how much protein left", "am I allowed", "talk me out of it", "it's late and I'm at the fridge"
@@ -532,6 +539,40 @@ const TOOLS = [
       },
     },
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+  },
+  {
+    name: 'start_block',
+    title: 'Start a multi-week training block',
+    description: 'Turns a programme into a dated plan with an end: an ordered schedule of weeks where the volume climbs and then a DELOAD is already scheduled before it is needed. Use for "give me a proper plan", "what should I run for the next two months", "I want something to follow" — anything asking for structure over time rather than one session. Nobody takes a deload when they decide it themselves; they take it a fortnight late as an injury. NO WEIGHTS are prescribed and none should be invented — loads still come from their own history through log_set and start_session, or as an RPE. One block runs at a time; starting another abandons the first and this says so.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        weeks:     { type: 'integer', enum: [4, 6, 8, 12], description: 'How long. 8 is the default and suits almost everybody. 4 for somebody testing whether they will stick to it, 12 only for people who have already finished one.' },
+        days:      { type: 'integer', description: 'Sessions per week they can realistically do. Defaults to their profile. A block demanding more days than they have is abandoned in week two.' },
+        goal:      { type: 'string', enum: ['general', 'strength', 'hypertrophy', 'tactical', 'endurance'], description: 'What the block is for. Ask if they have not said.' },
+        programme: { type: 'string', description: 'Pick a specific library programme by id instead of being matched.' },
+      },
+    },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+  },
+  {
+    name: 'block_status',
+    title: 'Where they are in the current block',
+    description: 'Which week, which session, what is due next and what this week is FOR. Call it whenever somebody asks what they are doing today, says they are heading to the gym, or wants to know how far through they are. Position comes from sessions actually completed, never from the calendar — missing a week does not skip a week, because advancing by date would punish an illness by deleting the training. Also reports when the block is finished, which is worth saying out loud: a plan that finishes is the reason somebody showed up on the days they did not want to.',
+    inputSchema: { type: 'object', properties: {} },
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+  },
+  {
+    name: 'end_block',
+    title: 'Stop the current block',
+    description: 'Marks the running block finished or abandoned. Use when somebody says they are done with it, want to switch to something else, or have completed it. Never call this without being asked — an abandoned block loses the schedule, though every session and set already logged under it stays exactly where it is.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        completed: { type: 'boolean', description: 'true if they finished it, false if they are dropping it. Default false.' },
+      },
+    },
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
   },
   {
     name: 'log_fast',
@@ -1247,8 +1288,16 @@ async function startSession(args, user) {
   const first = plan[0];
   const opener = await loadCallFor(user.id, first, tier);
 
+  // If a block is running, this session counts towards it. Stamped at the start
+  // rather than worked out later, because position in a block is the COUNT of
+  // finished sessions carrying its id — never the date. Advancing by calendar
+  // would punish a chest infection by deleting the training, and the block
+  // would read as finished having never happened.
+  const running = await activeBlock(user.id);
+
   const { data: session, error } = await supabase.from('wrought_sessions').insert([{
     user_id: user.id, routine_id: routine?.id || null,
+    block_id: running?.id || null,
     name, kind, plan, cursor_index: 0, local_date: today,
   }]).select('id').single();
   if (error) return { error: error.message };
@@ -1259,8 +1308,21 @@ async function startSession(args, user) {
     }).eq('id', routine.id);
   }
 
+  // Where this sits in the plan, so the answer to "what am I doing today" is
+  // one call rather than two.
+  let blockNote = null;
+  if (running) {
+    const done = await blockDone(running.id);
+    const pos = blockPosition(running.plan, done);
+    blockNote = {
+      name: running.name, week: pos.week, of_weeks: running.weeks,
+      intent: pos.intent, say: pos.say,
+    };
+  }
+
   return {
     session_id: session.id,
+    block: blockNote,
     name, tier,
     exercises: plan.map(e => `${e.name} — ${e.sets}×${e.reps}`),
     total_exercises: plan.length,
@@ -1860,6 +1922,157 @@ async function setEatingWindow(args, user) {
   };
 }
 
+// ── Blocks ─────────────────────────────────────────────────────────────────
+// The frozen plan lives on the server. A chat gets cleared, a phone dies, and
+// eight weeks of structure must not live in a conversation.
+
+async function activeBlock(userId) {
+  const { data } = await supabase.from('wrought_blocks')
+    .select('*').eq('user_id', userId).eq('status', 'active').maybeSingle();
+  return data || null;
+}
+
+async function blockDone(blockId) {
+  const { count } = await supabase.from('wrought_sessions')
+    .select('id', { count: 'exact', head: true })
+    .eq('block_id', blockId).eq('status', 'done');
+  return count || 0;
+}
+
+async function startBlock(args, user) {
+  const profile = await getProfile(user.id);
+  const tier = profile.training_age === 'beginner' ? 'beginner'
+             : profile.training_age === 'advanced' ? 'advanced' : 'intermediate';
+  const today = localDateFor(profile.timezone);
+
+  const days = args.days ?? profile.train_days ?? null;
+  const chosenProgramme = args.programme
+    ? PROGRAMMES.find(p => p.id === args.programme)
+    : null;
+
+  // Days beat the goal, exactly as in the library. Wanting the six-day split
+  // does not conjure three extra evenings.
+  const base = chosenProgramme || PROGRAMMES.find(p => p.id === (
+    pickProgramme({ days, tier, equipment: profile.equipment, goal: args.goal })?.id
+  ));
+  if (!base) {
+    return { error: 'no_programme_matched',
+      say: 'Nothing in the library fits those days and that kit. Tell me how many days a week you can actually train.' };
+  }
+
+  const block = buildBlock(base, {
+    tier, equipment: profile.equipment,
+    weeks: args.weeks ?? 8,
+    startDate: today,
+  });
+
+  // One at a time. Two blocks is not a plan, it is two plans, and the deload in
+  // each falls in a different week.
+  const previous = await activeBlock(user.id);
+  if (previous) {
+    await supabase.from('wrought_blocks')
+      .update({ status: 'abandoned', ended_at: new Date().toISOString() }).eq('id', previous.id);
+  }
+
+  const { data: row, error } = await supabase.from('wrought_blocks').insert([{
+    user_id: user.id,
+    name: block.name,
+    programme_id: block.id,
+    goal: block.goal,
+    tier: block.tier,
+    weeks: block.weeks,
+    days_per_week: block.days_per_week,
+    plan: block,
+    started_on: today,
+  }]).select('id').single();
+
+  if (error) return { error: 'could_not_start_block', detail: error.message };
+
+  const first = block.schedule[0];
+  return {
+    block_id: row.id,
+    name: block.name,
+    goal: GOALS[block.goal] || block.goal,
+    weeks: block.weeks,
+    days_per_week: block.days_per_week,
+    total_sessions: block.total_sessions,
+    deload_weeks: block.deload_weeks,
+    replaced: previous ? previous.name : null,
+    week_1: {
+      intent: first.intent,
+      sessions: first.sessions.map(x => ({
+        name: x.name,
+        exercises: x.exercises.map(e => ({ name: e.name, sets: e.sets, reps: e.reps, rest_s: e.rest_s, rpe_cap: e.rpe_cap, cue: e.cue })),
+      })),
+      say: first.say,
+    },
+    say: `${block.say}${previous ? ` Replaces ${previous.name}, which is now marked abandoned.` : ''}`,
+    note: 'No weights anywhere in this block, on purpose. Start each session with start_session and the loads come from what they have actually lifted, or as an RPE when there is no history.',
+    next_actions: ['start_session when they train', 'block_status to see where they are'],
+  };
+}
+
+async function blockStatus(_args, user) {
+  const block = await activeBlock(user.id);
+  if (!block) {
+    return {
+      running: false,
+      say: 'No block running. start_block turns a programme into a dated plan with the easy weeks already in it.',
+      next_actions: ['start_block', 'programmes to see what is in the library'],
+    };
+  }
+
+  const done = await blockDone(block.id);
+  const pos = blockPosition(block.plan, done);
+  const wk = block.plan?.schedule?.[pos.week - 1];
+  const session = wk?.sessions?.[pos.day - 1];
+
+  return {
+    running: !pos.complete,
+    name: block.name,
+    goal: GOALS[block.goal] || block.goal,
+    started_on: block.started_on,
+    week: pos.week, of_weeks: block.weeks,
+    session: pos.day, of_week: block.days_per_week,
+    sessions_done: pos.done, sessions_total: pos.total,
+    percent: pos.pct,
+    complete: pos.complete,
+    this_week_is: pos.intent,
+    // The deload is worth naming before it arrives, because somebody who is
+    // told on the day reads it as being let off rather than as training.
+    deload_weeks: block.plan?.deload_weeks || [],
+    up_next: session ? {
+      name: session.name,
+      exercises: session.exercises.map(e => ({
+        name: e.name, sets: e.sets, reps: e.reps, rest_s: e.rest_s, rpe_cap: e.rpe_cap, cue: e.cue,
+      })),
+    } : null,
+    say: pos.say,
+    note: 'Position is counted from sessions actually finished, never the calendar. A missed week is a missed week, not a skipped one.',
+    next_actions: pos.complete ? ['end_block with completed true', 'start_block for the next one'] : ['start_session'],
+  };
+}
+
+async function endBlock(args, user) {
+  const block = await activeBlock(user.id);
+  if (!block) return { say: 'No block was running.' };
+
+  const done = await blockDone(block.id);
+  await supabase.from('wrought_blocks')
+    .update({ status: args.completed ? 'done' : 'abandoned', ended_at: new Date().toISOString() })
+    .eq('id', block.id);
+
+  return {
+    name: block.name,
+    sessions_done: done,
+    completed: !!args.completed,
+    say: args.completed
+      ? `${block.name} done — ${done} sessions. Take a week easy, then start the next one a rung up.`
+      : `${block.name} stopped after ${done} session${done === 1 ? '' : 's'}. Everything you logged under it is still there.`,
+    note: 'Ending a block never touches the sessions or sets recorded under it.',
+  };
+}
+
 async function programmes(args, user) {
   const profile = await getProfile(user.id);
   const tier = profile.training_age === 'beginner' ? 'beginner'
@@ -2132,6 +2345,9 @@ const IMPL = {
   set_eating_window: setEatingWindow,
   log_fast: logFast,
   programmes,
+  start_block: startBlock,
+  block_status: blockStatus,
+  end_block: endBlock,
   connect_device: connectDevice,
   remember, recall,
 };
