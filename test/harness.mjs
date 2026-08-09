@@ -982,8 +982,8 @@ await test('log accepts a structured reading alongside the verbatim words', () =
   assert.ok(events.items.properties.event_type.enum.includes('food'));
   assert.ok(events.items.properties.event_type.enum.includes('workout'));
   assert.ok(events.items.properties.estimated, 'estimated must stay in the contract');
-  assert.deepEqual(log.inputSchema.required, ['text'],
-    'the user\'s own words stay required — a structured reading never replaces them');
+  assert.deepEqual(log.inputSchema.required, ['text', 'events'],
+    'both are required: the words so nothing is lost, the reading so it counts for something');
 });
 
 await test('the schema still forbids inventing a number', () => {

@@ -135,7 +135,7 @@ const TOOLS = [
   {
     name: 'log',
     title: 'Log anything, in plain words',
-    description: 'THE main tool. Records whatever the user said about their day — food, training, weight, measurements, sleep, mood, supplements — from one plain sentence, no structure required. "Two eggs and black coffee, pushed 40 minutes upper body, 182 on the scale" becomes three separate entries with macros estimated and the weight converted. Pass their words VERBATIM; do not tidy, summarise or ask for detail first. Use this for every log unless the user is giving only a weight or only a measurement, which have their own tools.',
+    description: 'THE main tool. Records whatever the user said about their day — food, training, weight, measurements, sleep, mood, supplements. Pass their words AND your structured reading of them; both are required. "Two eggs and black coffee, pushed 40 minutes upper body, 182 on the scale" becomes three separate entries with macros estimated and the weight converted. Pass their words VERBATIM; do not tidy, summarise or ask for detail first. Use this for every log unless the user is giving only a weight or only a measurement, which have their own tools.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -160,7 +160,12 @@ const TOOLS = [
         },
         quiet: { type: 'boolean', description: 'Set true when this was mentioned in passing during a conversation about something else. Suppresses the running totals so you can acknowledge in a clause and get straight back to what they were actually asking about.' },
       },
-      required: ['text'],
+      // events is REQUIRED, not optional. Left optional the call still succeeds
+      // without it, so the cheap path — words in, nothing structured — is always
+      // available and gets taken. The user is already paying for the model doing
+      // the reading; asking it to hand over what it read is not extra work, and
+      // making it mandatory is the difference between usually and always.
+      required: ['text', 'events'],
     },
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
   },
