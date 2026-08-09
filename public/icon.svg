@@ -1,14 +1,18 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="WROUGHT">
   <!--
-    The mark is the word, so the tile is the word too — cut down to the one
-    letter that still reads at 16 pixels in a browser tab. This is not a symbol
-    beside the name, which was removed on purpose and stays removed; it is the
-    same stamped letterform the wordmark uses, at the only size a connector
-    listing gives you.
+    The tile is the metal and the letter is the hole punched through it — which
+    is what the word means, and the reason it beats a letter sitting on a dark
+    square. It also survives being shrunk: figure-ground contrast is what still
+    reads at 32 pixels, once no serif is more than a pixel wide.
 
-    Drawn as paths rather than <text> so it renders identically everywhere —
-    a favicon that depends on a font is a favicon that is a rectangle on
-    somebody else's machine.
+    Slab, not grotesque. The bracketed terminals give it a foundry register
+    plate quality that a plain heavy W does not have — a plain one could belong
+    to any company starting with W.
+
+    Still not a symbol beside the name. It is the same word, cut down to the one
+    letter a connector listing has room for. Drawn as paths rather than <text>,
+    because a favicon depending on a font is a rectangle on somebody else's
+    machine.
   -->
   <defs>
     <linearGradient id="heat" x1="0" y1="0" x2="0" y2="1">
@@ -19,24 +23,12 @@
   </defs>
 
   <rect width="512" height="512" rx="112" fill="#14110F"/>
+  <rect x="56" y="56" width="400" height="400" rx="76" fill="url(#heat)"/>
 
-  <!-- The W: heavy, compressed, flat-cut terminals. Four strokes, no curves. -->
-  <path fill="url(#heat)" d="
-    M 96 132
-    L 168 132
-    L 200 300
-    L 232 132
-    L 280 132
-    L 312 300
-    L 344 132
-    L 416 132
-    L 352 380
-    L 284 380
-    L 256 236
-    L 228 380
-    L 160 380
-    Z"/>
-
-  <!-- The bar under it: the anvil line the letter is struck against. -->
-  <rect x="96" y="408" width="320" height="26" rx="4" fill="#F4EFE9" opacity=".92"/>
+  <!-- Serifs cut heavier than they would be in ink: a shape reads thinner when
+       it is the hole rather than the mark. -->
+  <path fill="#14110F" d="
+    M104 150 L206 150 L206 178 L182 183 L212 306 L238 183 L214 178 L214 150 L298 150
+    L298 178 L274 183 L304 306 L330 183 L306 178 L306 150 L408 150 L408 178 L386 184
+    L330 366 L276 366 L256 268 L236 366 L182 366 L126 184 L104 178 Z"/>
 </svg>
