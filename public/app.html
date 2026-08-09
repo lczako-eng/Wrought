@@ -438,6 +438,8 @@ label.ghost { display: inline-block; }
   border-radius: 10px; cursor: pointer;
   background: var(--scale-2); border: 1px solid var(--edge-lit); color: var(--bright);
 }
+.ghost { text-decoration: none; }
+a.ghost { display: inline-block; }
 .ghost:hover { border-color: var(--ash-dim); }
 .ghost:disabled { opacity: .55; cursor: default; }
 .ghost.small { padding: 7px 12px; font-size: 13px; }
@@ -973,6 +975,17 @@ function renderAccount(user, ids, factors) {
     </section>
 
     <section class="panel">
+      <h2>Your watch</h2>
+      <p class="sub"><b>One door covers almost everything.</b> Apple Health and Health Connect
+      are already aggregators — Oura, Whoop, Fitbit, Strava, Nike Run Club, Peloton, Garmin
+      and Samsung Health all write into whichever one is on your phone. Connect that and you
+      have them all, with nothing to register.</p>
+      <div class="btnrow"><a class="ghost" href="/connect.html">Set up the phone</a></div>
+      <div id="dev-body"></div>
+      <p class="msg" id="devmsg"></p>
+    </section>
+
+    <section class="panel">
       <h2>The nightly read on your phone</h2>
       <div id="push-body"><p class="empty">Checking…</p></div>
       <p class="msg" id="pushmsg"></p>
@@ -1036,11 +1049,104 @@ function renderAccount(user, ids, factors) {
   document.querySelectorAll('[data-mergeprov]').forEach(b => b.addEventListener('click', () => mergeWithProvider(b.dataset.mergeprov)));
   $('mo-go').addEventListener('click', mergeWithPassword);
   loadPush();
+  loadDevices();
   $('mfa-on')?.addEventListener('click', startEnrol);
   $('mfa-off')?.addEventListener('click', () => dropFactor(factors));
   $('mfa-confirm')?.addEventListener('click', confirmEnrol);
   $('mfa-code')?.addEventListener('keydown', e => { if (e.key === 'Enter') confirmEnrol(); });
   stagger();
+}
+
+// ── Devices ────────────────────────────────────────────────────────────────
+// The direct cloud APIs, listed honestly: as an upgrade nobody needs, not as a
+// checklist of things to go and register. The two doors already cover this,
+// which is why the panel above them says so first and this one is deliberately
+// quiet about itself.
+
+async function loadDevices() {
+  const el = $('dev-body');
+  if (!el) return;
+
+  const { data: s } = await sb.auth.getSession();
+  const res = await fetch('/.netlify/functions/api-device', {
+    headers: { Authorization: `Bearer ${s.session.access_token}` },
+  });
+  if (!res.ok) { el.innerHTML = ''; return; }
+  const d = await res.json();
+
+  const live = (d.providers || []).filter(p => p.available);
+  const connected = (d.providers || []).filter(p => p.connected);
+
+  // Nothing registered and nothing connected: say the true thing — there is
+  // nothing to do here — rather than showing five dead buttons that read as
+  // work outstanding.
+  if (!live.length && !connected.length) {
+    el.innerHTML = `<p class="sub dim" style="margin-top:16px">Direct connections to Withings,
+      Strava, Oura, Whoop and Fitbit exist as a higher-resolution upgrade. None are set up on
+      this deploy and none are needed — everything they give arrives through the door above.</p>`;
+    return;
+  }
+
+  el.innerHTML = `
+    <p class="sub dim" style="margin-top:18px">Direct connections — a resolution upgrade, not a
+    requirement. Anything already coming through the door above keeps working.</p>
+    <div class="doors">
+      ${(d.providers || []).map(p => `
+        <div class="door">
+          <div><b>${esc(p.name)}</b>
+            <span class="sub">${p.connected
+              ? (p.last_sync ? `synced ${esc(String(p.last_sync).slice(0, 10))}` : 'connected')
+              : esc(p.why_not || 'ready to connect')}</span></div>
+          ${p.connected
+            ? `<button class="ghost small" data-devoff="${esc(p.id)}">Disconnect</button>`
+            : p.available
+              ? `<button class="ghost small" data-devon="${esc(p.id)}">Connect</button>`
+              : '<span class="sub dim">not set up</span>'}
+        </div>`).join('')}
+    </div>
+    ${connected.length ? '<div class="btnrow"><button class="ghost" id="dev-sync">Sync now</button></div>' : ''}`;
+
+  document.querySelectorAll('[data-devon]').forEach(b => b.addEventListener('click', () => connectDevice(b.dataset.devon)));
+  document.querySelectorAll('[data-devoff]').forEach(b => b.addEventListener('click', () => disconnectDevice(b.dataset.devoff)));
+  $('dev-sync')?.addEventListener('click', syncDevices);
+}
+
+async function connectDevice(provider) {
+  const { data: s } = await sb.auth.getSession();
+  const res = await fetch(`/.netlify/functions/api-device/connect?provider=${encodeURIComponent(provider)}`, {
+    headers: { Authorization: `Bearer ${s.session.access_token}` },
+  });
+  const out = await res.json();
+  // The server names the missing environment variable rather than sending
+  // somebody to a provider's error page.
+  if (!res.ok || !out.url) { $('devmsg').textContent = out.message || out.error || 'Could not start.'; return; }
+  location.href = out.url;
+}
+
+async function disconnectDevice(provider) {
+  if (!confirm(`Disconnect ${provider}? Everything it already sent stays in your record.`)) return;
+  const { data: s } = await sb.auth.getSession();
+  const res = await fetch('/.netlify/functions/api-device', {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${s.session.access_token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ provider }),
+  });
+  const out = await res.json();
+  $('devmsg').textContent = out.say || 'Disconnected.';
+  setTimeout(loadDevices, 700);
+}
+
+async function syncDevices() {
+  $('devmsg').textContent = 'Pulling…';
+  const { data: s } = await sb.auth.getSession();
+  const res = await fetch('/.netlify/functions/api-device/sync', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${s.session.access_token}`, 'Content-Type': 'application/json' },
+    body: '{}',
+  });
+  const out = await res.json();
+  $('devmsg').textContent = out.say || out.error || 'Could not sync.';
+  setTimeout(loadDevices, 900);
 }
 
 // ── Notifications ──────────────────────────────────────────────────────────

@@ -77,19 +77,36 @@ independent; either alone is fine.
 
 ## 5. Direct device APIs
 
-Optional and always will be — Apple Health and Health Connect already cover most
-of this with nothing to register. These are a resolution upgrade.
+**Register none of these.** That is not a shortcut, it is the design.
 
-Do them in this order:
+Apple Health and Health Connect are already aggregators. Oura, Whoop, Fitbit,
+Strava, Nike Run Club, Peloton, Garmin and Samsung Health all write into
+whichever one is on the phone, so one Shortcut posting to `/ingest` picks up
+dozens of apps on day one with no partnerships, no keys and no review queues.
+The setup conversation is one question — *what phone do you carry?*
 
-**Withings** (`WITHINGS_CLIENT_ID`, `WITHINGS_CLIENT_SECRET`) — first, because
-bodyweight is the number people most reliably stop logging by hand, and a scale
-that reports itself removes the most-abandoned manual entry in the product.
+What a direct connection actually buys, when it buys anything:
 
-**Strava** (`STRAVA_CLIENT_ID`, `STRAVA_CLIENT_SECRET`) — best-documented API in
-the category, and the only one giving per-split pace rather than a daily total.
+- **Backfill.** The Shortcut sends what happens from now on. A direct API can
+  fetch the last year.
+- **No phone in the loop.** A scale that reports itself keeps reporting while
+  the phone is flat or the Shortcut is broken.
+- **Fields with no HealthKit equivalent** — Oura's sleep staging, Whoop's strain.
 
-Then, if wanted: `OURA_*`, `WHOOP_*`, `FITBIT_*`.
+None of that is worth doing before the product has been used for a fortnight.
+When it is worth doing, do them one at a time, in this order:
+
+| Provider | Variables | Getting the app | Worth it when |
+|---|---|---|---|
+| **Withings** | `WITHINGS_CLIENT_ID` / `_SECRET` | Self-serve, instant | You own a Withings scale. Bodyweight is the number people most reliably stop logging by hand |
+| **Strava** | `STRAVA_CLIENT_ID` / `_SECRET` | Self-serve, instant | You want per-split pace rather than a daily total |
+| **Oura** | `OURA_CLIENT_ID` / `_SECRET` | Self-serve | Sleep staging matters to you |
+| **Fitbit** | `FITBIT_CLIENT_ID` / `_SECRET` | Self-serve | Android and no Health Connect |
+| **Whoop** | `WHOOP_CLIENT_ID` / `_SECRET` | Needs approval | Strain and recovery matter |
+| Garmin | — | Acceptance into a programme, a review not a signup | Probably never — the door covers it |
+
+Each is maybe ten minutes: create an app, paste the callback below, copy two
+strings into Netlify.
 
 Every one uses the same callback:
 
