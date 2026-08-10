@@ -2677,6 +2677,39 @@ await test('the phrasebook knows what a split account sounds like', () => {
   }
 });
 
+await test('"link my accounts" is never answered with a menu of services', () => {
+  // What actually happened: "link my accounts" came back as "which account —
+  // Wrought, Gmail, Google Calendar, or something else?" The assistant read it
+  // as a question about ITS connectors. Asked of this server there is only one
+  // thing the word can mean.
+  assert.match(SERVER_INSTRUCTIONS, /NOT A QUESTION ABOUT WHICH SERVICE/);
+  assert.match(SERVER_INSTRUCTIONS, /do not offer a list/i);
+  for (const phrase of ['hook up my two emails', 'link my emails', 'two emails', 'give me a link code']) {
+    assert.ok(SERVER_INSTRUCTIONS.includes(phrase), `"${phrase}" maps to nothing`);
+  }
+});
+
+await test('a working connector is never mistaken for joined accounts', () => {
+  // The second half of the same failure: told "Wrought", the assistant replied
+  // "Wrought is linked and working, your account is <address>" — true, and the
+  // exact state somebody is in when the two accounts are still separate. The
+  // connector works perfectly, against the wrong one.
+  assert.match(SERVER_INSTRUCTIONS, /THE CONNECTOR IS WORKING" IS NOT AN ANSWER/);
+  assert.match(SERVER_INSTRUCTIONS, /never treat the account\.email on get_profile as confirmation/i);
+});
+
+await test('get_profile carries the linking pointer even when the account is full', () => {
+  // fork_check only fires on an empty account, and the split the founder hit
+  // was the other way round: the connector had a meal on it and the WEBSITE
+  // account was bare. So the pointer travels on every profile, not just an
+  // empty one, because this side can never see the other.
+  const src = readFileSync(new URL('../netlify/functions/mcp.js', import.meta.url), 'utf8');
+  const body = src.slice(src.indexOf('fork_check:'), src.indexOf('fork_check:') + 1600);
+  assert.match(body, /linking:/, 'get_profile does not carry a linking note');
+  assert.match(body, /call link_account/);
+  assert.ok(!/linking:\s*\(count/.test(body), 'the linking note is conditional on the count again');
+});
+
 group('Class names that collide, and the screens they collapse');
 
 await test('nothing else claims .bar — the header owns it', () => {

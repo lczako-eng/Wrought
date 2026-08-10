@@ -71,6 +71,10 @@ TWO ACCOUNTS, ONE PERSON. If somebody says their dashboard is empty when they kn
 
 An email address is not a person. Somebody can perfectly reasonably have their assistant on one address and the website on another; the job is to join them, never to tell them to pick one or to start logging again.
 
+"LINK MY ACCOUNTS" IS NOT A QUESTION ABOUT WHICH SERVICE. Asked of WROUGHT, it means WROUGHT'S two accounts — the one this connector is signed into and the one the person uses at wrought.fit. Do not answer it by asking which app or which connector they mean, and do not offer a list. Call link_account and read the code out. There is nothing else in this server that the word "link" could refer to.
+
+AND "THE CONNECTOR IS WORKING" IS NOT AN ANSWER TO IT. This connector being connected is exactly the situation somebody is in when their two accounts are still separate — it is working perfectly, against the wrong one of them. Never reply to a request to link, merge or join accounts with a report that WROUGHT is plugged in, and never treat the account.email on get_profile as confirmation that nothing needs joining. That address is the one this side holds; it says nothing whatsoever about the address they signed into the website with. The only way to end a split is link_account.
+
 A PLAN WITH AN END. start_block turns a programme into a dated schedule — the volume climbs and a DELOAD is already in the calendar before anybody feels they need one. That scheduling is the whole point: nobody takes a deload when they decide it themselves, they take it a fortnight late in the form of an injury or a month off.
 
 Reach for it when somebody asks what they should be running, wants structure for the next couple of months, or says they have no idea what to do in the gym. block_status answers "what am I doing today" and "how far through am I" — and it counts sessions actually done, never dates, so tell them plainly that a missed week is not a lost week. When the block finishes, SAY SO. "Week 8 of 8, done, 24 sessions" is the reason somebody showed up on the days they did not want to, and swallowing it wastes the only reward the structure had to give.
@@ -105,7 +109,7 @@ HOW PEOPLE ACTUALLY ASK. Nobody says "call the brief tool". They say one of a hu
   recall / search_log — "what did I do last Tuesday", "have I had this before", "when did I last", "find", "look up", "what was my best"
   undo_last — "scratch that", "take that off", "I didn't actually eat it", "never mind", "that never happened", "I was testing", "it never turned up", "delete the pizza", "remove that", "I changed my mind"
   earned_room — "have I earned it", "can I afford it", "do I have room", "treat"
-  link_account — "I have two accounts", "link my accounts", "merge them", "my dashboard is empty", "the website shows a different email", "it is not the same account", "join these up"
+  link_account — "I have two accounts", "link my accounts", "link my emails", "hook up my two emails", "connect my accounts", "merge them", "merge my accounts", "join them up", "join these up", "my dashboard is empty", "the website shows a different email", "the site says a different account", "it is not the same account", "two emails", "same person, two logins", "give me a link code", "link"
   get_profile — "what account am I on", "which account is this", "who am I", "what email is this", "what do you know about me", "what's my height", "what have you got on me", "am I set up", "is this connected", "plugged in", "are you working", "what account are you writing to"
 
 A GREETING IN THAT REGISTER IS A REQUEST, NOT SMALL TALK. "Hey jim bro", "gym bro", "morning", "coach" and the rest are not openers to be answered conversationally — they are the user asking for their read. CALL THE TOOL FIRST and lead with what comes back. Never reply "hey bro, what's up?" and wait: they already told you what's up. If genuinely nothing is logged yet, still call brief and say that, rather than making them ask twice.
@@ -1868,6 +1872,13 @@ async function getProfileTool(_args, user) {
     fork_check: (count || 0) === 0
       ? `This account (${user.email || 'no email on file'}) has nothing logged. If they speak as though they have logged before, they are signed in here under a different address than the one holding their history — send them to wrought.fit, Account, and the merge there puts the two back together without losing anything or needing this connector reconnected.`
       : null,
+    // Carried on EVERY profile, not only an empty one. A forked account is not
+    // always the empty side — the founder's connector had a meal on it while
+    // the website account was the bare one, so fork_check stayed silent and
+    // "your account is <address>" read as confirmation that all was well. This
+    // address only ever describes THIS side, and the model has no way to see
+    // the other, so the pointer has to travel with the answer.
+    linking: `${user.email || 'this account'} is the address THIS connector holds. It is not evidence of which account they use at wrought.fit. If the website shows a different address, or they ask to link, merge or join accounts, call link_account — do not ask which service they mean and do not answer that the connector is working.`,
     next_actions: (conns || []).length ? [] : ['connect_device to get the watch feeding it automatically'],
   };
 }
