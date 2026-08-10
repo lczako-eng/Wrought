@@ -225,28 +225,38 @@
   </div>
 
   <div class="panel" id="easypanel">
-    <h3 style="margin-top:0">The easy way — three taps</h3>
-    <ol style="margin:0 0 6px">
-      <li><b>Copy the key</b> above (it appears when you sign in).</li>
-      <li><b>Get the Shortcut</b> — one tap, everything pre-built.</li>
-      <li><b>Run it once</b> — paste the key when it asks, say yes to Health access. Done: it sends your stats every night.</li>
+    <h3 style="margin-top:0">The recommended way — Health Auto Export</h3>
+    <p class="muted">A small App Store app that reads Apple's own <b>deduplicated</b> daily
+    totals — the exact numbers on your watch face — and sends them here on a schedule,
+    workouts included. A hand-built Shortcut cannot do this: Apple's Shortcuts only expose
+    raw per-device samples, so phone + watch double-count and there is no fix. We learned
+    this the hard way so you don't have to.</p>
+    <ol style="margin:0 0 10px">
+      <li>Install <b>Health Auto Export — JSON+CSV</b> from the App Store.</li>
+      <li>In it: <b>Automations → new → REST API</b>.</li>
+      <li>URL: <code>https://wrought.fit/ingest</code></li>
+      <li>Header: <code>Authorization</code> = <code>Bearer YOUR_KEY</code> (copy the key above).</li>
+      <li>Format <b>JSON</b>, aggregation <b>Daily</b>. Tick steps, active energy, resting
+          heart rate, weight, sleep — and turn on <b>workouts</b>, so a watch-recorded run
+          lands as a real session.</li>
+      <li>Run it once — the "Is it working?" check above goes green.</li>
     </ol>
-    <p id="easylink"></p>
-    <p class="muted" style="margin:0">The Shortcut asks for the key exactly once and keeps it. To make it
-    automatic, add one automation: Shortcuts → Automation → Time of Day 11pm → run <b>Send to Wrought</b>.
-    That single step is Apple's rule — no app or page is allowed to schedule it for you.</p>
+    <p class="muted" style="margin:0">Its automatic schedule is a paid feature (a few dollars — the
+    only cost in this whole setup); the manual export button is free, so test before paying.
+    <b>Coming:</b> the Wrought iPhone app does all of this with one tap — it is written and
+    headed for the App Store.</p>
   </div>
 
-  <script>
-  // Built once on a phone, shared once, pasted here. Apple mints share links
-  // on-device only, so this is the one artefact the repo cannot generate.
-  const SHORTCUT_URL = '';
-  document.getElementById('easylink').innerHTML = SHORTCUT_URL
-    ? '<a class="btn" href="' + SHORTCUT_URL + '">Get the Shortcut</a>'
-    : '<span class="muted">The one-tap Shortcut link is not published yet — the recipe below builds the same thing by hand.</span>';
-  </script>
-
-  <h3>Option A — the Shortcut, built by hand (free, five taps)</h3>
+  <h3>Option B — a hand-built Shortcut (free, honest limits)</h3>
+  <div class="note">
+    <b>Know what a Shortcut cannot do before building one.</b> Shortcuts sees raw samples
+    from every device, not Apple's reconciled totals — so <b>steps and active energy will
+    overcount</b> when a phone and a watch both record, and no filter fixes it. A Shortcut
+    remains fine for <b>weight and resting heart rate</b> (single readings, nothing to
+    double). Mixing senders is safe either way: the server keeps only the newest claim per
+    metric per day, so whatever sends last wins rather than adding.
+  </div>
+  <h4 style="margin:18px 0 8px">The recipe, if you build one anyway</h4>
   <ol>
     <li>Open <b>Shortcuts</b> on the iPhone → Automation → new <b>Personal Automation</b>.</li>
     <li>Trigger: <b>Time of Day</b> → 11:00 pm → <b>Run Immediately</b>.</li>

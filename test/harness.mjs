@@ -2684,16 +2684,23 @@ await test('the first key mints itself and copies in one tap', () => {
   assert.equal([...src.matchAll(/id="keyval"/g)].length, 1, 'the fresh key is rendered in two places');
 });
 
-await test('the one-tap Shortcut panel is honest until the link exists', () => {
-  // Apple mints share links on-device only, so the pre-built Shortcut is the
-  // one artefact the repo cannot generate. Until the founder shares it once
-  // and pastes the URL, the panel says so — never a dead button.
+await test('the watch page recommends the route that gives true numbers', () => {
+  // The Shortcut route was retired the night the founder's 2,778-step day
+  // arrived as 33,640: Shortcuts exposes raw per-device samples, phone+watch
+  // double, and no reachable filter fixes it. The page now leads with Health
+  // Auto Export (Apple's own deduplicated totals, workouts included) and
+  // keeps the Shortcut as a demoted option with its limits stated OUTRIGHT —
+  // a route that quietly overcounts is worse than no route at all.
   const src = page('connect.html');
-  assert.match(src, /The easy way — three taps/);
-  assert.match(src, /const SHORTCUT_URL = ''/);
-  assert.match(src, /not published yet/);
-  // And the automation limit is stated as Apple's rule, not our laziness.
-  assert.match(src, /Apple's rule/);
+  assert.match(src, /The recommended way — Health Auto Export/);
+  assert.match(src, /deduplicated<\/b> daily\s+totals/);
+  assert.match(src, /steps and active energy will\s+overcount/);
+  assert.match(src, /fine for <b>weight and resting heart rate<\/b>/);
+  // The paid part is named before anybody installs, and the app is trailed.
+  assert.match(src, /paid feature/);
+  assert.match(src, /Wrought iPhone app/);
+  // The dead prebuilt-shortcut machinery is gone with the route.
+  assert.ok(!/SHORTCUT_URL/.test(src), 'the prebuilt-shortcut plumbing survived its route');
 });
 
 group('The statistics house — the iOS shell');
