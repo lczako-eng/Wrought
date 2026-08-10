@@ -951,3 +951,52 @@ export function goalCall({ profile = {}, weightKg = null, intent = 'maintain' } 
     caveat: 'All of it is an estimate. The weekly weigh-in trend is the truth; the target gets corrected against it, never the other way round.',
   };
 }
+
+// ── A number they remember is a claim, not a load ───────────────────────────
+// For a lift with no history, progressionCall refuses to invent a weight — the
+// right refusal, and also a dead end for somebody who has benched for years
+// and knows roughly where they are. The founder's ask: "ask them what they
+// think their bench press limits are and build off of that — and be careful
+// about it."
+//
+// The care IS the feature. A remembered number is the most flattering version
+// of a lift — the best day, the bounciest bar, rounded up, often years old.
+// Programming it as fact is how a product hands somebody a weight that hurts
+// them. So a claim is always DISCOUNTED before it touches a bar, the first
+// set is named a calibration rather than a prescription, and what they then
+// actually lift becomes the history everything after is computed from. The
+// claim never enters the log as if it were performance.
+export function baselineFromClaim({ claimed_kg, claimed_reps = null, kind = 'working', target_reps = 8, tier = 'intermediate' } = {}) {
+  const w = Number(claimed_kg);
+  if (!Number.isFinite(w) || w <= 0) {
+    return { verdict: 'refuse', weight_kg: null,
+             say: 'That claim did not include a usable weight. Ask what they usually lift for a set, or start light and let the bar decide.' };
+  }
+
+  // Epley in both directions: claimed set → estimated 1RM → working weight at
+  // the target reps. A claimed max (kind 'max') is already a 1RM claim.
+  const reps = Math.max(1, Math.round(Number(claimed_reps) || (kind === 'max' ? 1 : target_reps)));
+  const oneRm = kind === 'max' ? w : w * (1 + reps / 30);
+  const atTarget = oneRm / (1 + target_reps / 30);
+
+  // The discount is the safety, and it is bigger for the riskier claims: a
+  // stated 1RM is the least trustworthy number in any gym, and a beginner's
+  // estimate of anything is a guess wearing confidence.
+  const discount = (kind === 'max' ? 0.85 : 0.90) - (tier === 'beginner' ? 0.05 : 0);
+  const start = Math.floor((atTarget * discount) / 2.5) * 2.5;
+
+  if (start < 2.5) {
+    return { verdict: 'refuse', weight_kg: null,
+             say: 'That works out too light to load a bar with — start with the empty bar or bodyweight and log what happens.' };
+  }
+
+  return {
+    verdict: 'calibration',
+    weight_kg: start,
+    claimed: { weight_kg: w, reps, kind },
+    estimated_1rm: Math.round(oneRm),
+    discount_pct: Math.round((1 - discount) * 100),
+    say: `Start at ${start}kg for ${target_reps} — that is their claim with ${Math.round((1 - discount) * 100)}% held back, because a remembered number is a best day, not a Tuesday. The first set is a calibration: if it moves clean, add; if it grinds, strip it back and nothing is lost. What they ACTUALLY lift becomes the baseline.`,
+    note: 'The claim never enters the log — only the performed set does. From the next session, progression runs off real history and this claim is spent.',
+  };
+}

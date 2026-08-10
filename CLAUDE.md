@@ -226,6 +226,17 @@ partner is present tense and writes down what actually happened.
   `progressionCall()`. For a lift with no history it refuses to invent a weight
   and prescribes RPE instead — tested for all three tiers. Guessing a
   stranger's working weight is the fastest way this product injures somebody.
+- **A number they remember is a claim, not a load.** `baselineFromClaim()` +
+  the `calibrate_lift` tool. For a lift with **no history**, the assistant may
+  ask once what they usually do; the server discounts the claim (10% working,
+  15% stated max — the least trustworthy number in any gym — plus 5% for
+  beginners), converts across rep ranges by Epley, floors to a real plate, and
+  frames the first set as a **calibration**. The performed set becomes the
+  baseline; the claim goes to memory (category `lifts`), never into set
+  history, and **the record beats the memory forever after** — `history_wins`
+  when history exists. Never program a claim as-is, never suggest testing a
+  max. This is the founder's "ask them their limits and be careful about it";
+  the care is the feature.
 - **`position` is stored on every set** — where in the session the lift
   happened. Almost nobody stores this, which is why almost nobody can answer
   "is my bench stalling, or is it just always third?". `orderInsight()` needs

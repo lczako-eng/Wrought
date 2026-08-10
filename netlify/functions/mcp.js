@@ -30,7 +30,7 @@ import { nutritionTotals, composition, macroMatrix, yearOverYear } from './lib/n
 import {
   exerciseKey, lastPerformance, progressionCall, TIERS,
   restingBurn, energyBalance, planFromRoutine, sessionTotals, earnedRoom,
-  orderPlan, orderInsight, deviceMatrix, weekdayPattern, weekSoFar, goalCall,
+  orderPlan, orderInsight, deviceMatrix, weekdayPattern, weekSoFar, goalCall, baselineFromClaim,
 } from './lib/training.js';
 import { PROGRAMMES, GOALS, MOVEMENTS, movementsFor, pickProgramme, buildProgramme, buildBlock, blockPosition, BLOCK_LENGTHS } from './lib/library.js';
 
@@ -110,7 +110,8 @@ HOW PEOPLE ACTUALLY ASK. Nobody says "call the brief tool". They say one of a hu
   suggest_workout / programmes — "what should I train", "give me a workout", "what's today", "programme me", "build me something", "I've got 40 minutes", "what am I neglecting", "proper programme", "what should I be running"
   start_session — "let's go", "starting now", "at the gym", "leg day", "chest day", "I'm at the rack", "warmed up"
   log_set — "done", "got it", "got 8", "8 at 225", "that's up", "failed at 5", "couldn't finish", "one more in the tank"
-  swap_exercise — "machine's taken", "someone's on it", "bench is busy", "rack's full", "it's occupied", "can't get on it", "there's a queue", "that machine's broken", "can we do something else"
+  swap_exercise — "machine's taken"
+  calibrate_lift — "I usually bench 185", "I can do 80 for 8", "my max is 315", "I think I can press about", "I used to squat", "someone's on it", "bench is busy", "rack's full", "it's occupied", "can't get on it", "there's a queue", "that machine's broken", "can we do something else"
   recall / search_log — "what did I do last Tuesday", "have I had this before", "when did I last", "find", "look up", "what was my best"
   undo_last — "scratch that", "take that off", "I didn't actually eat it", "never mind", "that never happened", "I was testing", "it never turned up", "delete the pizza", "remove that", "I changed my mind"
   earned_room — "have I earned it", "can I afford it", "do I have room", "treat"
@@ -122,6 +123,10 @@ HOW PEOPLE ACTUALLY ASK. Nobody says "call the brief tool". They say one of a hu
 A PHOTOGRAPH OF A GYM IS AN EQUIPMENT LIST. When they send pictures of a gym, YOU read what is standing in them — racks, machines, dumbbells, benches, cables — because this server never sees images. Read the photos, list the equipment plainly, confirm in one line, and save it: set_profile equipment for their main gym, and remember (category "gym") for each named additional place — "Home gym: dumbbells to 50lb, bench, bands". More than one gym is normal. When they say where they are — "at the home gym", "hotel gym today" — pass that inventory as equipment to start_session or suggest_workout, and recall it from memory if you need it. Never build a plan around a machine their photos did not show.
 
 AT THE RACK, THE SERVER HOLDS THE CLIPBOARD. During a session, every log_set answer carries the checklist — every exercise with its sets and reps, marked done, current or to come. "What's left", "what's next", "how much more" are answered from the LATEST checklist, never from memory of the conversation. Ask at most ONE short question per rest gap — the reps, or how it felt — never a form. If they mention pain, log_set's note field takes their words verbatim AND it goes to remember (category health).
+
+A NUMBER THEY REMEMBER IS A CLAIM, NOT A LOAD. When a lift has no history the load call comes back as find_working_weight. At that moment — and only then — you may ask ONCE: "what do you usually do on this for a set?" If they answer, or volunteer a number any time ("I bench 185", "my max is 315"), pass it to calibrate_lift. The server holds part of it back — a remembered number is a best day, not a Tuesday — and frames the first set as a calibration: clean bar, add; grinding bar, strip it. What they ACTUALLY lift becomes the baseline, and from then on the record outranks the memory forever.
+
+Never program their claimed number as-is, never suggest testing a max, never present the discounted start as what you think they are capable of, and if they have never done the movement at all there is no claim to take — the effort prescription stands. This is the one place being generous is dangerous: rounding a stranger's memory upward is how a product hurts somebody.
 
 THE MACHINE BEING TAKEN IS NORMAL, NOT A PROBLEM TO DISCUSS. "Someone's on it" means swap_exercise, immediately — the server picks a movement that loads the same pattern with the kit they have, keeps the sets and reps, and computes the load from the REPLACEMENT'S own history. Never skip the slot because the equipment was busy, never transfer the old weight onto a different movement, and never turn it into a conversation about options unless the first pick is also taken.
 
@@ -319,6 +324,23 @@ const TOOLS = [
       },
     },
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+  },
+  {
+    name: 'calibrate_lift',
+    title: 'Turn what they think they lift into a safe starting weight',
+    description: 'For a lift with NO history, when they volunteer or you have asked what they usually do — "I bench 185 for 8", "my squat max is 315". The server discounts the claim (a remembered number is a best day, not a Tuesday), converts it to a starting weight for today\'s target reps, and frames the first set as a calibration. NEVER program a claimed number directly, and NEVER suggest testing a max. The set they then actually perform becomes the real baseline.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        exercise:  { type: 'string', description: 'The lift the claim is about.' },
+        weight_kg: { type: 'number', description: 'The claimed weight in kg — convert from lb first.' },
+        reps:      { type: 'integer', description: 'The reps the claim was for. Omit for a claimed max.' },
+        kind:      { type: 'string', enum: ['working','max'], description: '"working" for "I usually do X for Y"; "max" for a claimed 1RM. A max claim gets a deeper discount — it is the least trustworthy number in any gym.' },
+        target_reps: { type: 'integer', description: 'Reps prescribed today. Defaults to the live session\'s target, else 8.' },
+      },
+      required: ['exercise', 'weight_kg'],
+    },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   },
   {
     name: 'end_session',
@@ -1656,6 +1678,65 @@ async function swapExercise(args, user) {
   };
 }
 
+// "Ask them what they think their bench press limits are and build off of
+// that — and be careful about it." The care is the whole design: the claim is
+// discounted before it touches a bar, the first set is a calibration, and the
+// performed set — never the claim — becomes history. See baselineFromClaim.
+async function calibrateLift(args, user) {
+  const profile = await getProfile(user.id);
+  const key = exerciseKey(args.exercise || '');
+  if (!key) return { error: 'Which lift is the claim about?' };
+
+  // A claim is only for a lift with no history. With history, the record wins
+  // — a remembered number must never override what actually happened.
+  const last = await lastPerformance(user.id, key);
+  if (last && last.top_weight_kg != null) {
+    const call = progressionCall({ last, targetReps: args.target_reps || parseInt(String(last.top_reps), 10) || 8, tier: profile.training_age === 'beginner' ? 'beginner' : 'intermediate', key });
+    return {
+      verdict: 'history_wins',
+      progression: call,
+      say: `There is real history for this — ${last.top_weight_kg}kg for ${last.top_reps} on ${last.date} — and the record beats the memory. ${call.say}`,
+      note: 'Never let a remembered number override logged performance.',
+    };
+  }
+
+  // Target reps: the live session's prescription if this lift is on it.
+  let targetReps = args.target_reps || null;
+  if (!targetReps) {
+    const { data: session } = await supabase.from('wrought_sessions')
+      .select('plan, cursor_index').eq('user_id', user.id).eq('status', 'active').maybeSingle();
+    const entry = (Array.isArray(session?.plan) ? session.plan : []).find(e => (e.key || exerciseKey(e.name)) === key);
+    targetReps = entry ? parseInt(String(entry.reps), 10) || 8 : 8;
+  }
+
+  const tier = profile.training_age === 'beginner' ? 'beginner'
+             : profile.training_age === 'advanced' ? 'advanced' : 'intermediate';
+  const call = baselineFromClaim({
+    claimed_kg: args.weight_kg, claimed_reps: args.reps,
+    kind: args.kind === 'max' ? 'max' : 'working',
+    target_reps: targetReps, tier,
+  });
+  if (call.verdict === 'refuse') return { verdict: 'refuse', say: call.say };
+
+  // Kept as a memory, not as history — so it is never asked twice, and never
+  // mistaken for something they lifted.
+  await rememberFact(user.id,
+    `Claims ${args.exercise}: ~${args.weight_kg}kg${args.reps ? ` for ${args.reps}` : ''} (${args.kind === 'max' ? 'stated max' : 'stated working weight'}; calibration start ${call.weight_kg}kg)`,
+    'lifts');
+
+  return {
+    verdict: 'calibration',
+    exercise: args.exercise,
+    weight_kg: call.weight_kg,
+    target_reps: targetReps,
+    estimated_1rm: call.estimated_1rm,
+    discount_pct: call.discount_pct,
+    say: call.say,
+    note: `${call.note} Do not present the start weight as their level — it is deliberately under it. If the first set moves clean, add; if it grinds, strip it back without ceremony. NEVER suggest testing the claimed max.`,
+    next_actions: ['log_set with what they actually lift — that becomes the baseline'],
+  };
+}
+
 async function endSession(args, user) {
   const profile = await getProfile(user.id);
   const today = localDateFor(profile.timezone);
@@ -2652,6 +2733,7 @@ const IMPL = {
   start_session: startSession,
   log_set: logSet,
   swap_exercise: swapExercise,
+  calibrate_lift: calibrateLift,
   end_session: endSession,
   save_routine: saveRoutine,
   list_routines: listRoutines,

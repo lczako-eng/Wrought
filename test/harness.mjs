@@ -2783,6 +2783,62 @@ await test('get_profile carries the linking pointer even when the account is ful
   assert.ok(!/linking:\s*\(count/.test(body), 'the linking note is conditional on the count again');
 });
 
+group('A number they remember is a claim, not a load');
+
+const { baselineFromClaim } = await import('../netlify/functions/lib/training.js');
+
+await test('a claim is always discounted before it touches a bar', () => {
+  // A remembered number is the most flattering version of a lift — best day,
+  // bounciest bar, rounded up, often years old. Programming it as fact is how
+  // a product hands somebody a weight that hurts them.
+  const c = baselineFromClaim({ claimed_kg: 84, claimed_reps: 8, target_reps: 8 });
+  assert.equal(c.verdict, 'calibration');
+  assert.ok(c.weight_kg < 84, 'the claim was programmed as-is');
+  assert.equal(c.weight_kg, 75);           // 10% back, floored to a real plate
+  assert.match(c.say, /calibration/);
+  assert.match(c.note, /claim never enters the log/i);
+});
+
+await test('a claimed max is the least trustworthy number in any gym', () => {
+  // Deeper discount, and Epley converts it to the target rep range rather than
+  // anyone attempting it.
+  const c = baselineFromClaim({ claimed_kg: 140, kind: 'max', target_reps: 8 });
+  assert.equal(c.discount_pct, 15);
+  assert.equal(c.weight_kg, 92.5);
+  const working = baselineFromClaim({ claimed_kg: 140, claimed_reps: 8, target_reps: 8 });
+  assert.ok(c.weight_kg < working.weight_kg, 'a max claim was trusted as much as a working claim');
+});
+
+await test('a beginner claim gets held back further, and nonsense is refused', () => {
+  const b = baselineFromClaim({ claimed_kg: 60, claimed_reps: 8, target_reps: 8, tier: 'beginner' });
+  const i = baselineFromClaim({ claimed_kg: 60, claimed_reps: 8, target_reps: 8 });
+  assert.ok(b.weight_kg < i.weight_kg);
+  assert.equal(baselineFromClaim({ claimed_kg: 'lots' }).verdict, 'refuse');
+  assert.equal(baselineFromClaim({ claimed_kg: 2, claimed_reps: 8 }).verdict, 'refuse');
+});
+
+await test('the record always beats the memory', () => {
+  // calibrate_lift refuses to let a claim override logged history — a
+  // remembered 100 must never outrank a performed 85.
+  const src = readFileSync(new URL('../netlify/functions/mcp.js', import.meta.url), 'utf8');
+  const fn = src.slice(src.indexOf('async function calibrateLift('), src.indexOf('async function endSession('));
+  assert.match(fn, /history_wins/);
+  assert.match(fn, /the record beats the memory/i);
+  // The claim is kept as a memory, never inserted as a set.
+  assert.match(fn, /rememberFact/);
+  assert.ok(!/wrought_sets['"\)]*\.insert|from\('wrought_sets'\)\s*\.insert/.test(fn), 'the claim is being written into set history');
+});
+
+await test('the instructions forbid the dangerous versions outright', () => {
+  assert.match(SERVER_INSTRUCTIONS, /A NUMBER THEY REMEMBER IS A CLAIM, NOT A LOAD/);
+  assert.match(SERVER_INSTRUCTIONS, /never suggest testing a max/i);
+  assert.match(SERVER_INSTRUCTIONS, /ask ONCE/);
+  assert.match(SERVER_INSTRUCTIONS, /rounding a stranger's memory upward/i);
+  for (const phrase of ['I usually bench 185', 'my max is 315', 'I can do 80 for 8']) {
+    assert.ok(SERVER_INSTRUCTIONS.includes(phrase), `"${phrase}" maps to nothing`);
+  }
+});
+
 group('The about page, and the tutorial that lives in the conversation');
 
 await test('the about page says the name, the manual, and the way out', () => {
