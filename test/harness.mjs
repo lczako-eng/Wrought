@@ -2715,6 +2715,33 @@ await test('the dashboard offers the code route first', () => {
   assert.match(src, /link my accounts/i);
 });
 
+await test('connecting never happens without being asked which account', () => {
+  // The one moment a split account is created. This screen used to see a live
+  // browser session and finish on the spot, so whichever address the phone
+  // happened to be signed in as became the account the assistant wrote to,
+  // forever, without ever being shown. Reconnecting to CHANGE account was
+  // therefore impossible — it silently reconnected the same one.
+  const src = page('authorize.html');
+  assert.match(src, /id="already"/);
+  assert.match(src, /id="already-email"/);
+  assert.match(src, /Use a different account/);
+
+  // A session on its own is never enough. Both the load path and the auth
+  // listener demand a recorded choice.
+  assert.match(src, /if \(sessionStorage\.getItem\(CHOSE\) === '1'\) return complete/);
+  assert.match(src, /session && req && sessionStorage\.getItem\(CHOSE\) === '1'/);
+
+  // A fresh authorization request asks again rather than reusing the last
+  // answer, and the answer does not outlive the connection it was given for.
+  const fresh = src.match(/if \(params\.client_id\) \{([\s\S]*?)\n\}/)[1];
+  assert.match(fresh, /removeItem\(CHOSE\)/);
+  assert.match(src, /removeItem\(STASH\);\s*\n\s*sessionStorage\.removeItem\(CHOSE\)/);
+
+  // Switching out signs this browser out only — they asked to change account
+  // here, not to be logged out on every device they own.
+  assert.match(src, /signOut\(\{ scope: 'local' \}\)/);
+});
+
 await test('the phrasebook knows what a split account sounds like', () => {
   assert.match(SERVER_INSTRUCTIONS, /TWO ACCOUNTS, ONE PERSON/);
   assert.match(SERVER_INSTRUCTIONS, /An email address is not a person/);

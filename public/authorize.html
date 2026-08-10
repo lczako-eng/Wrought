@@ -59,6 +59,19 @@
     <h1>Connect your training memory</h1>
     <p class="who"><b id="client">An AI assistant</b> wants to read and write your WROUGHT log.</p>
 
+    <!-- Signed in on this browser already. This screen used to finish silently
+         at that point, which is the single moment a split account is created:
+         whoever the browser happens to be signed in as becomes the account the
+         assistant writes to, forever, with nobody ever seeing the address. The
+         founder hit exactly that — ChatGPT on one email, the website on
+         another, and no screen anywhere had offered a choice. So the address
+         is shown and the connection waits to be asked for. -->
+    <div id="already" hidden>
+      <p class="who">Signed in here as <b id="already-email">…</b>.</p>
+      <button id="already-go">Connect as this account</button>
+      <p class="alt"><a href="#" id="already-swap">Use a different account</a></p>
+    </div>
+
     <div id="form">
       <button class="oauth" data-provider="apple" type="button">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12.152 6.896c-.948 0-2.415-1.078-3.96-1.04-2.04.027-3.91 1.183-4.961 3.014-2.117 3.675-.546 9.103 1.519 12.09 1.013 1.454 2.208 3.09 3.792 3.039 1.52-.065 2.09-.987 3.935-.987 1.831 0 2.35.987 3.96.948 1.637-.026 2.676-1.48 3.676-2.948 1.156-1.688 1.636-3.325 1.662-3.415-.039-.013-3.182-1.221-3.22-4.857-.026-3.04 2.48-4.494 2.597-4.559-1.429-2.09-3.623-2.324-4.39-2.376-2-.156-3.675 1.09-4.61 1.09zM15.53 3.83c.843-1.012 1.4-2.427 1.245-3.83-1.207.052-2.662.805-3.532 1.818-.78.896-1.454 2.338-1.273 3.714 1.338.104 2.715-.688 3.559-1.701"/></svg>
@@ -140,7 +153,18 @@ const params = {
 };
 
 const STASH = 'wrought_oauth_request';
-if (params.client_id) sessionStorage.setItem(STASH, JSON.stringify(params));
+// Whether the person has actually PICKED the account this connection uses. An
+// existing browser session is not a choice — it is an accident of who last
+// opened the site on this phone. Set by pressing a button, by typing a
+// password, or by leaving for Apple or Google; never by simply arriving.
+const CHOSE = 'wrought_oauth_chose';
+if (params.client_id) {
+  sessionStorage.setItem(STASH, JSON.stringify(params));
+  // A fresh authorization asks again. Reusing an earlier answer is how somebody
+  // reconnecting specifically to CHANGE account gets silently reconnected to
+  // the same one.
+  sessionStorage.removeItem(CHOSE);
+}
 
 function request() {
   if (params.client_id) return params;
@@ -164,11 +188,38 @@ async function start() {
       : host;
   } catch { /* the default text is fine */ }
 
-  // Already signed in on this browser — finish immediately rather than asking
-  // somebody to type a password they gave the same site an hour ago.
+  // Already signed in on this browser. Do not finish on that alone — say who,
+  // and wait to be asked. One tap for the common case where it is the right
+  // account, and a way out for the case that costs somebody their history.
   const { data } = await sb.auth.getSession();
-  if (data.session) return complete(data.session.access_token, req);
+  if (!data.session) return;
+  if (sessionStorage.getItem(CHOSE) === '1') return complete(data.session.access_token, req);
+
+  $('already-email').textContent = data.session.user?.email || 'this account';
+  $('form').hidden = true;
+  $('already').hidden = false;
 }
+
+$('already-go').addEventListener('click', async () => {
+  const { data } = await sb.auth.getSession();
+  const req = request();
+  if (!data.session || !req) return;
+  sessionStorage.setItem(CHOSE, '1');
+  complete(data.session.access_token, req);
+});
+
+$('already-swap').addEventListener('click', async (e) => {
+  e.preventDefault();
+  // Local scope only. A global sign-out would reach every other device this
+  // person is signed in on, and they asked to switch account here, not to be
+  // logged out of their phone.
+  await sb.auth.signOut({ scope: 'local' });
+  sessionStorage.removeItem(CHOSE);
+  $('already').hidden = true;
+  $('form').hidden = false;
+  $('msg').className = 'msg';
+  $('msg').textContent = 'Sign in with the account you use at wrought.fit.';
+});
 
 // Email and password, matching the dashboard. A magic link put an inbox in the
 // middle of connecting an assistant: leave ChatGPT, find the mail app, wait,
@@ -224,6 +275,8 @@ async function submitAuth() {
   $('send').disabled = true;
   $('msg').className = 'msg';
   $('msg').textContent = mode === 'up' ? 'Creating…' : 'Signing in…';
+  // Typing an address IS picking the account, so the confirm step is answered.
+  sessionStorage.setItem(CHOSE, '1');
 
   const res = mode === 'up'
     ? await sb.auth.signUp({ email, password, options: { data: { name: $('name').value.trim() || null } } })
@@ -289,6 +342,9 @@ document.querySelectorAll('.oauth').forEach(b => b.addEventListener('click', asy
   const provider = b.dataset.provider;
   $('msg').className = 'msg';
   $('msg').textContent = `Opening ${PROVIDER_NAME[provider]}\u2026`;
+  // Picked before leaving, because the page reloads on the way back and the
+  // choice must not be forgotten in between.
+  sessionStorage.setItem(CHOSE, '1');
   const { error } = await sb.auth.signInWithOAuth({
     provider,
     options: { redirectTo: location.href },
@@ -346,7 +402,10 @@ $('mfacode').addEventListener('keydown', e => { if (e.key === 'Enter') submitCod
 
 sb?.auth.onAuthStateChange((_e, session) => {
   const req = request();
-  if (session && req) complete(session.access_token, req);
+  // This fires on page load with whatever session the browser already had, and
+  // completing on that is precisely the silent fork. Only a session the person
+  // chose gets through; the rest land on the confirm screen from start().
+  if (session && req && sessionStorage.getItem(CHOSE) === '1') complete(session.access_token, req);
 });
 
 async function complete(accessToken, req) {
@@ -372,6 +431,7 @@ async function complete(accessToken, req) {
   }
 
   sessionStorage.removeItem(STASH);
+  sessionStorage.removeItem(CHOSE);
   const back = new URL(req.redirect_uri);
   back.searchParams.set('code', out.code);
   if (req.state) back.searchParams.set('state', req.state);
