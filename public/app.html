@@ -124,6 +124,72 @@ main { padding-block: 26px 0; display: flex; flex-direction: column; gap: 22px; 
 }
 .linky:hover { color: var(--heat-4); }
 
+/* ── Calendar ─────────────────────────────────────────────────────────────
+   Everything else here is arithmetic ABOUT the record. This is the record laid
+   out the way people already hold time in their heads: squares, seven across.
+   It is the only view where "good all week except Thursday" is something you
+   SEE rather than work out.
+
+   The square carries both halves of the sum, because one number on its own was
+   the founder's complaint — calories in with nothing beside it is a diary, and
+   the point of this product is the subtraction. Colour is the net and nothing
+   else: cool for under, warm for over, flat grey for a day where one side is
+   not known. A day nobody logged is drawn empty rather than as a zero, because
+   a zero is a claim that they ate nothing. */
+.calgrid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 5px; margin-top: 14px; }
+.caldow {
+  font-family: var(--mono); font-size: 9.5px; letter-spacing: .1em; text-transform: uppercase;
+  color: var(--ash-dim); text-align: center; padding-bottom: 2px;
+}
+.calcell {
+  position: relative; aspect-ratio: 1; border-radius: 6px; border: 1px solid var(--edge);
+  background: var(--scale); padding: 5px 4px 4px; cursor: pointer; overflow: hidden;
+  display: flex; flex-direction: column; align-items: center; justify-content: flex-start;
+  font: inherit; color: inherit; text-align: center;
+}
+.calcell:disabled { cursor: default; }
+.calcell.pad { border-color: transparent; background: transparent; }
+.calcell .dnum { font-size: 11px; color: var(--ash); font-variant-numeric: tabular-nums; }
+.calcell .dnet {
+  font-family: var(--grotesk); font-weight: 900; font-stretch: 80%;
+  font-size: 13px; line-height: 1.1; margin-top: auto; font-variant-numeric: tabular-nums;
+}
+/* Four digits plus a sign will not fit at 13px in a seventh of a phone. */
+.calcell.four .dnet { font-size: 11px; letter-spacing: -.02em; }
+.calcell .dot { width: 4px; height: 4px; border-radius: 50%; background: var(--ash-dim); margin-top: 3px; }
+.calcell.under { border-color: var(--temper-dk); background: rgba(91,144,176,.13); }
+.calcell.under .dnet { color: var(--temper); }
+.calcell.over  { border-color: #4A2A18; background: rgba(242,100,25,.12); }
+.calcell.over  .dnet { color: var(--heat-3); }
+.calcell.half  { border-style: dashed; }
+.calcell.empty .dnum { color: var(--ash-dim); }
+.calcell.today { box-shadow: inset 0 0 0 1px var(--heat-4); }
+.calcell[aria-pressed="true"] { border-color: var(--heat-3); }
+.calcell .train { position: absolute; top: 4px; right: 4px; width: 5px; height: 5px; border-radius: 1px; background: var(--moss); }
+
+.calkey { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 12px; font-size: 11px; color: var(--ash-dim); }
+.calkey span { display: flex; align-items: center; gap: 5px; }
+.calkey i { width: 9px; height: 9px; border-radius: 2px; display: block; font-style: normal; }
+
+.calday { margin-top: 18px; border-top: 1px solid var(--edge); padding-top: 16px; }
+.calday h3 { margin: 0 0 3px; font-size: 15px; font-weight: 650; }
+.calday .sums { display: flex; gap: 18px; flex-wrap: wrap; margin: 10px 0 12px; }
+.calday .sums div { display: flex; flex-direction: column; gap: 1px; }
+.calday .sums b { font-size: 19px; font-weight: 650; font-variant-numeric: tabular-nums; }
+.calday .sums span { font-family: var(--mono); font-size: 9.5px; letter-spacing: .13em; text-transform: uppercase; color: var(--ash-dim); }
+.calday .row { display: flex; justify-content: space-between; gap: 12px; padding: 7px 0; border-top: 1px solid var(--edge); font-size: 13.5px; }
+.calday .row b { font-variant-numeric: tabular-nums; font-weight: 600; color: var(--ash); }
+
+.rollups { display: flex; flex-direction: column; gap: 0; }
+.rollup { padding: 15px 0; border-top: 1px solid var(--edge); }
+.rollup:first-child { border-top: 0; padding-top: 2px; }
+.rollup .lab { font-family: var(--mono); font-size: 10px; letter-spacing: .13em; text-transform: uppercase; color: var(--ash-dim); }
+.rollup .nums { display: flex; gap: 20px; flex-wrap: wrap; margin-top: 7px; }
+.rollup .nums div { display: flex; flex-direction: column; }
+.rollup .nums b { font-size: 21px; font-weight: 650; font-variant-numeric: tabular-nums; }
+.rollup .nums small { font-family: var(--mono); font-size: 9.5px; letter-spacing: .12em; text-transform: uppercase; color: var(--ash-dim); }
+.rollup p { margin: 9px 0 0; font-size: 12.5px; color: var(--ash); }
+
 /* ── Panels ─────────────────────────────────────────────────────────────── */
 /* ── Motion ───────────────────────────────────────────────────────────────
    Part of the system rather than decoration bolted on afterwards: a number
@@ -788,6 +854,7 @@ a.ghost { display: inline-block; }
       <nav class="ranges views" role="group" aria-label="View">
         <button class="range view" data-view="record" aria-pressed="true">Record</button>
         <button class="range view" data-view="log" aria-pressed="false">Log</button>
+        <button class="range view" data-view="calendar" aria-pressed="false">Calendar</button>
         <button class="range view" data-view="trainer" aria-pressed="false">Trainer</button>
         <button class="range view" data-view="photos" aria-pressed="false">Photos</button>
         <button class="range view" data-view="account" aria-pressed="false">Account</button>
@@ -975,7 +1042,7 @@ document.querySelectorAll('.range.view').forEach(b => b.addEventListener('click'
   view = b.dataset.view;
   // The range buttons only mean something on the record; the log paginates by
   // day and loads more on demand.
-  $('rangebtns').style.display = view === 'record' ? '' : 'none';
+  $('rangebtns').style.display = (view === 'record' || view === 'calendar') ? '' : 'none';
   logCursor = null; logDays = [];
   stopTrainer();
   refresh();
@@ -2826,6 +2893,43 @@ function demoData() {
       say: 'Sunday is your worst night.',
     },
     care_flags: [],
+    // The calendar, built from the same borrowed days as everything else here
+    // so the demo cannot show a month that disagrees with its own charts.
+    calendar: (() => {
+      const cd = series.map(d => {
+        const out = d.missed ? 2620 : 2540 + Math.round(d.trained ? 340 : 0);
+        const inn = d.calories;
+        return {
+          date: d.date, logged: !d.missed, in: inn, out,
+          net: inn == null ? null : inn - out,
+          resting: 1780, active: out - 1780, active_source: 'activity_level',
+          meals: inn == null ? [] : [
+            { summary: 'Eggs, oats and coffee', calories: Math.round(inn * 0.27), protein_g: 34, estimated: true },
+            { summary: 'Chicken, rice and greens', calories: Math.round(inn * 0.34), protein_g: 52, estimated: true },
+            { summary: 'Steak and a baked potato', calories: Math.round(inn * 0.39), protein_g: 58, estimated: true },
+          ],
+          meal_count: inn == null ? 0 : 3,
+          sessions: d.trained ? 1 : 0, minutes: d.trained ? 58 : 0,
+          protein_g: d.protein, weight_kg: d.weight, steps: 9000, estimated: true,
+        };
+      });
+      const roll = (arr, label) => {
+        const w = arr.filter(e => e.in != null);
+        const inT = w.reduce((a, e) => a + e.in, 0), outT = w.reduce((a, e) => a + e.out, 0);
+        const netT = inT - outT;
+        return {
+          label, span_days: arr.length, days_logged: w.length, days_counted: w.length, days_with_both: w.length,
+          in_total: inT, in_avg: Math.round(inT / w.length), out_total: outT, out_avg: Math.round(outT / w.length),
+          net_total: netT, net_avg: Math.round(netT / w.length),
+          sessions: arr.reduce((a, e) => a + e.sessions, 0), estimated: true,
+          say: `${label}: roughly ${Math.round(inT / w.length)} in and ${Math.round(outT / w.length)} out on an average logged day, about ${Math.abs(Math.round(netT / w.length))} ${netT < 0 ? 'under' : 'over'}. Counted across ${w.length} days, not the whole ${label.replace(/^the /, '')}.`,
+        };
+      };
+      const rollups = {};
+      if (cd.length >= 7)  rollups.week  = roll(cd.slice(-7),  'the last 7 days');
+      if (cd.length >= 28) rollups.month = roll(cd.slice(-30), 'the last 30 days');
+      return { days: cd, rollups, blocking: [], note: null };
+    })(),
   };
 
   function macroSet(cal, pro, carb, sug, fib, fat, meals, dayz) {
@@ -2941,16 +3045,20 @@ function firstRun(d) {
   </section>`;
 }
 
-function wireFirstRun() {
+// Any button that says "go and do it over there". Shared, because the first-run
+// screen and the calendar both send people to Account for the same five facts,
+// and two copies of this would drift.
+function wireGoTabs() {
   document.querySelectorAll('[data-go]').forEach(b => b.addEventListener('click', () => {
     document.querySelectorAll('.range.view').forEach(x => x.setAttribute('aria-pressed', 'false'));
     const tab = document.querySelector(`.range.view[data-view="${b.dataset.go}"]`);
     tab?.setAttribute('aria-pressed', 'true');
     view = b.dataset.go;
-    $('rangebtns').style.display = 'none';
+    $('rangebtns').style.display = (view === 'record' || view === 'calendar') ? '' : 'none';
     refresh();
   }));
 }
+const wireFirstRun = wireGoTabs;
 
 function hero(d) {
   const b = d.today?.balance;
@@ -2992,8 +3100,173 @@ function hero(d) {
   </section>`;
 }
 
+// ── Calendar ───────────────────────────────────────────────────────────────
+// The founder asked for this in one breath: "a calendar with everything I ate,
+// and I wanna know calories in versus calories out — you add up the math. Then
+// weekly, then yearly." All three parts matter and the middle one is the
+// product: a food diary shows what went in, and everybody has one of those.
+//
+// Every number here is computed server-side in lib/calendar.js and handed over.
+// Nothing on this page adds anything up — if the page did its own arithmetic,
+// the calendar and the brief could tell somebody two different things about the
+// same Tuesday, and after that neither is worth reading.
+
+let calPicked = null;
+
+const DOW = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+const MONTHS = ['January','February','March','April','May','June',
+                'July','August','September','October','November','December'];
+
+// Monday-first column for a YYYY-MM-DD, without touching the host clock — the
+// date string is the day, in the user's own zone, and parsing it as local time
+// is how a calendar drifts by one square for half the planet.
+function dowIndex(date) {
+  const d = new Date(`${date}T00:00:00Z`).getUTCDay();   // 0 = Sunday
+  return (d + 6) % 7;
+}
+
+function calCell(e, today) {
+  if (!e.logged && e.in == null) {
+    return `<button class="calcell empty" type="button" data-cal="${e.date}"${e.date === today ? ' aria-current="date"' : ''}>
+      <span class="dnum">${Number(e.date.slice(8))}</span>
+    </button>`;
+  }
+  // Colour is the net and nothing else. With only one side known the square
+  // stays neutral and dashed rather than implying a gap that was never worked
+  // out — a coloured square is a claim about the subtraction.
+  const cls = e.net == null ? 'half' : e.net < 0 ? 'under' : 'over';
+  // No thousands separator on the square. "−1,059" is six characters in a cell
+  // one seventh of a phone wide and it clipped to "−1,05", which reads as a
+  // different number rather than as a layout fault.
+  const raw = e.net != null ? Math.abs(e.net) : e.in;
+  const face = raw == null ? ''
+    : `${e.net != null && e.net < 0 ? '−' : e.net != null ? '+' : ''}${raw}`;
+  const wide = String(raw ?? '').length >= 4 ? ' four' : '';
+  return `<button class="calcell ${cls}${wide}${e.date === today ? ' today' : ''}" type="button" data-cal="${e.date}"
+      aria-pressed="${calPicked === e.date}"
+      aria-label="${esc(e.date)}: ${e.net != null ? `${Math.abs(e.net)} ${e.net < 0 ? 'under' : 'over'}` : `${e.in ?? 0} in`}">
+    <span class="dnum">${Number(e.date.slice(8))}</span>
+    ${e.sessions ? '<i class="train" aria-hidden="true"></i>' : ''}
+    <span class="dnet">${face}</span>
+  </button>`;
+}
+
+function calMonth(entries, today) {
+  // Grouped by real month so the squares line up under the right weekday, which
+  // is the only reason a grid beats a list.
+  const months = new Map();
+  for (const e of entries) {
+    const key = e.date.slice(0, 7);
+    if (!months.has(key)) months.set(key, []);
+    months.get(key).push(e);
+  }
+
+  return [...months.entries()].reverse().map(([key, es]) => {
+    const pad = dowIndex(es[0].date);
+    const [y, m] = key.split('-');
+    return `<section class="panel">
+      <h2>${MONTHS[Number(m) - 1]} ${y}</h2>
+      <div class="calgrid" role="grid">
+        ${DOW.map(d => `<span class="caldow">${d}</span>`).join('')}
+        ${Array.from({ length: pad }, () => '<span class="calcell pad"></span>').join('')}
+        ${es.map(e => calCell(e, today)).join('')}
+      </div>
+      <div class="calkey">
+        <span><i style="background:rgba(91,144,176,.5)"></i>under</span>
+        <span><i style="background:rgba(242,100,25,.5)"></i>over</span>
+        <span><i style="background:var(--moss)"></i>trained</span>
+        <span><i style="background:var(--scale);border:1px dashed var(--edge-lit)"></i>half known</span>
+      </div>
+      ${key === (calPicked || '').slice(0, 7) ? calDayPanel(es.find(e => e.date === calPicked)) : ''}
+    </section>`;
+  }).join('');
+}
+
+// What was actually eaten. The whole reason to tap a square — an average can
+// never tell you the Thursday was one enormous takeaway rather than three
+// ordinary meals.
+function calDayPanel(e) {
+  if (!e) return '';
+  const rows = e.meals.length
+    ? e.meals.map(m => `<div class="row"><span>${esc(m.summary)}${m.estimated ? ' <span class="chip">est</span>' : ''}</span><b>${m.calories != null ? m.calories.toLocaleString() : '—'}</b></div>`).join('')
+    : `<div class="row"><span>Nothing eaten was logged on this day.</span><b></b></div>`;
+
+  return `<div class="calday">
+    <h3>${esc(e.date)}</h3>
+    <div class="sums">
+      <div><b>${e.in != null ? e.in.toLocaleString() : '—'}</b><span>in</span></div>
+      <div><b>${e.out != null ? e.out.toLocaleString() : '—'}</b><span>out</span></div>
+      <div><b class="${e.net == null ? '' : e.net < 0 ? 'cool' : 'hot'}">${e.net != null ? `${e.net < 0 ? '−' : '+'}${Math.abs(e.net).toLocaleString()}` : '—'}</b><span>net</span></div>
+      ${e.sessions ? `<div><b>${e.sessions}</b><span>${e.sessions === 1 ? 'session' : 'sessions'}</span></div>` : ''}
+    </div>
+    ${rows}
+    ${e.estimated ? '<p class="sub dim">Calories are estimated from what you described, not measured.</p>' : ''}
+    ${e.out != null && e.active_source === 'none' ? '<p class="sub dim">Out is your resting burn only — nothing was counting your movement, so the real figure is higher.</p>' : ''}
+  </div>`;
+}
+
+function calRollup(r) {
+  if (!r) return '';
+  return `<div class="rollup">
+    <span class="lab">${esc(r.label)}</span>
+    <div class="nums">
+      <div><b>${r.in_avg != null ? r.in_avg.toLocaleString() : '—'}</b><small>in / day</small></div>
+      <div><b>${r.out_avg != null ? r.out_avg.toLocaleString() : '—'}</b><small>out / day</small></div>
+      <div><b class="${r.net_avg == null ? '' : r.net_avg < 0 ? 'cool' : 'hot'}">${r.net_avg != null ? `${r.net_avg < 0 ? '−' : '+'}${Math.abs(r.net_avg).toLocaleString()}` : '—'}</b><small>net / day</small></div>
+      <div><b>${r.net_total != null ? `${r.net_total < 0 ? '−' : '+'}${Math.abs(r.net_total).toLocaleString()}` : '—'}</b><small>net total</small></div>
+    </div>
+    <p>${esc(r.say)}</p>
+  </div>`;
+}
+
+function calendarView(d) {
+  const c = d.calendar;
+  if (!c || !c.days?.length) {
+    return `<section class="panel"><h2>Calendar</h2><p class="sub">Nothing logged yet. Say one sentence to your assistant and the first square fills in.</p></section>`;
+  }
+  const today = d.today?.date;
+  const roll = c.rollups || {};
+  const out = [];
+
+  // What is stopping the second column existing, said once at the top rather
+  // than repeated across thirty empty squares.
+  if (c.blocking?.length) {
+    out.push(callout('care', 'Half the sum is missing',
+      `${esc(c.note)} Add them under <button class="linky" data-go="account">Account</button> and every square fills in.`));
+  } else if (c.note) {
+    out.push(callout('', 'Worth knowing', esc(c.note)));
+  }
+
+  if (roll.week || roll.month || roll.year) {
+    out.push(`<section class="panel">
+      <h2>In versus out</h2>
+      <div class="rollups">
+        ${calRollup(roll.week)}${calRollup(roll.month)}${calRollup(roll.year)}
+      </div>
+    </section>`);
+  }
+
+  out.push(calMonth(c.days, today));
+  return out.join('');
+}
+
+function wireCalendar() {
+  document.querySelectorAll('[data-cal]').forEach(b => b.addEventListener('click', () => {
+    // Tapping the open day closes it, so the grid can be got back to without
+    // hunting for a close button.
+    calPicked = calPicked === b.dataset.cal ? null : b.dataset.cal;
+    refresh();
+  }));
+  wireGoTabs();
+}
+
 function render(d) {
   const s = d.summary, wu = d.weight_unit, out = [];
+
+  // The same payload, laid out as squares. Not a separate endpoint and not a
+  // second set of sums — the calendar and the dashboard must never be able to
+  // disagree about a Tuesday.
+  if (view === 'calendar') { $('content').innerHTML = calendarView(d); wireCalendar(); stagger(); return; }
 
   // A brand new account has nothing to draw, and drawing it anyway produces
   // nine panels all saying "not enough data yet" — which reads as broken

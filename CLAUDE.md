@@ -645,6 +645,32 @@ says out loud that signing out does **not** disconnect the assistant — they ar
 separate sessions, and pretending otherwise sends somebody hunting for a
 connector that is working perfectly.
 
+### The calendar — the subtraction, on every square
+
+`lib/calendar.js` + the Calendar tab. The founder asked for it in one breath:
+*"a calendar with everything I ate, and I wanna know calories in versus
+calories out — you add up the math. Then weekly, then yearly."* All three parts
+matter and the middle one is the product: a diary shows what went in, and
+everybody has one of those. Squares in rows of seven is the only layout where
+"good all week except Thursday" is something you SEE rather than derive.
+
+**A day nobody logged is not a zero-calorie day**, and this is the whole reason
+it is not thirty lines in the page. Summing raw calendar days counts every
+forgotten day as a perfect fast, manufactures an enormous deficit out of
+forgetfulness, and then advises on it — an error running in the dangerous
+direction. Totals and averages count **logged days only** and say how many:
+*"counted across 9 days, not the whole 30."* Same on the other side — with no
+height, birth year or weight, calories out is null on every square rather than
+a resting burn standing in for a working day, and **colour is the net**, so a
+square where only one half is known stays neutral and dashed. A coloured square
+is a claim about the subtraction.
+
+A window is only reported when the loaded range covers it — a "this year"
+figure built from seven days is a fabrication wearing a long label. The page
+does no arithmetic at all; there is a test that greps for a `reduce` in the
+view, because a calendar and a brief disagreeing about the same Tuesday means
+neither is worth reading.
+
 ### The log must be readable
 
 `api-log.js` + the Log view in `app.html`. Everything else on the dashboard is

@@ -2783,6 +2783,119 @@ await test('get_profile carries the linking pointer even when the account is ful
   assert.ok(!/linking:\s*\(count/.test(body), 'the linking note is conditional on the count again');
 });
 
+group('The calendar — both halves of the sum, on every square');
+
+const { calendarDays, calendarRollups, calendarMissing } =
+  await import('../netlify/functions/lib/calendar.js');
+
+const CAL_PROFILE = { height_cm: 180, birth_year: 1990, sex: 'male', activity_level: 'moderate', timezone: 'America/Toronto' };
+const calDay = (date, over = {}) => ({
+  date, logged: true, calories: 2000, protein_g: 140, carbs_g: null, fat_g: null,
+  meals: 2, sessions: 0, minutes: 0, volume_kg: null, weight_kg: null,
+  steps: null, sleep_minutes: null, active_calories: null, muscles: [], ...over,
+});
+
+await test('an unlogged day is empty, never a zero-calorie day', () => {
+  // The whole reason this is not thirty lines in the page. Counting calendar
+  // days would read every forgotten day as a perfect fast, manufacture an
+  // enormous deficit out of forgetfulness, and then advise on it — an error
+  // that runs in the dangerous direction.
+  const days = [
+    calDay('2026-08-01', { weight_kg: 84 }),
+    calDay('2026-08-02', { logged: false, calories: null, meals: 0 }),
+    calDay('2026-08-03'),
+  ];
+  const entries = calendarDays({ days, foodRows: [], profile: CAL_PROFILE });
+  assert.equal(entries[1].in, null, 'a blank day was given a calorie count');
+  assert.equal(entries[1].net, null, 'a blank day was given a net');
+
+  const r = calendarRollups(entries.concat(entries).concat(entries).slice(0, 7));
+  // Seven squares, but only the logged ones are counted, and it says so.
+  assert.ok(r.week.days_counted < r.week.span_days);
+  assert.match(r.week.say, /Counted across \d+ days, not the whole/);
+});
+
+await test('no net until BOTH sides are actually known', () => {
+  // A net computed against a zero nobody measured is a fabricated deficit.
+  const days = [calDay('2026-08-01', { weight_kg: 84 })];
+  const noBurn = calendarDays({ days, foodRows: [], profile: { timezone: 'UTC' } });
+  assert.equal(noBurn[0].in, 2000);
+  assert.equal(noBurn[0].out, null);
+  assert.equal(noBurn[0].net, null);
+
+  const withBurn = calendarDays({ days, foodRows: [], profile: CAL_PROFILE });
+  assert.ok(withBurn[0].out > 0);
+  assert.equal(withBurn[0].net, 2000 - withBurn[0].out);
+});
+
+await test('what is missing is named once, not on thirty empty squares', () => {
+  const days = [calDay('2026-08-01', { weight_kg: 84 })];
+  const blocked = calendarMissing({ timezone: 'UTC' }, calendarDays({ days, foodRows: [], profile: { timezone: 'UTC' } }));
+  assert.ok(blocked.blocking.length, 'nothing named as missing');
+  assert.match(blocked.note, /height|birth year|weigh-in/);
+
+  // With a figure but nothing measuring movement, the burn is resting-only and
+  // the deficit looks bigger than the day really had. Silence there is the
+  // dangerous kind.
+  const restOnly = calendarDays({ days, foodRows: [], profile: { ...CAL_PROFILE, activity_level: null } });
+  assert.equal(restOnly[0].active_source, 'none');
+  assert.match(calendarMissing(CAL_PROFILE, restOnly).note, /resting burn alone/);
+});
+
+await test('a measured burn beats a multiplier', () => {
+  const days = [calDay('2026-08-01', { weight_kg: 84, active_calories: 900 })];
+  const e = calendarDays({ days, foodRows: [], profile: CAL_PROFILE })[0];
+  assert.equal(e.active, 900);
+  assert.equal(e.active_source, 'device');
+  assert.equal(e.out, e.resting + 900);
+});
+
+await test('the weigh-in nearest the day is used, forwards then back', () => {
+  // Bodyweight moves slowly and is weighed irregularly. A Tuesday with no
+  // weigh-in still gets a real burn rather than a hole.
+  const days = [
+    calDay('2026-08-01'),                        // before any weigh-in
+    calDay('2026-08-02', { weight_kg: 84 }),
+    calDay('2026-08-03'),                        // after one
+  ];
+  const e = calendarDays({ days, foodRows: [], profile: CAL_PROFILE });
+  assert.ok(e[0].out > 0, 'a day before the first weigh-in got nothing');
+  assert.equal(e[1].out, e[2].out, 'the weight did not carry forward');
+});
+
+await test('the day carries what was actually eaten', () => {
+  // The whole reason to tap a square: an average can never say the Thursday was
+  // one enormous takeaway rather than three ordinary meals.
+  const foodRows = [
+    { local_date: '2026-08-01', summary: 'Slice of pizza', detail: { calories: 300, protein_g: 12 }, estimated: true },
+    { local_date: '2026-08-01', summary: '8oz steak and a baked potato', detail: { calories: 750 }, estimated: true },
+  ];
+  const e = calendarDays({ days: [calDay('2026-08-01', { weight_kg: 84 })], foodRows, profile: CAL_PROFILE })[0];
+  assert.equal(e.meal_count, 2);
+  assert.equal(e.meals[0].summary, 'Slice of pizza');
+  assert.equal(e.meals[1].calories, 750);
+  assert.ok(e.estimated, 'estimated meals are not flagged as estimates');
+});
+
+await test('a window is only reported when the range actually covers it', () => {
+  // "This year" computed from seven days is a fabrication wearing a long label.
+  const mk = k => Array.from({ length: k }, (_, i) => calDay(`2026-08-${String((i % 28) + 1).padStart(2, '0')}`, { weight_kg: 84 }));
+  const week = calendarRollups(calendarDays({ days: mk(7), foodRows: [], profile: CAL_PROFILE }));
+  assert.ok(week.week, 'no week rollup from 7 days');
+  assert.equal(week.month, undefined, 'a month was reported from a week of data');
+  assert.equal(week.year, undefined, 'a year was reported from a week of data');
+});
+
+await test('the page never does its own arithmetic', () => {
+  // If the calendar summed anything itself it could disagree with the brief
+  // about the same Tuesday, and after that neither is worth reading.
+  const src = page('app.html');
+  const view = src.slice(src.indexOf('function calendarView('), src.indexOf('function wireCalendar('));
+  assert.ok(!/reduce\(/.test(view), 'the calendar view is summing things in the browser');
+  // It reads the server's block and nothing else.
+  assert.match(view, /const c = d\.calendar;/);
+});
+
 group('When a tool falls over');
 
 await test('a failed write says the words back and does not lose them', () => {

@@ -467,7 +467,8 @@ export async function rangeFacts(userId, profile, fromDate, toDate) {
     if (!byDay.has(d)) byDay.set(d, {
       date: d, calories: 0, protein_g: 0, carbs_g: 0, fat_g: 0,
       meals: 0, sessions: 0, minutes: 0, volume_kg: 0,
-      weights: [], steps: 0, sleep_minutes: 0, muscles: new Set(), logged: false,
+      weights: [], steps: 0, sleep_minutes: 0, active_calories: 0,
+      muscles: new Set(), logged: false,
     });
     return byDay.get(d);
   };
@@ -503,6 +504,9 @@ export async function rangeFacts(userId, profile, fromDate, toDate) {
     if (m.metric === 'weight_kg')     day.weights.push(num(m.value));
     if (m.metric === 'steps')         day.steps += num(m.value);
     if (m.metric === 'sleep_minutes') day.sleep_minutes += num(m.value);
+    // Carried per day so the calendar can put a measured burn on each square.
+    // A measurement always beats a multiplier, but only if it survives the trip.
+    if (m.metric === 'active_calories') day.active_calories += num(m.value);
   }
 
   const days = [...byDay.values()].sort((a, b) => a.date.localeCompare(b.date)).map(d => ({
@@ -520,6 +524,7 @@ export async function rangeFacts(userId, profile, fromDate, toDate) {
       ? Math.round((d.weights.reduce((a, b) => a + b, 0) / d.weights.length) * 100) / 100 : null,
     steps: d.steps || null,
     sleep_minutes: d.sleep_minutes || null,
+    active_calories: Math.round(d.active_calories) || null,
     muscles: [...d.muscles],
   }));
 

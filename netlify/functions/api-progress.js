@@ -16,6 +16,7 @@ import { orderInsight, earnedRoom, energyBalance, exerciseKey, deviceMatrix, wee
 import { blockPosition } from './lib/library.js';
 import { allowed } from './lib/membership.js';
 import { nutritionTotals, composition, macroMatrix, yearOverYear } from './lib/nutrition.js';
+import { calendarDays, calendarRollups, calendarMissing } from './lib/calendar.js';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -66,7 +67,7 @@ export const handler = async (event) => {
       .order('last_used_on', { ascending: false, nullsFirst: false })
       .then(r => r.data || []),
     supabase.from('wrought_events')
-      .select('event_type, local_date, detail, estimated')
+      .select('event_type, local_date, summary, detail, estimated')
       .eq('user_id', user.id).in('event_type', ['food', 'drink'])
       .order('local_date', { ascending: false }).limit(8000)
       .then(r => r.data || []),
@@ -103,6 +104,11 @@ export const handler = async (event) => {
 
   const summary  = summariseRange(range, profile);
   const flags    = careFlags(range, profile);
+
+  // The month laid out as squares, both halves of the sum on each one. Totals
+  // count logged days only — see lib/calendar.js for why that is load-bearing
+  // rather than fussy.
+  const calDays = calendarDays({ days: range.days, foodRows, profile });
   const imperial = profile.units === 'imperial';
   const w = kg => (kg == null ? null : imperial ? kgToLb(kg) : kg);
 
@@ -218,6 +224,11 @@ export const handler = async (event) => {
         composition: composition(foodRows, { since: addDays(to, -89) }),
         macro_matrix: macroMatrix(foodRows, { weeks: 12, today: to }),
         year_over_year: yearOverYear(foodRows, { today: to }),
+      },
+      calendar: {
+        days: calDays,
+        rollups: calendarRollups(calDays),
+        ...calendarMissing(profile, calDays),
       },
       device_matrix: deviceMatrix(range.days),
       weekday: weekdayPattern(range.days),
