@@ -1000,3 +1000,92 @@ export function baselineFromClaim({ claimed_kg, claimed_reps = null, kind = 'wor
     note: 'The claim never enters the log — only the performed set does. From the next session, progression runs off real history and this claim is spent.',
   };
 }
+
+// ── Readiness — what the body says before the session starts ────────────────
+// The founder: "it has all my heart health data, it should show training
+// spikes... recovery should know the time you're starting your workout."
+//
+// This is the professional half nobody has wired to an AI: resting heart rate
+// and sleep, read against the person's OWN recent baseline, so the answer is
+// "you, today, versus you lately" rather than a chart of strangers.
+//
+// TWO RULES MAKE IT SAFE TO SHIP.
+//
+// 1. NOT A DIAGNOSIS. An elevated resting heart rate has a hundred causes and
+//    this cannot tell them apart. It is allowed to say "your body is reading
+//    tired, train lighter" and is never allowed to imply a condition. When the
+//    signal is genuinely extreme it stops guessing and says see a doctor.
+// 2. IT ONLY EVER SOFTENS. A good reading is permission, never an instruction
+//    to go harder — "you're recovered, add weight" is how a tool talks somebody
+//    into an injury on a day they already felt off. The body gets a veto, never
+//    a spur. Same shape as earnedRoom(): the flag adds permission or it stays
+//    quiet.
+export function readiness({ days = [], today = null } = {}) {
+  if (!today) return null;
+  const past = days.filter(d => d.date < today);
+  const now  = days.find(d => d.date === today);
+  if (!now) return null;
+
+  // Baseline from the fortnight before today, so a hard week moves the bar and
+  // a single rough night does not.
+  const window = past.slice(-14);
+  const mean = (arr) => arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : null;
+  const rhrBase   = mean(window.map(d => d.resting_hr).filter(v => v != null));
+  const sleepBase = mean(window.map(d => d.sleep_minutes).filter(v => v != null));
+
+  const signals = [];
+  let flags = 0;
+
+  if (now.resting_hr != null && rhrBase != null && window.length >= 4) {
+    const delta = Math.round((now.resting_hr - rhrBase) * 10) / 10;
+    // 7% over a fortnight's baseline is the threshold every endurance coach
+    // uses; below that it is noise, salt and what time you stood up.
+    const raised = delta > 0 && delta / rhrBase >= 0.07;
+    if (raised) flags++;
+    signals.push({
+      metric: 'resting_hr', value: now.resting_hr, baseline: Math.round(rhrBase),
+      delta, notable: raised,
+      say: raised
+        ? `Resting heart rate ${now.resting_hr}, about ${Math.abs(delta)} above your usual ${Math.round(rhrBase)}.`
+        : `Resting heart rate ${now.resting_hr}, normal for you.`,
+    });
+  }
+
+  if (now.sleep_minutes != null && sleepBase != null && window.length >= 4) {
+    const short = now.sleep_minutes < sleepBase - 60;
+    if (short) flags++;
+    signals.push({
+      metric: 'sleep', value: now.sleep_minutes, baseline: Math.round(sleepBase),
+      delta: Math.round(now.sleep_minutes - sleepBase), notable: short,
+      say: short
+        ? `Slept ${humanMinutes(now.sleep_minutes)}, about ${humanMinutes(Math.round(sleepBase - now.sleep_minutes))} short of your usual.`
+        : `Slept ${humanMinutes(now.sleep_minutes)}, in line with your usual.`,
+    });
+  }
+
+  if (!signals.length) {
+    return { known: false, say: 'Nothing measuring recovery yet — a watch reporting sleep and resting heart rate is what fills this in.' };
+  }
+
+  const state = flags >= 2 ? 'strained' : flags === 1 ? 'watch' : 'ready';
+  return {
+    known: true,
+    state,
+    signals,
+    // Only ever softer. "Ready" is permission to train as planned — never an
+    // instruction to add weight, which is how a tool argues somebody into an
+    // injury on a day they already felt wrong.
+    say: state === 'strained'
+      ? `${signals.filter(s => s.notable).map(s => s.say).join(' ')} Two signals off at once — train, but take today lighter: same movements, fewer hard sets, nothing near failure. If it stays like this for a week or you feel genuinely unwell, that is a doctor's question, not this app's.`
+      : state === 'watch'
+        ? `${signals.find(s => s.notable).say} One signal off. Train as planned and judge it on the first working set — if the bar feels heavy today, it is heavy today.`
+        : 'Recovery signals look normal for you. Train as planned.',
+    caveat: 'Not a medical reading. Resting heart rate and sleep move for a hundred reasons this cannot tell apart — it is a nudge about today, nothing more.',
+  };
+}
+
+function humanMinutes(mins) {
+  if (mins == null) return null;
+  const h = Math.floor(mins / 60), m = Math.round(mins % 60);
+  return h ? `${h}h ${String(m).padStart(2, '0')}m` : `${m}m`;
+}

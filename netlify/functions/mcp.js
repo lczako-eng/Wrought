@@ -30,7 +30,7 @@ import { nutritionTotals, composition, macroMatrix, yearOverYear } from './lib/n
 import {
   exerciseKey, lastPerformance, progressionCall, TIERS,
   restingBurn, energyBalance, planFromRoutine, sessionTotals, earnedRoom,
-  orderPlan, orderInsight, deviceMatrix, weekdayPattern, weekSoFar, goalCall, baselineFromClaim,
+  orderPlan, orderInsight, deviceMatrix, weekdayPattern, weekSoFar, goalCall, baselineFromClaim, readiness,
 } from './lib/training.js';
 import { PROGRAMMES, GOALS, MOVEMENTS, movementsFor, pickProgramme, buildProgramme, buildBlock, blockPosition, BLOCK_LENGTHS } from './lib/library.js';
 
@@ -110,6 +110,10 @@ Every goal with a number is scored in every brief and drawn as a ring on the das
 GETTING SOMEBODY TRAINING — THE EXPECTATION IS SET ONCE, THEN KEPT VISIBLE. The FIRST time they want a workout, a plan, or say they should be training more, and the profile has no train_days or equipment: ask ONCE, in one short message, all together — how many days a week they will honestly train (take their number; if they ask what is realistic, three to five is the honest range and three beats five for anybody new), what equipment they have, and whether there is anything they cannot do — an injury, a condition, a movement that hurts. Save days and equipment with set_profile, save limitations with remember (category "health"), and NEVER silently program a movement around a limitation without saying so. Then offer start_block so the expectation has a structure with an end.
 
 Every brief carries training_week — the week's sessions against their target, already computed. When the week is behind and no care flag is up, say it in ONE line and offer today's session via suggest_workout. When they trained today, when the target is met, or when any care flag is up, do not push — the no-rest flag exists precisely because more is not the goal. A missed week is information, never a debt: sessions never roll over, and next week starts at zero. Guilt is how training logs die.
+
+THE BODY GETS A VETO, NEVER A SPUR. start_session and the brief both carry readiness — resting heart rate and sleep read against the person's OWN fortnight, not a chart of strangers. When it says strained or watch, say it in ONE line before the first exercise and take the session lighter: same movements, fewer hard sets, nothing near failure. When it says ready, that is permission to train as planned and NOTHING MORE — never turn a good reading into "add weight" or "go heavier today". Talking somebody into a bigger session on a day they already felt off is exactly how this feature would hurt them.
+
+It is not a medical reading and must never be spoken as one. Resting heart rate moves for a hundred reasons this cannot tell apart, so no diagnosis, no naming a condition, no "this could mean". If somebody is genuinely unwell or the signal stays bad for a week, that is a doctor's question and saying so plainly IS the answer.
 
 A DAY IS NOT SPENT LYING DOWN. If nothing is measuring their movement, calories out is the resting burn ALONE — a day of work counts as zero, the deficit looks far bigger than it is, and the advice that follows tells somebody to eat less than they need. energy_balance flags this on the response. Fix it by asking for activity_level, and say plainly that the figure shown is resting-only until then. A watch is better and overrides it, but most people do not have one and must not be left with a wrong number in the meantime.
 
@@ -1044,6 +1048,7 @@ async function brief(args, user) {
     // first, so "prompt me into training" has to mean this number being already
     // on the table every single time they talk.
     training_week: weekSoFar(range.days, { today: date, target: profile.train_days }),
+    readiness: readiness({ days: range.days, today: date }),
   };
 
   // Cache the verdict per day so re-asking is free and last Tuesday's read is
@@ -1386,6 +1391,12 @@ async function startSession(args, user) {
     }
   }
 
+  // What the body says before the session starts. The founder asked for
+  // exactly this — recovery knowing the moment training begins — and the
+  // moment it is useful is now, not in tonight's brief.
+  const recent = await rangeFacts(user.id, profile, addDays(today, -14), today);
+  const ready = readiness({ days: recent.days, today });
+
   // Today's loads, computed per exercise from their own history.
   const first = plan[0];
   const opener = await loadCallFor(user.id, first, tier);
@@ -1430,9 +1441,13 @@ async function startSession(args, user) {
     checklist: planChecklist(plan, 0, 0),
     total_exercises: plan.length,
     up_next: { ...first, set: 1, of: first.sets, load: opener },
+    readiness: ready?.known ? ready : undefined,
     coaching: TIERS[tier]?.doctrine,
     say: `${name}. ${plan.length} exercises. First up: ${first.name}, ${first.sets} sets of ${first.reps}. ${opener.say}`,
-    note: 'Call log_set after EVERY set they report, even a bare "done". The server tracks their position — never try to hold it yourself, and never re-state the whole plan between sets.',
+    note: (ready?.state === 'strained' || ready?.state === 'watch'
+      ? 'READINESS FIRST, in one line, before the first exercise — the body gets a veto and today is a day to say so. It only ever softens: never turn a good reading into "add weight". '
+      : '') +
+      'Call log_set after EVERY set they report, even a bare "done". The server tracks their position — never try to hold it yourself, and never re-state the whole plan between sets.',
     next_actions: ['log_set when they finish a set', 'end_session when they are done'],
   };
 }

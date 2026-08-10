@@ -306,6 +306,29 @@ change" is how somebody stops believing the readout. Bodyweight work is carried
 with a null weight rather than a zero, which the Lifts panel got wrong once
 already.
 
+### Readiness — the body gets a veto, never a spur
+
+`readiness()` in `lib/training.js`, carried on `start_session` and every brief.
+The founder: *"it has all my heart health data, it should show training spikes
+... recovery should know the time you're starting your workout."* Resting heart
+rate and sleep read against **their own fortnight** — you today versus you
+lately, never a chart of strangers. 7% over baseline is the endurance-coaching
+threshold; under that it is salt, sleep and what time somebody stood up.
+
+**Two rules make it safe to ship.** It is **not a diagnosis** — an elevated
+resting heart rate has a hundred causes this cannot tell apart, so no
+condition is ever named and a week of bad signal is answered with "that is a
+doctor's question". And **it only ever softens**: strained means train lighter,
+same movements, nothing near failure; *ready* means train as planned and
+**nothing more**. Turning a good reading into "add weight" is how the feature
+would talk somebody into an injury on a day they already felt off — same shape
+as `earnedRoom()`, which only ever adds permission. Both have tests.
+
+**The training spike** rides on every workout: `avg_hr` and `max_hr` from the
+watch's own per-session statistics, kept on the record so a run three months
+from now is comparable at the same effort. HRV comes across as a recovery
+signal, read as a trend, never as a clinical number.
+
 ### Targets, drawn rather than described
 
 `scoreGoals()` gains `percent` / `over`; `targetsPanel()` draws them as rings

@@ -37,6 +37,7 @@ final class HealthCourier: ObservableObject {
         for id: HKQuantityTypeIdentifier in [
             .stepCount, .activeEnergyBurned, .restingHeartRate, .bodyMass,
             .distanceWalkingRunning, .distanceCycling, .appleExerciseTime,
+            .heartRate, .heartRateVariabilitySDNN,
         ] {
             if let q = HKObjectType.quantityType(forIdentifier: id) { t.insert(q) }
         }
@@ -174,6 +175,11 @@ final class HealthCourier: ObservableObject {
         if let (bpm, at) = await latest(.restingHeartRate, unit: HKUnit.count().unitDivided(by: .minute()), within: 2) {
             metrics.append(["metric": "resting_hr", "value": bpm.rounded(), "unit": "bpm", "measured_at": iso.string(from: at)])
         }
+        // The other recovery signal. Read as a trend against their own
+        // baseline, never as a clinical number.
+        if let (ms, at) = await latest(.heartRateVariabilitySDNN, unit: .secondUnit(with: .milli), within: 2) {
+            metrics.append(["metric": "hrv", "value": ms.rounded(), "unit": "ms", "measured_at": iso.string(from: at)])
+        }
         if let (kg, at) = await latest(.bodyMass, unit: .gramUnit(with: .kilo), within: 365) {
             metrics.append(["metric": "weight_kg", "value": (kg * 100).rounded() / 100, "unit": "kg", "measured_at": iso.string(from: at)])
         }
@@ -242,6 +248,19 @@ final class HealthCourier: ObservableObject {
             if let kcal = w.statistics(for: HKQuantityType(.activeEnergyBurned))?
                 .sumQuantity()?.doubleValue(for: .kilocalorie()), kcal > 0 {
                 out["calories"] = kcal.rounded()
+            }
+            // The training spike: what the heart actually did during this
+            // session. Average says how hard it was; peak says whether there
+            // was a top end in it. Neither is a medical reading and neither is
+            // ever presented as one.
+            let bpm = HKUnit.count().unitDivided(by: .minute())
+            if let hr = w.statistics(for: HKQuantityType(.heartRate)) {
+                if let avg = hr.averageQuantity()?.doubleValue(for: bpm), avg > 0 {
+                    out["avg_hr"] = avg.rounded()
+                }
+                if let peak = hr.maximumQuantity()?.doubleValue(for: bpm), peak > 0 {
+                    out["max_hr"] = peak.rounded()
+                }
             }
             return out
         }

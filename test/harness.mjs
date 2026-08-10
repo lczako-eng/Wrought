@@ -3099,6 +3099,79 @@ await test('a photo of the gym becomes an equipment list — and never reaches u
   assert.match(SERVER_INSTRUCTIONS, /Never build a plan around a machine their photos did not show/);
 });
 
+group('Readiness — the body gets a veto, never a spur');
+
+const { readiness } = await import('../netlify/functions/lib/training.js');
+const baseDays = (over = {}) => {
+  const d = [];
+  for (let i = 1; i <= 14; i++) d.push({ date: `2026-07-${String(i).padStart(2, '0')}`, resting_hr: 54, sleep_minutes: 420 });
+  d.push({ date: '2026-08-10', resting_hr: 54, sleep_minutes: 420, ...over });
+  return d;
+};
+
+await test('it reads them against their own fortnight, not a chart of strangers', () => {
+  const ok = readiness({ days: baseDays(), today: '2026-08-10' });
+  assert.equal(ok.state, 'ready');
+  assert.match(ok.say, /normal for you/);
+
+  // 7% over their own baseline is the endurance-coaching threshold; under it
+  // is salt, sleep and what time you stood up.
+  const noise = readiness({ days: baseDays({ resting_hr: 56 }), today: '2026-08-10' });
+  assert.equal(noise.state, 'ready');
+  const raised = readiness({ days: baseDays({ resting_hr: 62 }), today: '2026-08-10' });
+  assert.equal(raised.state, 'watch');
+});
+
+await test('two signals off means lighter, and it never says stop', () => {
+  const strained = readiness({ days: baseDays({ resting_hr: 62, sleep_minutes: 300 }), today: '2026-08-10' });
+  assert.equal(strained.state, 'strained');
+  assert.match(strained.say, /train, but take today lighter/);
+  assert.match(strained.say, /nothing near failure/);
+  // A week of it is a doctor's question, said plainly — not a diagnosis here.
+  assert.match(strained.say, /doctor's question/);
+  assert.match(strained.caveat, /Not a medical reading/);
+  assert.ok(!/condition|illness|infection|could mean/i.test(strained.say), 'it is diagnosing');
+});
+
+await test('a good reading is permission, never an instruction to go harder', () => {
+  // Same shape as earnedRoom: the flag adds permission or stays quiet. "You're
+  // recovered, add weight" is how a tool argues somebody into an injury.
+  const ok = readiness({ days: baseDays(), today: '2026-08-10' });
+  assert.match(ok.say, /Train as planned/);
+  assert.ok(!/heavier|add weight|push harder|go hard/i.test(ok.say), 'a good reading became a spur');
+  assert.match(SERVER_INSTRUCTIONS, /THE BODY GETS A VETO, NEVER A SPUR/);
+  assert.match(SERVER_INSTRUCTIONS, /never turn a good reading into "add weight"/);
+  assert.match(SERVER_INSTRUCTIONS, /no diagnosis, no naming a condition/);
+});
+
+await test('with nothing measuring it, it says so rather than inventing a state', () => {
+  const none = readiness({ days: [{ date: '2026-08-10' }], today: '2026-08-10' });
+  assert.equal(none.known, false);
+  assert.match(none.say, /Nothing measuring recovery yet/);
+});
+
+await test('the session asks the body before the first set', () => {
+  const src = readFileSync(new URL('../netlify/functions/mcp.js', import.meta.url), 'utf8');
+  const fn = src.slice(src.indexOf('async function startSession('), src.indexOf('// A session assembled from'));
+  assert.match(fn, /readiness\(\{ days: recent\.days, today \}\)/);
+  assert.match(fn, /readiness: ready\?\.known \? ready : undefined/);
+  assert.match(fn, /READINESS FIRST, in one line, before the first exercise/);
+});
+
+await test('the training spike survives the trip from the watch', () => {
+  // "It has all my heart health data, it should show training spikes."
+  const w = normaliseWorkout({ kind: 'Running', minutes: 32, distance_km: 5.2, calories: 410, avg_hr: 148, max_hr: 171 });
+  assert.equal(w.detail.avg_hr, 148);
+  assert.equal(w.detail.max_hr, 171);
+  assert.match(w.summary, /148 bpm avg/);
+  // And the app reads it per workout rather than as a day-wide average.
+  const courier = readFileSync(new URL('../ios/Wrought/HealthCourier.swift', import.meta.url), 'utf8');
+  assert.match(courier, /statistics\(for: HKQuantityType\(\.heartRate\)\)/);
+  assert.match(courier, /averageQuantity/);
+  assert.match(courier, /maximumQuantity/);
+  assert.match(courier, /heartRateVariabilitySDNN/);
+});
+
 group('Targets, drawn rather than described');
 
 await test('the server computes how full a ring is, not the page', () => {

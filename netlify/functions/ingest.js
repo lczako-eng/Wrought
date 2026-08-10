@@ -277,6 +277,7 @@ export function normaliseWorkout(w) {
   const bits = [kindRaw || kind];
   if (Number.isFinite(distance)) bits.push(`${Math.round(distance * 100) / 100} km`);
   if (Number.isFinite(minutes))  bits.push(`${Math.round(minutes)} min`);
+  if (Number.isFinite(Number(w.avg_hr))) bits.push(`${Math.round(Number(w.avg_hr))} bpm avg`);
 
   return {
     event_type: 'workout',
@@ -286,6 +287,11 @@ export function normaliseWorkout(w) {
       minutes: Number.isFinite(minutes) ? Math.round(minutes) : null,
       distance_km: Number.isFinite(distance) ? Math.round(distance * 100) / 100 : null,
       calories: Number.isFinite(Number(w.calories)) ? Math.round(Number(w.calories)) : null,
+      // The training spike. Average is how hard the session was; peak is
+      // whether there was a top end in it. Kept on the session so a run three
+      // months from now can still be compared to this one at the same effort.
+      avg_hr: Number.isFinite(Number(w.avg_hr)) ? Math.round(Number(w.avg_hr)) : null,
+      max_hr: Number.isFinite(Number(w.max_hr)) ? Math.round(Number(w.max_hr)) : null,
       // Cardio is whole-body as far as the training matrix is concerned. Without
       // this a runner's matrix stays empty forever and the brief tells them
       // they have not trained, which is both wrong and insulting.
