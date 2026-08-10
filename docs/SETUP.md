@@ -37,6 +37,7 @@ Or one at a time, top to bottom:
 | `011_wrought_membership.sql` | plans, trials, codes, and the admin people list |
 | `012_wrought_link_codes.sql` | joining two accounts with a code from the assistant |
 | `013_wrought_work.sql` | `log_activity` — a work shift counted as its own burn, never as a session |
+| `014_wrought_plan.sql` | the plan — pace (gentle/steady/aggressive) and how hard it pushes |
 
 Each endpoint that needs a missing migration says which one by name rather than
 failing with something generic.

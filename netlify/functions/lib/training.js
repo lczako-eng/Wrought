@@ -278,8 +278,25 @@ export function energyBalance({
     // zero: a watch that reported less than the session it recorded is a watch
     // disagreeing with itself, and a negative "other" is nonsense on a screen.
     train = Math.min(training.kcal, measured);
-    other = Math.max(0, measured - train);
-    activeSource = 'device';
+    const fromDevice = Math.max(0, measured - train);
+
+    // THE LARGER OF THE TWO, not the device outright, and not the sum.
+    //
+    // "A measurement beats an estimate" is the right rule for a metric a watch
+    // can actually see. It is the WRONG rule for manual work, and a real day
+    // proved it: 5,292 steps and four and a half hours at a petting zoo came
+    // back as 740 active calories. A wrist accelerometer does not see load —
+    // carrying, lifting, pushing, holding, the entire thing that makes a
+    // physical job physical barely registers next to walking.
+    //
+    // Summing them would double-count the hours the watch WAS awake for, which
+    // is the trap. Taking the higher figure treats both as estimates of the
+    // same quantity and keeps the better-founded one. It is deliberately the
+    // conservative choice — some non-work movement the watch caught gets
+    // absorbed rather than added — because overstating a burn is a credibility
+    // problem and understating one tells somebody to eat less than they need.
+    other = Math.max(fromDevice, logged);
+    activeSource = logged > fromDevice ? 'logged_over_device' : 'device';
   } else if (logged > 0) {
     // No watch, but they told us what they did. The logged work stands on its
     // own, and the hours NOT accounted for are charged at the sedentary floor
@@ -334,8 +351,10 @@ export function energyBalance({
          (foodEstimated ? ' Food is estimated from what you described, so treat it as a direction, not a measurement.' : '') +
          // A logged shift on a day the watch also reported is NOT added, and
          // staying quiet about that reads as the log having been ignored.
-         (measured > 0 && logged > 0
-           ? ' Your watch already counted the day including the work, so what you logged is on the record but not added on top — a measurement beats an estimate.'
+         (activeSource === 'logged_over_device'
+           ? ` Your watch reported ${measured} for the whole day, but the work you logged comes to about ${logged} on its own — a wrist does not see carrying, so the higher figure is the one being used. They are not added together; that would count the same hours twice.`
+           : measured > 0 && logged > 0
+           ? ' Your watch counted more than the work alone would come to, so its figure is the one being used — the two are not added together.'
            : '') +
          (activity.capped ? ' The logged work was held at a ceiling; the raw figure is on the entry.' : '') +
          // Silence here would be the dangerous kind: a burn counting only the
@@ -993,7 +1012,38 @@ export function weekSoFar(days = [], { today, target = null } = {}) {
 //     surplus beyond what training can use is just weight to lose later.
 //   - "Both" (lose fat, gain muscle — what most people actually want) is a
 //     modest deficit with protein high; the training does the recomposition.
-export function goalCall({ profile = {}, weightKg = null, intent = 'maintain' } = {}) {
+// How fast, and the rails that hold whatever gets chosen.
+//
+// The founder: "your plans to tailor-made plan for you — aggressive,
+// non-aggressive fat burning, both." He is right that one hardcoded pace is
+// not a plan, it is a default. But the choice is over a BOUNDED range: every
+// pace here still floors intake at 1,200 and still projects under the rate
+// careFlags warns about. Aggressive means the fast end of safe, never a
+// different set of rules — a product that will pace somebody into its own
+// safety warning if they ask nicely has no safety warning.
+export const PACES = {
+  gentle:     { pct: 0.0025, min: 200, max: 400, framing: 'a gentle cut — slow, and the easiest kind to actually finish',
+                say: 'Slow. Barely feels like dieting, and it is the one people finish.' },
+  steady:     { pct: 0.005,  min: 300, max: 750, framing: 'a paced cut',
+                say: 'The default. About half a percent of bodyweight a week — fast enough to see, slow enough to keep muscle.' },
+  aggressive: { pct: 0.0075, min: 500, max: 1000, framing: 'an aggressive cut — this one is meant to be uncomfortable',
+                say: 'The fast end of sensible. Hungrier, and it costs more muscle, so protein and lifting matter more, not less.' },
+};
+
+// careFlags raises rapid_loss past 1.2 kg/week. Plans stop below it, with room.
+const RAPID_LOSS_CEILING = 1.0;
+
+// How hard it pushes. This changes NOTHING about the numbers — it changes how
+// often and how forcefully the assistant brings training up unprompted. Kept
+// separate from bluntness, which is about how a verdict is worded: somebody can
+// want the truth delivered flat and still not want chasing every evening.
+export const PUSH = {
+  light:      { say: 'Light. Answers when asked, brings training up only when you are well behind.' },
+  normal:     { say: 'Normal. Mentions where the week stands, suggests the session when you are short.' },
+  relentless: { say: 'Relentless. Names what is overdue every time you speak, and does not let a missed week pass quietly.' },
+};
+
+export function goalCall({ profile = {}, weightKg = null, intent = 'maintain', pace = 'steady' } = {}) {
   const rest = restingBurn(profile, weightKg);
   if (rest.kcal == null) {
     return { known: false, missing: rest.missing,
@@ -1003,19 +1053,21 @@ export function goalCall({ profile = {}, weightKg = null, intent = 'maintain' } 
   const maintenance = rest.kcal + (level ? Math.round(rest.kcal * (level.mult - 1)) : 0);
 
   const w = Number(weightKg);
-  // 0.5% of bodyweight a week, in daily kcal (7,700 per kg), clamped.
-  const paced = Math.round((0.005 * w * 7700) / 7);
-  const deficit = Math.min(750, Math.max(300, paced));
+  const p = PACES[pace] || PACES.steady;
+
+  // A percentage of bodyweight a week, in daily kcal (7,700 per kg), clamped.
+  const paced = Math.round((p.pct * w * 7700) / 7);
+  const deficit = Math.min(p.max, Math.max(p.min, paced));
 
   let target, rate, framing;
   if (intent === 'lose') {
     target = Math.max(1200, maintenance - deficit);
     rate = -Math.round(((maintenance - target) * 7 / 7700) * 100) / 100;
-    framing = 'a paced cut';
+    framing = p.framing;
   } else if (intent === 'gain') {
-    target = maintenance + 250;
-    rate = 0.25;
-    framing = 'a lean gain';
+    target = maintenance + (pace === 'aggressive' ? 400 : 250);
+    rate = pace === 'aggressive' ? 0.4 : 0.25;
+    framing = pace === 'aggressive' ? 'a faster gain, which will carry some fat with it' : 'a lean gain';
   } else if (intent === 'recomp') {
     target = Math.max(1200, maintenance - 300);
     rate = -Math.round((300 * 7 / 7700) * 100) / 100;
@@ -1026,6 +1078,24 @@ export function goalCall({ profile = {}, weightKg = null, intent = 'maintain' } 
     framing = 'maintenance';
   }
 
+  // THE PRODUCT MUST NOT PRESCRIBE WHAT IT WARNS ABOUT.
+  //
+  // careFlags raises rapid_loss above 1.2 kg a week. A plan that paces
+  // somebody INTO their own care flag is incoherent — it would spend a
+  // fortnight telling them to eat less and then tell them they were losing too
+  // fast. So the projection is held below the flag with a margin, and the
+  // ceiling is stated rather than applied quietly.
+  let held = null;
+  if (rate < -RAPID_LOSS_CEILING) {
+    const capped = Math.round((RAPID_LOSS_CEILING * 7700) / 7);
+    target = Math.max(1200, maintenance - capped);
+    rate = -Math.round(((maintenance - target) * 7 / 7700) * 100) / 100;
+    held = `That pace would have put you past ${RAPID_LOSS_CEILING}kg a week, which is where WROUGHT starts warning rather than coaching. Held just under it.`;
+  }
+  if (intent !== 'maintain' && target === 1200 && maintenance - deficit < 1200) {
+    held = 'The target hit the 1,200 floor — that is the least a body should be asked to run on, and no plan here goes below it however fast somebody wants to go.';
+  }
+
   // Protein: 1.6 g/kg, capped — per-kg arithmetic overshoots at high
   // bodyweights, and 220g is already past what anybody needs.
   const protein = Math.min(220, Math.round(w * 1.6));
@@ -1033,15 +1103,18 @@ export function goalCall({ profile = {}, weightKg = null, intent = 'maintain' } 
   return {
     known: true,
     intent,
+    pace,
     maintenance,
     calorie_target: target,
     protein_target_g: protein,
     projected_kg_per_week: rate,
     resting_only: !level,
     approximate: true,
+    ...(held ? { held } : {}),
     say: `Roughly ${maintenance} a day to hold steady, so the target is about ${target} — ${framing}` +
          (rate ? `, on pace for roughly ${Math.abs(rate)}kg a ${rate < 0 ? 'week down' : 'week up'}` : '') +
          `. Protein target about ${protein}g a day.` +
+         (held ? ` ${held}` : '') +
          (!level ? ' NOTE: nothing is counting movement, so maintenance here is resting-only and the real figure is higher — set an activity level and this improves.' : ''),
     caveat: 'All of it is an estimate. The weekly weigh-in trend is the truth; the target gets corrected against it, never the other way round.',
   };

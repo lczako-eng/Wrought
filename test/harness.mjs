@@ -25,6 +25,7 @@ import {
   trainingBurn,
 } from '../netlify/functions/lib/training.js';
 import { activityBurn, activityTotal, matchActivity, ACTIVITIES, EFFORTS } from '../netlify/functions/lib/activity.js';
+const { goalCall, PACES, PUSH } = await import('../netlify/functions/lib/training.js');
 import {
   localDateFor, addDays, daysBetween, clockString, humanDuration,
   kgToLb, lbToKg, cmToIn, inToCm, sayWeight,
@@ -3349,7 +3350,6 @@ await test('the baseline is asked for once, and changing it is never a lecture',
 
 group('A body goal becomes numbers, computed — never guessed');
 
-const { goalCall } = await import('../netlify/functions/lib/training.js');
 const GOAL_P = { height_cm: 183, birth_year: 1982, sex: 'male', activity_level: 'moderate' };
 
 await test('loss is paced to the body it is for, and the deficit is clamped', () => {
@@ -3394,7 +3394,7 @@ await test('without the five facts it refuses, and everything is an estimate', (
 await test('set_goal computes body-goal numbers server-side, in one call', () => {
   const src = readFileSync(new URL('../netlify/functions/mcp.js', import.meta.url), 'utf8');
   const fn = src.slice(src.indexOf('async function setGoal('), src.indexOf('async function setEatingWindow('));
-  assert.match(fn, /goalCall\(\{ profile, weightKg, intent: args\.intent \}\)/);
+  assert.match(fn, /goalCall\(\{ profile, weightKg, intent: args\.intent, pace \}\)/);
   // The calorie and protein daily goals are set in the same call, so the brief
   // scores the plan the moment it exists.
   assert.match(fn, /metric: 'calories'/);
@@ -3981,6 +3981,108 @@ await test('a Supabase setting is named with the place it lives', () => {
   assert.match(src, /Authentication → Sign In \/ Providers/);
 });
 
+// ── The plan ────────────────────────────────────────────────────────────────
+
+group('The plan — how fast, how hard, and changeable');
+
+await test('aggressive is the fast end of safe, not different rules', () => {
+  const p = { height_cm: 190, birth_year: 1985, sex: 'male', activity_level: 'light' };
+  const gentle = goalCall({ profile: p, weightKg: 150, intent: 'lose', pace: 'gentle' });
+  const steady = goalCall({ profile: p, weightKg: 150, intent: 'lose', pace: 'steady' });
+  const hard   = goalCall({ profile: p, weightKg: 150, intent: 'lose', pace: 'aggressive' });
+
+  // Faster means fewer calories, in that order.
+  assert.ok(hard.calorie_target < steady.calorie_target);
+  assert.ok(steady.calorie_target < gentle.calorie_target);
+  // And every one of them still floors at the care number.
+  for (const c of [gentle, steady, hard]) assert.ok(c.calorie_target >= 1200);
+});
+
+await test('no plan paces somebody into the product\'s own warning', () => {
+  // careFlags raises rapid_loss past 1.2 kg a week. A plan that walks somebody
+  // into that would spend a fortnight coaching them to eat less and then warn
+  // them they were losing too fast. The product must not prescribe what it
+  // warns about — at ANY pace, at any size, on either end of the scale.
+  const bodies = [
+    [{ height_cm: 200, birth_year: 1985, sex: 'male', activity_level: 'very_active' }, 220],
+    [{ height_cm: 190, birth_year: 1985, sex: 'male', activity_level: 'light' }, 150],
+    [{ height_cm: 150, birth_year: 2000, sex: 'female', activity_level: 'sedentary' }, 45],
+    [{ height_cm: 175, birth_year: 1970 }, 90],
+  ];
+  for (const [p, kg] of bodies) {
+    for (const pace of Object.keys(PACES)) {
+      const c = goalCall({ profile: p, weightKg: kg, intent: 'lose', pace });
+      assert.ok(Math.abs(c.projected_kg_per_week) < 1.2,
+        `${pace} at ${kg}kg paces ${c.projected_kg_per_week} kg/week — into the care flag`);
+      assert.ok(c.calorie_target >= 1200,
+        `${pace} at ${kg}kg targets ${c.calorie_target}, under the floor`);
+    }
+  }
+});
+
+await test('the 1,200 floor holds however fast somebody wants to go', () => {
+  const small = { height_cm: 150, birth_year: 2000, sex: 'female', activity_level: 'sedentary' };
+  const c = goalCall({ profile: small, weightKg: 45, intent: 'lose', pace: 'aggressive' });
+  assert.ok(c.calorie_target >= 1200);
+  assert.ok(c.held, 'hitting the floor was not said');
+});
+
+await test('the plan is one read, and it names what is missing', () => {
+  const tool = TOOLS.find(t => t.name === 'my_plan');
+  assert.ok(tool, 'my_plan is missing');
+  assert.match(tool.description, /before their first session/i);
+  assert.equal(tool.annotations.readOnlyHint, true);
+
+  const set = TOOLS.find(t => t.name === 'set_plan');
+  assert.ok(set, 'set_plan is missing');
+  assert.deepEqual(set.inputSchema.properties.pace.enum, ['gentle', 'steady', 'aggressive']);
+  assert.deepEqual(set.inputSchema.properties.push.enum, ['light', 'normal', 'relentless']);
+  // Changing it is never a negotiation — that is the whole doctrine.
+  assert.match(set.description, /NEVER a negotiation/i);
+  assert.match(set.description, /set wrong/i);
+});
+
+await test('nobody trains before being told what they are training for', () => {
+  assert.match(SERVER_INSTRUCTIONS, /NOBODY TRAINS BEFORE THEY KNOW WHAT THEY ARE TRAINING FOR/);
+  // Asked once, all together, and the workout still arrives in the same turn.
+  assert.match(SERVER_INSTRUCTIONS, /ONE message/);
+  assert.match(SERVER_INSTRUCTIONS, /same turn/);
+  assert.match(SERVER_INSTRUCTIONS, /never turn this into a form/i);
+});
+
+await test('push and bluntness are not the same dial', () => {
+  // Conflating them means turning down the nagging also turns down the
+  // honesty, which is the one thing the product exists to provide.
+  assert.match(SERVER_INSTRUCTIONS, /PUSH IS NOT BLUNTNESS/);
+  assert.match(SERVER_INSTRUCTIONS, /care flag silences pushing entirely/i);
+  assert.equal(Object.keys(PUSH).length, 3);
+  for (const v of Object.values(PUSH)) assert.ok(v.say.length > 10);
+});
+
+await test('changing the plan moves the targets with it', () => {
+  // A new pace with the old calorie target standing beside it is two answers
+  // to one question — the same bug stacked goal rings had.
+  const src = readFileSync(new URL('../netlify/functions/mcp.js', import.meta.url), 'utf8');
+  const fn = src.slice(src.indexOf('async function setPlan('), src.indexOf('// Work, counted at last'));
+  assert.match(fn, /retireGoalsFor/);
+  assert.match(fn, /goalCall\(/);
+  assert.match(fn, /pace: patch\.plan_pace/);
+});
+
+await test('dictation cannot spell WROUGHT, so the server is told', () => {
+  // Nobody types to this product. "Wrought" comes out of voice-to-text as
+  // route, rot, rout — and a connector that stops understanding its own name
+  // is the hardest regression to notice, because nothing errors.
+  assert.match(SERVER_INSTRUCTIONS, /DICTATION CANNOT SPELL/i);
+  for (const v of ['ROUTE', 'ROT', 'ROUT', 'WROT']) {
+    assert.ok(SERVER_INSTRUCTIONS.includes(v), `${v} is not listed`);
+  }
+  // The subject decides, not the spelling — directions are still directions.
+  assert.match(SERVER_INSTRUCTIONS, /route to the gym/i);
+  // And it never corrects them.
+  assert.match(SERVER_INSTRUCTIONS, /[Nn]ever correct their pronunciation/);
+});
+
 // ── The third burn ──────────────────────────────────────────────────────────
 
 group('Work — the burn nothing was counting');
@@ -4047,22 +4149,40 @@ await test('the burn comes back in three named parts', () => {
   assert.match(b.say, /training/);
 });
 
-await test('a watch that counted the day does not count it again', () => {
+await test('a watch and a logged shift are never added together', () => {
   // The shift is where the steps and the heart rate came from, so a watch has
-  // already counted it. Adding a logged shift on top is how calories out
-  // silently doubles — the one bug that would make this feature dangerous.
+  // already counted part of it. Summing them is how calories out silently
+  // doubles — the one bug that would make this feature dangerous.
   const p = { height_cm: 190, birth_year: 1990, sex: 'male', activity_level: 'light' };
-  const measured = 1200;
+  const measured = 2400;
   const b = energyBalance({
     profile: p, weightKg: 110, caloriesIn: 2400, activeCalories: measured,
     workouts: [{ event_type: 'workout', detail: { kind: 'strength', minutes: 60, calories: 400 } }],
     activities: [{ event_type: 'activity', detail: { kcal: 900, hours: 7 } }],
   });
   assert.equal(b.active_source, 'device');
-  assert.equal(b.training_burn + b.other_burn, measured);
+  assert.equal(b.training_burn + b.other_burn, measured, 'the two were summed');
   assert.equal(b.training_burn, 400);
-  // And it says so, rather than looking like the log was ignored.
-  assert.match(b.say, /already counted the day/i);
+  assert.match(b.say, /not added together/i);
+});
+
+await test('a wrist that missed the work does not get the last word', () => {
+  // The real day that forced this: 5,292 steps and four and a half hours at a
+  // petting zoo came back as 740 active calories. An accelerometer does not see
+  // load — carrying, lifting, holding, the whole thing that makes a physical
+  // job physical barely registers next to walking. "A measurement beats an
+  // estimate" is right for a metric a watch can actually see and wrong here.
+  const p = { height_cm: 190, birth_year: 1985, sex: 'male', activity_level: 'light' };
+  const b = energyBalance({
+    profile: p, weightKg: 150, caloriesIn: 1520, activeCalories: 740,
+    activities: [{ event_type: 'activity', detail: { kcal: 1400, hours: 4.5 } }],
+  });
+  assert.equal(b.active_source, 'logged_over_device');
+  assert.equal(b.other_burn, 1400, 'the watch figure won when it should not have');
+  // Still not the sum — that would be the double-count.
+  assert.ok(b.other_burn < 740 + 1400);
+  assert.match(b.say, /wrist does not see carrying/i);
+  assert.match(b.say, /not added together/i);
 });
 
 await test('the session comes out of the watch total, never on top of it', () => {

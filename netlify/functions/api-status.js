@@ -43,6 +43,7 @@ const MIGRATIONS = [
   // a constraint is not visible through PostgREST. Assumed rather than probed —
   // log_activity says which migration it needs when the insert is rejected.
   { file: '013_wrought_work.sql',        probe: col('wrought_events', 'event_type'), gives: 'log_activity — a work shift counted as its own burn', assume: true },
+  { file: '014_wrought_plan.sql',        probe: col('wrought_profile', 'plan_pace'), gives: 'the plan — how fast it is paced and how hard it pushes' },
 ];
 
 // A probe that treats EVERY error as "not run" lies twice over: a timeout reads

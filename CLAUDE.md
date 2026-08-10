@@ -73,7 +73,7 @@ nothing else.
   MCP brief and the web dashboard cannot disagree. `api-progress.js` exists
   purely so the dashboard calls the same code rather than recomputing in JS.
 - **MCP server**: `netlify/functions/mcp.js` at `/mcp` — stateless Streamable
-  HTTP, JSON-RPC. 38 tools. Doctrines ship in `SERVER_INSTRUCTIONS`.
+  HTTP, JSON-RPC. 40 tools. Doctrines ship in `SERVER_INSTRUCTIONS`.
 - **Auth**: OAuth 2.1 (PKCE, dynamic client registration) so "Sign in with
   Wrought" appears in ChatGPT/Claude. Supabase session JWTs also accepted as a
   fallback. Everything secret is stored SHA-256 hashed.
@@ -246,13 +246,20 @@ nobody can act on.
   resting cost of those hours, which the daily resting burn is already
   charging for. Adding them raw on top of a full-day BMR bills those hours
   twice and invents a thousand calories nobody spent.
-- **A watch that reported the day has already counted the shift**, because the
-  shift is where the steps and the heart rate came from. On a measured day a
-  logged activity is kept as a record and adds **nothing** — and the response
-  says so, because silence there reads as the log having been ignored. Same
-  rule for the session: Apple's active energy is everything above resting,
-  workouts included, so training comes **out** of that total rather than on top
-  of it, floored at zero.
+- **The larger of the two, never the sum, and never the device outright.** A
+  watch has already counted part of the shift — that is where the steps came
+  from — so adding them is the double-count trap. But *"a measurement beats an
+  estimate"* is the wrong rule here, and a real day proved it: 5,292 steps and
+  four and a half hours at a petting zoo came back as **740 active calories**.
+  A wrist accelerometer does not see load; carrying, lifting and holding barely
+  register next to walking. So both are treated as estimates of the same
+  quantity and the better-founded one wins, with `active_source:
+  'logged_over_device'` saying which and why. Deliberately conservative — some
+  non-work movement gets absorbed rather than added — because overstating a
+  burn is a credibility problem while understating one tells somebody to eat
+  less than they need. Same shape for the session: Apple's active energy is
+  everything above resting, workouts included, so training comes **out** of
+  that total rather than on top of it, floored at zero.
 - **Logging work can never make somebody's burn go down.** Never below what
   the activity multiplier alone would have said — being punished for telling
   the truth is how a log stops being told the truth.
@@ -279,6 +286,57 @@ nobody can act on.
 contribute **nothing** to calories out unless a watch measured it, so the
 person most likely to be logging by hand was the person whose training counted
 for zero.
+
+### The plan — stated before the first session, changed in one sentence
+
+`PACES` / `PUSH` / `goalCall()` in `lib/training.js`, `014_wrought_plan.sql`,
+and the `my_plan` / `set_plan` tools. The founder: *"your plans to tailor-made
+plan for you — aggressive, non-aggressive fat burning — and how hard this
+thing's gonna prompt you. This should be explained right when you try your
+first workout: what plan are you on? Let's build this thing before diving right
+into it. And it should give you the ability to change it any time."*
+
+Every piece of this already existed and **none of it was answerable.** The
+intent sat on a goal row, the pace was hardcoded at 0.5%/week, the pushiness
+did not exist at all, days and tier were profile columns. *"What am I actually
+doing"* had no reply — and a plan nobody can state is a plan nobody is
+following.
+
+- **Pace is bounded, and aggressive is the fast end of SAFE.** Every pace still
+  floors intake at 1,200 and still projects under the rate `careFlags` warns
+  about. **The product must not prescribe what it warns about** — a plan that
+  paces somebody into their own care flag would spend a fortnight coaching them
+  to eat less and then tell them they were losing too fast. When a request hits
+  a ceiling it comes back in `held` and is said out loud, never applied
+  quietly. Tested across four body sizes at all three paces.
+- **Push is not bluntness.** Bluntness is how a verdict is WORDED; push is how
+  OFTEN training gets raised unprompted. Conflating them means turning down the
+  nagging also turns down the honesty, which is the one thing the product
+  exists for. A care flag silences pushing entirely — relentless is a setting,
+  not a licence.
+- **The plan is explained before the first session, once**, carried on
+  `suggest_workout` as a `plan` block. Somebody training without knowing what
+  they are training toward is doing exercise, not a programme, and the
+  difference is whether there is a reason to show up on a Tuesday they do not
+  feel like it. It rides ON the suggestion rather than blocking it: a setup
+  interview between somebody and their first workout is how the first workout
+  stops happening. Asked all at once, answered in the same turn as the session.
+- **Changing it is never a negotiation** — the same doctrine as `drop_goal`.
+  No remark about commitment, no asking why, no warning about backing off. A
+  plan somebody keeps missing is a plan set wrong. `set_plan` recomputes the
+  calorie and protein targets in the same call, so a new pace can never stand
+  beside an old target — the stacked-rings bug, in a new place.
+
+### "Wrought" is a word dictation cannot spell
+
+Nobody types to this product; they talk to their phone. "Wrought" comes back as
+**route**, rot, rout, wrot, rought. So `SERVER_INSTRUCTIONS` maps those onto
+the connector whenever the sentence is about training, food, weight or a plan —
+same treatment as *"jim bro"*. **The subject decides, not the spelling**:
+"what's my route to the gym" is directions and nothing to do with us. It never
+corrects the pronunciation and never replies "did you mean Wrought?" — it just
+answers. Losing this breaks nothing loudly; the connector simply stops
+recognising its own name, which is the hardest regression to spot.
 
 ### Hands-free — Siri owns the wake word, and that is the whole design
 
@@ -1118,7 +1176,7 @@ self-reporting scale removes the most-abandoned manual entry), then Strava.
 
 ## Conventions
 
-- `npm test` runs `test/harness.mjs` — 395 offline tests, no network, no database.
+- `npm test` runs `test/harness.mjs` — 404 offline tests, no network, no database.
   Run it before every push. It covers the JSON-RPC envelope (which fails as an
   uninformative "could not connect" inside ChatGPT) and all the arithmetic
   (which fails as a confidently wrong number in somebody's verdict).
@@ -1140,7 +1198,7 @@ self-reporting scale removes the most-abandoned manual entry), then Strava.
    `003_wrought_training.sql`, `004_wrought_fasting.sql`,
    `005_wrought_activity.sql`, `006_wrought_identity.sql`, `007_wrought_push.sql`,
    `008_wrought_blocks.sql`, `009_wrought_photos.sql` and
-   `010_wrought_profile_web.sql`, `011_wrought_membership.sql`, `012_wrought_link_codes.sql` and `013_wrought_work.sql` in Supabase. Full checklist in `docs/SETUP.md`.
+   `010_wrought_profile_web.sql`, `011_wrought_membership.sql`, `012_wrought_link_codes.sql`, `013_wrought_work.sql` and `014_wrought_plan.sql` in Supabase. Full checklist in `docs/SETUP.md`.
 3. Set env vars in Netlify: `SUPABASE_URL` (**no trailing slash** — Kong answers
    "Invalid path specified in request URL" and nothing says why),
    `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_ANON_KEY`,

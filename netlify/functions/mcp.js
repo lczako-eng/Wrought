@@ -33,6 +33,7 @@ import {
   exerciseKey, lastPerformance, progressionCall, TIERS,
   restingBurn, energyBalance, planFromRoutine, sessionTotals, earnedRoom,
   orderPlan, orderInsight, deviceMatrix, weekdayPattern, weekSoFar, goalCall, baselineFromClaim, readiness,
+  PACES, PUSH,
 } from './lib/training.js';
 import { PROGRAMMES, GOALS, MOVEMENTS, movementsFor, pickProgramme, buildProgramme, buildBlock, blockPosition, BLOCK_LENGTHS } from './lib/library.js';
 
@@ -123,6 +124,10 @@ BEING ADDRESSED BY NAME MEANS THE QUESTION IS FOR WROUGHT. "gym bro", "hey gym b
 
 This matters because the wrong answer looks exactly like the right one. "Jim bro, what account am I on?" answered from your own context gives them their ChatGPT account, which is confidently, uselessly wrong — they were asking which WROUGHT account holds their training. If a nickname is used and no tool obviously fits, call get_profile and answer from that.
 
+"WROUGHT" IS A WORD DICTATION CANNOT SPELL. Almost nobody types to this product — they talk to their phone, and "wrought" comes out as ROUTE, ROT, ROUT, WROT, RAW, WROUGHT IRON, or ROUGHT. So treat "what's my route", "add it to route", "tell route", "get more route", "my rot plan" and every near-miss like them as meaning THIS CONNECTOR, whenever the sentence is about training, food, weight, a plan or a log. Read it as the product name and answer from a tool.
+
+The tell is the subject, not the spelling. "What's my route to the gym" is directions and this has nothing to do with it; "what's my route say about today" is WROUGHT and needs a tool. When it genuinely could be either, ask in half a line rather than guessing — but the default in any health or training sentence is that they mean this. Never correct their pronunciation or point out the transcription, and never say "did you mean Wrought?" as a whole reply. Just answer the question they asked.
+
 HOW PEOPLE ACTUALLY ASK. Nobody says "call the brief tool". They say one of a hundred things, half of them sideways, most of them while doing something else. Treat all of these as the named tool, without asking which they meant:
 "what should I be running", "give me a plan", "what am I doing for the next two months", "I need a programme to follow" mean start_block; "what am I doing today", "what week am I on", "how far through am I" mean block_status.
 
@@ -132,6 +137,8 @@ HOW PEOPLE ACTUALLY ASK. Nobody says "call the brief tool". They say one of a hu
   suggest_workout / programmes — "what should I train", "give me a workout", "what's today", "programme me", "build me something", "I've got 40 minutes", "what am I neglecting", "proper programme", "what should I be running"
   start_session — "let's go", "starting now", "at the gym", "I'm going to the gym", "heading to the gym", "gym in ten", "leg day", "chest day", "I'm at the rack", "warmed up"
   log_set — "done", "got it", "got 8", "8 at 225", "that's up", "failed at 5", "couldn't finish", "one more in the tank"
+  my_plan — "what's my plan", "what am I on", "what am I actually doing", "what am I aiming for", "why that number", "what's my target", "remind me what this is", "what's my route" (dictation for WROUGHT), "how does this work for me"
+  set_plan — "make it aggressive", "I want this off faster", "go harder on me", "chase me", "ease off", "nothing drastic", "stop nagging me", "leave me alone a bit", "make it four days a week", "I can only do three", "change my plan"
   log_activity — "I was at work all day", "worked at the petting zoo", "did a double shift", "on site since six", "been on my feet since seven", "spent the afternoon digging", "moved house today", "was doing the garden", "shovelled the drive", "long shift", "physical day", "grafting all day"
   swap_exercise — "machine's taken"
   calibrate_lift — "I usually bench 185", "I can do 80 for 8", "my max is 315", "I think I can press about", "I used to squat", "someone's on it", "bench is busy", "rack's full", "it's occupied", "can't get on it", "there's a queue", "that machine's broken", "can we do something else"
@@ -166,6 +173,12 @@ THE MACHINE BEING TAKEN IS NORMAL, NOT A PROBLEM TO DISCUSS. "Someone's on it" m
 WHEN THE SESSION ENDS, NAME THE NEXT ONE. end_session returns next_workout and training_week. Close every workout with them, in one line: what they just did, anything that beat last time, and what is next — "Next up: Push A, week 3." This server can never speak first, so the end of one session is the only place the next one can be planted. If the block just finished, SAY SO — that is the only reward the structure had to give.
 
 A GREETING IN THAT REGISTER IS A REQUEST, NOT SMALL TALK. "Hey jim bro", "gym bro", "morning", "coach" and the rest are not openers to be answered conversationally — they are the user asking for their read. CALL THE TOOL FIRST and lead with what comes back. Never reply "hey bro, what's up?" and wait: they already told you what's up. If genuinely nothing is logged yet, still call brief and say that, rather than making them ask twice.
+
+NOBODY TRAINS BEFORE THEY KNOW WHAT THEY ARE TRAINING FOR. suggest_workout and start_session carry a plan block. When it says set: false, that person has never been told what plan they are on — so before the session, say in two lines what a plan is and ask for ALL of the missing parts in ONE message: what they are after, how fast (gentle / steady / aggressive), how hard WROUGHT should chase them (light / normal / relentless), and how many sessions a week they will honestly do. Then call set_plan and set_goal AND give them the workout in the same turn. Never make somebody ask twice for the session they came for, and never turn this into a form — a setup interview standing between somebody and their first workout is how the first workout stops happening. When set: true, open with the plan in one short line so the session has a reason attached, and get on with it.
+
+THE PLAN CHANGES WHENEVER THEY SAY SO, AND IT IS NEVER A NEGOTIATION. "Make it aggressive", "ease off", "stop nagging me", "make it three days" — call set_plan immediately, confirm in one line, move on. NO remark about commitment, no asking why, no warning that they are backing off. A plan somebody keeps missing is a plan set wrong, and easing it to what they will really do is the correct move, not a retreat. The one thing to say plainly on the way up: an aggressive pace is hungrier and costs more muscle, so protein and lifting matter more, not less. Every pace still floors intake at 1,200 and stays under the loss rate the care flags warn about — WROUGHT will not pace somebody into its own safety warning however hard they push, and if a request hits that ceiling the response says so in the held field. Relay it; do not argue it.
+
+PUSH IS NOT BLUNTNESS. Bluntness is how a verdict is WORDED. Push is how OFTEN training gets brought up when they did not ask. Somebody can want the truth delivered flat and still not want chasing every evening, so never change one when they asked for the other. And a care flag silences pushing entirely, whatever the plan says — relentless is a setting, not a licence.
 
 WORK IS THE THIRD BURN, AND IT IS USUALLY THE BIGGEST. Calories out has three parts: resting (what a body costs lying still), training (the gym), and everything else (a job, a garden, a house move). For anybody with a physical job the third is larger than the other two combined, and nothing counts it unless they say so. So a mention of having WORKED is a log — "I was at the petting zoo all day", "double shift", "on site since six" — call log_activity in the same turn, with quiet acknowledgement, exactly like capture in passing. Ask only for hours if they have not said, and ask for hours ON TASK rather than the length of the shift, because nobody works at full effort through their break. NEVER ESTIMATE THE CALORIES YOURSELF — the server reads them off a standard effort table against their bodyweight, and a guessed number here would be hundreds of calories wrong in a direction that changes what they eat. If the job is not in the table the server asks whether it was light, moderate, hard or very hard; pass that back rather than choosing for them.
 
@@ -549,6 +562,29 @@ const TOOLS = [
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
   },
   {
+    name: 'my_plan',
+    title: 'What plan am I on',
+    description: 'The whole plan in one read: what they are aiming at, how fast it is paced, how hard WROUGHT is meant to push, how many sessions a week, what tier they train at, and the daily calorie and protein targets that fall out of it. Call it whenever they ask "what am I actually doing", "what plan am I on", "what am I aiming for", "why that number" — and ALWAYS before their first session, so nobody starts training without being told what they are training toward. If nothing has been chosen yet it comes back with what to ask, in one message.',
+    inputSchema: { type: 'object', properties: {} },
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+  },
+  {
+    name: 'set_plan',
+    title: 'Change the plan',
+    description: 'Changes the pace, how hard it pushes, or the days a week — any one of them on its own. "Make it aggressive", "ease off", "stop nagging me", "chase me harder", "make it four days". Re-computes the calorie and protein targets from the new pace in the same call, so the plan and the numbers can never disagree. Changing a plan is NEVER a negotiation and never gets a remark about commitment: a plan somebody keeps missing is a plan set wrong, and easing it to what they will actually do is the correct move.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        pace:       { type: 'string', enum: ['gentle','steady','aggressive'],
+                      description: 'How fast the body goal is paced. Every pace floors intake at 1,200 and stays under the loss rate WROUGHT warns about — aggressive is the fast end of safe, not a different set of rules.' },
+        push:       { type: 'string', enum: ['light','normal','relentless'],
+                      description: 'How hard to bring training up unprompted. Changes no number. Separate from bluntness on purpose — somebody can want the truth flat and still not want chasing every evening.' },
+        train_days: { type: 'integer', description: 'Sessions a week they will honestly do. Their real number, never an aspirational one.' },
+      },
+    },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+  },
+  {
     name: 'log_activity',
     title: 'Record work, or a day of graft that was not training',
     description: 'A shift, a garden, a house move, eight hours on a building site — real physical work that is NOT a training session. Use this whenever somebody mentions having worked, especially a physical job: "I was at the petting zoo all day", "did a double shift", "spent the afternoon digging". It is usually the biggest number in their day and nothing else counts it. The server works out the calories from a standard effort table — never estimate them yourself. Do NOT use this for the gym: a workout is log or log_set, and filing work as training would count it toward their weekly sessions.',
@@ -652,6 +688,8 @@ const TOOLS = [
       type: 'object',
       properties: {
         goal:      { type: 'string', description: 'Their words: "get to 180 by Christmas", "hit 150 protein daily", "lose weight", "get more muscular".' },
+        pace:      { type: 'string', enum: ['gentle','steady','aggressive'],
+                     description: 'How fast, when they have said — "I want this off fast" is aggressive, "nothing drastic" is gentle. Only with intent. Omit to keep the pace already on their plan. Every pace is bounded the same way; aggressive is the fast end of safe, not different rules.' },
         intent:    { type: 'string', enum: ['lose','gain','recomp','maintain'],
                      description: 'Pass this when the goal is about their body rather than a single number — lose weight, build muscle, or both at once (recomp — what "lose weight AND get more muscular" means). The SERVER then computes the calorie and protein targets from their own maintenance, paced and floored safely, and sets the daily goals in the same call. NEVER invent those numbers yourself.' },
         metric:    { type: 'string', enum: ['protein_g','calories','steps','workout_days','sleep_minutes','weight_kg','distance_km','active_minutes'],
@@ -1035,6 +1073,160 @@ async function amendLast(args, user) {
 // target. Ids are checked against the caller's own rows before anything is
 // written: an id is guessable, and an unchecked one would let a stranger
 // rewrite somebody else's log.
+// ── The plan ────────────────────────────────────────────────────────────────
+//
+// The founder: "your plans to tailor-made plan for you — aggressive,
+// non-aggressive fat burning — and how hard this thing's gonna prompt you.
+// This should be explained right when you try your first workout: what plan are
+// you on? Let's build this thing before diving right into it. And it should
+// give you the ability to change it any time."
+//
+// Every piece of this already existed and NONE of it was answerable. The intent
+// sat on a goal row, the pace was hardcoded, the pushiness did not exist, the
+// days and the tier were profile columns. "What am I actually doing" had no
+// reply, and a plan nobody can state is a plan nobody is following.
+//
+// Two reads, one write, and the write is deliberately cheap to call. A plan you
+// have to negotiate with is one people abandon instead of adjusting.
+
+async function savePlan(userId, patch) {
+  const row = { user_id: userId, ...patch, plan_set_on: new Date().toISOString().slice(0, 10) };
+  const { error } = await supabase.from('wrought_profile')
+    .upsert(row, { onConflict: 'user_id' });
+  if (error && /column .* does not exist/i.test(error.message)) {
+    return { error: 'The plan columns are not in the database yet — run schema/014_wrought_plan.sql in Supabase.' };
+  }
+  return error ? { error: error.message } : {};
+}
+
+async function planFacts(userId) {
+  const [profile, goals] = await Promise.all([getProfile(userId), getGoals(userId)]);
+
+  const { data: recent } = await supabase.from('wrought_events')
+    .select('detail').eq('user_id', userId).eq('event_type', 'weight')
+    .order('occurred_at', { ascending: false }).limit(1);
+  const weightKg = recent?.[0]?.detail?.value_kg ?? null;
+
+  const bodyGoal = goals.find(g => g.metric === 'weight_kg');
+  const calGoal  = goals.find(g => g.metric === 'calories' && g.cadence === 'daily');
+  const proGoal  = goals.find(g => g.metric === 'protein_g' && g.cadence === 'daily');
+
+  // The intent is read off the goal that was actually set rather than stored
+  // twice — two copies of the same fact is two things to drift apart.
+  const intent = bodyGoal
+    ? (bodyGoal.direction === 'at_least' ? 'gain'
+       : /recomp/i.test(bodyGoal.goal || '') ? 'recomp' : 'lose')
+    : calGoal ? 'lose' : null;
+
+  const pace = profile.plan_pace || null;
+  const push = profile.plan_push || null;
+
+  return { profile, goals, weightKg, bodyGoal, calGoal, proGoal, intent, pace, push };
+}
+
+async function myPlan(_args, user) {
+  const f = await planFacts(user.id);
+  const missing = [];
+  if (!f.intent) missing.push('what they are actually after — losing, gaining, or both at once');
+  if (!f.pace) missing.push('how fast they want it: gentle, steady, or aggressive');
+  if (!f.push) missing.push('how hard WROUGHT should chase them: light, normal, or relentless');
+  if (!f.profile.train_days) missing.push('sessions a week they will honestly do');
+
+  const paceSay = f.pace ? PACES[f.pace]?.say : null;
+  const pushSay = f.push ? PUSH[f.push]?.say : null;
+
+  const lines = [];
+  if (f.intent) lines.push(`Aiming at: ${f.bodyGoal?.goal || f.intent}.`);
+  if (f.pace) lines.push(`Pace: ${f.pace}. ${paceSay}`);
+  if (f.push) lines.push(`Pushing: ${f.push}. ${pushSay}`);
+  if (f.profile.train_days) lines.push(`Training ${f.profile.train_days} a week, at ${f.profile.tier || 'intermediate'} level.`);
+  if (f.calGoal?.target_value) lines.push(`Daily: about ${Math.round(f.calGoal.target_value)} kcal${f.proGoal?.target_value ? `, ${Math.round(f.proGoal.target_value)}g protein` : ''}.`);
+
+  return {
+    set: missing.length === 0,
+    intent: f.intent,
+    pace: f.pace,
+    push: f.push,
+    train_days: f.profile.train_days || null,
+    tier: f.profile.tier || null,
+    calorie_target: f.calGoal?.target_value != null ? Math.round(f.calGoal.target_value) : null,
+    protein_target_g: f.proGoal?.target_value != null ? Math.round(f.proGoal.target_value) : null,
+    set_on: f.profile.plan_set_on || null,
+    ...(missing.length ? { missing } : {}),
+    options: {
+      pace: Object.fromEntries(Object.entries(PACES).map(([k, v]) => [k, v.say])),
+      push: Object.fromEntries(Object.entries(PUSH).map(([k, v]) => [k, v.say])),
+    },
+    say: lines.length ? lines.join(' ') : 'No plan on file yet.',
+    changeable: 'Any of it changes in one sentence — "make it aggressive", "ease off", "stop nagging me", "make it four days".',
+    note: missing.length
+      ? `Not set up yet. Ask for ALL of this in ONE message, never as a form and never one question at a time: ${missing.join('; ')}. Offer the pace and push options in a line each, in plain words. Then call set_plan (and set_goal with an intent) and get straight on with what they were doing.`
+      : 'Say it back short — what they are aiming at, how fast, how hard it pushes, days a week. Then remind them in half a clause that any of it changes by just saying so. Never defend the plan and never ask them to justify a change.',
+    next_actions: ['set_plan to change any part of it', 'suggest_workout to train under it'],
+  };
+}
+
+async function setPlan(args, user) {
+  const patch = {};
+  if (args.pace && PACES[args.pace]) patch.plan_pace = args.pace;
+  if (args.push && PUSH[args.push]) patch.plan_push = args.push;
+  if (args.train_days != null) {
+    const d = parseInt(args.train_days, 10);
+    if (!Number.isFinite(d) || d < 1 || d > 14) return { error: 'Sessions a week has to be between 1 and 14.' };
+    patch.train_days = d;
+  }
+  if (!Object.keys(patch).length) {
+    return { error: 'Nothing to change — pass a pace, a push, or days a week.' };
+  }
+
+  const saved = await savePlan(user.id, patch);
+  if (saved.error) return { error: saved.error };
+
+  const changed = [];
+  if (patch.plan_pace) changed.push(`pace is ${patch.plan_pace} — ${PACES[patch.plan_pace].say}`);
+  if (patch.plan_push) changed.push(`pushing is ${patch.plan_push} — ${PUSH[patch.plan_push].say}`);
+  if (patch.train_days) changed.push(`${patch.train_days} sessions a week`);
+
+  // A new pace with the old calorie target standing beside it is the same bug
+  // set_goal already had with stacked rings: two answers to one question. So
+  // the targets are recomputed here rather than left for a call nobody makes.
+  let retargeted = null, held = null;
+  if (patch.plan_pace) {
+    const f = await planFacts(user.id);
+    if (f.intent && f.intent !== 'maintain') {
+      const call = goalCall({ profile: f.profile, weightKg: f.weightKg, intent: f.intent, pace: patch.plan_pace });
+      if (call.known) {
+        for (const m of ['calories', 'protein_g']) await retireGoalsFor(user.id, m, 'daily');
+        await supabase.from('wrought_goals').insert([
+          { user_id: user.id, goal: `Calories: about ${call.calorie_target} a day (computed, ${f.intent}, ${patch.plan_pace})`,
+            metric: 'calories', direction: f.intent === 'gain' ? 'at_least' : 'at_most',
+            target_value: call.calorie_target, target_unit: ' kcal', cadence: 'daily' },
+          { user_id: user.id, goal: `Protein: about ${call.protein_target_g}g a day (computed)`,
+            metric: 'protein_g', direction: 'at_least',
+            target_value: call.protein_target_g, target_unit: 'g', cadence: 'daily' },
+        ]);
+        retargeted = {
+          calories_per_day: call.calorie_target,
+          protein_g_per_day: call.protein_target_g,
+          projected_kg_per_week: call.projected_kg_per_week,
+        };
+        held = call.held || null;
+      }
+    }
+  }
+
+  return {
+    changed: patch,
+    ...(retargeted ? { targets: retargeted } : {}),
+    ...(held ? { held } : {}),
+    say: `Changed — ${changed.join('; ')}.` +
+         (retargeted ? ` Targets moved with it: about ${retargeted.calories_per_day} kcal and ${retargeted.protein_g_per_day}g protein a day, on pace for roughly ${Math.abs(retargeted.projected_kg_per_week)}kg a week.` : '') +
+         (held ? ` ${held}` : ''),
+    note: 'Confirm it in one line and move on. NO remark about commitment, no asking why, no warning that they are backing off — a plan somebody keeps missing is a plan set wrong, and easing it to what they will really do is the right call, not a retreat. If they went aggressive, say plainly that it will be hungrier and that protein and lifting matter more now, and leave it there.',
+    next_actions: ['my_plan to hear the whole thing back', 'brief — it scores the new targets from tonight'],
+  };
+}
+
 // Work, counted at last.
 //
 // The founder: "today I worked at the Petting Zoo. It's very hard work so I
@@ -1566,12 +1758,30 @@ No preamble, no disclaimers, no warm-up boilerplate unless it matters for a name
     } catch { /* state alone is still useful */ }
   }
 
+  // Before the first session, the plan gets explained. The founder's ask, in
+  // his words: "this should be explained right when you try your first workout
+  // — what plan are you on? Let's build this thing before diving right into
+  // it." Somebody who starts training without knowing what they are training
+  // TOWARD is doing exercise, not a programme, and the difference is whether
+  // there is any reason to come back on a Tuesday they do not feel like it.
+  //
+  // Once only. It rides on the suggestion rather than blocking it, because a
+  // setup interview standing between somebody and their first workout is how
+  // the first workout stops happening.
+  const plan = await myPlan({}, user);
+
   return {
     state,
     session,
+    plan: { set: plan.set, intent: plan.intent, pace: plan.pace, push: plan.push,
+            train_days: plan.train_days, say: plan.say,
+            ...(plan.missing ? { missing: plan.missing, options: plan.options } : {}) },
     say: session || `Neglected: ${summary.matrix.neglected.join(', ') || 'nothing obvious'}. Last session was ${state.days_since_last_session ?? 'never'} days ago.`,
-    note: 'The staleness numbers come from their real log. If they train it, call log with what they actually did — not what was prescribed.',
-    next_actions: ['log the session afterwards', 'progress to see the matrix fill in'],
+    note: (plan.set
+      ? `Open with the plan in ONE short line before the session — "${plan.say}" — so they know what this is for, then give them the workout. Add half a clause that any of it changes by just saying so.`
+      : `THEY HAVE NO PLAN YET. Before the session, say what a plan is in two lines and ask for all of it in ONE message — never a form, never one question at a time: ${(plan.missing || []).join('; ')}. Give the pace and push choices in plain words (${Object.entries(plan.options.pace).map(([k, v]) => `${k}: ${v}`).join(' / ')}). Then call set_plan and set_goal, and give them the workout in the same turn — do NOT make them ask twice.`)
+      + ' The staleness numbers come from their real log. If they train it, call log with what they actually did — not what was prescribed.',
+    next_actions: ['set_plan / set_goal if the plan is not set', 'log the session afterwards', 'progress to see the matrix fill in'],
   };
 }
 
@@ -2475,7 +2685,11 @@ async function setGoal(args, user) {
       .order('occurred_at', { ascending: false }).limit(1);
     const weightKg = recent?.[0]?.detail?.value_kg ?? null;
 
-    const call = goalCall({ profile, weightKg, intent: args.intent });
+    // The pace is part of the plan, not part of this one goal — stored on the
+    // profile so "what plan am I on" has something to read, and so a later
+    // change re-paces everything instead of leaving two answers standing.
+    const pace = PACES[args.pace] ? args.pace : (profile.plan_pace || 'steady');
+    const call = goalCall({ profile, weightKg, intent: args.intent, pace });
     if (!call.known) {
       return { error: 'setup_needed', missing: call.missing, say: call.say,
                note: 'Ask for what is missing in ONE message (the five facts rule), set_profile / log_weight, then call this again.' };
@@ -2499,8 +2713,11 @@ async function setGoal(args, user) {
     const { error } = await supabase.from('wrought_goals').insert(rows);
     if (error) return { error: error.message };
 
+    await savePlan(user.id, { plan_pace: pace });
+
     return {
-      goal, intent: args.intent,
+      goal, intent: args.intent, pace,
+      ...(call.held ? { held: call.held } : {}),
       targets: {
         maintenance: call.maintenance,
         calories_per_day: call.calorie_target,
@@ -3072,6 +3289,8 @@ const IMPL = {
   log_weight: logWeight,
   log_measurement: logMeasurement,
   amend_last: amendLast,
+  my_plan: myPlan,
+  set_plan: setPlan,
   log_activity: logActivity,
   structure_entries: structureEntries,
   undo_last: undoLast,
