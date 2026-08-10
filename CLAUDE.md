@@ -549,6 +549,27 @@ together, in one message**, the first time a number needs them, and never as an
 opener. Five facts, once, ever — anything more is the interrogation that makes
 people stop using health apps.
 
+### The expectation — set once, kept visible, never a debt
+
+`weekSoFar()` in `lib/training.js`, carried on every brief as `training_week`.
+The founder's ask: *"set the expectations of like three or five workouts a week,
+create that baseline and then go from there."* An MCP server can never make the
+assistant speak first, so the expectation cannot be a reminder that arrives —
+it has to be a number already on the table every time the person talks. The
+notification channel is the only surface that genuinely speaks first.
+
+Setup mirrors the five facts: the first time somebody wants a workout and the
+profile has no `train_days` or equipment, the assistant asks ONCE, all together
+— days they will honestly do, equipment, anything they cannot do (limitations
+go to `remember` category `health`, and are never silently programmed around).
+Weeks start Monday. A missed week is information, never a debt: **sessions never
+roll over**, an impossible week is told it will finish short rather than counted
+down to zero, and a met target or a care flag silences the push entirely. Guilt
+is how training logs die. Tested, including the absence of scolding words.
+
+The dashboard has a **1d** range — `api-progress` clamps at 1, not 3, because
+"show me today" silently becoming "show me three days" is a lie in a small hat.
+
 ### Fasting — the record, not the plan
 
 `004_wrought_fasting.sql` adds `fast` as an event type; `log_fast` records one.

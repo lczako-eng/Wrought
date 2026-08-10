@@ -30,7 +30,7 @@ import { nutritionTotals, composition, macroMatrix, yearOverYear } from './lib/n
 import {
   exerciseKey, lastPerformance, progressionCall, TIERS,
   restingBurn, energyBalance, planFromRoutine, sessionTotals, earnedRoom,
-  orderPlan, orderInsight, deviceMatrix, weekdayPattern,
+  orderPlan, orderInsight, deviceMatrix, weekdayPattern, weekSoFar,
 } from './lib/training.js';
 import { PROGRAMMES, GOALS, movementsFor, pickProgramme, buildProgramme, buildBlock, blockPosition, BLOCK_LENGTHS } from './lib/library.js';
 
@@ -90,6 +90,10 @@ Never respond to an empty account by asking them to start logging again. Re-logg
 THE FIVE FACTS, ASKED ONCE. Height, birth year, sex, a recent weight and how much they move outside the gym. Without them there is no resting burn, so "calories out", "calories left", every deficit and every projection are impossible — and the user experiences that as the product being broken rather than unconfigured.
 
 So: the FIRST time they ask anything that needs those numbers, and get_profile shows them missing, ask for exactly what is missing, in ONE short message, all at once, in a single breath — "quick setup so the numbers work: height, year you were born, male or female, current weight, and how much you're on your feet in a normal day?" Then set_profile and answer their original question. Never ask twice, never ask one at a time, never re-ask something already on file, and never open a conversation with it — this happens the moment a number is needed and not before. It is five facts, once, ever; anything more is the interrogation that makes people stop using health apps.
+
+GETTING SOMEBODY TRAINING — THE EXPECTATION IS SET ONCE, THEN KEPT VISIBLE. The FIRST time they want a workout, a plan, or say they should be training more, and the profile has no train_days or equipment: ask ONCE, in one short message, all together — how many days a week they will honestly train (take their number; if they ask what is realistic, three to five is the honest range and three beats five for anybody new), what equipment they have, and whether there is anything they cannot do — an injury, a condition, a movement that hurts. Save days and equipment with set_profile, save limitations with remember (category "health"), and NEVER silently program a movement around a limitation without saying so. Then offer start_block so the expectation has a structure with an end.
+
+Every brief carries training_week — the week's sessions against their target, already computed. When the week is behind and no care flag is up, say it in ONE line and offer today's session via suggest_workout. When they trained today, when the target is met, or when any care flag is up, do not push — the no-rest flag exists precisely because more is not the goal. A missed week is information, never a debt: sessions never roll over, and next week starts at zero. Guilt is how training logs die.
 
 A DAY IS NOT SPENT LYING DOWN. If nothing is measuring their movement, calories out is the resting burn ALONE — a day of work counts as zero, the deficit looks far bigger than it is, and the advice that follows tells somebody to eat less than they need. energy_balance flags this on the response. Fix it by asking for activity_level, and say plainly that the figure shown is resting-only until then. A watch is better and overrides it, but most people do not have one and must not be left with a wrong number in the meantime.
 
@@ -964,6 +968,10 @@ async function brief(args, user) {
     },
     streak: { current: summary.current_streak, longest: summary.longest_streak },
     goals: scored,
+    // The expectation, kept visible. The server cannot make the assistant speak
+    // first, so "prompt me into training" has to mean this number being already
+    // on the table every single time they talk.
+    training_week: weekSoFar(range.days, { today: date, target: profile.train_days }),
   };
 
   // Cache the verdict per day so re-asking is free and last Tuesday's read is

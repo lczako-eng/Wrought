@@ -2783,6 +2783,67 @@ await test('get_profile carries the linking pointer even when the account is ful
   assert.ok(!/linking:\s*\(count/.test(body), 'the linking note is conditional on the count again');
 });
 
+group('The week against the expectation');
+
+const { weekSoFar } = await import('../netlify/functions/lib/training.js');
+
+await test('the week starts on Monday and last Sunday does not count', () => {
+  // 2026-08-10 is a Monday. A session on Sunday the 9th belongs to LAST week —
+  // counting it would let one weekend session satisfy two weeks' expectations.
+  const days = [{ date: '2026-08-09', sessions: 1 }, { date: '2026-08-10', sessions: 1 }];
+  const w = weekSoFar(days, { today: '2026-08-12', target: 3 });
+  assert.equal(w.week_start, '2026-08-10');
+  assert.equal(w.done, 1);
+  assert.equal(w.met, false);
+  assert.match(w.say, /1 of 3/);
+});
+
+await test('a target met says so and pushes nothing', () => {
+  const days = [{ date: '2026-08-10', sessions: 2 }, { date: '2026-08-11', sessions: 1 }];
+  const w = weekSoFar(days, { today: '2026-08-11', target: 3 });
+  assert.equal(w.met, true);
+  assert.match(w.say, /target is met/);
+});
+
+await test('an impossible week finishes short, and is never a debt', () => {
+  // 0 of 3 with one day left cannot fit. A countdown to an impossible number is
+  // a guilt machine; the week ends and the next one starts at zero. Sessions
+  // never roll over — a punishment schedule is how training dies.
+  const w = weekSoFar([], { today: '2026-08-15', target: 3 });   // Saturday
+  assert.match(w.say, /finish short/);
+  assert.match(w.say, /not a debt/);
+  assert.match(w.say, /next week starts at zero/);
+  assert.ok(!/behind|owe|catch up|make up/i.test(w.say), 'the say string scolds');
+});
+
+await test('no target set is said plainly, not invented', () => {
+  const w = weekSoFar([{ date: '2026-08-10', sessions: 2 }], { today: '2026-08-12' });
+  assert.equal(w.target, null);
+  assert.match(w.say, /No weekly target is set/);
+});
+
+await test('the brief carries the week, and the instructions set it up once', () => {
+  const src = readFileSync(new URL('../netlify/functions/mcp.js', import.meta.url), 'utf8');
+  assert.match(src, /training_week: weekSoFar\(range\.days/);
+  assert.match(SERVER_INSTRUCTIONS, /THE EXPECTATION IS SET ONCE, THEN KEPT VISIBLE/);
+  // Ask once, all together — days, equipment, limitations — same shape as the
+  // five facts, because a drip of questions is an interrogation.
+  assert.match(SERVER_INSTRUCTIONS, /ask ONCE, in one short message/);
+  assert.match(SERVER_INSTRUCTIONS, /anything they cannot do/);
+  assert.match(SERVER_INSTRUCTIONS, /category "health"/);
+  // The pushes that must never happen.
+  assert.match(SERVER_INSTRUCTIONS, /never roll over|sessions never roll over/i);
+  assert.match(SERVER_INSTRUCTIONS, /care flag is up, do not push/);
+});
+
+await test('a single day is an answerable question', () => {
+  // The founder asked for a 1d view. The API used to clamp at 3, which turned
+  // "show me today" into "show me three days" silently.
+  const api = readFileSync(new URL('../netlify/functions/api-progress.js', import.meta.url), 'utf8');
+  assert.match(api, /params\.days, 10\) \|\| 30, 1\)/);
+  assert.match(page('app.html'), /data-days="1"/);
+});
+
 group('Every item its own number, and the total underneath');
 
 await test('the day card lists what each thing was, not just the sum', () => {

@@ -833,3 +833,51 @@ export function sessionTotals(sets) {
     }, {})).map(s => ({ exercise: s.exercise, weight_kg: s.weight_kg, reps: s.reps })),
   };
 }
+
+// ── The week against the expectation ────────────────────────────────────────
+// The founder's ask: "set the expectations of like three or five workouts a
+// week, create that baseline and then go from there." An MCP server can never
+// make the assistant speak first, so the expectation cannot be a reminder that
+// arrives — it has to be a number that is ALREADY THERE every time the person
+// talks. This computes it; the brief carries it.
+//
+// The say string is flat arithmetic on purpose. "1 of 3, four days left" is
+// information somebody can act on; "you're behind" is a judgement that makes
+// people stop opening the app. And a missed week is never a debt — sessions do
+// not carry over, because a punishment schedule is how training dies. Same
+// doctrine as blockPosition, which refuses to let the calendar delete training.
+export function weekSoFar(days = [], { today, target = null } = {}) {
+  if (!today) return null;
+  const dow = (new Date(`${today}T00:00:00Z`).getUTCDay() + 6) % 7;   // Mon = 0
+  const monday = new Date(`${today}T00:00:00Z`);
+  monday.setUTCDate(monday.getUTCDate() - dow);
+  const weekStart = monday.toISOString().slice(0, 10);
+
+  const done = days
+    .filter(d => d.date >= weekStart && d.date <= today)
+    .reduce((a, d) => a + (d.sessions || 0), 0);
+  const daysLeft = 6 - dow;   // days remaining AFTER today
+
+  const t = Number.isFinite(Number(target)) && Number(target) > 0 ? Number(target) : null;
+  let say;
+  if (!t) {
+    say = `${done} session${done === 1 ? '' : 's'} so far this week. No weekly target is set.`;
+  } else if (done >= t) {
+    say = `${done} of ${t} sessions this week — the target is met.`;
+  } else if (t - done > daysLeft) {
+    // It cannot fit any more. Saying so beats a countdown to an impossible
+    // number, and the week ends there — nothing rolls into the next one.
+    say = `${done} of ${t} sessions this week with ${daysLeft} day${daysLeft === 1 ? '' : 's'} left — this week will finish short. That is information, not a debt; next week starts at zero.`;
+  } else {
+    say = `${done} of ${t} sessions this week, ${daysLeft} day${daysLeft === 1 ? '' : 's'} left.`;
+  }
+
+  return {
+    week_start: weekStart,
+    done,
+    target: t,
+    days_left: daysLeft,
+    met: t ? done >= t : null,
+    say,
+  };
+}

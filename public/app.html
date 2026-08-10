@@ -904,6 +904,7 @@ a.ghost { display: inline-block; }
         <button class="range view" data-view="admin" aria-pressed="false" id="admintab" hidden>Admin</button>
       </nav>
       <div class="ranges" id="rangebtns" role="group" aria-label="Time range">
+        <button class="range" data-days="1"   aria-pressed="false">1d</button>
         <button class="range" data-days="7"   aria-pressed="false">7d</button>
         <button class="range" data-days="30"  aria-pressed="true">30d</button>
         <button class="range" data-days="90"  aria-pressed="false">90d</button>
@@ -2753,7 +2754,7 @@ function demoData() {
 
   const lift = (name, from, to, sessions) => ({
     name, sessions,
-    best: { weight: Math.max(from, to), reps: 6, date: series[series.length - 2].date },
+    best: { weight: Math.max(from, to), reps: 6, date: series[Math.max(0, series.length - 2)].date },
     latest: { weight: to, reps: 6, date: series[series.length - 1].date },
     change: Math.round((to - from) * 10) / 10,
     series: Array.from({ length: sessions }, (_, i) => ({
@@ -2763,7 +2764,7 @@ function demoData() {
   });
 
   return {
-    from: series[0].date, to: series[N - 1].date, span_days: N,
+    from: series[0].date, to: series[Math.max(0, N - 1)].date, span_days: N,
     units: 'metric', weight_unit: 'kg',
     // The demo runs the SAME render path as the real thing, or it drifts and
     // starts selling a screen nobody actually gets.
@@ -2782,7 +2783,7 @@ function demoData() {
     },
     last_session: {
       known: true, name: 'Push', kind: 'strength',
-      date: series[N - 1].date, days_ago: 1, minutes: 52, when: 'Last night',
+      date: series[Math.max(0, N - 1)].date, days_ago: 1, minutes: 52, when: 'Last night',
       totals: { sets: 14, reps: 108, volume: 7420, unit: 'kg', exercises: 4 },
       muscles: ['chest', 'shoulders', 'triceps'],
       exercises: [
@@ -2809,11 +2810,11 @@ function demoData() {
       say: 'Last night: Push, 14 sets, 108 reps in 52 min. 2 lifts up on last time.',
     },
     today: {
-      date: series[N - 1].date,
+      date: series[Math.max(0, N - 1)].date,
       food: { say: 'Roughly 2,140 kcal · 148g protein · 196g carbs · 71g fat (estimated from what you described)',
               calories: 2140, protein_g: 148, carbs_g: 196, fat_g: 71, estimated: true },
       training: { say: '1 session, 44 min — legs, glutes, core' },
-      body: { weight_kg: series[N - 1].weight },
+      body: { weight_kg: series[Math.max(0, N - 1)].weight },
       device: { steps: 9840, active_calories: 740, sleep_minutes: 402 },
       // Each with its own numbers, so the demo shows the addition rather than
       // asserting a total — the whole point of the day card.
@@ -2841,8 +2842,8 @@ function demoData() {
       current_streak: 6, longest_streak: 14,
       weight: {
         direction: 'down', per_week_kg: -0.39,
-        first: 84, last: series[N - 1].weight, points: N,
-        say: `Trending down about 0.39 kg a week — averaging ${series[N - 1].weight} kg now vs 84 kg at the start.`,
+        first: 84, last: series[Math.max(0, N - 1)].weight, points: N,
+        say: `Trending down about 0.39 kg a week — averaging ${series[Math.max(0, N - 1)].weight} kg now vs 84 kg at the start.`,
       },
       matrix: { muscles, weeks, grid, neglected: ['legs'] },
     },
@@ -2864,15 +2865,15 @@ function demoData() {
       }],
     },
     notes: [
-      { date: series[N - 1].date, exercise: 'Back Squat', note: 'left knee grumbled on the last set' },
-      { date: series[N - 4].date, exercise: 'Deadlift', note: 'grip went before the legs did' },
-      { date: series[N - 8].date, exercise: 'Bench Press', note: 'felt light today, bar speed was quick' },
+      { date: series[Math.max(0, N - 1)].date, exercise: 'Back Squat', note: 'left knee grumbled on the last set' },
+      { date: series[Math.max(0, N - 4)].date, exercise: 'Deadlift', note: 'grip went before the legs did' },
+      { date: series[Math.max(0, N - 8)].date, exercise: 'Bench Press', note: 'felt light today, bar speed was quick' },
     ],
     sessions: [
-      { name: 'Leg day', kind: 'strength', date: series[N - 1].date, minutes: 44, days_ago: 0 },
-      { name: 'Push A', kind: 'strength', date: series[N - 3].date, minutes: 51, days_ago: 2 },
-      { name: 'Tuesday five-a-side', kind: 'sport', date: series[N - 5].date, minutes: 70, days_ago: 4 },
-      { name: 'Pull A', kind: 'strength', date: series[N - 7].date, minutes: 47, days_ago: 6 },
+      { name: 'Leg day', kind: 'strength', date: series[Math.max(0, N - 1)].date, minutes: 44, days_ago: 0 },
+      { name: 'Push A', kind: 'strength', date: series[Math.max(0, N - 3)].date, minutes: 51, days_ago: 2 },
+      { name: 'Tuesday five-a-side', kind: 'sport', date: series[Math.max(0, N - 5)].date, minutes: 70, days_ago: 4 },
+      { name: 'Pull A', kind: 'strength', date: series[Math.max(0, N - 7)].date, minutes: 47, days_ago: 6 },
     ],
     routines: [
       { name: 'Leg day', kind: 'strength', exercises: 5, times_used: 11, days_since: 0 },
@@ -2885,7 +2886,7 @@ function demoData() {
       volume: pt('volume'), steps: pt('sleep'), sleep: pt('sleep'),
     },
     latest_verdict: {
-      local_date: series[N - 1].date, kind: 'evening',
+      local_date: series[Math.max(0, N - 1)].date, kind: 'evening',
       verdict: "Roughly 2,140 calories and 148g of protein — fourth day running you've hit protein, which is the longest you've held it. Squat moved again: 102.5 for 6 is up 10kg on where you started this block. But you've now gone five weeks without training legs properly outside that one session, and the volume shows it. Weight's coming down about 0.4kg a week, which is the right speed, so leave the food alone. Tomorrow is legs — and put the bench first for once, it's costing you six kilos going last.",
     },
     nutrition: {

@@ -40,7 +40,9 @@ export const handler = async (event) => {
   if (!gate.ok) return { statusCode: 402, headers: CORS, body: JSON.stringify(gate) };
 
   const params = event.queryStringParameters || {};
-  const span = Math.min(Math.max(parseInt(params.days, 10) || 30, 3), 400);
+  // Min 1, not 3 — the founder asked for a one-day view, and a single day with
+  // its items and totals is a perfectly answerable question.
+  const span = Math.min(Math.max(parseInt(params.days, 10) || 30, 1), 400);
 
   const profile = await getProfile(user.id);
   const to   = params.to || localDateFor(profile.timezone);
