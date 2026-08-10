@@ -151,6 +151,12 @@ export const handler = async (event) => {
         muscles: e.detail?.muscles || [],
         volume_kg: e.detail?.volume_kg ?? null,
         distance_km: e.detail?.distance_km ?? null,
+        calories: e.detail?.calories ?? null,
+        // The training spike, carried to the readable log — a run's average
+        // says how hard it was, and without it a watch session is a name and
+        // a duration, which is the least interesting version of what happened.
+        avg_hr: e.detail?.avg_hr ?? null,
+        max_hr: e.detail?.max_hr ?? null,
         note: e.detail?.note || null,
         name: session?.name || e.summary,
         // The whole point: the session, set by set, exactly as it happened.

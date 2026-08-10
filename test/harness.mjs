@@ -3099,6 +3099,47 @@ await test('a photo of the gym becomes an equipment list — and never reaches u
   assert.match(SERVER_INSTRUCTIONS, /Never build a plan around a machine their photos did not show/);
 });
 
+group('The burn, split into the half you can change');
+
+await test('resting and moving are shown apart, not summed away', () => {
+  // "Show the distinction between the two — your basal plus the burn rate of
+  // the day that's totally moving all the time." They behave completely
+  // differently: resting burn is a near-constant a body spends whatever the
+  // day does; the moving half is the only part behaviour touches, and it is
+  // the one still climbing when somebody is deciding about dinner.
+  const src = page('app.html');
+  const fn = src.slice(src.indexOf('function burnSplit('), src.indexOf('// ── Calendar'));
+  assert.match(fn, /const rest = Number\(b\.resting_burn\)/);
+  assert.match(fn, /const move = Number\(b\.active_burn\)/);
+  assert.match(fn, /at rest/);
+  assert.match(fn, /moving today/);
+  // The moving half is labelled as an estimate when nothing measured it — a
+  // multiplier presented as a measurement is the dangerous version.
+  assert.match(fn, /moving \(estimated\)/);
+  // Drawn proportionally rather than described.
+  assert.match(fn, /class="bsbar"/);
+  assert.match(fn, /width:\$\{pct\(rest\)\}/);
+});
+
+await test('the caveat names which half is guessed', () => {
+  const src = page('app.html');
+  const hero = src.slice(src.indexOf('function hero(d) {'), src.indexOf('function burnSplit('));
+  assert.match(hero, /active_source === 'device'/);
+  assert.match(hero, /standard multiplier, not a measurement/);
+  assert.match(hero, /resting burn alone/);
+});
+
+await test('a watch session shows what the heart did, not just a name', () => {
+  const src = page('app.html');
+  const fn = src.slice(src.indexOf('function sessionBlock('), src.indexOf('function sessionBlock(') + 1200);
+  assert.match(fn, /bpm avg/);
+  assert.match(fn, /peak/);
+  assert.match(fn, /km/);
+  const api = readFileSync(new URL('../netlify/functions/api-log.js', import.meta.url), 'utf8');
+  assert.match(api, /avg_hr: e\.detail\?\.avg_hr/);
+  assert.match(api, /max_hr: e\.detail\?\.max_hr/);
+});
+
 group('Changing your mind is one call, not a negotiation');
 
 await test('a new number replaces the old one instead of stacking a second ring', () => {

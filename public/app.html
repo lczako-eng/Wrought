@@ -167,6 +167,39 @@ main { padding-block: 26px 0; display: flex; flex-direction: column; gap: 22px; 
 }
 .total b { font-size: 21px; font-variant-numeric: tabular-nums; }
 
+/* ── The burn, split ──────────────────────────────────────────────────────
+   Resting burn and the moving half behave completely differently: one is a
+   near-constant the body spends whatever the day does, the other is the only
+   part behaviour touches and the one that climbs all afternoon. A single
+   "burned" figure hides the only number somebody can still change before
+   dinner — which is exactly the number they are deciding against.
+
+   The bar is proportional and the moving half is the lit one, because that is
+   the part that moves. Temper for rest (it is neither good nor bad, it just
+   is) and heat for effort, which is the same vocabulary the whole product
+   uses for work. */
+.burnsplit { width: min(320px, 86%); margin: 14px auto 0; }
+.bsbar {
+  display: flex; height: 9px; border-radius: 999px; overflow: hidden;
+  background: var(--heat-0); box-shadow: inset 0 0 0 1px var(--edge);
+}
+.bs { display: block; height: 100%; }
+.bs.rest { background: var(--temper-dk); }
+.bs.move { background: var(--heat-3); animation: grow 900ms var(--ease) both; }
+@keyframes grow { from { transform: scaleX(0); transform-origin: left; } }
+.bskeys { display: flex; justify-content: space-between; gap: 12px; margin-top: 8px; }
+.bskey {
+  display: flex; align-items: baseline; gap: 5px;
+  font-size: 14px; font-weight: 650; font-variant-numeric: tabular-nums;
+}
+.bskey i { width: 8px; height: 8px; border-radius: 2px; display: block; flex: none; align-self: center; }
+.bskey i.rest { background: var(--temper-dk); }
+.bskey i.move { background: var(--heat-3); }
+.bskey em {
+  font-style: normal; font-family: var(--mono); font-size: 9px; letter-spacing: .12em;
+  text-transform: uppercase; color: var(--ash-dim); font-weight: 400;
+}
+
 /* ── Targets ──────────────────────────────────────────────────────────────
    A goal written as a sentence is a note to self. A goal drawn as a ring is
    a thing you glance at and instantly know. These sit directly under the
@@ -2611,6 +2644,8 @@ function dayBlock(d) {
   if (d.device.steps) dev.push(`${n(Math.round(d.device.steps))} steps`);
   if (d.device.resting_hr) dev.push(`${Math.round(d.device.resting_hr)} bpm resting`);
   if (d.device.active_calories) dev.push(`${n(Math.round(d.device.active_calories))} kcal moved`);
+  if (d.device.distance_km) dev.push(`${Math.round(d.device.distance_km * 10) / 10} km`);
+  if (d.device.active_minutes) dev.push(`${n(Math.round(d.device.active_minutes))} active min`);
 
   return `<div class="day">
     <div class="dayhead">
@@ -2627,8 +2662,19 @@ function dayBlock(d) {
 // with their sets underneath, it is the workout you actually did.
 function sessionBlock(w) {
   if (!w.exercises?.length) {
+    // A watch-recorded session has no sets, and its numbers ARE the session:
+    // distance, duration, what the heart did. Without them a run reads as a
+    // word and a timestamp, which is the least interesting version of it.
+    const bits = [
+      w.distance_km ? `${Math.round(w.distance_km * 10) / 10} km` : null,
+      w.minutes ? `${w.minutes} min` : null,
+      w.avg_hr ? `${w.avg_hr} bpm avg` : null,
+      w.max_hr ? `${w.max_hr} peak` : null,
+      w.calories ? `${n(Math.round(w.calories))} kcal` : null,
+    ].filter(Boolean);
     return `<div class="ent"><span class="tm">${esc(w.at)}</span>
-      <span class="bd">${esc(w.summary)}${w.minutes ? ` <span class="cat">${w.minutes}m</span>` : ''}</span></div>`;
+      <span class="bd">${esc(w.name || w.summary)}
+        ${bits.length ? `<div class="macros">${esc(bits.join(' · '))}</div>` : ''}</span></div>`;
   }
   const exs = w.exercises.map(e => {
     const best = e.top;
@@ -2869,7 +2915,7 @@ function demoData() {
       balance: {
         known: true, calories_in: 2140, resting_burn: 1770, active_burn: 740,
         calories_out: 2510, net: -370, direction: 'deficit',
-        projected_kg_per_week: -0.34, approximate: true,
+        projected_kg_per_week: -0.34, approximate: true, active_source: 'device',
       },
     },
     earned_room: { available: true, room_kcal: 1420, logged_days: 6, worth: 'a proper meal out, whatever you actually want' },
@@ -3313,10 +3359,41 @@ function hero(d) {
       <span class="leg"><b>${n(b.calories_in)}</b><span>eaten</span></span>
       <span class="leg"><b>${n(b.calories_out)}</b><span>burned</span></span>
     </div>
-    <p class="caveat">${b.approximate ? 'Both sides are estimates — roughly, not exactly. ' : ''}${
-      b.active_burn ? `${n(b.resting_burn)} at rest plus ${n(b.active_burn)} you moved.`
-                    : `${n(b.resting_burn)} at rest. Connect a watch and the movement side stops being a guess.`}</p>
+    ${burnSplit(b)}
+    <p class="caveat">${b.approximate ? 'Both sides are estimates — roughly, not exactly.' : ''}${
+      b.active_source === 'device' ? '' :
+      b.active_source === 'activity_level' ? ' The moving half is a standard multiplier, not a measurement — connect a watch and it becomes real.'
+                                           : ' Nothing is counting your movement yet, so this is your resting burn alone — the real figure is higher.'}</p>
   </section>`;
+}
+
+// The burn, split into the half that happens lying down and the half you earn.
+// The founder: "show the distinction between the two — your basal plus the
+// burn rate of the day that's totally moving all the time."
+//
+// It matters because they behave completely differently. Resting burn is a
+// near-constant a body spends whatever the day does; the moving half is the
+// only part behaviour touches, and it is the one that climbs all day. Adding
+// them into a single figure hides the only number somebody can actually change
+// before dinner — which is exactly the number they are deciding against.
+function burnSplit(b) {
+  const rest = Number(b.resting_burn) || 0;
+  const move = Number(b.active_burn) || 0;
+  const total = rest + move;
+  if (!total) return '';
+  const pct = (v) => `${(v / total * 100).toFixed(1)}%`;
+
+  return `<div class="burnsplit">
+    <div class="bsbar" role="img" aria-label="${n(rest)} at rest, ${n(move)} moving">
+      <span class="bs rest" style="width:${pct(rest)}"></span>
+      <span class="bs move" style="width:${pct(move)}"></span>
+    </div>
+    <div class="bskeys">
+      <span class="bskey"><i class="rest"></i>${n(rest)}<em>at rest</em></span>
+      <span class="bskey"><i class="move"></i>${n(move)}<em>${
+        b.active_source === 'device' ? 'moving today' : 'moving (estimated)'}</em></span>
+    </div>
+  </div>`;
 }
 
 // ── Calendar ───────────────────────────────────────────────────────────────
