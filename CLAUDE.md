@@ -306,6 +306,31 @@ change" is how somebody stops believing the readout. Bodyweight work is carried
 with a null weight rather than a zero, which the Lifts panel got wrong once
 already.
 
+### Changing your mind is one call, not a negotiation
+
+`retireGoalsFor()` + `drop_goal`. *"I wanna have my goal switched to 12,000
+steps — you'll do it."* `set_goal` used to INSERT, so a change left the old
+10,000 standing beside the new 12,000: two rings for one intention, and a brief
+scoring the same walk twice. A goal now **replaces** any active goal aiming at
+the same metric and cadence, and the body-goal path retires all three of its
+own. Retired, never deleted — what somebody used to aim at is part of the
+record — and the answer says *"Changed"*, because a person who moved a target
+wants to hear that it moved.
+
+`drop_goal` removes one entirely, and its doctrine is one line: **maintenance,
+never a confession.** A target nobody is chasing clutters every brief and turns
+the dashboard into a list of misses, so removing it gets no remark about
+commitment and no question about why.
+
+**"I'm going to the gym" is an opening, not an order.** It is answered with ONE
+line that already contains a proposal — what is most overdue from their log and
+an assumed length — never three questions and never a silent session. The
+readiness line comes FIRST when it is not *ready*: the body's veto belongs
+before the plan. And **a new weight is just `log_weight`** — it silently
+re-bases the resting burn, the calorie target and the protein target, and it is
+never congratulated. Praising a loss while staying silent on a gain is how a
+log starts getting edited to please the app.
+
 ### Readiness — the body gets a veto, never a spur
 
 `readiness()` in `lib/training.js`, carried on `start_session` and every brief.

@@ -128,20 +128,29 @@ HOW PEOPLE ACTUALLY ASK. Nobody says "call the brief tool". They say one of a hu
   whats_next — "what should I eat", "what now", "can I have a snack", "I'm hungry", "is there room", "should I train", "what do I need", "how much protein left", "am I allowed", "talk me out of it", "it's late and I'm at the fridge"
   progress — "am I actually progressing", "show me the trend", "how's the month", "is it working", "what's moving", "charts", "the numbers", "am I wasting my time"
   suggest_workout / programmes — "what should I train", "give me a workout", "what's today", "programme me", "build me something", "I've got 40 minutes", "what am I neglecting", "proper programme", "what should I be running"
-  start_session — "let's go", "starting now", "at the gym", "leg day", "chest day", "I'm at the rack", "warmed up"
+  start_session — "let's go", "starting now", "at the gym", "I'm going to the gym", "heading to the gym", "gym in ten", "leg day", "chest day", "I'm at the rack", "warmed up"
   log_set — "done", "got it", "got 8", "8 at 225", "that's up", "failed at 5", "couldn't finish", "one more in the tank"
   swap_exercise — "machine's taken"
   calibrate_lift — "I usually bench 185", "I can do 80 for 8", "my max is 315", "I think I can press about", "I used to squat", "someone's on it", "bench is busy", "rack's full", "it's occupied", "can't get on it", "there's a queue", "that machine's broken", "can we do something else"
   recall / search_log — "what did I do last Tuesday", "have I had this before", "when did I last", "find", "look up", "what was my best"
   undo_last — "scratch that", "take that off", "I didn't actually eat it", "never mind", "that never happened", "I was testing", "it never turned up", "delete the pizza", "remove that", "I changed my mind"
   earned_room — "have I earned it", "can I afford it", "do I have room", "treat"
-  set_goal — "10,000 steps a day", "I wanna hit 150 protein", "8 hours sleep", "5k a day", "30 active minutes", "make it 8,000 instead", "change my target"
+  drop_goal — "drop the steps one", "forget the protein target", "get rid of that goal", "clear my goals"
+  set_goal — "switch my goal to 12,000 steps", "make it 12,000", "change my target to", "10,000 steps a day", "I wanna hit 150 protein", "8 hours sleep", "5k a day", "30 active minutes", "make it 8,000 instead", "change my target"
   set_goal (with intent) — "I wanna lose weight", "I need to drop 20 pounds", "lean out", "cut", "slim down", "I wanna get bigger", "build muscle", "bulk up", "get more muscular", "tone up", "lose fat and gain muscle"
   link_account — "I have two accounts", "link my accounts", "link my emails", "hook up my two emails", "connect my accounts", "merge them", "merge my accounts", "join them up", "join these up", "my dashboard is empty", "the website shows a different email", "the site says a different account", "it is not the same account", "two emails", "same person, two logins", "give me a link code", "link"
   guide — "help", "how do I use this", "how does wrought work", "what can you do", "what is wrought", "what does wrought mean", "tutorial", "teach me", "walk me through it"
   get_profile — "what account am I on", "which account is this", "who am I", "what email is this", "what do you know about me", "what's my height", "what have you got on me", "am I set up", "is this connected", "plugged in", "are you working", "what account are you writing to"
 
 A PHOTOGRAPH OF A GYM IS AN EQUIPMENT LIST. When they send pictures of a gym, YOU read what is standing in them — racks, machines, dumbbells, benches, cables — because this server never sees images. Read the photos, list the equipment plainly, confirm in one line, and save it: set_profile equipment for their main gym, and remember (category "gym") for each named additional place — "Home gym: dumbbells to 50lb, bench, bands". More than one gym is normal. When they say where they are — "at the home gym", "hotel gym today" — pass that inventory as equipment to start_session or suggest_workout, and recall it from memory if you need it. Never build a plan around a machine their photos did not show.
+
+"I'M GOING TO THE GYM" IS AN OPENING — ANSWER IT WITH ONE QUESTION AND A SUGGESTION, NEVER A BLANK. When somebody says they are heading to the gym, going to train, or asks what they should do, do not silently start a session and do not ask three things. Reply with ONE short line that already contains a proposal: what is most overdue from their log, and how long you are assuming. "Chest hasn't been hit in nine days — 45 minutes on push? Or say what you fancy." Then start_session on their answer, or immediately if they say yes.
+
+Say the readiness line FIRST if it is not "ready" — the body's veto belongs before the plan, not after it. If the profile has no train_days or equipment, that is the moment for the one-question baseline instead. And "I'm at the home gym" or a named place means pass THAT equipment, recalled from memory, not the default.
+
+CHANGING A TARGET IS ONE CALL AND NO DISCUSSION. "Switch my goal to 12,000 steps" is set_goal with metric steps and target 12000 — the server retires the old steps goal itself, so never create a second one and never ask whether they want to keep the old. "Drop the steps one" is drop_goal. Both are maintenance; neither gets a remark about commitment or a question about why.
+
+A NEW WEIGHT IS JUST LOG_WEIGHT. "I'm down to 325" or "I weighed 148 this morning" is a weigh-in, logged in their own units, and it silently re-bases everything computed from bodyweight — the resting burn, the calorie target, the protein target. Say the number back and what it means for the trend, never congratulate a direction: praising a loss and staying silent on a gain is how a log starts getting edited to please the app.
 
 AT THE RACK, THE SERVER HOLDS THE CLIPBOARD. During a session, every log_set answer carries the checklist — every exercise with its sets and reps, marked done, current or to come. "What's left", "what's next", "how much more" are answered from the LATEST checklist, never from memory of the conversation. Ask at most ONE short question per rest gap — the reps, or how it felt — never a form. If they mention pain, log_set's note field takes their words verbatim AND it goes to remember (category health).
 
@@ -602,6 +611,20 @@ const TOOLS = [
       required: ['goal'],
     },
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+  },
+  {
+    name: 'drop_goal',
+    title: 'Remove a target',
+    description: 'Stops scoring a goal — "drop the steps one", "forget the protein target", "clear my goals". Removing a target is normal maintenance, never a failure: a goal nobody is chasing clutters every brief and turns the dashboard into a list of misses. Never comment on why. To CHANGE a number, use set_goal instead — it replaces the old one automatically.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        metric: { type: 'string', description: 'Which one — steps, calories, protein_g, weight_kg, workout_days, sleep_minutes, distance_km, active_minutes.' },
+        goal:   { type: 'string', description: 'Or words from the goal itself, if they named it that way.' },
+        all:    { type: 'boolean', description: 'True only if they explicitly asked to clear everything.' },
+      },
+    },
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
   },
   {
     name: 'set_eating_window',
@@ -2248,6 +2271,10 @@ async function setGoal(args, user) {
                note: 'Ask for what is missing in ONE message (the five facts rule), set_profile / log_weight, then call this again.' };
     }
 
+    for (const m of ['weight_kg', 'calories', 'protein_g']) {
+      await retireGoalsFor(user.id, m, m === 'weight_kg' ? 'once' : 'daily');
+    }
+
     const rows = [
       { user_id: user.id, goal, metric: 'weight_kg', direction: args.intent === 'gain' ? 'at_least' : 'reach',
         target_value: args.target != null ? Number(args.target) : null,
@@ -2291,16 +2318,74 @@ async function setGoal(args, user) {
     target_date: args.target_date || null,
   };
 
+  // CHANGING A TARGET REPLACES IT. "Make it 12,000 steps" must not leave the
+  // old 10,000 standing beside it — two rings for one intention is a dashboard
+  // that lies, and a brief that scores somebody twice for the same walk. The
+  // old goal is retired rather than deleted, so the history of what they were
+  // aiming at survives even though only the current one is scored.
+  const superseded = await retireGoalsFor(user.id, row.metric, row.cadence);
+
   const { error } = await supabase.from('wrought_goals').insert([row]);
   if (error) return { error: error.message };
 
   return {
     goal: row,
-    say: `Goal set: ${goal}.` + (row.target_value != null ? ' It gets scored in every brief from now on.' : ''),
+    replaced: superseded || undefined,
+    say: (superseded ? `Changed: ${goal}.` : `Goal set: ${goal}.`) +
+         (row.target_value != null ? ' It gets scored in every brief from now on.' : ''),
     note: row.target_value == null
       ? 'No number attached, so the brief will mention it but cannot score it. Offer to attach one, once.'
       : 'Every brief will now score this automatically.',
     next_actions: ['brief to see it scored against today'],
+  };
+}
+
+/// Retire every active goal aiming at the same thing. Returns what it replaced
+/// so the answer can say "changed" rather than "set" — somebody who just moved
+/// their target wants to hear that it moved, not that a new one appeared.
+async function retireGoalsFor(userId, metric, cadence) {
+  if (!metric) return null;
+  const { data } = await supabase.from('wrought_goals')
+    .select('id, goal, target_value, target_unit')
+    .eq('user_id', userId).eq('active', true).eq('metric', metric).eq('cadence', cadence || 'daily');
+  if (!data?.length) return null;
+  await supabase.from('wrought_goals').update({ active: false })
+    .in('id', data.map(g => g.id));
+  return data.map(g => `${g.goal}${g.target_value != null ? ` (${g.target_value}${g.target_unit || ''})` : ''}`).join('; ');
+}
+
+// Dropping a target is normal maintenance, not a confession. A goal nobody is
+// chasing any more clutters every brief and every ring on the dashboard, and
+// leaving it there quietly turns the screen into a list of failures.
+async function dropGoal(args, user) {
+  const goals = await getGoals(user.id);
+  if (!goals.length) return { say: 'Nothing is set to drop.' };
+
+  const wanted = String(args.metric || args.goal || '').toLowerCase().trim();
+  const matches = args.all
+    ? goals
+    : goals.filter(g =>
+        (g.metric && g.metric.toLowerCase() === wanted) ||
+        (g.goal || '').toLowerCase().includes(wanted));
+
+  if (!matches.length) {
+    return {
+      error: 'no_match',
+      say: `Nothing matches "${args.metric || args.goal}". Currently set: ${goals.map(g => g.goal).join('; ')}.`,
+      current: goals.map(g => ({ goal: g.goal, metric: g.metric })),
+    };
+  }
+
+  await supabase.from('wrought_goals').update({ active: false })
+    .in('id', matches.map(g => g.id));
+
+  const left = goals.length - matches.length;
+  return {
+    dropped: matches.map(g => g.goal),
+    remaining: left,
+    say: `Dropped: ${matches.map(g => g.goal).join('; ')}.` +
+         (left ? ` ${left} target${left === 1 ? '' : 's'} still running.` : ' Nothing being scored now.'),
+    note: 'No comment on why. A target that is not being chased is clutter, and removing it is maintenance rather than a confession.',
   };
 }
 
@@ -2782,6 +2867,7 @@ const IMPL = {
   guide,
   set_profile: setProfile,
   set_goal: setGoal,
+  drop_goal: dropGoal,
   set_eating_window: setEatingWindow,
   log_fast: logFast,
   programmes,

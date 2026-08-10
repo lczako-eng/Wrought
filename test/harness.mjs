@@ -3099,6 +3099,61 @@ await test('a photo of the gym becomes an equipment list — and never reaches u
   assert.match(SERVER_INSTRUCTIONS, /Never build a plan around a machine their photos did not show/);
 });
 
+group('Changing your mind is one call, not a negotiation');
+
+await test('a new number replaces the old one instead of stacking a second ring', () => {
+  // "Switch my goal to 12,000 steps" must not leave 10,000 standing beside it:
+  // two rings for one intention is a dashboard that lies, and a brief that
+  // scores the same walk twice.
+  const src = readFileSync(new URL('../netlify/functions/mcp.js', import.meta.url), 'utf8');
+  assert.match(src, /async function retireGoalsFor/);
+  const fn = src.slice(src.indexOf('async function setGoal('), src.indexOf('async function retireGoalsFor'));
+  assert.match(fn, /const superseded = await retireGoalsFor\(user\.id, row\.metric, row\.cadence\)/);
+  // A body goal replaces its three too, or a second cut stacks three more.
+  assert.match(fn, /for \(const m of \['weight_kg', 'calories', 'protein_g'\]\)/);
+  // Retired, not deleted — what somebody used to aim at is part of the record.
+  const retire = src.slice(src.indexOf('async function retireGoalsFor'), src.indexOf('async function dropGoal'));
+  assert.match(retire, /update\(\{ active: false \}\)/);
+  assert.ok(!/\.delete\(\)/.test(retire), 'the old goal is being destroyed rather than retired');
+  // And it says "changed", because somebody who moved a target wants to hear
+  // that it moved, not that a new one appeared.
+  assert.match(fn, /superseded \? `Changed/);
+});
+
+await test('dropping a target is maintenance, never a confession', () => {
+  const tool = TOOLS.find(t => t.name === 'drop_goal');
+  assert.ok(tool);
+  assert.match(tool.description, /never a failure/);
+  assert.match(tool.description, /Never comment on why/);
+  const src = readFileSync(new URL('../netlify/functions/mcp.js', import.meta.url), 'utf8');
+  const fn = src.slice(src.indexOf('async function dropGoal('), src.indexOf('async function setEatingWindow('));
+  assert.match(fn, /No comment on why/);
+  // Nothing matching is answered with what IS set, not a shrug.
+  assert.match(fn, /Currently set:/);
+  for (const phrase of ['drop the steps one', 'switch my goal to 12,000 steps', 'make it 12,000']) {
+    assert.ok(SERVER_INSTRUCTIONS.includes(phrase), `"${phrase}" maps to nothing`);
+  }
+});
+
+await test('going to the gym is answered with a proposal, not a blank', () => {
+  // "When I say I'm going to the gym, Jim has to prompt me — what is he gonna
+  // do?" One line that already contains a plan, never three questions.
+  assert.match(SERVER_INSTRUCTIONS, /"I'M GOING TO THE GYM" IS AN OPENING/);
+  assert.match(SERVER_INSTRUCTIONS, /ONE short line that already contains a proposal/);
+  assert.match(SERVER_INSTRUCTIONS, /do not ask three things/);
+  // The body's veto comes before the plan, not after it.
+  assert.match(SERVER_INSTRUCTIONS, /readiness line FIRST/);
+  assert.ok(SERVER_INSTRUCTIONS.includes("I'm going to the gym"));
+});
+
+await test('a new weight re-bases the arithmetic and is never congratulated', () => {
+  // Praising a loss and staying silent on a gain is how a log starts getting
+  // edited to please the app.
+  assert.match(SERVER_INSTRUCTIONS, /A NEW WEIGHT IS JUST LOG_WEIGHT/);
+  assert.match(SERVER_INSTRUCTIONS, /re-bases everything computed from bodyweight/);
+  assert.match(SERVER_INSTRUCTIONS, /never congratulate a direction/);
+});
+
 group('Readiness — the body gets a veto, never a spur');
 
 const { readiness } = await import('../netlify/functions/lib/training.js');
