@@ -189,6 +189,7 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = Wrought;
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
+				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "Wrought does not write to Apple Health. This permission exists only because Apple requires declaring it alongside read access.";
 				INFOPLIST_KEY_NSHealthShareUsageDescription = "Wrought reads your steps, active energy, resting heart rate, weight and sleep so your record fills in automatically. Nothing is read beyond what you approve, and everything can be exported or deleted from wrought.fit.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
@@ -221,6 +222,7 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = Wrought;
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
+				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "Wrought does not write to Apple Health. This permission exists only because Apple requires declaring it alongside read access.";
 				INFOPLIST_KEY_NSHealthShareUsageDescription = "Wrought reads your steps, active energy, resting heart rate, weight and sleep so your record fills in automatically. Nothing is read beyond what you approve, and everything can be exported or deleted from wrought.fit.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
