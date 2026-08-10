@@ -184,20 +184,32 @@ main { padding-block: 26px 0; display: flex; flex-direction: column; gap: 22px; 
   background: var(--heat-0); box-shadow: inset 0 0 0 1px var(--edge);
 }
 .bs { display: block; height: 100%; }
-.bs.rest { background: var(--temper-dk); }
-.bs.move { background: var(--heat-3); animation: grow 900ms var(--ease) both; }
+.bs.rest  { background: var(--temper-dk); }
+/* Training sits between the two: hotter than the burn you cannot change,
+   cooler than the day's work, so the bar reads left-to-right as effort. */
+.bs.train { background: var(--heat-2); animation: grow 900ms var(--ease) both; }
+.bs.move  { background: var(--heat-3); animation: grow 900ms var(--ease) both; }
 @keyframes grow { from { transform: scaleX(0); transform-origin: left; } }
-.bskeys { display: flex; justify-content: space-between; gap: 12px; margin-top: 8px; }
+/* Three keys will not sit apart on a 390px screen, so they wrap and centre
+   rather than being squeezed until the numbers collide. */
+.bskeys { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px 14px; margin-top: 8px; }
 .bskey {
   display: flex; align-items: baseline; gap: 5px;
   font-size: 14px; font-weight: 650; font-variant-numeric: tabular-nums;
 }
 .bskey i { width: 8px; height: 8px; border-radius: 2px; display: block; flex: none; align-self: center; }
-.bskey i.rest { background: var(--temper-dk); }
-.bskey i.move { background: var(--heat-3); }
+.bskey i.rest  { background: var(--temper-dk); }
+.bskey i.train { background: var(--heat-2); }
+.bskey i.move  { background: var(--heat-3); }
 .bskey em {
   font-style: normal; font-family: var(--mono); font-size: 9px; letter-spacing: .12em;
   text-transform: uppercase; color: var(--ash-dim); font-weight: 400;
+}
+/* What the work actually was, under the key. A number with no name beside it
+   is trivia — "1,240 work" means nothing, "petting zoo, 7h" is the day. */
+.bswork {
+  margin-top: 6px; text-align: center; font-family: var(--mono); font-size: 10px;
+  letter-spacing: .06em; color: var(--ash-dim);
 }
 
 /* ── Targets ──────────────────────────────────────────────────────────────
@@ -2913,9 +2925,13 @@ function demoData() {
         { at: '20:05', summary: 'greek yoghurt and berries', estimated: true, calories: 1040, protein_g: 62, carbs_g: 119, fat_g: 25 },
       ],
       balance: {
-        known: true, calories_in: 2140, resting_burn: 1770, active_burn: 740,
-        calories_out: 2510, net: -370, direction: 'deficit',
-        projected_kg_per_week: -0.34, approximate: true, active_source: 'device',
+        known: true, calories_in: 2140, resting_burn: 1770, active_burn: 1490,
+        training_burn: 430, other_burn: 1060,
+        calories_out: 3260, net: -1120, direction: 'deficit',
+        projected_kg_per_week: -1.02, approximate: true, active_source: 'logged',
+        training_source: 'device',
+        logged_activity: { count: 1, capped: false, kcal: 980,
+                           entries: [{ summary: 'animal care, 7h', kcal: 980, hours: 7 }] },
       },
     },
     earned_room: { available: true, room_kcal: 1420, logged_days: 6, worth: 'a proper meal out, whatever you actually want' },
@@ -3360,9 +3376,11 @@ function hero(d) {
       <span class="leg"><b>${n(b.calories_out)}</b><span>burned</span></span>
     </div>
     ${burnSplit(b)}
-    <p class="caveat">${b.approximate ? 'Both sides are estimates — roughly, not exactly.' : ''}${
+    <p class="caveat">${b.approximate ? 'Every part of this is an estimate — roughly, not exactly.' : ''}${
       b.active_source === 'device' ? '' :
-      b.active_source === 'activity_level' ? ' The moving half is a standard multiplier, not a measurement — connect a watch and it becomes real.'
+      b.active_source === 'logged' ? ' The work is read off a standard effort table rather than measured — the weekly trend on the scale is what corrects it.' :
+      b.active_source === 'activity_level' ? ' The moving part is a standard multiplier, not a measurement — connect a watch, or tell WROUGHT what work you did.' :
+      b.active_source === 'training_only' ? ' Your session is counted but nothing is counting the rest of the day, so the real figure is higher.'
                                            : ' Nothing is counting your movement yet, so this is your resting burn alone — the real figure is higher.'}</p>
   </section>`;
 }
@@ -3376,23 +3394,48 @@ function hero(d) {
 // only part behaviour touches, and it is the one that climbs all day. Adding
 // them into a single figure hides the only number somebody can actually change
 // before dinner — which is exactly the number they are deciding against.
+// The day's burn in the three parts it actually has — the founder's own
+// division: "one is your daily metabolic rate, your workout, and other."
+//
+// It is the right split because of what each part means to the person reading
+// it. The first cannot be changed. The second is a choice they made. The third
+// is a job they went to, and for anybody doing physical work it is the largest
+// of the three and was invisible until now. A single "calories out" figure
+// hides all of that behind one number nobody can act on.
 function burnSplit(b) {
-  const rest = Number(b.resting_burn) || 0;
-  const move = Number(b.active_burn) || 0;
-  const total = rest + move;
+  const rest  = Number(b.resting_burn) || 0;
+  const train = Number(b.training_burn) || 0;
+  // Older responses only ever carried the two halves; fall back so a cached
+  // payload draws something correct rather than an empty bar.
+  const other = b.other_burn != null
+    ? Number(b.other_burn) || 0
+    : Math.max(0, (Number(b.active_burn) || 0) - train);
+  const total = rest + train + other;
   if (!total) return '';
   const pct = (v) => `${(v / total * 100).toFixed(1)}%`;
 
+  // What the third slice is called depends on where it came from, because
+  // "work" is a claim. Only say it when they actually logged some.
+  const otherLabel = b.logged_activity?.count ? 'work and moving'
+                   : b.active_source === 'device' ? 'moving today'
+                   : 'moving (estimated)';
+
+  const label = [`${n(rest)} at rest`, train ? `${n(train)} training` : null,
+                 other ? `${n(other)} ${otherLabel}` : null].filter(Boolean).join(', ');
+
   return `<div class="burnsplit">
-    <div class="bsbar" role="img" aria-label="${n(rest)} at rest, ${n(move)} moving">
+    <div class="bsbar" role="img" aria-label="${label}">
       <span class="bs rest" style="width:${pct(rest)}"></span>
-      <span class="bs move" style="width:${pct(move)}"></span>
+      ${train ? `<span class="bs train" style="width:${pct(train)}"></span>` : ''}
+      ${other ? `<span class="bs move" style="width:${pct(other)}"></span>` : ''}
     </div>
     <div class="bskeys">
       <span class="bskey"><i class="rest"></i>${n(rest)}<em>at rest</em></span>
-      <span class="bskey"><i class="move"></i>${n(move)}<em>${
-        b.active_source === 'device' ? 'moving today' : 'moving (estimated)'}</em></span>
+      ${train ? `<span class="bskey"><i class="train"></i>${n(train)}<em>${
+        b.training_source === 'device' ? 'training' : 'training (estimated)'}</em></span>` : ''}
+      ${other ? `<span class="bskey"><i class="move"></i>${n(other)}<em>${otherLabel}</em></span>` : ''}
     </div>
+    ${b.logged_activity?.count ? `<div class="bswork">${esc(b.logged_activity.entries.map(e => e.summary).join(' · '))}</div>` : ''}
   </div>`;
 }
 

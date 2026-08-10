@@ -8,6 +8,7 @@
 // product will have hurt them.
 
 import { supabase, daysBetween, kgToLb } from './wrought.js';
+import { activityTotal } from './activity.js';
 
 // ── Matching an exercise across time ────────────────────────────────────────
 // "Barbell Bench Press", "bench press", "Bench (BB)" and "benching" are one
@@ -198,7 +199,60 @@ export const ACTIVITY = {
   very_active: { mult: 1.9,   say: 'physical job, heavy work' },
 };
 
-export function energyBalance({ profile, weightKg, caloriesIn, activeCalories, foodEstimated }) {
+// What a training session cost, when nothing measured it.
+//
+// A watch reports a workout's calories and that figure wins. Without one, a
+// logged session used to contribute NOTHING to calories out — so the person
+// most likely to be logging by hand was the person whose training counted for
+// zero. Net of resting, same as work: the hour is already being billed by the
+// daily resting burn.
+const TRAINING_MET = { strength: 5.0, cardio: 7.0, mobility: 2.8 };
+
+export function trainingBurn(workouts = [], weightKg = null) {
+  let measured = 0, estimated = 0, anyMeasured = false, anyEstimated = false;
+
+  for (const w of workouts) {
+    const kcal = Number(w.detail?.calories);
+    if (Number.isFinite(kcal) && kcal > 0) { measured += kcal; anyMeasured = true; continue; }
+
+    const mins = Number(w.detail?.minutes);
+    if (!Number.isFinite(mins) || mins <= 0 || !weightKg) continue;
+    const met = TRAINING_MET[w.detail?.kind] ?? TRAINING_MET.strength;
+    estimated += Math.round((met - 1) * Number(weightKg) * (mins / 60) * 1.05);
+    anyEstimated = true;
+  }
+
+  return {
+    kcal: Math.round(measured + estimated),
+    measured: Math.round(measured),
+    estimated: Math.round(estimated),
+    source: anyMeasured && anyEstimated ? 'mixed' : anyMeasured ? 'device' : anyEstimated ? 'estimate' : 'none',
+  };
+}
+
+/**
+ * The day's burn, in the three parts it actually has.
+ *
+ * The founder: "one is your daily metabolic rate, your workout, and other."
+ * That is the right division, and it is the one people can act on — the first
+ * part cannot be changed, the second is a choice, and the third is a job.
+ *
+ *   resting  — what a body costs lying still. Fixed.
+ *   training — deliberate exercise. Measured by a watch, or estimated from
+ *              logged minutes.
+ *   other    — work and daily life. This is the part that was missing, and for
+ *              anybody with a physical job it is the biggest of the three.
+ *
+ * The precedence between measurement and estimate is the whole correctness
+ * problem, and it runs the same way everywhere: a device that reported the day
+ * has ALREADY counted the shift and the session, because that is where the
+ * steps and the heart rate came from. So a logged activity is recorded and adds
+ * nothing on a measured day. Adding both is how "calories out" doubles.
+ */
+export function energyBalance({
+  profile, weightKg, caloriesIn, activeCalories, foodEstimated,
+  workouts = [], activities = [],
+}) {
   const rest = restingBurn(profile, weightKg);
 
   if (rest.kcal == null) {
@@ -210,25 +264,59 @@ export function energyBalance({ profile, weightKg, caloriesIn, activeCalories, f
 
   const measured = Number(activeCalories) || 0;
   const level = ACTIVITY[profile.activity_level];
+  const training = trainingBurn(workouts, weightKg);
+  // Capped against THIS day's resting burn, which is why it happens here rather
+  // than at the call site — the ceiling is a ratio, not a constant.
+  const activity = activityTotal(activities, rest.kcal);
+  const logged = Number(activity.kcal) || 0;
 
-  // A measurement always beats a multiplier. But with neither, "calories out"
-  // was the resting figure alone — which counts a day of work as nothing and
-  // produces a deficit that is wrong in the dangerous direction, because it
-  // tells somebody to eat less than they need.
-  const active = measured > 0
-    ? measured
-    : level ? Math.round(rest.kcal * (level.mult - 1)) : 0;
-  const activeSource = measured > 0 ? 'device' : level ? 'activity_level' : 'none';
+  let train = 0, other = 0, activeSource;
 
+  if (measured > 0) {
+    // Apple's active energy is everything above resting, workouts included —
+    // so the session comes OUT of it rather than being added to it. Floored at
+    // zero: a watch that reported less than the session it recorded is a watch
+    // disagreeing with itself, and a negative "other" is nonsense on a screen.
+    train = Math.min(training.kcal, measured);
+    other = Math.max(0, measured - train);
+    activeSource = 'device';
+  } else if (logged > 0) {
+    // No watch, but they told us what they did. The logged work stands on its
+    // own, and the hours NOT accounted for are charged at the sedentary floor
+    // rather than at their usual multiplier — the multiplier already assumes a
+    // typical day, and a typical day is the thing being replaced here. Never
+    // below what the multiplier alone would have said, so logging a shift can
+    // never make somebody's burn go DOWN.
+    train = training.kcal;
+    const floor = Math.round(rest.kcal * (ACTIVITY.sedentary.mult - 1));
+    const viaLevel = level ? Math.round(rest.kcal * (level.mult - 1)) : 0;
+    other = Math.max(logged + floor - train, viaLevel - train, 0);
+    activeSource = 'logged';
+  } else {
+    train = training.kcal;
+    const viaLevel = level ? Math.round(rest.kcal * (level.mult - 1)) : 0;
+    other = Math.max(0, viaLevel - train);
+    activeSource = level ? 'activity_level' : train > 0 ? 'training_only' : 'none';
+  }
+
+  const active = train + other;
   const out = rest.kcal + active;
   const inn = Number(caloriesIn) || 0;
   const net = inn - out;
+
+  const parts = [`${rest.kcal} at rest`];
+  if (train) parts.push(`${train} training`);
+  if (other) parts.push(`${other} ${activeSource === 'logged' ? 'work and moving about' : 'moving about'}`);
 
   return {
     known: true,
     calories_in: inn,
     resting_burn: rest.kcal,
+    // Kept for everything already reading it — the two halves the split bar
+    // draws — with the third now named beside them.
     active_burn: active,
+    training_burn: train,
+    other_burn: other,
     calories_out: out,
     net,
     direction: net < -150 ? 'deficit' : net > 150 ? 'surplus' : 'maintenance',
@@ -237,20 +325,27 @@ export function energyBalance({ profile, weightKg, caloriesIn, activeCalories, f
     approximate: true,
     resting_approximate: rest.approximate,
     active_source: activeSource,
-    say: `Roughly ${inn} in, about ${out} out (${rest.kcal} at rest${
-      activeSource === 'device' ? ` plus ${active} your watch measured`
-      : activeSource === 'activity_level' ? ` plus about ${active} for ${ACTIVITY[profile.activity_level].say}`
-      : ''}) — ` +
+    training_source: training.source,
+    ...(activity.count ? { logged_activity: activity } : {}),
+    say: `Roughly ${inn} in, about ${out} out (${parts.join(' · ')}) — ` +
          (net < -150 ? `around ${Math.abs(net)} down on the day.`
         : net > 150  ? `around ${net} over.`
         : `about level.`) +
          (foodEstimated ? ' Food is estimated from what you described, so treat it as a direction, not a measurement.' : '') +
+         // A logged shift on a day the watch also reported is NOT added, and
+         // staying quiet about that reads as the log having been ignored.
+         (measured > 0 && logged > 0
+           ? ' Your watch already counted the day including the work, so what you logged is on the record but not added on top — a measurement beats an estimate.'
+           : '') +
+         (activity.capped ? ' The logged work was held at a ceiling; the raw figure is on the entry.' : '') +
          // Silence here would be the dangerous kind: a burn counting only the
          // resting figure looks like a bigger deficit than the day really had.
          (activeSource === 'none'
-           ? ' NOTE: nothing is counting your movement — this is your resting burn only, so the real figure is higher and the deficit smaller than it looks. Set an activity level or connect a phone to fix it.'
+           ? ' NOTE: nothing is counting your movement — this is your resting burn only, so the real figure is higher and the deficit smaller than it looks. Log the work, set an activity level, or connect a phone to fix it.'
+           : activeSource === 'training_only'
+           ? ' NOTE: your session is counted but nothing is counting the rest of the day, so the real figure is higher and the deficit smaller than it looks. Log the work, set an activity level, or connect a phone.'
            : ''),
-    caveat: 'Both halves are estimates. Resting burn varies by hundreds of calories between people the same size, and described meals are inferred. Use the weekly trend on the scale to correct it, never a single day.',
+    caveat: 'Every part of this is an estimate. Resting burn varies by hundreds of calories between people the same size, described meals are inferred, and work is read off a standard effort table rather than measured. Use the weekly trend on the scale to correct it, never a single day.',
   };
 }
 

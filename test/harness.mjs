@@ -22,7 +22,9 @@ import {
   exerciseKey, loadStep, progressionCall, TIERS,
   restingBurn, energyBalance, planFromRoutine, sessionTotals, earnedRoom,
   orderPlan, orderInsight, deviceMatrix, weekdayPattern, ACTIVITY, focusCall,
+  trainingBurn,
 } from '../netlify/functions/lib/training.js';
+import { activityBurn, activityTotal, matchActivity, ACTIVITIES, EFFORTS } from '../netlify/functions/lib/activity.js';
 import {
   localDateFor, addDays, daysBetween, clockString, humanDuration,
   kgToLb, lbToKg, cmToIn, inToCm, sayWeight,
@@ -3110,8 +3112,10 @@ await test('resting and moving are shown apart, not summed away', () => {
   // the one still climbing when somebody is deciding about dinner.
   const src = page('app.html');
   const fn = src.slice(src.indexOf('function burnSplit('), src.indexOf('// ── Calendar'));
-  assert.match(fn, /const rest = Number\(b\.resting_burn\)/);
-  assert.match(fn, /const move = Number\(b\.active_burn\)/);
+  assert.match(fn, /const rest\s+= Number\(b\.resting_burn\)/);
+  // The moving half survived the split into three: it is now whatever is left
+  // after training, and falls back to active_burn for an older payload.
+  assert.match(fn, /b\.active_burn/);
   assert.match(fn, /at rest/);
   assert.match(fn, /moving today/);
   // The moving half is labelled as an estimate when nothing measured it — a
@@ -3975,6 +3979,152 @@ await test('a Supabase setting is named with the place it lives', () => {
   const src = page('app.html');
   assert.match(src, /manual linking is disabled/i);
   assert.match(src, /Authentication → Sign In \/ Providers/);
+});
+
+// ── The third burn ──────────────────────────────────────────────────────────
+
+group('Work — the burn nothing was counting');
+
+await test('a shift is priced off a table, never off a guess', () => {
+  // "Today I worked at the Petting Zoo. It's very hard work so I wanna make
+  // sure that captures it." The words have to reach a real MET value.
+  const b = activityBurn({ text: 'petting zoo all day', hours: 7, weightKg: 95 });
+  assert.ok(b.known);
+  assert.equal(b.matched, true);
+  assert.match(b.label, /animal care/);
+  assert.ok(b.kcal > 1500 && b.kcal < 2600, `implausible: ${b.kcal}`);
+  // Labelled, every time. A calorie figure read as a fact is the credibility gone.
+  assert.equal(b.estimated, true);
+  assert.match(b.say, /estimate/i);
+});
+
+await test('the resting hours are not billed twice', () => {
+  // MET values are GROSS — they include the resting cost of those hours, which
+  // the daily resting burn is already charging for. Adding them raw invents
+  // hundreds of calories nobody spent. Everything here is NET: (MET - 1).
+  const met = 4.3, kg = 95, h = 7;
+  const gross = Math.round(met * kg * h * 1.05);
+  const b = activityBurn({ text: 'petting zoo', hours: h, weightKg: kg });
+  assert.ok(b.kcal < gross, 'the burn is gross, not net');
+  assert.equal(b.kcal, Math.round((met - 1) * kg * h * 1.05));
+});
+
+await test('an unknown job asks the person, rather than guessing from a title', () => {
+  const b = activityBurn({ text: 'sorting out the archive', hours: 5, weightKg: 95 });
+  assert.equal(b.known, false);
+  assert.equal(b.why, 'effort');
+  assert.deepEqual(b.options, ['light', 'moderate', 'hard', 'very_hard']);
+  // And their own answer is accepted.
+  const chosen = activityBurn({ text: 'sorting out the archive', hours: 5, effort: 'hard', weightKg: 95 });
+  assert.ok(chosen.known);
+  assert.ok(chosen.kcal > 0);
+  assert.equal(chosen.matched, false);
+});
+
+await test('hours are demanded, and a day only holds so many', () => {
+  assert.equal(activityBurn({ text: 'warehouse', weightKg: 95 }).why, 'hours');
+  assert.equal(activityBurn({ text: 'warehouse', hours: 0, weightKg: 95 }).why, 'hours');
+  assert.equal(activityBurn({ text: 'warehouse', hours: 26, weightKg: 95 }).why, 'hours');
+});
+
+await test('the burn comes back in three named parts', () => {
+  // The founder's own division: "one is your daily metabolic rate, your
+  // workout, and other." Each part is something different about the day —
+  // one fixed, one a choice, one a job.
+  const p = { height_cm: 190, birth_year: 1990, sex: 'male', activity_level: 'light' };
+  const b = energyBalance({
+    profile: p, weightKg: 110, caloriesIn: 2400, activeCalories: 0,
+    workouts: [{ event_type: 'workout', detail: { kind: 'strength', minutes: 60 } }],
+    activities: [{ event_type: 'activity', detail: { kcal: 900, hours: 7 } }],
+  });
+  assert.ok(b.resting_burn > 0);
+  assert.ok(b.training_burn > 0);
+  assert.ok(b.other_burn > 0);
+  // The three have to add up to the number on screen, or the bar is a lie.
+  assert.equal(b.calories_out, b.resting_burn + b.training_burn + b.other_burn);
+  assert.equal(b.active_burn, b.training_burn + b.other_burn);
+  assert.equal(b.active_source, 'logged');
+  assert.match(b.say, /training/);
+});
+
+await test('a watch that counted the day does not count it again', () => {
+  // The shift is where the steps and the heart rate came from, so a watch has
+  // already counted it. Adding a logged shift on top is how calories out
+  // silently doubles — the one bug that would make this feature dangerous.
+  const p = { height_cm: 190, birth_year: 1990, sex: 'male', activity_level: 'light' };
+  const measured = 1200;
+  const b = energyBalance({
+    profile: p, weightKg: 110, caloriesIn: 2400, activeCalories: measured,
+    workouts: [{ event_type: 'workout', detail: { kind: 'strength', minutes: 60, calories: 400 } }],
+    activities: [{ event_type: 'activity', detail: { kcal: 900, hours: 7 } }],
+  });
+  assert.equal(b.active_source, 'device');
+  assert.equal(b.training_burn + b.other_burn, measured);
+  assert.equal(b.training_burn, 400);
+  // And it says so, rather than looking like the log was ignored.
+  assert.match(b.say, /already counted the day/i);
+});
+
+await test('the session comes out of the watch total, never on top of it', () => {
+  // Apple's active energy is everything above resting, workouts included.
+  const p = { height_cm: 190, birth_year: 1990, sex: 'male' };
+  const b = energyBalance({
+    profile: p, weightKg: 110, caloriesIn: 2000, activeCalories: 300,
+    workouts: [{ event_type: 'workout', detail: { kind: 'cardio', minutes: 90, calories: 800 } }],
+  });
+  // A watch disagreeing with itself must not produce a negative slice.
+  assert.ok(b.other_burn >= 0);
+  assert.equal(b.training_burn + b.other_burn, 300);
+});
+
+await test('logging a shift can never make somebody burn less', () => {
+  // Somebody on "very active" who logs one short job must not end up with a
+  // smaller figure than the multiplier alone gave them — that would read as
+  // being punished for telling the truth.
+  const p = { height_cm: 190, birth_year: 1990, sex: 'male', activity_level: 'very_active' };
+  const plain = energyBalance({ profile: p, weightKg: 110, caloriesIn: 2000, activeCalories: 0 });
+  const withWork = energyBalance({
+    profile: p, weightKg: 110, caloriesIn: 2000, activeCalories: 0,
+    activities: [{ event_type: 'activity', detail: { kcal: 120, hours: 1 } }],
+  });
+  assert.ok(withWork.calories_out >= plain.calories_out,
+    `${withWork.calories_out} < ${plain.calories_out}`);
+});
+
+await test('an implausible pile of work is capped, and the cap is said', () => {
+  // Over-reported hours must not hand somebody 3,000 calories of permission.
+  // Capping quietly would be worse — the log has to stay honest about it.
+  const rest = 2000;
+  const t = activityTotal([
+    { event_type: 'activity', summary: 'forestry, 12h', detail: { kcal: 4000, hours: 12 } },
+  ], rest);
+  assert.equal(t.capped, true);
+  assert.equal(t.kcal, 3000);
+  assert.equal(t.raw_kcal, 4000);
+  assert.match(t.say, /held at/i);
+});
+
+await test('a shift is never a training session', () => {
+  // Filing work as a workout would count it toward the weekly target, put it
+  // in the matrix and feed progression. Somebody would hit "four sessions this
+  // week" by going to work, and the expectation would mean nothing.
+  const tool = TOOLS.find(t => t.name === 'log_activity');
+  assert.ok(tool, 'log_activity is missing');
+  assert.match(tool.description, /NOT a training session/i);
+  assert.match(tool.description, /never estimate them yourself/i);
+  assert.match(SERVER_INSTRUCTIONS, /WORK IS NOT TRAINING/);
+  assert.match(SERVER_INSTRUCTIONS, /never congratulate somebody for having gone to work/i);
+  // And the phrasebook carries the way people actually say it.
+  assert.match(SERVER_INSTRUCTIONS, /worked at the petting zoo/i);
+});
+
+await test('the bar draws three slices that add to the number above it', () => {
+  const src = page('app.html');
+  assert.match(src, /\.bs\.train/);
+  assert.match(src, /training_burn/);
+  assert.match(src, /other_burn/);
+  // The page still does no arithmetic of its own — the parts come computed.
+  assert.doesNotMatch(src, /resting_burn \+ b\.training_burn \+ b\.other_burn ===/);
 });
 
 // ── Said out loud, from a locked phone ──────────────────────────────────────

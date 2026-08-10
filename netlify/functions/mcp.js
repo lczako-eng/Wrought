@@ -26,6 +26,7 @@ import {
 } from './lib/wrought.js';
 import { allowed } from './lib/membership.js';
 import { pendingVoice } from './lib/voice.js';
+import { activityBurn, EFFORTS } from './lib/activity.js';
 import { PROVIDERS, providerSummary, recommendRoute } from './lib/providers.js';
 import { nutritionTotals, composition, macroMatrix, yearOverYear } from './lib/nutrition.js';
 import {
@@ -131,6 +132,7 @@ HOW PEOPLE ACTUALLY ASK. Nobody says "call the brief tool". They say one of a hu
   suggest_workout / programmes — "what should I train", "give me a workout", "what's today", "programme me", "build me something", "I've got 40 minutes", "what am I neglecting", "proper programme", "what should I be running"
   start_session — "let's go", "starting now", "at the gym", "I'm going to the gym", "heading to the gym", "gym in ten", "leg day", "chest day", "I'm at the rack", "warmed up"
   log_set — "done", "got it", "got 8", "8 at 225", "that's up", "failed at 5", "couldn't finish", "one more in the tank"
+  log_activity — "I was at work all day", "worked at the petting zoo", "did a double shift", "on site since six", "been on my feet since seven", "spent the afternoon digging", "moved house today", "was doing the garden", "shovelled the drive", "long shift", "physical day", "grafting all day"
   swap_exercise — "machine's taken"
   calibrate_lift — "I usually bench 185", "I can do 80 for 8", "my max is 315", "I think I can press about", "I used to squat", "someone's on it", "bench is busy", "rack's full", "it's occupied", "can't get on it", "there's a queue", "that machine's broken", "can we do something else"
   recall / search_log — "what did I do last Tuesday", "have I had this before", "when did I last", "find", "look up", "what was my best"
@@ -164,6 +166,10 @@ THE MACHINE BEING TAKEN IS NORMAL, NOT A PROBLEM TO DISCUSS. "Someone's on it" m
 WHEN THE SESSION ENDS, NAME THE NEXT ONE. end_session returns next_workout and training_week. Close every workout with them, in one line: what they just did, anything that beat last time, and what is next — "Next up: Push A, week 3." This server can never speak first, so the end of one session is the only place the next one can be planted. If the block just finished, SAY SO — that is the only reward the structure had to give.
 
 A GREETING IN THAT REGISTER IS A REQUEST, NOT SMALL TALK. "Hey jim bro", "gym bro", "morning", "coach" and the rest are not openers to be answered conversationally — they are the user asking for their read. CALL THE TOOL FIRST and lead with what comes back. Never reply "hey bro, what's up?" and wait: they already told you what's up. If genuinely nothing is logged yet, still call brief and say that, rather than making them ask twice.
+
+WORK IS THE THIRD BURN, AND IT IS USUALLY THE BIGGEST. Calories out has three parts: resting (what a body costs lying still), training (the gym), and everything else (a job, a garden, a house move). For anybody with a physical job the third is larger than the other two combined, and nothing counts it unless they say so. So a mention of having WORKED is a log — "I was at the petting zoo all day", "double shift", "on site since six" — call log_activity in the same turn, with quiet acknowledgement, exactly like capture in passing. Ask only for hours if they have not said, and ask for hours ON TASK rather than the length of the shift, because nobody works at full effort through their break. NEVER ESTIMATE THE CALORIES YOURSELF — the server reads them off a standard effort table against their bodyweight, and a guessed number here would be hundreds of calories wrong in a direction that changes what they eat. If the job is not in the table the server asks whether it was light, moderate, hard or very hard; pass that back rather than choosing for them.
+
+WORK IS NOT TRAINING, AND THE DISTINCTION IS LOAD-BEARING. A shift never counts toward their weekly session target, never enters the training matrix and never feeds progression. Never call a day's work a workout, never let it tick off a session, and never congratulate somebody for having gone to work — it is a fact about the day, recorded because it burns calories, not an achievement to remark on. If they ask whether it counts as training, the answer is plainly no, and that their weekly number is untouched.
 
 WHAT THEY TOLD THE PHONE IS STILL WAITING FOR YOU. On an iPhone they can say "hey Siri, gym bro" hands-free and dictate a sentence with the screen off. There is no model on that end of the wire, so it lands word for word with no calories on it and counts for nothing in any total. brief hands these back as voice_pending, each with its id and exactly what was said. READ THEM AND CALL structure_entries IN THE SAME TURN, before you deliver the verdict — otherwise you are about to read out a day's figures that you already know are missing things. Then acknowledge it in one short clause, never a list: dictating has to feel free, and a recital of everything they mumbled at their phone yesterday is how it stops feeling that way. The same rules apply as to any other reading — estimate what was actually named, leave "had lunch" null rather than padding it into a number.
 
@@ -539,6 +545,23 @@ const TOOLS = [
                 description: 'Which kind of entry to amend. Omit to amend whatever was logged most recently.' },
       },
       required: ['text'],
+    },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+  },
+  {
+    name: 'log_activity',
+    title: 'Record work, or a day of graft that was not training',
+    description: 'A shift, a garden, a house move, eight hours on a building site — real physical work that is NOT a training session. Use this whenever somebody mentions having worked, especially a physical job: "I was at the petting zoo all day", "did a double shift", "spent the afternoon digging". It is usually the biggest number in their day and nothing else counts it. The server works out the calories from a standard effort table — never estimate them yourself. Do NOT use this for the gym: a workout is log or log_set, and filing work as training would count it toward their weekly sessions.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        activity: { type: 'string', description: 'What the work was, in their words — "petting zoo", "warehouse shift", "digging the garden". Matched against the effort table.' },
+        hours:    { type: 'number', description: 'Hours ACTUALLY at it, not the length of the shift. Breaks and standing around are not the work. Ask if they have not said; roughly is fine.' },
+        effort:   { type: 'string', enum: ['light','moderate','hard','very_hard'],
+                    description: 'Only needed when the job is not in the table — the server will say so and ask. Their read on their own day, never your guess from a job title.' },
+        date:     { type: 'string', description: 'YYYY-MM-DD. Defaults to today.' },
+      },
+      required: ['activity'],
     },
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
   },
@@ -1012,6 +1035,84 @@ async function amendLast(args, user) {
 // target. Ids are checked against the caller's own rows before anything is
 // written: an id is guessable, and an unchecked one would let a stranger
 // rewrite somebody else's log.
+// Work, counted at last.
+//
+// The founder: "today I worked at the Petting Zoo. It's very hard work so I
+// wanna make sure that captures it and then add it to the total."
+//
+// This is the third burn and it was the missing one. It is filed as its own
+// event type rather than a workout on purpose — a shift must never count toward
+// the weekly session target, never enter the training matrix, and never feed
+// progression. Somebody hitting "four sessions this week" by going to work
+// would make the one number the expectation rests on meaningless.
+async function logActivity(args, user) {
+  const profile = await getProfile(user.id);
+  const date = /^\d{4}-\d{2}-\d{2}$/.test(String(args.date || ''))
+    ? args.date : localDateFor(profile.timezone);
+
+  // Bodyweight, because the whole calculation scales with it — a 60kg and a
+  // 110kg person doing identical work do not spend remotely the same energy.
+  let weightKg = null;
+  const { data: recent } = await supabase.from('wrought_events')
+    .select('detail').eq('user_id', user.id).eq('event_type', 'weight')
+    .order('occurred_at', { ascending: false }).limit(1);
+  weightKg = recent?.[0]?.detail?.value_kg ?? null;
+
+  const burn = activityBurn({
+    text: args.activity, hours: args.hours, effort: args.effort, weightKg,
+  });
+
+  // Not a failure — a question. The missing piece is named so the assistant
+  // asks for exactly that one thing rather than re-opening the whole entry.
+  if (!burn.known) {
+    return {
+      needs: burn.why,
+      ...(burn.options ? { options: burn.options } : {}),
+      say: burn.say,
+      note: 'Ask for just this and call log_activity again with everything else the same. One question, not a form.',
+    };
+  }
+
+  const written = await insertEvents(user.id, profile, [{
+    event_type: 'activity',
+    summary: `${burn.label}, ${burn.hours}h`,
+    detail: {
+      label: burn.label, key: burn.key, met: burn.met,
+      hours: burn.hours, kcal: burn.kcal,
+      matched: burn.matched, said: String(args.activity || '').slice(0, 200),
+    },
+    estimated: true,
+  }], { rawInput: `${args.activity} ${args.hours ?? ''}h`.trim() }).catch(e => ({ error: e }));
+
+  if (written?.error) {
+    const msg = String(written.error.message || written.error);
+    return { error: /constraint|check|invalid input/i.test(msg)
+      ? 'The activity event type is not in the database yet — run schema/013_wrought_work.sql in Supabase.'
+      : msg };
+  }
+
+  const day = await dayFacts(user.id, profile, date);
+  const balance = await balanceFor(user.id, profile, date, day);
+
+  return {
+    logged: `${burn.label}, ${burn.hours}h`,
+    kcal: burn.kcal,
+    met: burn.met,
+    matched: burn.matched,
+    counted_as: 'work — not a training session',
+    balance: balance.known ? {
+      resting_burn: balance.resting_burn,
+      training_burn: balance.training_burn,
+      other_burn: balance.other_burn,
+      calories_out: balance.calories_out,
+      say: balance.say,
+    } : null,
+    say: `${burn.say}${balance.known ? ` Day so far: about ${balance.calories_out} out.` : ''}`,
+    note: 'Say the figure as an estimate, because it is one — read off a standard effort table, not measured. It does NOT count as a workout and must not be mentioned as one; their weekly training target is untouched. No praise for having gone to work.',
+    next_actions: ['energy_balance for the full subtraction', 'brief for the day\'s read'],
+  };
+}
+
 const VALID_EVENT_TYPES = new Set(
   ['food','drink','workout','weight','measurement','sleep','symptom','mood','supplement','note','fast']);
 
@@ -2146,6 +2247,8 @@ async function balanceFor(userId, profile, date, day) {
     caloriesIn: day.food.calories,
     activeCalories: day.device.active_calories,
     foodEstimated: day.food.estimated,
+    workouts: day.training.entries,
+    activities: day.activity.entries,
   });
 }
 
@@ -2969,6 +3072,7 @@ const IMPL = {
   log_weight: logWeight,
   log_measurement: logMeasurement,
   amend_last: amendLast,
+  log_activity: logActivity,
   structure_entries: structureEntries,
   undo_last: undoLast,
   get_profile: getProfileTool,

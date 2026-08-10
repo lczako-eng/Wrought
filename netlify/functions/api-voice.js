@@ -116,6 +116,8 @@ export const handler = async (event) => {
       caloriesIn: day.food.calories,
       activeCalories: day.device.active_calories,
       foodEstimated: day.food.estimated,
+      workouts: day.training.entries,
+      activities: day.activity.entries,
     });
     const flags = careFlags(range, profile);
     const week  = weekSoFar(range.days, { today, target: profile.train_days });

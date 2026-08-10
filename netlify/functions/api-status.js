@@ -39,6 +39,10 @@ const MIGRATIONS = [
   { file: '010_wrought_profile_web.sql', probe: col('wrought_profile', 'display_name'), gives: 'the profile screen and your picture' },
   { file: '011_wrought_membership.sql',  probe: t('wrought_memberships'),           gives: 'plans, trials, codes and the admin people list' },
   { file: '012_wrought_link_codes.sql',  probe: t('wrought_link_codes'),            gives: 'joining two accounts with a code instead of a password' },
+  // Like 004, this widens a check constraint rather than creating anything, and
+  // a constraint is not visible through PostgREST. Assumed rather than probed —
+  // log_activity says which migration it needs when the insert is rejected.
+  { file: '013_wrought_work.sql',        probe: col('wrought_events', 'event_type'), gives: 'log_activity — a work shift counted as its own burn', assume: true },
 ];
 
 // A probe that treats EVERY error as "not run" lies twice over: a timeout reads

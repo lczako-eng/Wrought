@@ -126,6 +126,8 @@ export const handler = async (event) => {
     caloriesIn: today.food.calories,
     activeCalories: today.device.active_calories,
     foodEstimated: today.food.estimated,
+    workouts: today.training.entries,
+    activities: today.activity.entries,
   });
 
   const calorieGoal = goals.find(g => g.metric === 'calories' && g.cadence === 'daily');

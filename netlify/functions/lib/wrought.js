@@ -355,8 +355,9 @@ export async function dayFacts(userId, profile, date) {
   const lastMeal = meals.length ? meals[meals.length - 1] : null;
   const lastMealMin = lastMeal ? localMinutesFor(profile.timezone, new Date(lastMeal.occurred_at)) : null;
 
-  // Training
+  // Training, and — separately — work.
   const workouts = evs.filter(e => e.event_type === 'workout');
+  const activities = evs.filter(e => e.event_type === 'activity');
   const trainedMinutes = workouts.reduce((a, e) => a + num(e.detail?.minutes), 0);
   const muscles = [...new Set(workouts.flatMap(e => e.detail?.muscles || []))];
   const volumeKg = workouts.reduce((a, e) =>
@@ -411,10 +412,25 @@ export async function dayFacts(userId, profile, date) {
       muscles,
       volume_kg: Math.round(volumeKg),
       summaries: workouts.map(w => w.summary),
+      // The rows themselves, so the burn can be worked out from a watch's own
+      // figure where there is one and from the minutes where there is not.
+      entries: workouts.map(w => ({ event_type: 'workout', summary: w.summary, detail: w.detail || {} })),
       say: workouts.length
         ? `${workouts.length} session${workouts.length === 1 ? '' : 's'}, ${trainedMinutes} min` +
           (muscles.length ? ` — ${muscles.join(', ')}` : '')
         : 'Rest day (nothing logged).',
+    },
+    // Work and daily life — the third burn, and for anybody with a physical job
+    // the biggest of the three. Deliberately NOT part of `training`: a shift is
+    // not a session and must never count toward the weekly target or the matrix.
+    activity: {
+      count: activities.length,
+      minutes: Math.round(activities.reduce((a, e) => a + num(e.detail?.hours) * 60, 0)),
+      summaries: activities.map(a => a.summary),
+      entries: activities.map(a => ({ event_type: 'activity', summary: a.summary, detail: a.detail || {} })),
+      say: activities.length
+        ? activities.map(a => a.summary).join('; ')
+        : 'Nothing logged.',
     },
     body: {
       weight_kg: weightKg,

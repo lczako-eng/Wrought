@@ -73,7 +73,7 @@ nothing else.
   MCP brief and the web dashboard cannot disagree. `api-progress.js` exists
   purely so the dashboard calls the same code rather than recomputing in JS.
 - **MCP server**: `netlify/functions/mcp.js` at `/mcp` — stateless Streamable
-  HTTP, JSON-RPC. 37 tools. Doctrines ship in `SERVER_INSTRUCTIONS`.
+  HTTP, JSON-RPC. 38 tools. Doctrines ship in `SERVER_INSTRUCTIONS`.
 - **Auth**: OAuth 2.1 (PKCE, dynamic client registration) so "Sign in with
   Wrought" appears in ChatGPT/Claude. Supabase session JWTs also accepted as a
   fallback. Everything secret is stored SHA-256 hashed.
@@ -220,6 +220,65 @@ creating a second one.** Without it, "doing my workout" plus a later "that was
 legs, 40 minutes" becomes two phantom sessions and the day double-counts. It
 re-parses the original words together with the new ones and merges the detail,
 so nothing already known gets wiped.
+
+### The three burns — and the one nothing was counting
+
+`lib/activity.js` + `013_wrought_work.sql` + the `log_activity` tool. The
+founder, after a shift: *"today I worked at the Petting Zoo. It's very hard
+work so I wanna make sure that captures it and then add it to the total as
+well — like one is your daily metabolic rate, your workout, and other."*
+
+His division is the right one, and it is right because of what each part means
+to the person reading it. **Resting** cannot be changed. **Training** is a
+choice they made. **Other** is a job they went to — and for anybody doing
+physical work it is larger than the other two combined and was completely
+invisible. A single "calories out" figure hides all of that behind one number
+nobody can act on.
+
+- **Priced off the Compendium of Physical Activities**, the MET table every
+  exercise physiologist and every fitness app is already using underneath. That
+  matters for the estimates doctrine: a published reference figure is not a
+  language model's impression of what a petting zoo costs. Still labelled an
+  estimate every single time. **The model must never estimate these calories
+  itself** — a guess here is hundreds of calories wrong in a direction that
+  changes what somebody eats.
+- **Everything is NET, `(MET − 1)`.** MET values are gross — they include the
+  resting cost of those hours, which the daily resting burn is already
+  charging for. Adding them raw on top of a full-day BMR bills those hours
+  twice and invents a thousand calories nobody spent.
+- **A watch that reported the day has already counted the shift**, because the
+  shift is where the steps and the heart rate came from. On a measured day a
+  logged activity is kept as a record and adds **nothing** — and the response
+  says so, because silence there reads as the log having been ignored. Same
+  rule for the session: Apple's active energy is everything above resting,
+  workouts included, so training comes **out** of that total rather than on top
+  of it, floored at zero.
+- **Logging work can never make somebody's burn go down.** Never below what
+  the activity multiplier alone would have said — being punished for telling
+  the truth is how a log stops being told the truth.
+- **A shift is not a session, and that is load-bearing.** Its own event type,
+  never counted toward the weekly target, never in the training matrix, never
+  fed to progression. Somebody hitting "four sessions this week" by going to
+  work would make the one number the expectation rests on meaningless. And
+  **no praise for having gone to work** — it is a fact about the day, recorded
+  because it burns calories.
+- **Hours ON TASK, not the length of the shift.** Nobody works at full effort
+  through their break, and an eight-hour shift billed as eight hours of labour
+  is how the number stops being believable. The person answering knows the
+  difference; the tool asks for it that way.
+- **An unknown job asks rather than guesses.** Off the table, the server asks
+  whether it was light, moderate, hard or very hard. Their read on their own
+  day beats anything inferred from a job title, and refusing outright would be
+  wrong here — the alternative to a classified estimate is the shift going
+  unrecorded.
+- **Capped at 1.5× resting, and the cap is said out loud.** Over-reported hours
+  must not hand somebody 3,000 calories of permission; capping quietly would be
+  worse, because then the log is lying too.
+
+`trainingBurn()` also fills a related hole: a logged gym session used to
+contribute **nothing** to calories out unless a watch measured it, so the
+person most likely to be logging by hand was the person whose training counted
+for zero.
 
 ### Hands-free — Siri owns the wake word, and that is the whole design
 
@@ -1059,7 +1118,7 @@ self-reporting scale removes the most-abandoned manual entry), then Strava.
 
 ## Conventions
 
-- `npm test` runs `test/harness.mjs` — 384 offline tests, no network, no database.
+- `npm test` runs `test/harness.mjs` — 395 offline tests, no network, no database.
   Run it before every push. It covers the JSON-RPC envelope (which fails as an
   uninformative "could not connect" inside ChatGPT) and all the arithmetic
   (which fails as a confidently wrong number in somebody's verdict).
@@ -1081,7 +1140,7 @@ self-reporting scale removes the most-abandoned manual entry), then Strava.
    `003_wrought_training.sql`, `004_wrought_fasting.sql`,
    `005_wrought_activity.sql`, `006_wrought_identity.sql`, `007_wrought_push.sql`,
    `008_wrought_blocks.sql`, `009_wrought_photos.sql` and
-   `010_wrought_profile_web.sql` and `011_wrought_membership.sql` in Supabase. Full checklist in `docs/SETUP.md`.
+   `010_wrought_profile_web.sql`, `011_wrought_membership.sql`, `012_wrought_link_codes.sql` and `013_wrought_work.sql` in Supabase. Full checklist in `docs/SETUP.md`.
 3. Set env vars in Netlify: `SUPABASE_URL` (**no trailing slash** — Kong answers
    "Invalid path specified in request URL" and nothing says why),
    `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_ANON_KEY`,
