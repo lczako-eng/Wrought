@@ -2718,6 +2718,34 @@ await test('the app frames the website and owns only the native powers', () => {
   assert.match(read('HealthCourier.swift'), /HKStatisticsQuery/);
   assert.match(read('HealthCourier.swift'), /cumulativeSum/);
   assert.match(read('HealthCourier.swift'), /enableBackgroundDelivery/);
+
+  // Ground covered and the green ring, not just steps.
+  const courier = read('HealthCourier.swift');
+  assert.match(courier, /distanceWalkingRunning/);
+  assert.match(courier, /distanceCycling/);
+  assert.match(courier, /"metric": "distance_km"/);
+  assert.match(courier, /appleExerciseTime/);
+  assert.match(courier, /"metric": "active_minutes"/);
+
+  // THE WORKOUTS THEMSELVES. A run is a session, not a lump of calories — it
+  // has to reach the training matrix or the brief calls a run day a rest day.
+  assert.match(courier, /HKObjectType\.workoutType\(\)/);
+  assert.match(courier, /func recentWorkouts/);
+  // HealthKit's own uuid as source_ref, so the server's unique index means
+  // resending the same week forever can never double a run.
+  assert.match(courier, /"source_ref": w\.uuid\.uuidString/);
+  // statistics(for:) rather than the deprecated totals — same numbers, and it
+  // keeps working as Apple retires the old properties.
+  assert.match(courier, /statistics\(for: HKQuantityType\(\.activeEnergyBurned\)\)/);
+  assert.ok(!/\.totalEnergyBurned/.test(courier), 'using the deprecated workout totals');
+  // A finished workout lands while the sweat is still on.
+  assert.match(courier, /\.immediate/);
+  // Apple's enum becomes the word a person would say.
+  assert.match(courier, /case \.traditionalStrengthTraining/);
+  assert.match(courier, /return "Workout"/);
+  // And the client can carry them.
+  assert.match(read('IngestClient.swift'), /workouts: \[\[String: Any\]\] = \[\]/);
+  assert.match(read('IngestClient.swift'), /body\["workouts"\] = workouts/);
   // It posts to the same public door as every other client — no second protocol.
   assert.match(read('IngestClient.swift'), /appendingPathComponent\("ingest"\)/);
   assert.match(read('IngestClient.swift'), /wrought_ios/);

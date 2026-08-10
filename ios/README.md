@@ -10,8 +10,11 @@ So this app is three things and refuses to be more:
    native shell. Not a rebuilt copy: a second window onto the same record, so
    the app and the site can never disagree, and a dashboard fix ships to both
    in one deploy with no App Store release.
-2. **The HealthKit courier.** Native statistics queries return Apple's own
-   deduplicated daily totals — the number on the watch face — which an entire
+2. **The HealthKit courier.** Steps, distance (walking, running and cycling
+   summed), active energy, exercise minutes, resting heart rate, weight, last
+   night's sleep — and **every workout the watch recorded**, carrying its own
+   HealthKit uuid so resending a week can never double a run. Native
+   statistics queries return Apple's own deduplicated daily totals — the number on the watch face — which an entire
    evening of Shortcuts archaeology proved unreachable any other way. It
    registers background delivery, so the phone wakes it when new data lands
    and the record fills in by itself.

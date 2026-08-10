@@ -28,16 +28,22 @@ final class HealthCourier: ObservableObject {
         switch state {
         case .connected: return "Connected — your watch reports in on its own."
         case .failed:    return "Not connected yet."
-        default:         return "Steps, burn, heart rate, weight and sleep — read the way the Health app reads them, sent to your record automatically."
+        default:         return "Steps, distance, burn, workouts, heart rate, weight and sleep — read the way the Health app reads them, sent to your record automatically."
         }
     }
 
     private var readTypes: Set<HKObjectType> {
         var t = Set<HKObjectType>()
-        for id: HKQuantityTypeIdentifier in [.stepCount, .activeEnergyBurned, .restingHeartRate, .bodyMass] {
+        for id: HKQuantityTypeIdentifier in [
+            .stepCount, .activeEnergyBurned, .restingHeartRate, .bodyMass,
+            .distanceWalkingRunning, .distanceCycling, .appleExerciseTime,
+        ] {
             if let q = HKObjectType.quantityType(forIdentifier: id) { t.insert(q) }
         }
         if let sleep = HKObjectType.categoryType(forIdentifier: .sleepAnalysis) { t.insert(sleep) }
+        // The workouts themselves — a run is not a number, it is a session, and
+        // it belongs in the training matrix next to the lifting.
+        t.insert(HKObjectType.workoutType())
         return t
     }
 
@@ -174,24 +180,126 @@ final class HealthCourier: ObservableObject {
         if let sleep = await lastNightSleepMinutes() {
             metrics.append(["metric": "sleep_minutes", "value": sleep.rounded(), "unit": "min", "measured_at": now])
         }
+        // Ground covered — walking, running and cycling summed, because "how
+        // far did I go today" is one question, not three.
+        var km = 0.0
+        for id: HKQuantityTypeIdentifier in [.distanceWalkingRunning, .distanceCycling] {
+            km += await total(id, unit: .meterUnit(with: .kilo)) ?? 0
+        }
+        if km > 0 {
+            metrics.append(["metric": "distance_km", "value": (km * 100).rounded() / 100, "unit": "km", "measured_at": now])
+        }
+        // The green ring: minutes the watch judged to be real effort. A better
+        // read on a day than steps, which reward pacing around a kitchen.
+        if let mins = await total(.appleExerciseTime, unit: .minute()) {
+            metrics.append(["metric": "active_minutes", "value": mins.rounded(), "unit": "min", "measured_at": now])
+        }
 
-        guard !metrics.isEmpty else { return }
-        do { try await IngestClient.post(metrics: metrics) }
+        let workouts = await recentWorkouts()
+
+        guard !metrics.isEmpty || !workouts.isEmpty else { return }
+        do { try await IngestClient.post(metrics: metrics, workouts: workouts) }
         catch { lastError = "Send failed: \(error.localizedDescription)" }
+    }
+
+    // MARK: - The sessions themselves
+
+    /// Every workout the watch recorded in the last week, in the shape /ingest
+    /// already understands. Each carries its HealthKit uuid as source_ref, and
+    /// the server's unique index on (user, source, source_ref) means resending
+    /// the same week forever can never double a run.
+    private func recentWorkouts() async -> [[String: Any]] {
+        let from = Calendar.current.date(byAdding: .day, value: -7, to: Date())
+        let predicate = HKQuery.predicateForSamples(withStart: from, end: Date())
+        let sort = NSSortDescriptor(key: HKSampleSortIdentifierStartDate, ascending: false)
+        let iso = ISO8601DateFormatter()
+
+        let samples: [HKWorkout] = await withCheckedContinuation { cont in
+            let q = HKSampleQuery(sampleType: HKObjectType.workoutType(), predicate: predicate,
+                                  limit: 50, sortDescriptors: [sort]) { _, result, _ in
+                cont.resume(returning: (result as? [HKWorkout]) ?? [])
+            }
+            store.execute(q)
+        }
+
+        return samples.map { w in
+            var out: [String: Any] = [
+                "kind": Self.name(for: w.workoutActivityType),
+                "minutes": (w.duration / 60).rounded(),
+                "occurred_at": iso.string(from: w.startDate),
+                // HealthKit's own identity for this session.
+                "source_ref": w.uuid.uuidString,
+            ]
+            // statistics(for:) rather than the deprecated totals — same numbers,
+            // and it keeps working as Apple retires the old properties.
+            if let d = w.statistics(for: HKQuantityType(.distanceWalkingRunning))?
+                .sumQuantity()?.doubleValue(for: .meterUnit(with: .kilo)), d > 0 {
+                out["distance_km"] = (d * 100).rounded() / 100
+            } else if let d = w.statistics(for: HKQuantityType(.distanceCycling))?
+                .sumQuantity()?.doubleValue(for: .meterUnit(with: .kilo)), d > 0 {
+                out["distance_km"] = (d * 100).rounded() / 100
+            }
+            if let kcal = w.statistics(for: HKQuantityType(.activeEnergyBurned))?
+                .sumQuantity()?.doubleValue(for: .kilocalorie()), kcal > 0 {
+                out["calories"] = kcal.rounded()
+            }
+            return out
+        }
+    }
+
+    /// Apple's activity types are an enum; the log wants the word a person
+    /// would say. Unmapped types fall back to something honest rather than a
+    /// number nobody can read.
+    private static func name(for type: HKWorkoutActivityType) -> String {
+        switch type {
+        case .running:                 return "Running"
+        case .walking:                 return "Walking"
+        case .hiking:                  return "Hiking"
+        case .cycling:                 return "Cycling"
+        case .swimming:                return "Swimming"
+        case .traditionalStrengthTraining: return "Strength training"
+        case .functionalStrengthTraining:  return "Functional strength"
+        case .highIntensityIntervalTraining: return "HIIT"
+        case .elliptical:              return "Elliptical"
+        case .rowing:                  return "Rowing"
+        case .stairClimbing, .stairs:  return "Stair climbing"
+        case .yoga:                    return "Yoga"
+        case .pilates:                 return "Pilates"
+        case .coreTraining:            return "Core training"
+        case .flexibility:             return "Stretching"
+        case .dance, .cardioDance:     return "Dance"
+        case .boxing, .kickboxing:     return "Boxing"
+        case .martialArts:             return "Martial arts"
+        case .soccer:                  return "Football"
+        case .basketball:              return "Basketball"
+        case .tennis:                  return "Tennis"
+        case .golf:                    return "Golf"
+        case .hockey:                  return "Hockey"
+        case .climbing:                return "Climbing"
+        case .mixedCardio, .crossTraining: return "Cross training"
+        case .cooldown:                return "Cooldown"
+        default:                       return "Workout"
+        }
     }
 
     /// The phone wakes this app when Health changes — the thing no website,
     /// Shortcut or nightly alarm can be. Hourly is plenty: the server keeps
     /// one total per day however often it hears.
     private func registerBackgroundDelivery() {
-        for id: HKQuantityTypeIdentifier in [.stepCount, .activeEnergyBurned] {
-            guard let type = HKObjectType.quantityType(forIdentifier: id) else { continue }
+        var watched: [HKSampleType] = [HKObjectType.workoutType()]
+        for id: HKQuantityTypeIdentifier in [.stepCount, .activeEnergyBurned, .distanceWalkingRunning] {
+            if let t = HKObjectType.quantityType(forIdentifier: id) { watched.append(t) }
+        }
+        for type in watched {
             let query = HKObserverQuery(sampleType: type, predicate: nil) { [weak self] _, done, _ in
                 Task { await self?.sendToday() }
                 done()
             }
             store.execute(query)
-            store.enableBackgroundDelivery(for: type, frequency: .hourly) { _, _ in }
+            // A finished workout should land while the sweat is still on, not
+            // an hour later — everything else is happy with hourly.
+            let cadence: HKUpdateFrequency = (type == HKObjectType.workoutType()) ? .immediate : .hourly
+            store.enableBackgroundDelivery(for: type, frequency: cadence) { _, _ in }
         }
     }
 }

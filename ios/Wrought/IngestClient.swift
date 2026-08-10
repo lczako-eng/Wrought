@@ -48,17 +48,20 @@ enum IngestClient {
         Keychain.write(account: keychainAccount, value: key)
     }
 
-    static func post(metrics: [[String: Any]]) async throws {
+    /// Metrics AND workouts in one call — the endpoint takes both, and a run
+    /// is not a number: it is a session that belongs in the training matrix.
+    static func post(metrics: [[String: Any]], workouts: [[String: Any]] = []) async throws {
         guard let key = storedKey() else { throw IngestError.noKey }
+
+        var body: [String: Any] = ["source": "wrought_ios"]
+        if !metrics.isEmpty { body["metrics"] = metrics }
+        if !workouts.isEmpty { body["workouts"] = workouts }
 
         var req = URLRequest(url: base.appendingPathComponent("ingest"))
         req.httpMethod = "POST"
         req.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        req.httpBody = try JSONSerialization.data(withJSONObject: [
-            "source": "wrought_ios",
-            "metrics": metrics,
-        ])
+        req.httpBody = try JSONSerialization.data(withJSONObject: body)
 
         let (data, resp) = try await URLSession.shared.data(for: req)
         let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
