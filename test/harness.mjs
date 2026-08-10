@@ -2783,6 +2783,56 @@ await test('get_profile carries the linking pointer even when the account is ful
   assert.ok(!/linking:\s*\(count/.test(body), 'the linking note is conditional on the count again');
 });
 
+group('At the rack — the checklist, the swap, and the next workout');
+
+await test('the machine being taken has a tool, and the phrasebook knows the sound of it', () => {
+  const swap = TOOLS.find(t => t.name === 'swap_exercise');
+  assert.ok(swap, 'swap_exercise is not a tool');
+  for (const phrase of ["machine's taken", "someone's on it", "bench is busy", "rack's full"]) {
+    assert.ok(SERVER_INSTRUCTIONS.includes(phrase), `"${phrase}" maps to nothing`);
+  }
+  assert.match(SERVER_INSTRUCTIONS, /swap_exercise, immediately/);
+});
+
+await test('a swap never carries the old weight onto the new movement', () => {
+  // 80kg from a bench press landing on a machine press is how somebody gets
+  // hurt by an interruption. The replacement is loaded from its OWN history —
+  // and with none, progressionCall refuses a number and prescribes RPE.
+  const src = readFileSync(new URL('../netlify/functions/mcp.js', import.meta.url), 'utf8');
+  const fn = src.slice(src.indexOf('async function swapExercise('), src.indexOf('async function endSession('));
+  assert.match(fn, /loadCallFor\(user\.id, \{ \.\.\.swapped, load_kg: null \}/);
+  assert.match(fn, /never carry the old weight across/i);
+  // Same pattern through different kit — that is what a substitute IS.
+  assert.match(fn, /movementsFor\(inLib\.pattern/);
+  // Sets already done count toward the slot: a swap after two sets leaves
+  // three, not five.
+  assert.match(fn, /current\.sets \|\| 1\) - \(doneHere \|\| 0\)/);
+});
+
+await test('every set answer carries the checklist, owned by the server', () => {
+  const src = readFileSync(new URL('../netlify/functions/mcp.js', import.meta.url), 'utf8');
+  assert.match(src, /function planChecklist\(/);
+  assert.match(src, /checklist: planChecklist\(plan, 0, 0\)/, 'start_session carries no checklist');
+  assert.match(src, /checklist: planChecklist\(plan, cursor/, 'log_set carries no checklist');
+  assert.match(SERVER_INSTRUCTIONS, /answered from the LATEST checklist, never from memory/);
+  // One question per rest gap — a form at the rack is how logging dies.
+  assert.match(SERVER_INSTRUCTIONS, /ONE short question per rest gap/);
+});
+
+await test('the end of one workout names the next one', () => {
+  // The server can never speak first, so the close of this session is the only
+  // place the next one can be planted.
+  const src = readFileSync(new URL('../netlify/functions/mcp.js', import.meta.url), 'utf8');
+  const fn = src.slice(src.indexOf('async function endSession('), src.indexOf('async function previousBest('));
+  assert.match(fn, /next_workout: nextWorkout/);
+  assert.match(fn, /training_week: week/);
+  // A finished block is said out loud — the only reward the structure had.
+  assert.match(fn, /block_complete/);
+  // No block → the longest-rested routine, so rotation still has a pointer.
+  assert.match(fn, /ascending: true, nullsFirst: true/);
+  assert.match(SERVER_INSTRUCTIONS, /WHEN THE SESSION ENDS, NAME THE NEXT ONE/);
+});
+
 group('The week against the expectation');
 
 const { weekSoFar } = await import('../netlify/functions/lib/training.js');

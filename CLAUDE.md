@@ -62,7 +62,7 @@ nothing else.
   MCP brief and the web dashboard cannot disagree. `api-progress.js` exists
   purely so the dashboard calls the same code rather than recomputing in JS.
 - **MCP server**: `netlify/functions/mcp.js` at `/mcp` — stateless Streamable
-  HTTP, JSON-RPC. 26 tools. Doctrines ship in `SERVER_INSTRUCTIONS`.
+  HTTP, JSON-RPC. 33 tools. Doctrines ship in `SERVER_INSTRUCTIONS`.
 - **Auth**: OAuth 2.1 (PKCE, dynamic client registration) so "Sign in with
   Wrought" appears in ChatGPT/Claude. Supabase session JWTs also accepted as a
   fallback. Everything secret is stored SHA-256 hashed.
@@ -283,6 +283,29 @@ for 6" is the point. Same weight for more reps counts as UP — calling that "no
 change" is how somebody stops believing the readout. Bodyweight work is carried
 with a null weight rather than a zero, which the Lifts panel got wrong once
 already.
+
+### At the rack — the clipboard, the swap, and the next workout
+
+Three rules for the live session, all born from the founder describing how he
+actually trains:
+
+- **The server holds the clipboard.** Every `log_set` answer carries a
+  `checklist` — each exercise with sets×reps, marked done / current / to come,
+  with sets remaining on the live one. "What's left" is answered from the
+  latest checklist, never from the model's memory. One short question per rest
+  gap, never a form.
+- **`swap_exercise` — the machine being taken is normal, not a discussion.**
+  Same PATTERN through kit the person owns (the library knows both), sets and
+  reps kept, sets already done counting toward the slot. **The load comes from
+  the replacement's own history, never carried across** — 80kg off a bench
+  press landing on a machine press is how an interruption injures somebody.
+  With no history, the RPE refusal applies as everywhere else. A named
+  preference wins even off-library; their gym has machines ours does not.
+- **`end_session` names the next workout.** From the block when one is running
+  (deload weeks flagged as deliberate; a finished block is SAID — the only
+  reward the structure had), else the longest-rested routine. It also carries
+  `training_week`. The server can never speak first, so the close of one
+  session is the only place the next one can be planted.
 
 ### Blocks — a plan with an end, and a deload nobody has to choose
 

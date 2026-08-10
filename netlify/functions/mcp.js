@@ -32,7 +32,7 @@ import {
   restingBurn, energyBalance, planFromRoutine, sessionTotals, earnedRoom,
   orderPlan, orderInsight, deviceMatrix, weekdayPattern, weekSoFar,
 } from './lib/training.js';
-import { PROGRAMMES, GOALS, movementsFor, pickProgramme, buildProgramme, buildBlock, blockPosition, BLOCK_LENGTHS } from './lib/library.js';
+import { PROGRAMMES, GOALS, MOVEMENTS, movementsFor, pickProgramme, buildProgramme, buildBlock, blockPosition, BLOCK_LENGTHS } from './lib/library.js';
 
 const PROTOCOL_VERSION = '2025-06-18';
 
@@ -110,11 +110,18 @@ HOW PEOPLE ACTUALLY ASK. Nobody says "call the brief tool". They say one of a hu
   suggest_workout / programmes — "what should I train", "give me a workout", "what's today", "programme me", "build me something", "I've got 40 minutes", "what am I neglecting", "proper programme", "what should I be running"
   start_session — "let's go", "starting now", "at the gym", "leg day", "chest day", "I'm at the rack", "warmed up"
   log_set — "done", "got it", "got 8", "8 at 225", "that's up", "failed at 5", "couldn't finish", "one more in the tank"
+  swap_exercise — "machine's taken", "someone's on it", "bench is busy", "rack's full", "it's occupied", "can't get on it", "there's a queue", "that machine's broken", "can we do something else"
   recall / search_log — "what did I do last Tuesday", "have I had this before", "when did I last", "find", "look up", "what was my best"
   undo_last — "scratch that", "take that off", "I didn't actually eat it", "never mind", "that never happened", "I was testing", "it never turned up", "delete the pizza", "remove that", "I changed my mind"
   earned_room — "have I earned it", "can I afford it", "do I have room", "treat"
   link_account — "I have two accounts", "link my accounts", "link my emails", "hook up my two emails", "connect my accounts", "merge them", "merge my accounts", "join them up", "join these up", "my dashboard is empty", "the website shows a different email", "the site says a different account", "it is not the same account", "two emails", "same person, two logins", "give me a link code", "link"
   get_profile — "what account am I on", "which account is this", "who am I", "what email is this", "what do you know about me", "what's my height", "what have you got on me", "am I set up", "is this connected", "plugged in", "are you working", "what account are you writing to"
+
+AT THE RACK, THE SERVER HOLDS THE CLIPBOARD. During a session, every log_set answer carries the checklist — every exercise with its sets and reps, marked done, current or to come. "What's left", "what's next", "how much more" are answered from the LATEST checklist, never from memory of the conversation. Ask at most ONE short question per rest gap — the reps, or how it felt — never a form. If they mention pain, log_set's note field takes their words verbatim AND it goes to remember (category health).
+
+THE MACHINE BEING TAKEN IS NORMAL, NOT A PROBLEM TO DISCUSS. "Someone's on it" means swap_exercise, immediately — the server picks a movement that loads the same pattern with the kit they have, keeps the sets and reps, and computes the load from the REPLACEMENT'S own history. Never skip the slot because the equipment was busy, never transfer the old weight onto a different movement, and never turn it into a conversation about options unless the first pick is also taken.
+
+WHEN THE SESSION ENDS, NAME THE NEXT ONE. end_session returns next_workout and training_week. Close every workout with them, in one line: what they just did, anything that beat last time, and what is next — "Next up: Push A, week 3." This server can never speak first, so the end of one session is the only place the next one can be planted. If the block just finished, SAY SO — that is the only reward the structure had to give.
 
 A GREETING IN THAT REGISTER IS A REQUEST, NOT SMALL TALK. "Hey jim bro", "gym bro", "morning", "coach" and the rest are not openers to be answered conversationally — they are the user asking for their read. CALL THE TOOL FIRST and lead with what comes back. Never reply "hey bro, what's up?" and wait: they already told you what's up. If genuinely nothing is logged yet, still call brief and say that, rather than making them ask twice.
 
@@ -292,6 +299,19 @@ const TOOLS = [
         exercise:  { type: 'string',  description: 'Only if they did something other than what was prescribed — a swap or an extra lift.' },
         note:      { type: 'string',  description: 'Anything they said at the rack — "left shoulder pinched", "grip went before the legs", "felt light today", "bar speed was slow". Pass it VERBATIM and never discard it as chatter. It attaches to this exact set, so six weeks later it is the thing that explains a plateau.' },
         skip:      { type: 'boolean', description: 'True if they are skipping this exercise entirely and moving on.' },
+      },
+    },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+  },
+  {
+    name: 'swap_exercise',
+    title: 'The machine is taken — swap the exercise',
+    description: 'Mid-session, when the equipment for the current exercise is occupied, broken, or missing — "machine\'s taken", "someone\'s on the bench", "rack\'s full" — swaps it for a movement with the SAME training pattern that fits the equipment they have, keeping the sets and reps. The load for the replacement is computed from its own history, never carried across from the old lift. Sets already done stay logged under what was actually lifted. Also for plain preference: "can we do something else for chest".',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        to:     { type: 'string', description: 'Only if they named what they want instead. Otherwise the server picks the nearest same-pattern movement.' },
+        reason: { type: 'string', description: 'Their words — "bench is busy", "shoulder does not like it today". A pain reason should ALSO go to remember (category health).' },
       },
     },
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
@@ -1355,6 +1375,7 @@ async function startSession(args, user) {
     block: blockNote,
     name, tier,
     exercises: plan.map(e => `${e.name} — ${e.sets}×${e.reps}`),
+    checklist: planChecklist(plan, 0, 0),
     total_exercises: plan.length,
     up_next: { ...first, set: 1, of: first.sets, load: opener },
     coaching: TIERS[tier]?.doctrine,
@@ -1415,6 +1436,19 @@ async function loadCallFor(userId, exercise, tier) {
              say: `${exercise.load_kg}kg, as written.`, last };
   }
   return { ...progressionCall({ last, targetReps: target, tier, key }), last };
+}
+
+// The plan as a checklist — what is done, what is live, what is left. The
+// founder asked for exactly this: "it's also a checklist... how many sets reps
+// for each one." The server owns the position, so the list is always true;
+// the model reads it back when asked "what's left" instead of remembering.
+function planChecklist(plan, cursor, setsDoneHere = 0) {
+  return plan.map((e, i) => ({
+    exercise: e.name,
+    target: `${e.sets}\u00d7${e.reps}`,
+    status: i < cursor ? 'done' : i === cursor ? 'current' : 'to_come',
+    ...(i === cursor ? { sets_done: setsDoneHere, sets_left: Math.max(0, (e.sets || 0) - setsDoneHere) } : {}),
+  }));
 }
 
 async function logSet(args, user) {
@@ -1517,9 +1551,95 @@ async function logSet(args, user) {
       sets: running.sets, volume_kg: running.volume_kg, minutes: elapsed,
       exercise: `${cursor + 1} of ${plan.length}`,
     },
+    checklist: planChecklist(plan, cursor, moreSetsHere ? setsDone : 0),
     say: `${moreSetsHere ? 'Logged' : `${current.name} done`}. Rest ${nextExercise.rest_s}s, then ${nextExercise.name} set ${setNo} of ${nextExercise.sets}, ${nextExercise.reps} reps. ${load.say}`,
     note: 'One or two lines only — they are standing in a gym holding a phone, not reading a report. The so_far numbers are there for the rest gap: offer them if they ask or if the moment fits, never after every single set.',
     next_actions: ['log_set for the next set', 'end_session if they stop early'],
+  };
+}
+
+// The machine is taken. The commonest interruption in any commercial gym, and
+// the answer is never "skip it" — it is the same PATTERN through different
+// kit. The pattern is what the programme prescribed; the movement was always
+// just the best available way to load it.
+async function swapExercise(args, user) {
+  const profile = await getProfile(user.id);
+
+  const { data: session } = await supabase.from('wrought_sessions')
+    .select('*').eq('user_id', user.id).eq('status', 'active').maybeSingle();
+  if (!session) {
+    return { error: 'no_active_session', say: 'No workout is running — nothing to swap.', next_actions: ['start_session'] };
+  }
+
+  const plan = Array.isArray(session.plan) ? session.plan : [];
+  const current = plan[session.cursor_index];
+  if (!current) return { error: 'plan_finished', say: 'The plan is already finished.', next_actions: ['end_session'] };
+
+  const tier = plan[0]?.tier || (profile.training_age === 'beginner' ? 'beginner' : 'intermediate');
+  const inLib = MOVEMENTS.find(m => exerciseKey(m.name) === (current.key || exerciseKey(current.name)));
+
+  // Same pattern, kit they own, not the busy one, not already on the plan.
+  const planned = new Set(plan.map(e => e.key || exerciseKey(e.name)));
+  let options = inLib
+    ? movementsFor(inLib.pattern, { equipment: profile.equipment, tier })
+    : MOVEMENTS.filter(m => (m.muscles || []).some(mu => (current.muscles || []).includes(mu)));
+  options = options.filter(m => exerciseKey(m.name) !== (current.key || exerciseKey(current.name))
+                             && !planned.has(exerciseKey(m.name)));
+
+  // A named preference wins, even off-library — their gym has machines ours
+  // does not, and refusing a swap because we never heard of the machine would
+  // be the tool being precious at the exact moment it needs to be quick.
+  let pick = null;
+  if (args.to) {
+    const key = exerciseKey(args.to);
+    pick = MOVEMENTS.find(m => exerciseKey(m.name) === key)
+        || { name: String(args.to).trim(), muscles: current.muscles || [], cue: null };
+  } else {
+    pick = options[0];
+  }
+  if (!pick) {
+    return {
+      error: 'no_alternative',
+      say: `Nothing in the library loads the same pattern with the equipment on file. Ask what they have free and pass it as "to".`,
+      next_actions: ['swap_exercise with to', 'log_set with skip to move on instead'],
+    };
+  }
+
+  // Swap in place: same slot, same sets and reps — the prescription is the
+  // volume, the movement is the vehicle. Sets already down stay logged under
+  // the lift that actually happened.
+  const swapped = {
+    ...current,
+    name: pick.name,
+    key: exerciseKey(pick.name),
+    muscles: pick.muscles || current.muscles || [],
+    cue: pick.cue || null,
+  };
+  const newPlan = plan.map((e, i) => (i === session.cursor_index ? swapped : e));
+  const { error } = await supabase.from('wrought_sessions').update({ plan: newPlan }).eq('id', session.id);
+  if (error) return { error: error.message };
+
+  // How many sets are already done in this SLOT under the old name — they
+  // count toward the slot, so a swap after two sets leaves three, not five.
+  const { count: doneHere } = await supabase.from('wrought_sets')
+    .select('id', { count: 'exact', head: true })
+    .eq('session_id', session.id).eq('exercise_key', current.key || exerciseKey(current.name));
+
+  // The load is the replacement's OWN history. Carrying 80kg from a bench
+  // press onto a machine press is how somebody gets hurt by an interruption.
+  const load = await loadCallFor(user.id, { ...swapped, load_kg: null }, tier);
+  const remaining = Math.max(1, (current.sets || 1) - (doneHere || 0));
+
+  return {
+    swapped: { from: current.name, to: swapped.name },
+    sets_remaining_here: remaining,
+    reps: swapped.reps,
+    load,
+    cue: swapped.cue,
+    alternatives: options.slice(0, 4).map(m => m.name),
+    say: `${current.name} is out — ${swapped.name} instead, ${remaining} set${remaining === 1 ? '' : 's'} of ${swapped.reps}. ${load.say}`,
+    note: 'The load call is from the NEW movement\'s own history — never carry the old weight across. If the reason was pain rather than a queue, put it in remember (category health) as well.',
+    next_actions: ['log_set when they finish a set', 'swap_exercise again if that one is also taken'],
   };
 }
 
@@ -1576,15 +1696,53 @@ async function endSession(args, user) {
   const day = await dayFacts(user.id, profile, today);
   const balance = await balanceFor(user.id, profile, today, day);
 
+  // What comes next, answered at the moment the question exists. "It should be
+  // prompting us after we're done each workout — OK, this is the next workout."
+  // The server cannot speak first, so the close of THIS session is where the
+  // next one gets named. A block answers precisely; a routine rotation answers
+  // roughly; and the week's count is on the table either way.
+  let nextWorkout = null;
+  const running = session.block_id ? await activeBlock(user.id) : null;
+  if (running) {
+    const done = await blockDone(running.id);
+    const pos = blockPosition(running.plan, done);
+    if (pos.complete) {
+      nextWorkout = { source: 'block_complete', say: `That was the last session of ${running.name} — ${pos.done} sessions, finished. Say so: it is the only reward the structure had to give. end_block, then start_block when they want the next one.` };
+    } else {
+      const wk = running.plan?.schedule?.[pos.week - 1];
+      const nx = wk?.sessions?.[pos.day - 1];
+      nextWorkout = {
+        source: 'block',
+        name: nx?.name || null, week: pos.week, of_weeks: running.weeks,
+        intent: pos.intent,
+        say: nx ? `Next up in ${running.name}: ${nx.name} (week ${pos.week}${pos.intent === 'deload' ? ', deload — same lifts, about half the sets, on purpose' : ''}).` : pos.say,
+      };
+    }
+  } else {
+    const { data: routines } = await supabase.from('wrought_routines')
+      .select('name, last_used_on').eq('user_id', user.id).eq('active', true)
+      .order('last_used_on', { ascending: true, nullsFirst: true }).limit(1);
+    if (routines?.length) {
+      nextWorkout = { source: 'rotation', name: routines[0].name,
+        say: `${routines[0].name} is the longest-rested routine — likely next.` };
+    }
+  }
+  const range = await rangeFacts(user.id, profile, addDays(today, -13), today);
+  const week = weekSoFar(range.days, { today, target: profile.train_days });
+
   return {
     session: session.name,
     minutes, ...totals, muscles,
     beat_last_time: beats,
     day_so_far: { food: day.food.say, energy: balance.say },
+    training_week: week,
+    next_workout: nextWorkout,
     say: `${session.name} done — ${minutes} minutes, ${totals.sets} sets, ${totals.volume_kg}kg moved.` +
          (beats.length ? ` Up on last time: ${beats.join('; ')}.` : '') +
-         ` ${balance.say}`,
-    note: 'Lead with anything in beat_last_time — that is the only part of a session summary anyone actually cares about.',
+         ` ${balance.say}` +
+         (week ? ` ${week.say}` : '') +
+         (nextWorkout?.say ? ` ${nextWorkout.say}` : ''),
+    note: 'Lead with anything in beat_last_time — that is the only part of a session summary anyone actually cares about. Close with next_workout: naming the next session at the end of this one is the only prompt this server can ever give.',
     next_actions: ['log what they eat next', 'brief tonight for the full read'],
   };
 }
@@ -2399,6 +2557,7 @@ const IMPL = {
   suggest_workout: suggestWorkout,
   start_session: startSession,
   log_set: logSet,
+  swap_exercise: swapExercise,
   end_session: endSession,
   save_routine: saveRoutine,
   list_routines: listRoutines,
