@@ -448,23 +448,29 @@ export const handler = async (event) => {
   const DAILY_TOTALS = new Set([
     'steps', 'active_calories', 'total_calories', 'distance_km', 'active_minutes',
   ]);
+  // ONE daily total per metric per day — across sources, not per source. The
+  // founder's Shortcut and Health Auto Export both describe THE SAME day, and
+  // keeping one row from each meant every reader that sums a day's rows
+  // counted the day twice. Two totals for the same day are two claims about
+  // one fact: keep the newest claim, never add them. (Point-in-time readings
+  // keep their per-source, per-moment identity — this collapse applies only
+  // to the running totals.)
   const cumulative = rows.filter(r => DAILY_TOTALS.has(r.metric));
   if (cumulative.length) {
     const seen = new Set();
     for (const r of cumulative) {
-      const key = `${r.source}|${r.metric}|${r.local_date}`;
+      const key = `${r.metric}|${r.local_date}`;
       if (seen.has(key)) continue;
       seen.add(key);
       await supabase.from('wrought_metrics').delete()
-        .eq('user_id', userId).eq('source', r.source)
+        .eq('user_id', userId)
         .eq('metric', r.metric).eq('local_date', r.local_date);
     }
-    // Within ONE payload, a source that sends the same day twice means the
-    // last one is the one it meant.
+    // Within ONE payload, the last reading for a day is the one it meant.
     const keep = new Map();
     for (const r of rows) {
       if (!DAILY_TOTALS.has(r.metric)) continue;
-      keep.set(`${r.source}|${r.metric}|${r.local_date}`, r);
+      keep.set(`${r.metric}|${r.local_date}`, r);
     }
     rows = rows.filter(r => !DAILY_TOTALS.has(r.metric)).concat([...keep.values()]);
   }

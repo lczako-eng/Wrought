@@ -2633,11 +2633,16 @@ await test('the cumulative metrics are named, and the point-in-time ones are not
   for (const m of ['weight_kg', 'resting_hr', 'glucose', 'sleep_minutes', 'hrv']) {
     assert.ok(!block.includes(`'${m}'`), `${m} must not be collapsed to one a day`);
   }
-  // The older reading for that source/metric/day is removed before the new one
-  // lands, scoped to the user.
+  // The older reading for that metric/day is removed before the new one lands,
+  // scoped to the user — and deliberately NOT scoped to the source. A Shortcut
+  // and Health Auto Export both describe the same day; keeping one row from
+  // each made every day-summing reader count the day twice. Two totals for one
+  // day are two claims about one fact: the newest claim wins.
   assert.match(block, /\.delete\(\)/);
   assert.match(block, /\.eq\('user_id', userId\)/);
   assert.match(block, /\.eq\('local_date', r\.local_date\)/);
+  assert.ok(!/delete\(\)[\s\S]{0,120}\.eq\('source'/.test(block),
+    'the daily-total replacement is scoped per source again — two senders will double the day');
   // And within one payload, the last reading for a day is the one it meant.
   assert.match(block, /keep\.set\(/);
 });
