@@ -317,6 +317,54 @@ function flattenHealthAutoExport(body) {
   return out;
 }
 
+// THE RUN ITSELF, not just the calories it burned. Health Auto Export puts
+// workouts under data.workouts and this endpoint was reading only data.metrics
+// — so a watch-recorded 5k arrived as a number in the day's active energy and
+// the run vanished. The brief then said "rest day" to somebody who had just
+// run, which is the kind of wrongness that ends a product's credibility in one
+// sentence.
+//
+// HAE wraps quantities as {qty, units}; distance can arrive in km or miles and
+// duration in seconds or minutes depending on the app's settings, so both are
+// resolved here rather than trusted.
+function flattenHealthAutoExportWorkouts(body) {
+  const list = body?.data?.workouts;
+  if (!Array.isArray(list)) return [];
+
+  const qty = (v) => {
+    if (v == null) return null;
+    if (typeof v === 'object') return Number(v.qty ?? v.value ?? NaN);
+    return Number(v);
+  };
+  const units = (v) => String((v && typeof v === 'object' && v.units) || '').toLowerCase();
+
+  return list.map(w => {
+    const distRaw = w.distance ?? w.totalDistance;
+    let km = qty(distRaw);
+    const du = units(distRaw);
+    if (Number.isFinite(km)) {
+      if (du.startsWith('mi')) km = km * 1.609344;
+      else if (du === 'm') km = km / 1000;
+    }
+
+    // "duration" is seconds in HAE's own export and minutes in some forks.
+    // Anything over three hours expressed as "minutes" is almost certainly
+    // seconds, and a 7,200-minute run is a worse error than a rounding.
+    let minutes = qty(w.duration ?? w.durationMinutes);
+    if (Number.isFinite(minutes) && minutes > 600) minutes = minutes / 60;
+
+    return {
+      kind: w.name || w.workoutActivityType || w.type,
+      minutes: Number.isFinite(minutes) ? minutes : null,
+      distance_km: Number.isFinite(km) ? km : null,
+      calories: qty(w.activeEnergy ?? w.activeEnergyBurned ?? w.totalEnergy),
+      occurred_at: w.start || w.startDate || w.date || null,
+      // The workout's own identity, so re-exporting a week never doubles it.
+      source_ref: w.id || (w.start ? `hae:${w.start}` : null),
+    };
+  });
+}
+
 export const handler = async (event) => {
   if (event.httpMethod === 'OPTIONS') return { statusCode: 204, headers: CORS, body: '' };
   if (event.httpMethod !== 'POST') {
@@ -442,6 +490,7 @@ export const handler = async (event) => {
   const incomingEvents = [
     ...(Array.isArray(body.events) ? body.events : []),
     ...(Array.isArray(body.workouts) ? body.workouts.map(normaliseWorkout).filter(Boolean) : []),
+    ...flattenHealthAutoExportWorkouts(body).map(normaliseWorkout).filter(Boolean),
   ];
 
   let eventsWritten = 0;

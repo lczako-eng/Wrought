@@ -2580,6 +2580,42 @@ await test('the record stays metric whatever the display says', () => {
   assert.equal(fromCm(null, true), '');
 });
 
+group('The run itself, not just the calories it burned');
+
+await test('Health Auto Export workouts are read, not thrown away', async () => {
+  // HAE puts workouts under data.workouts and this endpoint read only
+  // data.metrics — so a watch-recorded 5k arrived as a number in the day's
+  // active energy and the run vanished. The brief then said "rest day" to
+  // somebody who had just run.
+  const src = readFileSync(new URL('../netlify/functions/ingest.js', import.meta.url), 'utf8');
+  assert.match(src, /function flattenHealthAutoExportWorkouts/);
+  assert.match(src, /flattenHealthAutoExportWorkouts\(body\)\.map\(normaliseWorkout\)/);
+});
+
+await test('a watch run keeps its distance, its minutes and its identity', () => {
+  const w = normaliseWorkout({ kind: 'Running', minutes: 32, distance_km: 5.2, calories: 410 });
+  assert.equal(w.event_type, 'workout');
+  assert.match(w.summary, /Running/);
+  assert.match(w.summary, /5\.2 km/);
+  assert.match(w.summary, /32 min/);
+  assert.equal(w.detail.distance_km, 5.2);
+  // Cardio counts as whole-body in the matrix, or a runner's brief tells them
+  // they have not trained — wrong and insulting at the same time.
+  assert.deepEqual(w.detail.muscles, ['full body']);
+});
+
+await test('miles convert, and seconds are not filed as minutes', () => {
+  const src = readFileSync(new URL('../netlify/functions/ingest.js', import.meta.url), 'utf8');
+  const fn = src.slice(src.indexOf('function flattenHealthAutoExportWorkouts'), src.indexOf('export const handler'));
+  // HAE ships distance in km or miles depending on the phone's settings.
+  assert.match(fn, /1\.609344/);
+  // "duration" is seconds in HAE's own export and minutes in some forks. A
+  // 7,200-minute run is a worse error than a rounding.
+  assert.match(fn, /minutes > 600/);
+  // The workout's own identity, so re-exporting a week never doubles it.
+  assert.match(fn, /source_ref: w\.id/);
+});
+
 group('A daily total replaces its day, it does not add to it');
 
 await test('the cumulative metrics are named, and the point-in-time ones are not', () => {
