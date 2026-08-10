@@ -1770,7 +1770,9 @@ await test('the installed app opens the app, not the sales page', () => {
 await test('the wordmark is clickable, and does not throw you out of your record', () => {
   // From inside the dashboard it goes to the dashboard. Being dumped on a sales
   // pitch from your own log is the complaint, not the fix.
-  assert.match(page('app.html'), /<a class="mark" href="\/app\.html"/);
+  // On the dashboard it goes to the Record view, not to /app.html — pointing it
+  // at the same URL reloaded the page and looked like nothing happened.
+  assert.match(page('app.html'), /<a class="mark" href="#record"/);
   for (const f of ['authorize.html', 'connect.html']) {
     assert.match(page(f), /<a class="mark" href="\/"/, `${f} has no way home`);
   }
@@ -2474,7 +2476,7 @@ await test('a first run gets its own screen, not nine empty panels', () => {
 });
 
 await test('the dashboard carries the mark like every other page', () => {
-  assert.match(page('app.html'), /<a class="mark" href="\/app\.html"[^>]*>\s*<img src="\/icon\.svg"/);
+  assert.match(page('app.html'), /<a class="mark" href="#record"[^>]*>\s*<img src="\/icon\.svg"/);
 });
 
 await test('you can sign out and switch accounts', () => {
@@ -2596,27 +2598,17 @@ await test('asking which account is a mapped question', () => {
 
 group('The phone screen actually fits');
 
-await test('the header does not become the containing block for the tab bar', () => {
-  // backdrop-filter on an ancestor makes it the containing block for anything
-  // position:fixed inside it. The header had one, so the bottom tab bar was
-  // pinned to the HEADER's bottom rather than the viewport's — and being taller
-  // than the header, it hung off the top of the screen with the first and last
-  // tabs clipped. Exactly what a phone showed.
+await test('the tab row is in the header and nothing is pinned', () => {
+  // It was a fixed bottom bar, and it was wrong twice over: the founder wanted
+  // the tabs at the top, and backdrop-filter on the header made the header the
+  // containing block for anything fixed inside it, so the bar hung off the top
+  // of the screen with the first and last tabs clipped.
   const src = page('app.html');
   const phone = src.slice(src.indexOf('@media (max-width: 700px)'));
-  assert.match(phone, /header \{ backdrop-filter: none/);
-  assert.match(phone, /position: fixed; z-index: 20; inset: auto 0 0 0;/);
-});
-
-await test('the tab row wraps rather than clipping', () => {
-  const src = page('app.html');
-  const phone = src.slice(src.indexOf('@media (max-width: 700px)'));
-  assert.match(phone, /\.views \{ flex-wrap: wrap/);
-  // Not growing: six tabs fit a row at this size, and growing forces a wrap
-  // that doubles the bar's height for nothing.
-  assert.match(phone, /flex: 0 1 auto/);
-  // And whatever height it ends up, nothing may be trapped underneath it.
-  assert.match(phone, /padding-bottom: calc\(132px/);
+  assert.ok(!/position: fixed/.test(phone), 'something in the phone layout is still pinned');
+  assert.match(phone, /overflow-x: auto/);
+  // Tabs do not shrink; the row scrolls instead.
+  assert.match(phone, /flex: 0 0 auto/);
 });
 
 await test('switching accounts is reachable from every view', () => {
@@ -2684,6 +2676,52 @@ await test('the phrasebook knows what a split account sounds like', () => {
   for (const phrase of ['I have two accounts', 'my dashboard is empty', 'link my accounts']) {
     assert.ok(SERVER_INSTRUCTIONS.includes(phrase), `"${phrase}" maps to nothing`);
   }
+});
+
+group('Class names that collide, and the screens they collapse');
+
+await test('nothing else claims .bar — the header owns it', () => {
+  // A 6px tall overflow:hidden .bar rule added for a progress bar collapsed the
+  // ENTIRE header row, which is what was clipping the navigation. The header
+  // owns the name; anything else gets its own.
+  const src = page('app.html');
+  const rules = [...src.matchAll(/^\.bar\s*\{([^}]*)\}/gm)].map(m => m[1]);
+  assert.equal(rules.length, 1, '.bar is defined more than once');
+  assert.match(rules[0], /display: flex/);
+  assert.ok(!/height:\s*6px/.test(rules[0]), 'the header row has a fixed height again');
+  // And no element carries a bare class="bar" any more.
+  assert.ok(!/class="bar"/.test(src), 'something is still using class="bar"');
+});
+
+group('Tabs at the top, and a reset that lands somewhere useful');
+
+await test('the view switcher sits in the header and scrolls sideways', () => {
+  const src = page('app.html');
+  const phone = src.slice(src.indexOf('@media (max-width: 700px)'));
+  assert.match(phone, /flex-wrap: nowrap; overflow-x: auto/);
+  // Not a bottom bar, and not fixed — it belongs to the header now.
+  assert.ok(!/position: fixed/.test(phone), 'the tab row is still pinned somewhere');
+  // Views before the date range: which screen outranks how far back.
+  assert.match(phone, /order: 2/);
+  assert.match(phone, /#rangebtns \{ order: 3; \}/);
+});
+
+await test('the mark goes home instead of reloading the page', () => {
+  // href="/app.html" reloaded the page and looked like nothing happened.
+  const src = page('app.html');
+  assert.match(src, /<a class="mark" href="#record" id="home"/);
+  assert.match(src, /data-view="record"\]'\)\?\.click\(\)/);
+});
+
+await test('a password reset lands on a set-a-password screen', () => {
+  // It was landing on the ordinary sign-in form — with a password they do not
+  // know. That is the exact moment somebody gives up.
+  const src = page('app.html');
+  assert.match(src, /id="reset"/);
+  assert.match(src, /id="newpass"/);
+  assert.match(src, /PASSWORD_RECOVERY/);
+  assert.match(src, /type=recovery/);
+  assert.match(src, /sb\.auth\.updateUser\(\{ password \}\)/);
 });
 
 // ── Report ──────────────────────────────────────────────────────────────────

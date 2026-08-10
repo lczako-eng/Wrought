@@ -206,37 +206,21 @@ svg.ser .cursor { transition: opacity var(--quick) var(--ease); }
    content, and the same buttons ride in the header on a desktop. Components
    that already sit where an app puts them survive the move into one. */
 @media (max-width: 700px) {
-  /* backdrop-filter on an ancestor makes it the containing block for anything
-     position:fixed inside it. The header had one, so the bottom bar was pinned
-     to the HEADER's bottom rather than the viewport's — and being taller than
-     the header, it hung off the top of the screen with the first and last tabs
-     clipped. A solid header on a phone costs nothing and puts the bar back
-     where it belongs. */
-  header { backdrop-filter: none; -webkit-backdrop-filter: none; background: var(--iron); }
-
+  /* Top, and scrolling sideways. A bottom bar was the wrong call — the founder
+     wanted them where the page starts, and a row that scrolls always fits
+     however many tabs there are. */
   .views {
-    position: fixed; z-index: 20; inset: auto 0 0 0;
-    justify-content: center; gap: 8px;
-    padding: 10px 12px calc(10px + env(safe-area-inset-bottom));
-    background: color-mix(in srgb, var(--iron) 86%, transparent);
-    backdrop-filter: blur(18px) saturate(140%);
-    -webkit-backdrop-filter: blur(18px) saturate(140%);
-    border-top: 1px solid var(--edge);
+    flex-wrap: nowrap; overflow-x: auto; overflow-y: hidden;
+    -webkit-overflow-scrolling: touch; scrollbar-width: none;
+    /* A plain flex item that scrolls inside the page gutters. Full-bleed with
+       negative margins fought the sticky header and clipped it. */
+    order: 2; flex: 1 1 100%; min-width: 0;
   }
-  /* Six tabs do not fit one row on a phone, and a centred row that overflows
-     is clipped at BOTH ends — which is how Record and Admin ended up half
-     off-screen. Wrapping always fits; scrolling is the fallback if a future
-     tab pushes it further. */
-  .views { flex-wrap: wrap; overflow-x: auto; scrollbar-width: none; }
   .views::-webkit-scrollbar { display: none; }
-  .views .range {
-    /* Do not grow. Six tabs fit one row at this size; growing them forces a
-       wrap that makes the bar twice as tall for no reason. */
-    flex: 0 1 auto; min-width: 0;
-    padding: 10px 9px; font-size: 12.5px; white-space: nowrap;
-  }
-  /* Clear the bar so the last panel is never trapped underneath it. */
-  main { padding-bottom: calc(132px + env(safe-area-inset-bottom)); }
+  .views .range { flex: 0 0 auto; padding: 9px 13px; font-size: 13px; white-space: nowrap; }
+  .bar { row-gap: 10px; }
+  #rangebtns { order: 3; }
+  main { padding-bottom: 60px; }
 }
 .range { transition: background var(--quick) var(--ease), color var(--quick) var(--ease), border-color var(--quick) var(--ease); }
 
@@ -316,13 +300,13 @@ svg { display: block; width: 100%; height: auto; overflow: visible; }
   display: flex; align-items: flex-end; gap: 4px;
   height: 92px; margin-top: 12px;
 }
-.lift .bar {
+.lift .col {
   flex: 1 1 0; min-width: 0; position: relative;
   background: linear-gradient(180deg, var(--heat-3), var(--heat-1));
   border-radius: 2px 2px 0 0;
 }
-.lift .bar:last-child { background: linear-gradient(180deg, var(--heat-4), var(--heat-2)); }
-.lift .bar b {
+.lift .col:last-child { background: linear-gradient(180deg, var(--heat-4), var(--heat-2)); }
+.lift .col b {
   position: absolute; inset: auto 0 100% 0; text-align: center;
   font-family: var(--mono); font-weight: 400; font-size: 9.5px;
   color: var(--ash-dim); padding-bottom: 3px; white-space: nowrap;
@@ -331,8 +315,8 @@ svg { display: block; width: 100%; height: auto; overflow: visible; }
 /* Below about six bars the labels collide, so the newest keeps its number and
    the rest live in the tooltip rather than turning into grey mush. */
 @media (max-width: 560px) {
-  .lift .bar b { display: none; }
-  .lift .bar:last-child b { display: block; }
+  .lift .col b { display: none; }
+  .lift .col:last-child b { display: block; }
 }
 .lift .delta {
   font-family: var(--mono); font-size: 15px; text-align: right;
@@ -470,8 +454,10 @@ table.matrix td.rh.cold { color: var(--heat-3); }
 .wk.now  { background: var(--heat-3); border-color: var(--heat-4); color: #1A0A02; font-weight: 700; }
 /* The easy week is marked cool and deliberately does not look like a gap. */
 .wk.deload { background: var(--temper-dk); border-color: var(--temper); color: var(--bright); }
-.bar { height: 6px; border-radius: 4px; background: var(--scale); overflow: hidden; margin: 6px 0 12px; }
-.bar i { display: block; height: 100%; background: linear-gradient(90deg, var(--heat-2), var(--heat-4)); }
+/* NOT .bar — that is the header row, and a 6px tall overflow:hidden rule on it
+   collapsed the whole navigation. Named for what it is. */
+.progbar { height: 6px; border-radius: 4px; background: var(--scale); overflow: hidden; margin: 6px 0 12px; }
+.progbar i { display: block; height: 100%; background: linear-gradient(90deg, var(--heat-2), var(--heat-4)); }
 
 .thennow { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 14px 0 8px; }
 .thennow img, .shot img { width: 100%; display: block; border-radius: 11px; background: var(--scale); }
@@ -720,6 +706,16 @@ a.ghost { display: inline-block; }
     </p>
     <p class="msg" id="msg"></p>
 
+    <!-- Coming back from a reset email. Landing on the ordinary sign-in form
+         with a password they do not know is the one thing that screen must not
+         do — it is the exact moment somebody gives up. -->
+    <div id="reset" hidden>
+      <p class="gate-sub" style="margin:0 0 10px">Pick a new password.</p>
+      <input id="newpass" type="password" placeholder="New password"
+             autocomplete="new-password" enterkeyhint="go">
+      <button id="setpass">Save it and sign in</button>
+    </div>
+
     <!-- The second factor. Hidden until the account actually asks for one, so
          nobody who has not turned it on ever sees a field they cannot fill. -->
     <div id="mfa" hidden>
@@ -740,7 +736,7 @@ a.ghost { display: inline-block; }
 <div id="app" hidden>
   <header>
     <div class="wrap bar">
-      <a class="mark" href="/app.html" aria-label="WROUGHT dashboard"><img src="/icon.svg" alt="" width="26" height="26"><span class="name">Wrought</span></a>
+      <a class="mark" href="#record" id="home" aria-label="WROUGHT — back to your record"><img src="/icon.svg" alt="" width="26" height="26"><span class="name">Wrought</span></a>
       <nav class="ranges views" role="group" aria-label="View">
         <button class="range view" data-view="record" aria-pressed="true">Record</button>
         <button class="range view" data-view="log" aria-pressed="false">Log</button>
@@ -801,6 +797,10 @@ async function boot() {
   // the one being absorbed — treating it as a normal sign-in would show
   // somebody the empty account they came here to get rid of.
   if (new URLSearchParams(location.search).has('merge') && await finishProviderMerge()) return;
+
+  // The recovery grant arrives in the fragment. onAuthStateChange usually
+  // catches it, but not if the client finished exchanging it before this ran.
+  if (/type=recovery/.test(location.hash)) { askForNewPassword(); return; }
 
   const { data } = await sb.auth.getSession();
   if (!data.session) { $('gate').hidden = false; return; }
@@ -903,6 +903,14 @@ $('send')?.addEventListener('click', submitAuth);
 $('pass')?.addEventListener('keydown', e => { if (e.key === 'Enter') submitAuth(); });
 $('email')?.addEventListener('keydown', e => { if (e.key === 'Enter') $('pass').focus(); });
 
+// The mark is home. It was pointing at /app.html, so tapping it reloaded the
+// page and looked like nothing happened.
+$('home')?.addEventListener('click', (e) => {
+  e.preventDefault();
+  document.querySelector('.range.view[data-view="record"]')?.click();
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+});
+
 $('whoami-out')?.addEventListener('click', () => leave(false));
 $('whoami-switch')?.addEventListener('click', () => leave(true));
 
@@ -961,6 +969,45 @@ const MERGE_STASH = 'wrought_merge_keep';
 // and the server does not is decoration — the real gate is in lib/wrought.js
 // and in oauth-authorize-complete.js, which is what stops "connect ChatGPT"
 // from becoming a permanent way around it.
+
+// Supabase sends people back here with the recovery grant in the URL fragment.
+// The client swallows it and fires PASSWORD_RECOVERY; without handling that,
+// somebody who asked for a reset lands on a sign-in form and is exactly as
+// stuck as before they asked.
+function askForNewPassword() {
+  $('gate').hidden = false;
+  $('app').hidden = true;
+  ['name', 'email', 'pass', 'send', 'swap-line', 'forgot'].forEach(id => {
+    const el = $(id); if (el) el.hidden = true;
+  });
+  document.querySelectorAll('#gate .oauth, #gate .or').forEach(el => { el.hidden = true; });
+  $('mfa').hidden = true;
+  $('reset').hidden = false;
+  $('msg').textContent = '';
+  $('newpass').focus();
+}
+
+async function saveNewPassword() {
+  const password = $('newpass').value;
+  if (password.length < 8) { $('msg').textContent = 'Eight characters or more.'; return; }
+  $('setpass').disabled = true;
+  $('msg').textContent = 'Saving…';
+  const { error } = await sb.auth.updateUser({ password });
+  $('setpass').disabled = false;
+  if (error) { $('msg').textContent = error.message; return; }
+  // Straight in — they have just proved the address and set the password.
+  history.replaceState(null, '', location.pathname);
+  $('reset').hidden = true;
+  $('gate').hidden = true;
+  boot();
+}
+
+$('setpass')?.addEventListener('click', saveNewPassword);
+$('newpass')?.addEventListener('keydown', e => { if (e.key === 'Enter') saveNewPassword(); });
+
+sb?.auth.onAuthStateChange((event) => {
+  if (event === 'PASSWORD_RECOVERY') askForNewPassword();
+});
 
 async function mfaNeeded() {
   try {
@@ -3152,7 +3199,7 @@ function blockPanel(d) {
       <div class="ls-tot">${legStat(b.sessions_done, 'done')}${legStat(b.sessions_total - b.sessions_done, 'to go')}</div>
     </div>
     <div class="weeks">${weeks}</div>
-    <div class="bar"><i style="width:${b.percent}%"></i></div>
+    <div class="progbar"><i style="width:${b.percent}%"></i></div>
     <p class="sub">${esc(b.say)}</p>
     ${b.up_next ? `<div class="ls-ex">
       <div class="ls-ex-top"><b>Up next: ${esc(b.up_next.name)}</b>
@@ -3387,7 +3434,7 @@ function liftsPanel(d) {
       const label = l.metric === 'reps'
         ? `${p.reps ?? '—'}`
         : `${p.weight ?? '—'}${p.reps ? `×${p.reps}` : ''}`;
-      return `<span class="bar" style="height:${h}%" title="${esc(p.date)} · ${esc(label)}">
+      return `<span class="col" style="height:${h}%" title="${esc(p.date)} · ${esc(label)}">
         <b>${esc(label)}</b></span>`;
     }).join('');
 

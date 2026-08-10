@@ -588,6 +588,38 @@ below last one.
   because something has been adding up. It stays silent until both years have
   30+ logged days.
 
+### Two classes called `.bar`, and the header they flattened
+
+Worth keeping because it cost an evening and looked like six different bugs. A
+progress bar added with the blocks work claimed `.bar` — a name the **header
+row** already owned — and set `height: 6px; overflow: hidden` on it. The whole
+navigation collapsed into a 6px strip, which is why tabs came back clipped at
+both ends no matter what was tried, and why every layout fix appeared not to
+work.
+
+The header owns `.bar`. Anything else gets its own name: `.progbar` for the
+block progress bar, `.col` for the chart columns inside `.lift`. **A test now
+asserts `.bar` is defined exactly once and that nothing carries a bare
+`class="bar"`.** Before blaming a layout, check whether two things share a class.
+
+The tabs live at the top of the page, in the header, scrolling sideways — the
+founder asked for that directly, and a scrolling row fits however many tabs
+there are. The earlier fixed bottom bar is gone; on top of being the wrong
+place, `backdrop-filter` on the header made the header the containing block for
+anything `position: fixed` inside it, so it anchored to the header rather than
+the screen.
+
+The mark is `#record`, not `/app.html` — pointing it at the page it is already
+on reloaded and looked like nothing happened.
+
+### Coming back from a reset email
+
+`resetPasswordForEmail` returns somebody to the dashboard with the recovery
+grant in the URL fragment, and the page used to show them the ordinary sign-in
+form — asking for the password they had just told us they do not have. That is
+the exact moment somebody gives up. `PASSWORD_RECOVERY` and `type=recovery` both
+now open a *set a new password* screen, and saving it signs them straight in.
+
 ### The empty dashboard — the screen that decides everything
 
 A brand new account has nothing to draw, and drawing it anyway produced nine
