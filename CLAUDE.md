@@ -858,6 +858,28 @@ this drift is invisible on any page viewed by itself.
 `.well-known/mcp.json` and `site.webmanifest`. Paths, never `<text>` — a favicon
 depending on a font is a rectangle on somebody else's machine.
 
+### The about page, and the tutorial in the conversation
+
+`public/about.html` + the `guide` tool. The founder: *"need an about page, and
+prompts a tutorial on AI to tell you how to use Wrought and what it means."*
+The page explains the name (wrought — the old past tense of *work*, what iron
+is called once it has been worked enough to hold a shape), and the manual is
+**example sentences, not feature lists**, because talking normally IS the
+manual. The refusals are printed on it — no flattery, no guessed weights, no
+guilt, care flags stop coaching, not a medical device — and so is the export
+promise, because "give us your record" is only fair next to "here is the door".
+
+`guide` serves the same tutorial as a tool, so "how do I use this" / "what does
+wrought mean" is answered from data rather than the model's memory of a README
+it never read. The note says answer what was asked, not recite the manual.
+
+**A photograph of a gym is an equipment list.** Same architecture as the
+dinner plate: the connected model reads the image, this server never sees it —
+only the extraction arrives. The main gym goes to `set_profile` equipment;
+additional named gyms go to `remember` (category `gym`); "I'm at the home gym"
+passes that inventory to `start_session`/`suggest_workout`. Never build a plan
+around a machine the photos did not show.
+
 ### Devices — two doors, not fifteen integrations
 
 The founder asked for "Apple Watch and Samsung watch and Oura and Nike Run —

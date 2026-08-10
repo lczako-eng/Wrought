@@ -2783,6 +2783,54 @@ await test('get_profile carries the linking pointer even when the account is ful
   assert.ok(!/linking:\s*\(count/.test(body), 'the linking note is conditional on the count again');
 });
 
+group('The about page, and the tutorial that lives in the conversation');
+
+await test('the about page says the name, the manual, and the way out', () => {
+  const src = page('about.html');
+  // The name explained — wrought as worked iron — because "what does wrought
+  // mean" is the first question the brand invites.
+  assert.match(src, /past tense of/);
+  assert.match(src, /wrought iron/i);
+  // The manual is example sentences, not feature lists — talking IS the manual.
+  assert.match(src, /Talk normally/);
+  assert.match(src, /machine's taken/);
+  // The refusals are on the page — the honesty is the differentiator and it is
+  // said before anybody connects, not discovered after.
+  assert.match(src, /It will not flatter you/);
+  assert.match(src, /not a medical device/i);
+  // And the export promise, because "give us your record" is only a fair ask
+  // next to "and here is the door".
+  assert.match(src, /JSON or CSV/);
+  assert.match(src, /even if you stop paying/i);
+  // Linked from the marketing footer.
+  assert.match(page('index.html'), /<a href="\/about\.html">About<\/a>/);
+});
+
+await test('the tutorial is a tool, not the model\'s memory of a README', () => {
+  const g = TOOLS.find(t => t.name === 'guide');
+  assert.ok(g, 'no guide tool');
+  assert.ok(g.annotations.readOnlyHint);
+  for (const phrase of ['how do I use this', 'what does wrought mean', 'what can you do', 'tutorial']) {
+    assert.ok(SERVER_INSTRUCTIONS.includes(phrase), `"${phrase}" maps to nothing`);
+  }
+  const src = readFileSync(new URL('../netlify/functions/mcp.js', import.meta.url), 'utf8');
+  const fn = src.slice(src.indexOf('async function guide('), src.indexOf('async function setProfile('));
+  assert.match(fn, /past tense of/);
+  assert.match(fn, /what_it_refuses/);
+  assert.match(fn, /do not recite the whole manual/i);
+});
+
+await test('a photo of the gym becomes an equipment list — and never reaches us', () => {
+  // Same architecture as the dinner plate: the connected model reads the
+  // image, only the extraction arrives here. Multiple gyms are normal and
+  // named; the plan is built from what the photos actually showed.
+  assert.match(SERVER_INSTRUCTIONS, /A PHOTOGRAPH OF A GYM IS AN EQUIPMENT LIST/);
+  assert.match(SERVER_INSTRUCTIONS, /this server never sees images/);
+  assert.match(SERVER_INSTRUCTIONS, /category "gym"/);
+  assert.match(SERVER_INSTRUCTIONS, /More than one gym is normal/);
+  assert.match(SERVER_INSTRUCTIONS, /Never build a plan around a machine their photos did not show/);
+});
+
 group('A body goal becomes numbers, computed — never guessed');
 
 const { goalCall } = await import('../netlify/functions/lib/training.js');
@@ -3301,6 +3349,7 @@ await test('the word is set in the same slab everywhere', () => {
     'connect.html':   /\.mark \.name\{font-family:Rockwell/,
     'privacy.html':   /\.wordmark\{font-family:Rockwell/,
     'terms.html':     /\.wordmark\{font-family:Rockwell/,
+    'about.html':     /\.wordmark\{font-family:Rockwell/,
   };
   for (const [file, re] of Object.entries(PAGES)) {
     assert.match(page(file), re, `${file} sets the wordmark in something else`);

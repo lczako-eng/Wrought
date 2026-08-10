@@ -116,7 +116,10 @@ HOW PEOPLE ACTUALLY ASK. Nobody says "call the brief tool". They say one of a hu
   earned_room — "have I earned it", "can I afford it", "do I have room", "treat"
   set_goal (with intent) — "I wanna lose weight", "I need to drop 20 pounds", "lean out", "cut", "slim down", "I wanna get bigger", "build muscle", "bulk up", "get more muscular", "tone up", "lose fat and gain muscle"
   link_account — "I have two accounts", "link my accounts", "link my emails", "hook up my two emails", "connect my accounts", "merge them", "merge my accounts", "join them up", "join these up", "my dashboard is empty", "the website shows a different email", "the site says a different account", "it is not the same account", "two emails", "same person, two logins", "give me a link code", "link"
+  guide — "help", "how do I use this", "how does wrought work", "what can you do", "what is wrought", "what does wrought mean", "tutorial", "teach me", "walk me through it"
   get_profile — "what account am I on", "which account is this", "who am I", "what email is this", "what do you know about me", "what's my height", "what have you got on me", "am I set up", "is this connected", "plugged in", "are you working", "what account are you writing to"
+
+A PHOTOGRAPH OF A GYM IS AN EQUIPMENT LIST. When they send pictures of a gym, YOU read what is standing in them — racks, machines, dumbbells, benches, cables — because this server never sees images. Read the photos, list the equipment plainly, confirm in one line, and save it: set_profile equipment for their main gym, and remember (category "gym") for each named additional place — "Home gym: dumbbells to 50lb, bench, bands". More than one gym is normal. When they say where they are — "at the home gym", "hotel gym today" — pass that inventory as equipment to start_session or suggest_workout, and recall it from memory if you need it. Never build a plan around a machine their photos did not show.
 
 AT THE RACK, THE SERVER HOLDS THE CLIPBOARD. During a session, every log_set answer carries the checklist — every exercise with its sets and reps, marked done, current or to come. "What's left", "what's next", "how much more" are answered from the LATEST checklist, never from memory of the conversation. Ask at most ONE short question per rest gap — the reps, or how it felt — never a form. If they mention pain, log_set's note field takes their words verbatim AND it goes to remember (category health).
 
@@ -502,6 +505,13 @@ const TOOLS = [
     name: 'get_profile',
     title: 'Read everything WROUGHT knows about this user',
     description: 'One read: profile (timezone, units, height, equipment, training days, dietary constraints, bluntness), active goals, eating window, connected devices, and how long they have been logging. Call this at the start of a conversation so you never ask for something already known.',
+    inputSchema: { type: 'object', properties: {} },
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+  },
+  {
+    name: 'guide',
+    title: 'How to use WROUGHT, in its own words',
+    description: 'The tutorial. Call when they ask what WROUGHT is, what the name means, how to use it, what it can do, or how anything works — "help", "how do I use this", "what can you do", "what does wrought mean". Returns the manual; relay it in their register, shortened to what they actually asked.',
     inputSchema: { type: 'object', properties: {} },
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   },
@@ -2052,6 +2062,37 @@ async function getProfileTool(_args, user) {
   };
 }
 
+// The tutorial, served as data rather than trusted to the model's memory of a
+// README it never read. "It should tell you how to use Wrought and what it
+// means" — from inside the conversation, because that is where the user is.
+async function guide() {
+  return {
+    name: 'WROUGHT',
+    meaning: 'Wrought is the old past tense of "work" — what iron is called after enough fire and hammer to hold a shape. Nothing about wrought iron happened in one session. A body is the same: worked, repeatedly, honestly, over a long time. This product holds the record of that work.',
+    what_it_is: 'The memory your AI does not have. Mention food, training, weight, sleep or a symptom in ANY conversation and it is kept — filed under the right day, forever — then read back honestly: totals, trends, and a nightly verdict.',
+    how_to_use: [
+      'Talk normally. One sentence is a complete log: "had a steak and a baked potato", "330 this morning", "did ten push-ups".',
+      '"gym bro" / "what\'s the damage" — the day so far and the week\'s trend.',
+      '"I wanna lose weight" / "build muscle" — targets computed from YOUR numbers, paced and capped, never guessed.',
+      '"let\'s go, 45 minutes" — builds a session; say "got 8" after each set; loads come from your own history.',
+      '"machine\'s taken" — swaps the exercise for the same pattern on kit you have.',
+      'Photograph your gym and show the AI — it reads the equipment and every plan is built from what is actually there.',
+      'The dashboard at wrought.fit shows the record laid out: calendar, log, trainer screen, progress photos.',
+    ],
+    what_it_refuses: [
+      'Flattery — the read is honest, in the register you chose: gentle, honest or brutal.',
+      'Guessed working weights — no history means effort is prescribed, not an invented number.',
+      'Guilt — sessions never roll over, fasts are never scored, a missed week is information.',
+      'Coaching past a care flag — eating too little, losing too fast, no rest in 14 days stops the coaching entirely.',
+      'Medicine — not a medical device; it says so and points at a doctor.',
+    ],
+    your_data: 'Everything comes back on demand as JSON or CSV from the dashboard — always, even lapsed, even revoked. More at wrought.fit/about and wrought.fit/privacy.html.',
+    say: 'WROUGHT is the memory your AI does not have — say what you ate or lifted in any conversation and it is kept and read back honestly. The name is the old past tense of "work": what iron is called once it has been worked enough to hold a shape.',
+    note: 'Answer WHAT THEY ASKED, in their register, from these fields — do not recite the whole manual. If they are brand new, the one thing to land is: talk normally, one sentence is enough.',
+    next_actions: ['get_profile to see what is set up', 'brief for their first read once anything is logged'],
+  };
+}
+
 async function setProfile(args, user) {
   const fields = ['timezone','units','height_cm','birth_year','sex','training_age','equipment','train_days','dietary','bluntness','notes','activity_level'];
   const patch = {};
@@ -2624,6 +2665,7 @@ const IMPL = {
   amend_last: amendLast,
   undo_last: undoLast,
   get_profile: getProfileTool,
+  guide,
   set_profile: setProfile,
   set_goal: setGoal,
   set_eating_window: setEatingWindow,
