@@ -1003,6 +1003,20 @@ verdict lives on the website and the phone app, written by the connected model
 when he next talks to it and saved into `wrought_briefs` (which exists for
 exactly that). Do that and the whole thing runs with no API key at all.
 
+**The revisit clause below FIRED on 2026-08-10.** The founder spent an evening
+discovering, tap by tap, that Shortcuts cannot produce a deduplicated step
+count — "Find Health Samples" exposes raw per-device samples and no statistics
+query, so phone+watch always double and grouping does not fix it. Health Auto
+Export can, because it is a NATIVE app: HealthKit's HKStatisticsQuery (the
+deduplicated daily totals — the number on the watch face) plus background
+delivery are native-only APIs. So the first native build, after the fortnight
+of real use, is **a courier app**: one screen, sign in with the Wrought
+account, grant Health access, register background delivery, POST to /ingest.
+No UI beyond that — the PWA stays the product; the app only moves data. The
+founder already owns the US$99 account. Until it ships, Health Auto Export is
+the recommended watch route and /ingest reads its shape natively, workouts
+included.
+
 **The "light app" is the PWA, and that is the right answer.** Installed, it has
 an icon, a splash, a standalone window with no browser chrome, and the lock
 screen — which is the entire reason to want an app here. Native would mean two
