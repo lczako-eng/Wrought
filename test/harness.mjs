@@ -2783,6 +2783,24 @@ await test('get_profile carries the linking pointer even when the account is ful
   assert.ok(!/linking:\s*\(count/.test(body), 'the linking note is conditional on the count again');
 });
 
+group('When a tool falls over');
+
+await test('a failed write says the words back and does not lose them', () => {
+  // "Wrought's logging action is erroring right now" — no cause, and no sign
+  // of what became of the sentence somebody said in passing. A log that throws
+  // is the worst case in the product: they said it once, while doing something
+  // else, and it is gone.
+  const src = readFileSync(new URL('../netlify/functions/mcp.js', import.meta.url), 'utf8');
+  const block = src.slice(src.indexOf("error: 'tool_failed'"), src.indexOf("error: 'tool_failed'") + 1600);
+  assert.match(block, /tool: params\.name/);
+  assert.match(block, /detail: err\.message/);
+  assert.match(block, /say:/, 'nothing human to relay');
+  assert.match(block, /NOTHING WAS WRITTEN/);
+  assert.match(block, /repeat the detail back/i);
+  // A failed read must never be dressed up as an answer from memory.
+  assert.match(block, /never substitute a number from your own memory/i);
+});
+
 group('Class names that collide, and the screens they collapse');
 
 await test('nothing else claims .bar — the header owns it', () => {

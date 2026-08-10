@@ -2478,8 +2478,26 @@ export async function handleRpc(msg, authUser) {
           isError: Boolean(out && out.error),
         });
       } catch (err) {
+        // A tool that throws used to hand back a bare error string, and the
+        // assistant relayed it as "Wrought's logging action is erroring right
+        // now" — no cause, nothing to act on, and no sign of what happened to
+        // the sentence the person just said. On a log that is the worst part:
+        // they said it once, in passing, and it is gone. So the failure carries
+        // words to repeat, the reason in plain sight, and an instruction to try
+        // again rather than move on.
+        const writing = /^(log|amend|undo|set_|start_|end_|remember|connect_)/.test(params.name);
         return rpcResult(id, {
-          content: [{ type: 'text', text: JSON.stringify({ error: 'tool_failed', detail: err.message }) }],
+          content: [{ type: 'text', text: JSON.stringify({
+            error: 'tool_failed',
+            tool: params.name,
+            detail: err.message,
+            say: writing
+              ? `That did not save — ${err.message}`
+              : `WROUGHT could not answer that — ${err.message}`,
+            note: writing
+              ? 'NOTHING WAS WRITTEN. Try the same call once more before saying anything; these are usually momentary. If it fails again, tell the user IN FULL what they said is not saved and repeat the detail back so they still have it, and give them the reason above rather than "it is erroring" — a reason can be acted on and an outage cannot.'
+              : 'Say what failed and why, in the words above. Never present a failed read as a real answer, and never substitute a number from your own memory of this conversation.',
+          }) }],
           isError: true,
         });
       }
