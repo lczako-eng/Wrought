@@ -7,7 +7,7 @@ import SwiftUI
 
 struct ContentView: View {
     @EnvironmentObject var courier: HealthCourier
-    @State private var webView = WebViewStore()
+    @StateObject private var webView = WebViewStore()
 
     var body: some View {
         ZStack(alignment: .bottom) {

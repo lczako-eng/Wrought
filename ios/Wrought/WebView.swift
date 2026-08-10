@@ -11,6 +11,7 @@
 import SwiftUI
 import WebKit
 
+@MainActor
 final class WebViewStore: NSObject, ObservableObject {
     let webView: WKWebView
 
@@ -44,10 +45,8 @@ final class WebViewStore: NSObject, ObservableObject {
         })()
         """
         return await withCheckedContinuation { cont in
-            DispatchQueue.main.async {
-                self.webView.evaluateJavaScript(js) { result, _ in
-                    cont.resume(returning: result as? String)
-                }
+            webView.evaluateJavaScript(js) { result, _ in
+                cont.resume(returning: result as? String)
             }
         }
     }
