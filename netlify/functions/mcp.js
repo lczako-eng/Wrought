@@ -30,7 +30,7 @@ import { nutritionTotals, composition, macroMatrix, yearOverYear } from './lib/n
 import {
   exerciseKey, lastPerformance, progressionCall, TIERS,
   restingBurn, energyBalance, planFromRoutine, sessionTotals, earnedRoom,
-  orderPlan, orderInsight, deviceMatrix, weekdayPattern, weekSoFar,
+  orderPlan, orderInsight, deviceMatrix, weekdayPattern, weekSoFar, goalCall,
 } from './lib/training.js';
 import { PROGRAMMES, GOALS, MOVEMENTS, movementsFor, pickProgramme, buildProgramme, buildBlock, blockPosition, BLOCK_LENGTHS } from './lib/library.js';
 
@@ -114,6 +114,7 @@ HOW PEOPLE ACTUALLY ASK. Nobody says "call the brief tool". They say one of a hu
   recall / search_log — "what did I do last Tuesday", "have I had this before", "when did I last", "find", "look up", "what was my best"
   undo_last — "scratch that", "take that off", "I didn't actually eat it", "never mind", "that never happened", "I was testing", "it never turned up", "delete the pizza", "remove that", "I changed my mind"
   earned_room — "have I earned it", "can I afford it", "do I have room", "treat"
+  set_goal (with intent) — "I wanna lose weight", "I need to drop 20 pounds", "lean out", "cut", "slim down", "I wanna get bigger", "build muscle", "bulk up", "get more muscular", "tone up", "lose fat and gain muscle"
   link_account — "I have two accounts", "link my accounts", "link my emails", "hook up my two emails", "connect my accounts", "merge them", "merge my accounts", "join them up", "join these up", "my dashboard is empty", "the website shows a different email", "the site says a different account", "it is not the same account", "two emails", "same person, two logins", "give me a link code", "link"
   get_profile — "what account am I on", "which account is this", "who am I", "what email is this", "what do you know about me", "what's my height", "what have you got on me", "am I set up", "is this connected", "plugged in", "are you working", "what account are you writing to"
 
@@ -531,11 +532,13 @@ const TOOLS = [
   {
     name: 'set_goal',
     title: 'Set something to be measured against',
-    description: 'Records what they are actually trying to do, in their words, plus an optional number the brief can score every day. "150g of protein a day", "gym 4 times a week", "180 lb by Christmas". Without a goal the brief still reports — it just cannot tell them whether it was a good day.',
+    description: 'Records what they are actually trying to do, in their words, plus an optional number the brief can score every day. "150g of protein a day", "gym 4 times a week", "180 lb by Christmas". For body goals — lose weight, build muscle, both — pass intent instead of inventing numbers: the server computes calorie and protein targets from their own maintenance, safely paced, and sets the daily goals itself. Without a goal the brief still reports — it just cannot tell them whether it was a good day.',
     inputSchema: {
       type: 'object',
       properties: {
-        goal:      { type: 'string', description: 'Their words: "get to 180 by Christmas", "hit 150 protein daily".' },
+        goal:      { type: 'string', description: 'Their words: "get to 180 by Christmas", "hit 150 protein daily", "lose weight", "get more muscular".' },
+        intent:    { type: 'string', enum: ['lose','gain','recomp','maintain'],
+                     description: 'Pass this when the goal is about their body rather than a single number — lose weight, build muscle, or both at once (recomp — what "lose weight AND get more muscular" means). The SERVER then computes the calorie and protein targets from their own maintenance, paced and floored safely, and sets the daily goals in the same call. NEVER invent those numbers yourself.' },
         metric:    { type: 'string', enum: ['protein_g','calories','steps','workout_days','sleep_minutes','weight_kg'],
                      description: 'What to score it on. Omit for a goal that is real but not measurable from the log.' },
         target:    { type: 'number', description: 'The number to hit. In metric (kg) for weight — convert first.' },
@@ -2071,6 +2074,56 @@ async function setProfile(args, user) {
 async function setGoal(args, user) {
   const goal = String(args.goal || '').trim();
   if (!goal) return { error: 'A goal is required.' };
+
+  // A body goal. The words are stored as the goal; the NUMBERS are computed
+  // here, because a model asked for a cutting target says 1,500 to a 150kg man
+  // and a 60kg woman alike. Maintenance from their own facts, loss paced at
+  // half a percent of bodyweight a week, intake never below the care floor —
+  // and the calorie and protein daily goals are set in the same call, so the
+  // brief starts scoring the plan the moment it exists.
+  if (args.intent) {
+    const profile = await getProfile(user.id);
+    const { data: recent } = await supabase.from('wrought_events')
+      .select('detail').eq('user_id', user.id).eq('event_type', 'weight')
+      .order('occurred_at', { ascending: false }).limit(1);
+    const weightKg = recent?.[0]?.detail?.value_kg ?? null;
+
+    const call = goalCall({ profile, weightKg, intent: args.intent });
+    if (!call.known) {
+      return { error: 'setup_needed', missing: call.missing, say: call.say,
+               note: 'Ask for what is missing in ONE message (the five facts rule), set_profile / log_weight, then call this again.' };
+    }
+
+    const rows = [
+      { user_id: user.id, goal, metric: 'weight_kg', direction: args.intent === 'gain' ? 'at_least' : 'reach',
+        target_value: args.target != null ? Number(args.target) : null,
+        target_unit: 'kg', cadence: 'once', target_date: args.target_date || null },
+      { user_id: user.id, goal: `Calories: about ${call.calorie_target} a day (computed, ${args.intent})`,
+        metric: 'calories', direction: args.intent === 'gain' ? 'at_least' : 'at_most',
+        target_value: call.calorie_target, target_unit: ' kcal', cadence: 'daily' },
+      { user_id: user.id, goal: `Protein: about ${call.protein_target_g}g a day (computed)`,
+        metric: 'protein_g', direction: 'at_least',
+        target_value: call.protein_target_g, target_unit: 'g', cadence: 'daily' },
+    ];
+    const { error } = await supabase.from('wrought_goals').insert(rows);
+    if (error) return { error: error.message };
+
+    return {
+      goal, intent: args.intent,
+      targets: {
+        maintenance: call.maintenance,
+        calories_per_day: call.calorie_target,
+        protein_g_per_day: call.protein_target_g,
+        projected_kg_per_week: call.projected_kg_per_week,
+        resting_only: call.resting_only,
+      },
+      approximate: true,
+      say: `Goal set: ${goal}. ${call.say}`,
+      caveat: call.caveat,
+      note: 'Relay the numbers AS estimates — "roughly", "about". The weekly weigh-in trend corrects the target, never the other way round. Training: a cut keeps the lifting (muscle is what a deficit spends without it); "gain" or "recomp" points suggest_workout and start_block at hypertrophy.',
+      next_actions: ['start_block to give the goal a training structure', 'brief — it scores these from tonight'],
+    };
+  }
 
   const row = {
     user_id: user.id, goal,

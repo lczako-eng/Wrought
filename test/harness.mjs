@@ -2783,6 +2783,66 @@ await test('get_profile carries the linking pointer even when the account is ful
   assert.ok(!/linking:\s*\(count/.test(body), 'the linking note is conditional on the count again');
 });
 
+group('A body goal becomes numbers, computed — never guessed');
+
+const { goalCall } = await import('../netlify/functions/lib/training.js');
+const GOAL_P = { height_cm: 183, birth_year: 1982, sex: 'male', activity_level: 'moderate' };
+
+await test('loss is paced to the body it is for, and the deficit is clamped', () => {
+  // A model asked for a cutting target says 1,500 to a 150kg man and a 60kg
+  // woman alike. The server paces at 0.5% of bodyweight a week, deficit
+  // clamped 300..750 — so the heavy man is not starved and the light woman is
+  // not handed a rounding-error deficit that does nothing.
+  const heavy = goalCall({ profile: GOAL_P, weightKg: 150, intent: 'lose' });
+  assert.equal(heavy.maintenance - heavy.calorie_target, 750, 'the deficit cap did not bind');
+  const light = goalCall({ profile: { height_cm: 160, birth_year: 1998, sex: 'female', activity_level: 'sedentary' }, weightKg: 50, intent: 'lose' });
+  assert.equal(light.maintenance - light.calorie_target, 300, 'the deficit floor did not bind');
+});
+
+await test('the intake target never lands below the care floor', () => {
+  // The product must not prescribe the thing careFlags() warns about.
+  const tiny = goalCall({ profile: { height_cm: 150, birth_year: 2000, sex: 'female' }, weightKg: 42, intent: 'lose' });
+  assert.ok(tiny.calorie_target >= 1200, `target ${tiny.calorie_target} is under the care floor`);
+});
+
+await test('gaining is a small surplus, and protein is capped', () => {
+  const g = goalCall({ profile: GOAL_P, weightKg: 150, intent: 'gain' });
+  assert.equal(g.calorie_target - g.maintenance, 250, 'the surplus is not small');
+  // 1.6 g/kg at 150kg would be 240g; the cap holds it to what a body can use.
+  assert.equal(g.protein_target_g, 220);
+});
+
+await test('recomp is what "lose weight AND get more muscular" means', () => {
+  const r = goalCall({ profile: GOAL_P, weightKg: 150, intent: 'recomp' });
+  assert.equal(r.maintenance - r.calorie_target, 300);
+  assert.match(r.say, /recomposition/);
+});
+
+await test('without the five facts it refuses, and everything is an estimate', () => {
+  const missing = goalCall({ profile: {}, weightKg: null, intent: 'lose' });
+  assert.equal(missing.known, false);
+  assert.ok(missing.missing.length);
+  const ok = goalCall({ profile: GOAL_P, weightKg: 100, intent: 'lose' });
+  assert.equal(ok.approximate, true);
+  assert.match(ok.caveat, /weigh-in trend is the truth/);
+});
+
+await test('set_goal computes body-goal numbers server-side, in one call', () => {
+  const src = readFileSync(new URL('../netlify/functions/mcp.js', import.meta.url), 'utf8');
+  const fn = src.slice(src.indexOf('async function setGoal('), src.indexOf('async function setEatingWindow('));
+  assert.match(fn, /goalCall\(\{ profile, weightKg, intent: args\.intent \}\)/);
+  // The calorie and protein daily goals are set in the same call, so the brief
+  // scores the plan the moment it exists.
+  assert.match(fn, /metric: 'calories'/);
+  assert.match(fn, /metric: 'protein_g'/);
+  // And the schema tells the model outright never to invent those numbers.
+  const tool = TOOLS.find(t => t.name === 'set_goal');
+  assert.match(tool.inputSchema.properties.intent.description, /NEVER invent those numbers/);
+  for (const phrase of ['I wanna lose weight', 'get more muscular', 'bulk up', 'lose fat and gain muscle']) {
+    assert.ok(SERVER_INSTRUCTIONS.includes(phrase), `"${phrase}" maps to nothing`);
+  }
+});
+
 group('At the rack — the checklist, the swap, and the next workout');
 
 await test('the machine being taken has a tool, and the phrasebook knows the sound of it', () => {

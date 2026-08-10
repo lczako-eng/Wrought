@@ -284,6 +284,25 @@ change" is how somebody stops believing the readout. Bodyweight work is carried
 with a null weight rather than a zero, which the Lifts panel got wrong once
 already.
 
+### A body goal becomes numbers — computed, paced, floored
+
+`goalCall()` in `lib/training.js` + `intent` on `set_goal`. *"Should be getting
+goals established as well — losing weight, gain more muscle — and tailor plans
+to that."* The words are the goal; the **server** turns them into targets,
+because a model asked for a cutting target confidently says 1,500 — to a 150kg
+man and a 60kg woman alike, and one of them gets hurt.
+
+The rails are the point: loss paced at **0.5% of bodyweight a week** with the
+daily deficit clamped 300–750, the intake target **never below 1,200** (the
+care-flag floor — the product must not prescribe what it warns about), a gain
+is a small ~250 surplus, protein 1.6 g/kg capped at 220g, and *"lose weight AND
+get more muscular"* is `recomp` — modest deficit, protein high, training does
+the rest. One call sets the calorie and protein daily goals alongside the goal
+itself, so the brief scores the plan the moment it exists. Without the five
+facts it refuses and asks. Everything is labelled an estimate, and the caveat
+is doctrine: **the weekly weigh-in trend corrects the target, never the other
+way round.**
+
 ### At the rack — the clipboard, the swap, and the next workout
 
 Three rules for the live session, all born from the founder describing how he

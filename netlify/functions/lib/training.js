@@ -881,3 +881,73 @@ export function weekSoFar(days = [], { today, target = null } = {}) {
     say,
   };
 }
+
+// ── What a body goal actually means, in numbers ─────────────────────────────
+// "I wanna lose weight", "get more muscular" — the words are the goal; the
+// server turns them into targets, because NEVER SUBSTITUTE A PLAUSIBLE NUMBER
+// applies doubly here. A model asked for a cutting target will confidently say
+// 1,500, to a 150kg man and a 60kg woman alike, and one of them gets hurt.
+//
+// The rails are the point, not the arithmetic:
+//   - Loss is paced at 0.5% of bodyweight a week — the rate heavy and light
+//     people can both actually sustain — with the daily deficit clamped to
+//     300..750 kcal. Faster exists; it is also where careFlags() lives.
+//   - The intake target NEVER lands below 1,200 kcal. That is the care-flag
+//     floor, and a product must not prescribe the thing it warns about.
+//   - A surplus is small (~250) because muscle is built in months and the
+//     surplus beyond what training can use is just weight to lose later.
+//   - "Both" (lose fat, gain muscle — what most people actually want) is a
+//     modest deficit with protein high; the training does the recomposition.
+export function goalCall({ profile = {}, weightKg = null, intent = 'maintain' } = {}) {
+  const rest = restingBurn(profile, weightKg);
+  if (rest.kcal == null) {
+    return { known: false, missing: rest.missing,
+             say: `Setting a real target needs ${rest.missing.join(' and ')} first.` };
+  }
+  const level = ACTIVITY[profile.activity_level];
+  const maintenance = rest.kcal + (level ? Math.round(rest.kcal * (level.mult - 1)) : 0);
+
+  const w = Number(weightKg);
+  // 0.5% of bodyweight a week, in daily kcal (7,700 per kg), clamped.
+  const paced = Math.round((0.005 * w * 7700) / 7);
+  const deficit = Math.min(750, Math.max(300, paced));
+
+  let target, rate, framing;
+  if (intent === 'lose') {
+    target = Math.max(1200, maintenance - deficit);
+    rate = -Math.round(((maintenance - target) * 7 / 7700) * 100) / 100;
+    framing = 'a paced cut';
+  } else if (intent === 'gain') {
+    target = maintenance + 250;
+    rate = 0.25;
+    framing = 'a lean gain';
+  } else if (intent === 'recomp') {
+    target = Math.max(1200, maintenance - 300);
+    rate = -Math.round((300 * 7 / 7700) * 100) / 100;
+    framing = 'a recomposition — modest deficit, protein high, training does the rest';
+  } else {
+    target = maintenance;
+    rate = 0;
+    framing = 'maintenance';
+  }
+
+  // Protein: 1.6 g/kg, capped — per-kg arithmetic overshoots at high
+  // bodyweights, and 220g is already past what anybody needs.
+  const protein = Math.min(220, Math.round(w * 1.6));
+
+  return {
+    known: true,
+    intent,
+    maintenance,
+    calorie_target: target,
+    protein_target_g: protein,
+    projected_kg_per_week: rate,
+    resting_only: !level,
+    approximate: true,
+    say: `Roughly ${maintenance} a day to hold steady, so the target is about ${target} — ${framing}` +
+         (rate ? `, on pace for roughly ${Math.abs(rate)}kg a ${rate < 0 ? 'week down' : 'week up'}` : '') +
+         `. Protein target about ${protein}g a day.` +
+         (!level ? ' NOTE: nothing is counting movement, so maintenance here is resting-only and the real figure is higher — set an activity level and this improves.' : ''),
+    caveat: 'All of it is an estimate. The weekly weigh-in trend is the truth; the target gets corrected against it, never the other way round.',
+  };
+}
