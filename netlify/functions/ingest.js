@@ -355,7 +355,7 @@ export const handler = async (event) => {
     ? body.metrics
     : flattenHealthAutoExport(body);
 
-  const rows = [];
+  let rows = [];
   const skipped = [];
 
   for (const m of incoming) {
@@ -379,6 +379,46 @@ export const handler = async (event) => {
       source,
       source_ref: m.source_ref || null,
     });
+  }
+
+  // ── A DAILY TOTAL REPLACES ITS DAY; IT DOES NOT ADD TO IT ────────────────
+  // Steps and active calories arrive as the running total SO FAR TODAY — that
+  // is what a phone or a watch reports. But the row carries the moment it was
+  // sent, and the dashboard sums a day's readings, so running the Shortcut at
+  // teatime and again at eleven counted the day twice. Idempotency on
+  // measured_at cannot catch it: the two sends genuinely happened at different
+  // times, they just describe the same day.
+  //
+  // So for the cumulative metrics, the newest reading for a (source, metric,
+  // day) REPLACES the older one. That is what makes "run it whenever you like"
+  // safe, which matters because the Shortcut is the main door and people press
+  // it to see if it worked.
+  //
+  // Point-in-time readings — weight, heart rate, glucose, sleep — are NOT in
+  // this list. Three weigh-ins in a day are three real facts, and collapsing
+  // them would throw away the record rather than repair it.
+  const DAILY_TOTALS = new Set([
+    'steps', 'active_calories', 'total_calories', 'distance_km', 'active_minutes',
+  ]);
+  const cumulative = rows.filter(r => DAILY_TOTALS.has(r.metric));
+  if (cumulative.length) {
+    const seen = new Set();
+    for (const r of cumulative) {
+      const key = `${r.source}|${r.metric}|${r.local_date}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      await supabase.from('wrought_metrics').delete()
+        .eq('user_id', userId).eq('source', r.source)
+        .eq('metric', r.metric).eq('local_date', r.local_date);
+    }
+    // Within ONE payload, a source that sends the same day twice means the
+    // last one is the one it meant.
+    const keep = new Map();
+    for (const r of rows) {
+      if (!DAILY_TOTALS.has(r.metric)) continue;
+      keep.set(`${r.source}|${r.metric}|${r.local_date}`, r);
+    }
+    rows = rows.filter(r => !DAILY_TOTALS.has(r.metric)).concat([...keep.values()]);
   }
 
   let written = 0;

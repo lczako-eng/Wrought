@@ -2580,6 +2580,32 @@ await test('the record stays metric whatever the display says', () => {
   assert.equal(fromCm(null, true), '');
 });
 
+group('A daily total replaces its day, it does not add to it');
+
+await test('the cumulative metrics are named, and the point-in-time ones are not', () => {
+  // Steps and active calories arrive as the running total SO FAR TODAY, and
+  // the row carries the moment it was SENT — so running the Shortcut at
+  // teatime and again at eleven counted the day twice, and idempotency on
+  // measured_at could never catch it because both sends genuinely happened.
+  const src = readFileSync(new URL('../netlify/functions/ingest.js', import.meta.url), 'utf8');
+  const block = src.slice(src.indexOf('const DAILY_TOTALS'), src.indexOf('let written = 0;'));
+  for (const m of ['steps', 'active_calories', 'total_calories', 'distance_km', 'active_minutes']) {
+    assert.ok(block.includes(`'${m}'`), `${m} is not treated as a daily total`);
+  }
+  // Three weigh-ins in a day are three real facts. Collapsing point-in-time
+  // readings would throw the record away rather than repair it.
+  for (const m of ['weight_kg', 'resting_hr', 'glucose', 'sleep_minutes', 'hrv']) {
+    assert.ok(!block.includes(`'${m}'`), `${m} must not be collapsed to one a day`);
+  }
+  // The older reading for that source/metric/day is removed before the new one
+  // lands, scoped to the user.
+  assert.match(block, /\.delete\(\)/);
+  assert.match(block, /\.eq\('user_id', userId\)/);
+  assert.match(block, /\.eq\('local_date', r\.local_date\)/);
+  // And within one payload, the last reading for a day is the one it meant.
+  assert.match(block, /keep\.set\(/);
+});
+
 group('What an Apple Shortcut actually types');
 
 await test('the number is dug out of whatever wrapping it arrived in', () => {
