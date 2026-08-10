@@ -127,10 +127,32 @@ Sign in with Apple on the web.
 1. Apple Developer → **Certificates, Identifiers & Profiles**.
 2. An **App ID** with *Sign in with Apple* enabled.
 3. A **Services ID** — this is what Supabase calls the client ID. Its return URL
-   is `https://<your-project>.supabase.co/auth/v1/callback`.
-4. A **Sign in with Apple key** (.p8). Keep the key ID and your team ID.
-5. Supabase → Authentication → Providers → Apple: Services ID, team ID, key ID,
-   and the .p8 contents.
+   is `https://<your-project>.supabase.co/auth/v1/callback`, and its *Domains*
+   field is `wrought.fit`. Putting the site in the return-URL slot is the single
+   most common way this fails.
+4. A **Sign in with Apple key** (.p8). Apple lets you download it **once**, ever.
+5. **Do not paste the .p8 into Supabase.** Its Apple provider has two boxes —
+   *Client IDs* and *Secret Key (for OAuth)* — and no field for a team ID or a
+   key ID, so the obvious move is to paste the key file into the second box, and
+   it fails with nothing readable. That box wants a short-lived **ES256 token
+   signed with** the key, carrying the team ID and key ID inside it. The tell is
+   printed on the page itself: *"Apple OAuth secret keys expire every 6 months."*
+   A private key does not expire. A token does.
+
+   ```
+   node scripts/apple-secret.mjs \
+     --team A1B2C3D4E5 \
+     --services fit.wrought.signin \
+     --p8 ~/Downloads/AuthKey_ABC1234567.p8
+   ```
+
+   Prints the token. *Client IDs* gets the Services ID, *Secret Key (for OAuth)*
+   gets the token.
+
+**Six months from that day, Sign in with Apple stops working on the web** and
+nothing warns anybody — not Apple, not Supabase, not us. Run the script again
+with the same .p8 and paste the new value in. Keep the .p8; it is the one file
+here that cannot be re-downloaded.
 
 Until each provider is switched on, its button says so in as many words —
 *"Apple sign-in is not switched on in Supabase yet"* — rather than failing with

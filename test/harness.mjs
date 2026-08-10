@@ -10,6 +10,8 @@
 
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+import fs from 'node:fs';
+import path from 'node:path';
 import crypto from 'node:crypto';
 import { handler, TOOLS, handleRpc, SERVER_INSTRUCTIONS } from '../netlify/functions/mcp.js';
 import { canonicalMetric, normalise, normaliseWorkout } from '../netlify/functions/ingest.js';
@@ -1953,6 +1955,50 @@ await test('the VAPID signature is raw r||s, not DER', () => {
   assert.equal(JSON.parse(Buffer.from(head, 'base64url').toString()).alg, 'ES256');
   // The audience is the push service's ORIGIN, never the full endpoint.
   assert.equal(JSON.parse(Buffer.from(body, 'base64url').toString()).aud, 'https://fcm.googleapis.com');
+});
+
+await test('the Apple secret is a signed token, not the key file', async () => {
+  // Supabase's Apple provider has two boxes and no field for a team ID or a key
+  // ID, so everybody pastes the .p8 into "Secret Key (for OAuth)" and gets an
+  // unreadable failure. That box wants a short-lived ES256 JWT SIGNED with the
+  // .p8 — which is why the page says the secret expires every six months, a
+  // thing a private key never does. scripts/apple-secret.mjs builds it.
+  const { execFileSync } = await import('node:child_process');
+  const os = await import('node:os');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'apple-'));
+  const file = path.join(dir, 'AuthKey_ABCDE12345.p8');
+  const pair = crypto.generateKeyPairSync('ec', { namedCurve: 'prime256v1' });
+  fs.writeFileSync(file, pair.privateKey.export({ type: 'pkcs8', format: 'pem' }));
+
+  const out = execFileSync(process.execPath, [
+    new URL('../scripts/apple-secret.mjs', import.meta.url).pathname,
+    '--team', 'A1B2C3D4E5', '--services', 'fit.wrought.signin', '--p8', file,
+  ], { encoding: 'utf8' });
+
+  const jwt = out.split('\n').find(l => l.split('.').length === 3 && l.length > 100);
+  assert.ok(jwt, 'no token printed');
+  const [head, body, sig] = jwt.split('.');
+
+  const header = JSON.parse(Buffer.from(head, 'base64url').toString());
+  assert.equal(header.alg, 'ES256');
+  // The key ID rides in the header, read out of the filename Apple ships, so
+  // nobody has to copy ten random characters off a screen.
+  assert.equal(header.kid, 'ABCDE12345');
+
+  const claims = JSON.parse(Buffer.from(body, 'base64url').toString());
+  assert.equal(claims.iss, 'A1B2C3D4E5');          // team ID issues it
+  assert.equal(claims.sub, 'fit.wrought.signin');   // Services ID, never the App ID
+  assert.equal(claims.aud, 'https://appleid.apple.com');
+  assert.ok(claims.exp - claims.iat <= 15777000, 'Apple caps the lifetime at six months');
+
+  // Raw r||s, not DER. Node signs DER by default and Apple answers
+  // "invalid_client" with nothing else to go on.
+  assert.equal(Buffer.from(sig, 'base64url').length, 64);
+  assert.ok(crypto.createVerify('SHA256').update(`${head}.${body}`)
+    .verify({ key: pair.publicKey, dsaEncoding: 'ieee-p1363' }, Buffer.from(sig, 'base64url')),
+    'Apple would reject this signature');
+
+  fs.rmSync(dir, { recursive: true, force: true });
 });
 
 await test('nothing is sent when the keys are not set', async () => {
