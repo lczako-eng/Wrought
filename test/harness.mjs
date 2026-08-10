@@ -2594,6 +2594,22 @@ await test('the handshake carries the icon and the site', async () => {
     assert.match(i.src, /^https:\/\/wrought\.fit\//);
     assert.ok(i.mimeType);
   }
+  // PNG FIRST. Clients routinely refuse remote SVG (it can carry script), take
+  // the first usable entry, and fall back to a grey monogram — which is
+  // exactly the unprofessional tile the founder kept seeing.
+  assert.equal(info.icons[0].mimeType, 'image/png');
+  assert.equal(info.icons[info.icons.length - 1].mimeType, 'image/svg+xml');
+});
+
+await test('the negotiated version is one that carries icons', async () => {
+  // icons on serverInfo entered the spec after 2025-06-18. A client offering
+  // the newer revision must get it echoed, or it may discard the icons as
+  // unknown fields — and an unknown FUTURE version must not be blindly
+  // mirrored, because that claims support for a spec nobody has read.
+  const newer = await handleRpc({ id: 1, method: 'initialize', params: { protocolVersion: '2025-11-25' } }, null);
+  assert.equal(newer.result.protocolVersion, '2025-11-25');
+  const unknown = await handleRpc({ id: 2, method: 'initialize', params: { protocolVersion: '2099-01-01' } }, null);
+  assert.equal(unknown.result.protocolVersion, '2025-06-18');
 });
 
 await test('the OAuth metadata and the manifest agree with it', async () => {
@@ -2604,8 +2620,8 @@ await test('the OAuth metadata and the manifest agree with it', async () => {
 
   const manifest = JSON.parse(readFileSync(new URL('../public/.well-known/mcp.json', import.meta.url), 'utf8'));
   assert.ok(manifest.icons?.length);
-  // Same file in both, so a directory and a client never render two marks.
-  assert.equal(manifest.icons[0].src, 'https://wrought.fit/icon.svg');
+  // Same mark in both, PNG first for the same reason as the handshake.
+  assert.equal(manifest.icons[0].src, 'https://wrought.fit/icon-512.png');
 });
 
 await test('the icon is served cross-origin or a listing renders nothing', () => {

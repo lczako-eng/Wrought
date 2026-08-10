@@ -34,6 +34,12 @@ import {
 } from './lib/training.js';
 import { PROGRAMMES, GOALS, MOVEMENTS, movementsFor, pickProgramme, buildProgramme, buildBlock, blockPosition, BLOCK_LENGTHS } from './lib/library.js';
 
+// Newest first. The icons on serverInfo are only honoured by clients speaking
+// the newer revisions, so blindly answering 2025-06-18 quietly costs the tile.
+// A blind echo of the CLIENT's version is wrong the other way — it claims
+// support for revisions that do not exist yet. Meet in the middle: echo the
+// requested version when it is one we know, else answer the newest we do.
+const PROTOCOL_VERSIONS = ['2025-11-25', '2025-06-18', '2025-03-26'];
 const PROTOCOL_VERSION = '2025-06-18';
 
 const CORS = {
@@ -2767,7 +2773,7 @@ export async function handleRpc(msg, authUser) {
   switch (method) {
     case 'initialize':
       return rpcResult(id, {
-        protocolVersion: params.protocolVersion || PROTOCOL_VERSION,
+        protocolVersion: PROTOCOL_VERSIONS.includes(params.protocolVersion) ? params.protocolVersion : PROTOCOL_VERSION,
         capabilities: { tools: { listChanged: false } },
         // icons and websiteUrl ride on serverInfo because that is the one
         // place every client already reads. /.well-known/mcp.json carries the
@@ -2780,9 +2786,10 @@ export async function handleRpc(msg, authUser) {
           version: '1.0.0',
           websiteUrl: 'https://wrought.fit',
           icons: [
-            { src: 'https://wrought.fit/icon.svg',     mimeType: 'image/svg+xml', sizes: ['any'] },
             { src: 'https://wrought.fit/icon-512.png', mimeType: 'image/png',     sizes: ['512x512'] },
             { src: 'https://wrought.fit/icon-192.png', mimeType: 'image/png',     sizes: ['192x192'] },
+            { src: 'https://wrought.fit/icon-32.png',  mimeType: 'image/png',     sizes: ['32x32'] },
+            { src: 'https://wrought.fit/icon.svg',     mimeType: 'image/svg+xml', sizes: ['any'] },
           ],
         },
         instructions: SERVER_INSTRUCTIONS,

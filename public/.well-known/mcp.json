@@ -4,11 +4,6 @@
   "description": "The training and nutrition memory that lives inside your AI. Log what you ate and lifted in one sentence, get an honest read every night, and connect any watch, ring, scale or glucose monitor to the same record.",
   "icons": [
     {
-      "src": "https://wrought.fit/icon.svg",
-      "sizes": "any",
-      "type": "image/svg+xml"
-    },
-    {
       "src": "https://wrought.fit/icon-512.png",
       "sizes": "512x512",
       "type": "image/png"
@@ -17,6 +12,16 @@
       "src": "https://wrought.fit/icon-192.png",
       "sizes": "192x192",
       "type": "image/png"
+    },
+    {
+      "src": "https://wrought.fit/icon-32.png",
+      "sizes": "32x32",
+      "type": "image/png"
+    },
+    {
+      "src": "https://wrought.fit/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
     }
   ],
   "version": "1.0.0",
