@@ -2818,6 +2818,66 @@ await test('the server hands over per-entry macros, so the page adds nothing', (
   }
 });
 
+group('The five facts, asked where the number is missing');
+
+await test('the website can record a weigh-in at all', () => {
+  // This was a hole, not a preference. Resting burn needs height, birth year
+  // AND a recent weight — and a weight is an EVENT, not a profile column, so
+  // somebody could fill in every box on the Account screen and still be told
+  // "calories out needs a recent weigh-in" with nowhere on the site to give it
+  // one. The assistant could do it. The website could not.
+  const src = readFileSync(new URL('../netlify/functions/api-profile.js', import.meta.url), 'utf8');
+  assert.match(src, /'weight' in body/);
+  assert.match(src, /event_type: 'weight'/);
+  assert.match(src, /value_kg: weighed/);
+  // Pounds are converted, never stored as typed.
+  assert.match(src, /weight_unit === 'lb' \? 'lb' : 'kg'/);
+  assert.match(src, /lbToKg\(raw\)/);
+  // A fat-fingered 8400 must not become a resting burn nobody can explain.
+  assert.match(src, /kg < 20 \|\| kg > 400/);
+  // The profile saving and the weigh-in failing are different outcomes.
+  assert.match(src, /weight_not_saved/);
+});
+
+await test('the five facts sit on the panel that refuses to draw', () => {
+  // The founder read "calories out needs a recent weigh-in and birth year" and
+  // had no way to answer it from that screen. A form buried under Account is a
+  // form nobody fills in.
+  const src = page('app.html');
+  const hero = src.slice(src.indexOf('function hero(d) {'), src.indexOf('function hero(d) {') + 900);
+  assert.match(hero, /factsForm\(b\)/);
+  for (const id of ['ff-h', 'ff-w', 'ff-y', 'ff-s', 'ff-a']) {
+    assert.ok(src.includes(`id="${id}"`), `${id} is not on the form`);
+  }
+  // Both unit systems, because half the people who need this think in stones
+  // and inches and the other half do not.
+  assert.match(src, /<option value="in">in<\/option>/);
+  assert.match(src, /<option value="lb">lb<\/option>/);
+});
+
+await test('it names what is still missing rather than half-saving', () => {
+  const src = page('app.html');
+  const fn = src.slice(src.indexOf('async function saveFacts('), src.indexOf('function wireFacts('));
+  assert.match(fn, /Still need \$\{list\}/);
+  // Height, a weight and a birth year are the three the arithmetic cannot do
+  // without. Sex and activity level are optional and flagged, never demanded.
+  assert.match(fn, /!body\.height_cm && 'height'/);
+  assert.match(fn, /!body\.weight && 'a weight'/);
+  assert.match(fn, /!body\.birth_year/);
+  assert.ok(!/!body\.sex/.test(fn), 'sex is being demanded');
+  assert.ok(!/!body\.activity_level/.test(fn), 'activity level is being demanded');
+});
+
+await test('the demo never asks for facts it cannot use', () => {
+  // Borrowed numbers. A form on the demo would collect somebody's real weight
+  // into a screen that throws it away.
+  const src = page('app.html');
+  const hero = src.slice(src.indexOf('function hero(d) {'), src.indexOf('function hero(d) {') + 500);
+  assert.match(hero, /if \(DEMO\)/);
+  assert.ok(hero.indexOf('if (DEMO)') < hero.indexOf('factsForm(b)'),
+    'the demo reaches the form before it is turned away');
+});
+
 group('The zone the days are filed under');
 
 await test('a wrong timezone is caught by the DATE, never the name', () => {

@@ -661,6 +661,25 @@ opens its macros, because the calories are the headline and the rest is detail.
 An entry with no calories says out loud that it counts for nothing in the day's
 total, rather than showing a quiet em dash.
 
+### The five facts, asked where the number is missing
+
+`factsForm()` on the hero panel + `weight` accepted by `api-profile.js`. The
+founder read *"calories out needs a recent weigh-in and birth year"* on the
+dashboard and had no way to answer it from that screen — and filling in every
+box under Account would not have fixed it either, because **a weigh-in is an
+event, not a profile column, and the website had no way to record one at all.**
+The assistant could; the site could not. That was a hole, not a preference.
+
+So the form lives on the panel that is refusing to draw, and it disappears the
+moment the burn is known — a gap being filled, not a settings page that follows
+people around. Height, a weight and a birth year are demanded because the
+arithmetic cannot run without them; sex and activity level stay optional and
+flagged. Pounds and inches are converted, never stored as typed, and a weight
+outside 20–400 kg is refused rather than becoming a resting burn nobody can
+explain. If the profile saves and the weigh-in does not, it says so — a flat
+failure sends somebody re-entering their height. The demo never shows it: a
+form there would collect a real weight into a screen that discards it.
+
 ### The zone the days are filed under
 
 A pizza eaten at 11:44 landed on **yesterday**, stamped 23:28, because the

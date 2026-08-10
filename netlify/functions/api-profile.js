@@ -10,7 +10,7 @@
 // So this screen is a place to LOOK, not a form to fill in. Nothing is required
 // and nothing is asked for at signup.
 
-import { supabase, getAuthUser, getProfile, localDateFor } from './lib/wrought.js';
+import { supabase, getAuthUser, getProfile, localDateFor, insertEvents, lbToKg, sayWeight } from './lib/wrought.js';
 import { ACTIVITY } from './lib/training.js';
 
 const CORS = {
@@ -152,6 +152,27 @@ async function save(user, body) {
   if ('birth_year' in body) set('birth_year', num(body.birth_year, 1900, new Date().getFullYear()), 'birth year');
   if ('train_days' in body) set('train_days', num(body.train_days, 0, 14), 'training days');
 
+  // A WEIGH-IN IS NOT A PROFILE FIELD, and until now the website had no way to
+  // record one at all. That was a hole rather than a preference: resting burn
+  // needs height, birth year AND a recent weight, so somebody could fill in
+  // every box on this screen and still be told "calories out needs a recent
+  // weigh-in" with nowhere on the site to give it one. The assistant could do
+  // it; the website could not. So it is accepted here and written where it
+  // belongs — as an event on the log, dated, exactly as log_weight writes it.
+  let weighed = null;
+  if ('weight' in body && body.weight !== '' && body.weight != null) {
+    const raw = Number(body.weight);
+    const unit = body.weight_unit === 'lb' ? 'lb' : 'kg';
+    if (!Number.isFinite(raw) || raw <= 0) bad.push('weight');
+    else {
+      const kg = unit === 'lb' ? lbToKg(raw) : Math.round(raw * 100) / 100;
+      // Bounds wide enough for every real person and tight enough that a
+      // fat-fingered 8400 does not become a resting burn nobody can explain.
+      if (kg < 20 || kg > 400) bad.push('weight');
+      else weighed = kg;
+    }
+  }
+
   if (bad.length) {
     return json(400, { error: 'bad_values', fields: bad, message: `Could not read: ${bad.join(', ')}.` });
   }
@@ -169,7 +190,27 @@ async function save(user, body) {
     });
   }
 
-  return json(200, { ok: true, say: 'Saved.' });
+  if (weighed != null) {
+    const p = await getProfile(user.id);
+    try {
+      await insertEvents(user.id, p, [{
+        event_type: 'weight',
+        summary: sayWeight(weighed, p.units),
+        detail: { value_kg: weighed },
+        estimated: false,
+      }], { source: 'web' });
+    } catch (err) {
+      // The profile itself saved. Say which half did not, rather than a flat
+      // failure that sends somebody re-entering their height.
+      return json(500, { error: 'weight_not_saved', message: `Your details saved, but the weigh-in did not: ${err.message}` });
+    }
+  }
+
+  return json(200, {
+    ok: true,
+    weighed_kg: weighed,
+    say: weighed != null ? 'Saved, and the weigh-in is on the log.' : 'Saved.',
+  });
 }
 
 async function putAvatar(user, body) {

@@ -124,6 +124,28 @@ main { padding-block: 26px 0; display: flex; flex-direction: column; gap: 22px; 
 }
 .linky:hover { color: var(--heat-4); }
 
+/* The five facts, on the panel that is refusing to draw without them. Wide
+   enough to be typed on a phone with one thumb; gone the moment it works. */
+.facts { text-align: left; width: 100%; }
+.facts .caveat { max-width: none; margin: 0 0 14px; color: var(--ash); font-size: 13px; }
+.fgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 12px; margin-bottom: 14px; }
+.fgrid label.wide { grid-column: 1 / -1; }
+.fgrid label {
+  display: flex; flex-direction: column; gap: 5px;
+  font-family: var(--mono); font-size: 9.5px; letter-spacing: .12em;
+  text-transform: uppercase; color: var(--ash-dim);
+}
+.fgrid .pair { display: flex; gap: 6px; }
+.fgrid .pair input { flex: 1; min-width: 0; }
+.fgrid .pair select { flex: 0 0 62px; }
+.fgrid input, .fgrid select {
+  font: inherit; font-size: 15px; font-family: var(--sans);
+  letter-spacing: normal; text-transform: none; color: var(--bright);
+  background: var(--scale-2); border: 1px solid var(--edge);
+  border-radius: 7px; padding: 9px 10px; width: 100%;
+}
+.fgrid input:focus, .fgrid select:focus { outline: none; border-color: var(--heat-3); }
+
 /* An item, its number, and the time — the three things somebody scans for.
    The total sits under the list rather than over it, because a total above a
    list reads as a headline and a total below reads as a sum. */
@@ -3105,12 +3127,104 @@ function wireGoTabs() {
 }
 const wireFirstRun = wireGoTabs;
 
+// The five facts, asked where the missing number actually is.
+//
+// They were reachable through the assistant and then through Account, and the
+// founder still ended up staring at "calories out needs a recent weigh-in and
+// birth year" with no way to answer it from that screen. Worse: filling in
+// every box under Account would not have fixed it, because a WEIGH-IN was not
+// among them and the website had no way to record one at all.
+//
+// So the form lives on the panel that is refusing to draw. Five inputs, once,
+// and the number appears. It is never shown once the burn is known — this is a
+// gap being filled, not a settings page that follows people around.
+function factsForm(b) {
+  const yr = new Date().getFullYear();
+  const years = Array.from({ length: 90 }, (_, i) => yr - 14 - i);
+  return `<div class="facts">
+    <p class="caveat">${esc(b?.say || 'Calories out needs a few things before it can be worked out.')}</p>
+    <div class="fgrid">
+      <label>Height
+        <span class="pair">
+          <input id="ff-h" type="number" inputmode="decimal" placeholder="180">
+          <select id="ff-hu"><option value="cm">cm</option><option value="in">in</option></select>
+        </span>
+      </label>
+      <label>Weight now
+        <span class="pair">
+          <input id="ff-w" type="number" inputmode="decimal" placeholder="84">
+          <select id="ff-wu"><option value="kg">kg</option><option value="lb">lb</option></select>
+        </span>
+      </label>
+      <label>Born
+        <select id="ff-y"><option value="">—</option>${years.map(y => `<option value="${y}">${y}</option>`).join('')}</select>
+      </label>
+      <label>Sex
+        <select id="ff-s">
+          <option value="">—</option><option value="male">Male</option><option value="female">Female</option>
+        </select>
+      </label>
+      <label class="wide">On your feet in a normal day
+        <select id="ff-a">
+          <option value="">—</option>
+          <option value="sedentary">Desk job, little walking</option>
+          <option value="light">Some walking</option>
+          <option value="moderate">On my feet a fair bit</option>
+          <option value="very">Physical job, most of the day</option>
+        </select>
+      </label>
+    </div>
+    <button class="ghost" id="ff-go">Work it out</button>
+    <p class="sub dim" id="ff-msg">Sex changes the resting-burn constant. Leave it blank and the midpoint is used and flagged.</p>
+  </div>`;
+}
+
+async function saveFacts() {
+  const msg = $('ff-msg'), btn = $('ff-go');
+  const h = Number($('ff-h').value), w = Number($('ff-w').value);
+  const body = {};
+  if (h > 0) body.height_cm = $('ff-hu').value === 'in' ? Math.round(h * 2.54 * 10) / 10 : h;
+  if (w > 0) { body.weight = w; body.weight_unit = $('ff-wu').value; }
+  if ($('ff-y').value) body.birth_year = Number($('ff-y').value);
+  if ($('ff-s').value) body.sex = $('ff-s').value;
+  if ($('ff-a').value) body.activity_level = $('ff-a').value;
+
+  // Say which one is still missing rather than saving three of five and
+  // redrawing the same refusal with no explanation.
+  const need = [!body.height_cm && 'height', !body.weight && 'a weight', !body.birth_year && 'the year you were born'].filter(Boolean);
+  if (need.length) {
+    const list = need.length > 1 ? `${need.slice(0, -1).join(', ')} and ${need[need.length - 1]}` : need[0];
+    msg.textContent = `Still need ${list}.`;
+    return;
+  }
+
+  btn.disabled = true; msg.textContent = 'Working it out…';
+  const { data } = await sb.auth.getSession();
+  if (!data.session) return;
+  const res = await fetch('/.netlify/functions/api-profile', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${data.session.access_token}` },
+    body: JSON.stringify(body),
+  });
+  const out = await res.json().catch(() => ({}));
+  btn.disabled = false;
+  if (!res.ok) { msg.textContent = out.message || 'Could not save that.'; return; }
+  refresh();
+}
+
+function wireFacts() {
+  $('ff-go')?.addEventListener('click', saveFacts);
+}
+
 function hero(d) {
   const b = d.today?.balance;
   if (!b?.known) {
-    const why = b?.say || 'Log some food and connect a device and the day draws itself here.';
+    if (DEMO) {
+      return `<section class="panel hero"><h2>In vs out · today</h2>
+        <p class="caveat">${esc(b?.say || 'Nothing to draw yet.')}</p></section>`;
+    }
     return `<section class="panel hero"><h2>In vs out · today</h2>
-      <p class="caveat">${esc(why)}</p></section>`;
+      ${factsForm(b)}</section>`;
   }
 
   const R = 86, C = 2 * Math.PI * R;
@@ -3347,7 +3461,7 @@ async function fixZone(tz) {
   const { data } = await sb.auth.getSession();
   if (!data.session) return;
   const res = await fetch('/.netlify/functions/api-profile', {
-    method: 'PATCH',
+    method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${data.session.access_token}` },
     body: JSON.stringify({ timezone: tz }),
   });
@@ -3449,6 +3563,7 @@ function render(d) {
 
   $('content').innerHTML = out.join('');
   wireZone();
+  wireFacts();
   wireGoTabs();
   stagger();
 }
