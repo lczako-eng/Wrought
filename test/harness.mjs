@@ -2724,6 +2724,26 @@ await test('a password reset lands on a set-a-password screen', () => {
   assert.match(src, /sb\.auth\.updateUser\(\{ password \}\)/);
 });
 
+await test('/status says which sign-in doors are actually open', async () => {
+  // The pages hide a provider Supabase has switched off — a button that dumps
+  // somebody on raw JSON is worse than no button — but that left "where is
+  // Sign in with Apple?" with no answer anywhere.
+  const src = readFileSync(new URL('../netlify/functions/api-status.js', import.meta.url), 'utf8');
+  assert.match(src, /auth\/v1\/settings/);
+  assert.match(src, /sign_in_providers/);
+  assert.match(src, /Authentication → Providers/);
+
+  const { handler: status } = await import('../netlify/functions/api-status.js');
+  const html = (await status({ httpMethod: 'GET', headers: { accept: 'text/html' } })).body;
+  assert.match(html, /<h2>Sign-in<\/h2>/);
+  // Still no values, ever — the key used to ask must not appear in the answer.
+  process.env.SUPABASE_ANON_KEY = 'anon-key-must-not-leak';
+  try {
+    const again = (await status({ httpMethod: 'GET', headers: { accept: 'text/html' } })).body;
+    assert.ok(!again.includes('anon-key-must-not-leak'));
+  } finally { delete process.env.SUPABASE_ANON_KEY; }
+});
+
 // ── Report ──────────────────────────────────────────────────────────────────
 
 console.log(results.join('\n'));

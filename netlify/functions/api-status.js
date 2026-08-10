@@ -107,6 +107,23 @@ export const handler = async (event) => {
   const url = process.env.SUPABASE_URL || '';
   const trailingSlash = url.endsWith('/');
 
+  // Which sign-in doors Supabase actually has switched on. The pages hide any
+  // provider that is off — showing a button that dumps somebody on raw JSON is
+  // worse than not showing it — but that leaves "where is Sign in with Apple?"
+  // with no answer anywhere. This is the answer.
+  let providers = null;
+  if (url && !trailingSlash && (process.env.SUPABASE_ANON_KEY || process.env.SUPABASE_PUBLISHABLE_KEY)) {
+    try {
+      const key = process.env.SUPABASE_ANON_KEY || process.env.SUPABASE_PUBLISHABLE_KEY;
+      const r = await fetch(`${url.replace(/\/$/, '')}/auth/v1/settings`, { headers: { apikey: key } });
+      if (r.ok) {
+        const j = await r.json();
+        const ext = j.external || {};
+        providers = ['email', 'apple', 'google'].map(id => ({ id, on: ext[id] === true }));
+      }
+    } catch { /* left null, reported as unknown */ }
+  }
+
   let migrations = [];
   let reachable = false;
   if (supabase && !trailingSlash) {
@@ -142,7 +159,8 @@ export const handler = async (event) => {
     migrations,
     // Presence only. A value never appears here, on purpose.
     environment: env.map(e => ({ key: e.key, set: e.set, needed_for: e.needed })),
-    next: nextStep({ trailingSlash, missingHardEnv, reachable, migrations, env, unsure }),
+    sign_in_providers: providers,
+    next: nextStep({ trailingSlash, missingHardEnv, reachable, migrations, env, unsure, providers, appleWanted: false }),
   };
 
   const wantsHtml = /text\/html/.test(event.headers?.accept || event.headers?.Accept || '');
@@ -157,12 +175,15 @@ export const handler = async (event) => {
 
 // One thing to do next, not a list. A checklist with eleven open items is a
 // checklist nobody starts.
-function nextStep({ trailingSlash, missingHardEnv, reachable, migrations, env, unsure = [] }) {
+function nextStep({ trailingSlash, missingHardEnv, reachable, migrations, env, unsure = [], providers = null, appleWanted = false }) {
   if (trailingSlash) return 'Remove the trailing slash from SUPABASE_URL in Netlify, then redeploy.';
   if (missingHardEnv.length) return `Set ${missingHardEnv.join(' and ')} in Netlify, then redeploy.`;
   if (!reachable) return 'Check SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY against the Supabase project settings.';
   const nextMigration = migrations.find(m => m.run === false);
   if (nextMigration) return `Run schema/${nextMigration.file} in the Supabase SQL editor — it gives you ${nextMigration.gives}.`;
+  if (providers && !providers.find(pr => pr.id === 'apple')?.on && appleWanted) {
+    return 'Apple is not enabled in Supabase → Authentication → Providers. Until it is, the Apple button stays hidden rather than failing with raw JSON.';
+  }
   if (unsure.length) return 'Reload this page in a moment — a check could not be confirmed, which usually means Supabase has not refreshed since the last SQL ran.';
   if (!env.find(e => e.key === 'WROUGHT_VAPID_PUBLIC')?.set) {
     return 'Optional: run node scripts/vapid.mjs and set the three VAPID variables to turn on notifications.';
@@ -220,6 +241,12 @@ p.foot{color:var(--faint);font-size:12.5px;margin-top:30px;line-height:1.55}
   ? d.migrations.map(m => row(m.run === true ? true : m.run === false ? false : null, m.file,
       m.run === true ? '' : m.run === false ? m.gives : 'could not check just now')).join('')
   : '<li class="n"><b>could not check</b><span>database unreachable</span></li>'}</ul>
+
+<h2>Sign-in</h2>
+<ul>${d.sign_in_providers
+  ? d.sign_in_providers.map(pr => row(pr.on, pr.id,
+      pr.on ? '' : 'switched off in Supabase — Authentication → Providers')).join('')
+  : '<li class="q"><b>could not check</b><span>needs SUPABASE_ANON_KEY</span></li>'}</ul>
 
 <h2>Environment</h2>
 <ul>${d.environment.map(e => row(e.set, e.key, e.set ? '' : e.needed_for)).join('')}</ul>
