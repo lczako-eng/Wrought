@@ -959,6 +959,15 @@ self-reporting scale removes the most-abandoned manual entry), then Strava.
    and say so rather than hanging, but the founder's ask is only actually met
    with it off.
 6. Domain bought: **wrought.fit** (renews ~C$70 Aug 2027).
+7. **Build the Shortcut once, on the iPhone**, and paste its iCloud share link
+   into `SHORTCUT_URL` in `connect.html`. Recipe: Ask for Input (the key, first
+   run only) → Find Health Samples ×6 (steps, sleep, resting HR, HRV, active
+   energy, body mass, today) → Get Contents of URL: POST
+   `https://wrought.fit/ingest`, headers `Authorization: Bearer <key>`,
+   `Content-Type: application/json`, body in the native shape → share as
+   iCloud link. Apple mints share links on-device only, so this is the one
+   artefact the repo cannot generate. Until then the three-tap panel says the
+   link is not published yet.
 
 ### Notifications — MCP cannot push, so the phone carries it
 
