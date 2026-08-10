@@ -2573,7 +2573,9 @@ group('Addressed by name means the question is for WROUGHT');
 await test('the nicknames are all mapped, not just some of them', () => {
   // "Hey Jim bro, what account am I on?" got answered about the ChatGPT
   // account — confidently, uselessly wrong, and indistinguishable from right.
-  for (const name of ['jim bro', 'gym bro', 'broski', 'broheim', 'coach', 'trainer']) {
+  // "gym bro" is the real phrase; "jim bro" is only ever voice-to-text mangling
+  // it, and both have to land in the same place.
+  for (const name of ['gym bro', 'hey gym bro', 'jim bro', 'broski', 'broheim', 'coach', 'trainer']) {
     assert.ok(SERVER_INSTRUCTIONS.toLowerCase().includes(name), `"${name}" is not in the phrasebook`);
   }
 });
