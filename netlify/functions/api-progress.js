@@ -193,6 +193,10 @@ export const handler = async (event) => {
     body: JSON.stringify({
       from, to, span_days: span,
       units: profile.units,
+      // The zone the days are being FILED under. The page compares it against
+      // the browser's, because a wrong one puts a late meal on the wrong day
+      // and quietly corrupts every total after it.
+      timezone: profile.timezone,
       weight_unit: imperial ? 'lb' : 'kg',
       today: {
         date: to,

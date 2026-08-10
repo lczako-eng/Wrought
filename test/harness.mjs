@@ -2783,6 +2783,73 @@ await test('get_profile carries the linking pointer even when the account is ful
   assert.ok(!/linking:\s*\(count/.test(body), 'the linking note is conditional on the count again');
 });
 
+group('Every item its own number, and the total underneath');
+
+await test('the day card lists what each thing was, not just the sum', () => {
+  // "One steak's up to the right and the pizza's to the left — should be
+  // altogether and then a total. Each one should have its own list and then add
+  // it together." A list of names above one figure is unauditable: you cannot
+  // see which item is the 750, so a mis-heard entry hides in an average.
+  const src = page('app.html');
+  const fn = src.slice(src.indexOf('function entryRows('), src.indexOf('function balancePanel('));
+  assert.match(fn, /e\.calories != null \? e\.calories\.toLocaleString\(\)/);
+  assert.match(fn, /class="total"/);
+  // Items first, sum after — a total above a list reads as a headline.
+  assert.ok(fn.indexOf('class="rows"') < fn.indexOf('class="total"'),
+    'the total is printed above the items again');
+  // Tapping opens the macros rather than putting four numbers on every row.
+  assert.match(fn, /<details class="entry">/);
+  assert.match(fn, /g protein/);
+});
+
+await test('an entry with no calories says it counts for nothing', () => {
+  // Silently showing an em dash lets a named food sit in the log contributing
+  // zero to every total, which looks like a small gap and is a wrong day.
+  const src = page('app.html');
+  const fn = src.slice(src.indexOf('function entryRows('), src.indexOf('function todayPanel('));
+  assert.match(fn, /counts for nothing in the day/);
+});
+
+await test('the server hands over per-entry macros, so the page adds nothing', () => {
+  const src = readFileSync(new URL('../netlify/functions/lib/wrought.js', import.meta.url), 'utf8');
+  const block = src.slice(src.indexOf('log: evs.map('), src.indexOf('log: evs.map(') + 900);
+  for (const k of ['calories', 'protein_g', 'carbs_g', 'fat_g']) {
+    assert.ok(block.includes(k), `entries do not carry ${k}`);
+  }
+});
+
+group('The zone the days are filed under');
+
+await test('a wrong timezone is caught by the DATE, never the name', () => {
+  // A pizza eaten at 11:44 landed on yesterday, stamped 23:28, because the
+  // account was still on the default zone twelve hours away. Nothing errored;
+  // the day card, the streak and every weekly total were quietly wrong.
+  const src = page('app.html');
+  const fn = src.slice(src.indexOf('function zoneWarning('), src.indexOf('async function fixZone('));
+  assert.match(fn, /if \(!here \|\| !filed \|\| here === filed\) return '';/);
+  // America/Toronto and America/New_York disagree about nothing that matters
+  // here, and nagging about them trains somebody to dismiss the one that counts.
+  assert.ok(!/resolvedOptions\(\)\.timeZone !== d\.timezone/.test(fn),
+    'it is comparing zone names rather than the day they produce');
+  assert.match(fn, /one tap|Use \$\{esc\(mine\)\} instead/);
+  // And the server has to say which zone it is filing under for any of it.
+  const api = readFileSync(new URL('../netlify/functions/api-progress.js', import.meta.url), 'utf8');
+  assert.match(api, /timezone: profile\.timezone/);
+});
+
+await test('the demo is reachable from inside the app, and has a way back', () => {
+  // It lived only at a URL somebody had to be told about, so the one person who
+  // most needs it — looking at a dashboard with a single meal on it, deciding
+  // whether this is worth a fortnight — never saw it.
+  const src = page('app.html');
+  assert.match(src, /id="whoami-demo"/);
+  assert.match(src, /See it full of data/);
+  assert.match(src, /Back to my record/);
+  // Signing out of borrowed numbers is meaningless.
+  const demo = src.slice(src.indexOf('if (DEMO) {'), src.indexOf('if (DEMO) {') + 600);
+  assert.match(demo, /whoami-out'\)\.hidden = true/);
+});
+
 group('The calendar — both halves of the sum, on every square');
 
 const { calendarDays, calendarRollups, calendarMissing } =

@@ -124,6 +124,27 @@ main { padding-block: 26px 0; display: flex; flex-direction: column; gap: 22px; 
 }
 .linky:hover { color: var(--heat-4); }
 
+/* An item, its number, and the time — the three things somebody scans for.
+   The total sits under the list rather than over it, because a total above a
+   list reads as a headline and a total below reads as a sum. */
+.entry { border-top: 1px solid var(--edge); }
+.entry:first-child { border-top: 0; }
+.entry > summary {
+  display: flex; align-items: baseline; gap: 10px; padding: 9px 0;
+  cursor: pointer; list-style: none; font-size: 13.5px;
+}
+.entry > summary::-webkit-details-marker { display: none; }
+.entry .nm { flex: 1; min-width: 0; }
+.entry .kc { font-variant-numeric: tabular-nums; font-weight: 650; }
+.entry .when { font-family: var(--mono); font-size: 10.5px; color: var(--ash-dim); flex: none; }
+.entry > p { margin: 0 0 10px; }
+.total {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 12px;
+  border-top: 2px solid var(--edge-lit); margin-top: 4px; padding-top: 11px;
+  font-size: 14px; font-weight: 650;
+}
+.total b { font-size: 21px; font-variant-numeric: tabular-nums; }
+
 /* ── Calendar ─────────────────────────────────────────────────────────────
    Everything else here is arithmetic ABOUT the record. This is the record laid
    out the way people already hold time in their heads: squares, seven across.
@@ -873,6 +894,13 @@ a.ghost { display: inline-block; }
        have to find a tab to get out. -->
   <div class="wrap whoami" id="whoami" hidden>
     <span id="whoami-email"></span>
+    <!-- The demo used to live only at a URL somebody had to be told about,
+         which meant the one person who most needs it — staring at a dashboard
+         with a single meal on it, deciding whether any of this is worth the
+         effort — never saw it. It is the same screens and the same code with
+         borrowed numbers, so it answers "what does this look like once I have
+         actually used it" in one tap instead of a fortnight. -->
+    <a class="linky" id="whoami-demo" href="/app.html?demo=1">See it full of data</a>
     <button class="linky" id="whoami-switch">Switch account</button>
     <button class="linky" id="whoami-out">Sign out</button>
   </div>
@@ -904,7 +932,17 @@ let logDays = [];
 const DEMO = new URLSearchParams(location.search).has('demo');
 
 async function boot() {
-  if (DEMO) { $('app').hidden = false; refresh(); return; }
+  if (DEMO) {
+    $('app').hidden = false;
+    $('whoami-email').textContent = 'Demo — borrowed numbers, same screens.';
+    $('whoami-demo').textContent = 'Back to my record';
+    $('whoami-demo').href = '/app.html';
+    $('whoami-switch').hidden = true;
+    $('whoami-out').hidden = true;
+    $('whoami').hidden = false;
+    refresh();
+    return;
+  }
   if (!sb) { $('gate').hidden = false; $('msg').textContent = 'This deploy is missing its Supabase keys.'; return; }
 
   // Back from proving the other account with Apple or Google. This has to run
@@ -2750,16 +2788,19 @@ function demoData() {
     },
     today: {
       date: series[N - 1].date,
-      food: { say: 'Roughly 2,140 kcal · 148g protein · 196g carbs · 71g fat (estimated from what you described)', estimated: true },
+      food: { say: 'Roughly 2,140 kcal · 148g protein · 196g carbs · 71g fat (estimated from what you described)',
+              calories: 2140, protein_g: 148, carbs_g: 196, fat_g: 71, estimated: true },
       training: { say: '1 session, 44 min — legs, glutes, core' },
       body: { weight_kg: series[N - 1].weight },
       device: { steps: 9840, active_calories: 740, sleep_minutes: 402 },
+      // Each with its own numbers, so the demo shows the addition rather than
+      // asserting a total — the whole point of the day card.
       entries: [
-        { at: '08:14', summary: 'two eggs and black coffee', estimated: true },
-        { at: '08:15', summary: '82.4 kg', estimated: false },
-        { at: '12:40', summary: 'chicken burrito bowl, no rice', estimated: true },
-        { at: '18:22', summary: 'Leg day — 19 sets, 44 min', estimated: false },
-        { at: '20:05', summary: 'greek yoghurt and berries', estimated: true },
+        { at: '08:14', summary: 'two eggs and black coffee', estimated: true, calories: 320, protein_g: 24, carbs_g: 3, fat_g: 23 },
+        { at: '08:15', summary: '82.4 kg', estimated: false, calories: null },
+        { at: '12:40', summary: 'chicken burrito bowl, no rice', estimated: true, calories: 780, protein_g: 62, carbs_g: 74, fat_g: 23 },
+        { at: '18:22', summary: 'Leg day — 19 sets, 44 min', estimated: false, calories: null },
+        { at: '20:05', summary: 'greek yoghurt and berries', estimated: true, calories: 1040, protein_g: 62, carbs_g: 119, fat_g: 25 },
       ],
       balance: {
         known: true, calories_in: 2140, resting_burn: 1770, active_burn: 740,
@@ -3048,6 +3089,10 @@ function firstRun(d) {
 // Any button that says "go and do it over there". Shared, because the first-run
 // screen and the calendar both send people to Account for the same five facts,
 // and two copies of this would drift.
+function wireZone() {
+  $('fixtz')?.addEventListener('click', e => fixZone(e.target.dataset.tz));
+}
+
 function wireGoTabs() {
   document.querySelectorAll('[data-go]').forEach(b => b.addEventListener('click', () => {
     document.querySelectorAll('.range.view').forEach(x => x.setAttribute('aria-pressed', 'false'));
@@ -3189,6 +3234,9 @@ function calDayPanel(e) {
   if (!e) return '';
   const rows = e.meals.length
     ? e.meals.map(m => `<div class="row"><span>${esc(m.summary)}${m.estimated ? ' <span class="chip">est</span>' : ''}</span><b>${m.calories != null ? m.calories.toLocaleString() : '—'}</b></div>`).join('')
+      // Every item, then the sum under it — the same shape as the day card, so
+      // the addition is visible rather than asserted.
+      + (e.in != null ? `<div class="total"><span>Total in</span><b>${e.in.toLocaleString()}</b></div>` : '')
     : `<div class="row"><span>Nothing eaten was logged on this day.</span><b></b></div>`;
 
   return `<div class="calday">
@@ -3260,6 +3308,56 @@ function wireCalendar() {
   wireGoTabs();
 }
 
+// ── The zone the days are filed under ──────────────────────────────────────
+// A pizza eaten at 11:44 landed on YESTERDAY, timestamped 23:28, because the
+// account was still on the default zone twelve hours from where the founder
+// was standing. Nothing errored. The day card, the streak, the calendar and
+// every weekly total were all quietly wrong, and the only visible symptom was
+// a date that looked slightly odd.
+//
+// The trigger is a DIFFERENT DATE, not a different zone name. America/Toronto
+// and America/New_York disagree about nothing that matters here, and nagging
+// about them would train somebody to dismiss the one that counts.
+function browserZone() {
+  try { return Intl.DateTimeFormat().resolvedOptions().timeZone || null; } catch { return null; }
+}
+
+function dateIn(tz) {
+  try {
+    return new Intl.DateTimeFormat('en-CA', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+  } catch { return null; }
+}
+
+function zoneWarning(d) {
+  const mine = browserZone();
+  if (!mine || DEMO) return '';
+  const here = dateIn(mine);
+  const filed = d.today?.date;
+  if (!here || !filed || here === filed) return '';
+  return callout('care', 'Your days are landing on the wrong date',
+    `WROUGHT is filing your log on <strong>${esc(d.timezone || 'another zone')}</strong> time, where it is
+     still <strong>${esc(filed)}</strong>. Your phone says <strong>${esc(here)}</strong>, so tonight's dinner
+     is going down as yesterday's and every daily total is off by a meal.
+     <button class="linky" id="fixtz" data-tz="${esc(mine)}">Use ${esc(mine)} instead</button>`);
+}
+
+async function fixZone(tz) {
+  const btn = $('fixtz');
+  if (btn) btn.textContent = 'Setting…';
+  const { data } = await sb.auth.getSession();
+  if (!data.session) return;
+  const res = await fetch('/.netlify/functions/api-profile', {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${data.session.access_token}` },
+    body: JSON.stringify({ timezone: tz }),
+  });
+  if (!res.ok && btn) { btn.textContent = 'Could not set it — try Account.'; return; }
+  // Existing rows keep the local_date they were written with. Saying so beats
+  // somebody watching yesterday's meal fail to move and concluding it did not
+  // work.
+  refresh();
+}
+
 function render(d) {
   const s = d.summary, wu = d.weight_unit, out = [];
 
@@ -3278,6 +3376,10 @@ function render(d) {
   for (const f of (d.care_flags || [])) {
     out.push(callout('care', 'Worth pausing on', esc(f.detail)));
   }
+
+  // Above everything but a care flag: a wrong zone makes every number below it
+  // describe the wrong day.
+  out.push(zoneWarning(d));
 
   // The graphic opens the page — care flags above it and nothing else, because
   // a flag is the one thing that outranks the day's arithmetic.
@@ -3346,6 +3448,8 @@ function render(d) {
   if (d.notes?.length) out.push(notesPanel(d));
 
   $('content').innerHTML = out.join('');
+  wireZone();
+  wireGoTabs();
   stagger();
 }
 
@@ -3369,16 +3473,52 @@ const trendWord = (w, u) =>
   : w.direction === 'flat' ? 'holding steady'
   : `${w.direction} ${Math.abs(w.per_week_kg)}${u === 'lb' ? 'kg' : u}/wk`;
 
+// Every item, with its own number, and the total underneath where a total
+// belongs. The founder said it plainly: "one steak's up to the right and the
+// pizza's to the left — should be altogether and then a total. Each one should
+// have its own list and then add it together."
+//
+// A list of names above a single figure is unauditable — you cannot see which
+// item is the 750 and which is the 300, so a mis-heard entry disappears into an
+// average and stays there. Tapping a row opens its macros, because the calories
+// are the headline and the rest is detail.
+function entryRows(entries = []) {
+  return entries.map(e => {
+    const macros = [
+      e.protein_g != null ? `${e.protein_g}g protein` : null,
+      e.carbs_g   != null ? `${e.carbs_g}g carbs` : null,
+      e.fat_g     != null ? `${e.fat_g}g fat` : null,
+    ].filter(Boolean).join(' · ');
+    return `<details class="entry">
+      <summary>
+        <span class="nm">${esc(e.summary)}${e.estimated ? ' <span class="chip">est</span>' : ''}</span>
+        <b class="kc">${e.calories != null ? e.calories.toLocaleString() : '—'}</b>
+        <span class="when">${esc(e.at)}</span>
+      </summary>
+      <p class="sub dim">${macros || 'No macros on this one.'}${
+        e.calories == null ? ' Nothing was estimated for it, so it counts for nothing in the day\'s total — say roughly what it was and it will be corrected.' : ''}</p>
+    </details>`;
+  }).join('');
+}
+
 function todayPanel(d) {
   const t = d.today;
-  const rows = (t.entries || []).map(e =>
-    `<div class="row"><span>${esc(e.summary)}${e.estimated ? ' <span class="chip">est</span>' : ''}</span>
-     <span class="when">${esc(e.at)}</span></div>`).join('');
+  const f = t.food || {};
+  const rows = entryRows(t.entries || []);
+  const totals = [
+    f.protein_g != null ? `${f.protein_g}g protein` : null,
+    f.carbs_g   != null ? `${f.carbs_g}g carbs` : null,
+    f.fat_g     != null ? `${f.fat_g}g fat` : null,
+  ].filter(Boolean).join(' · ');
+
   return `<section class="panel">
     <h2>Today · ${esc(t.date)}</h2>
-    <p class="sub">${esc(t.food.say)}</p>
-    <p class="sub">${esc(t.training.say)}</p>
     <div class="rows">${rows || '<p class="empty">Nothing logged yet today.</p>'}</div>
+    ${f.calories != null && (t.entries || []).length ? `<div class="total">
+      <span>Total${f.estimated ? ' <span class="chip">est</span>' : ''}</span>
+      <b>${Number(f.calories).toLocaleString()}</b>
+    </div>${totals ? `<p class="sub dim">${esc(totals)}</p>` : ''}` : ''}
+    <p class="sub">${esc(t.training.say)}</p>
   </section>`;
 }
 

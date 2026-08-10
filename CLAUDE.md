@@ -645,6 +645,43 @@ says out loud that signing out does **not** disconnect the assistant — they ar
 separate sessions, and pretending otherwise sends somebody hunting for a
 connector that is working perfectly.
 
+### Every item its own number, and the total underneath
+
+`entryRows()` in `app.html` + per-entry macros on `dayFacts`. The founder,
+looking at a day card: *"one steak's up to the right and the pizza's to the
+left — should be altogether and then a total. Each one should have its own list
+and then add it together."*
+
+A list of names above a single figure is **unauditable**. You cannot see which
+item is the 750 and which is the 300, so a mis-heard entry disappears into an
+average and stays there — which is the exact failure the readable log exists to
+prevent, reappearing on the screen people actually look at. Items first with
+their own calories, the sum **under** them where a sum belongs; tapping a row
+opens its macros, because the calories are the headline and the rest is detail.
+An entry with no calories says out loud that it counts for nothing in the day's
+total, rather than showing a quiet em dash.
+
+### The zone the days are filed under
+
+A pizza eaten at 11:44 landed on **yesterday**, stamped 23:28, because the
+account was still on the default zone twelve hours from where the founder was
+standing. Nothing errored. The day card, the streak, the calendar and every
+weekly total were all quietly wrong, and the only visible symptom was a date
+that looked slightly odd — which is exactly the shape of bug that survives for
+months.
+
+`zoneWarning()` compares the **date** the server filed under with the date in
+the browser, and offers the fix in one tap. The trigger is a different DATE, not
+a different zone name: `America/Toronto` and `America/New_York` disagree about
+nothing that matters here, and nagging about them trains somebody to dismiss the
+one that counts.
+
+**The demo is reachable from inside the app**, not only from a URL somebody has
+to be told about — the person who most needs it is the one staring at a
+dashboard with a single meal on it, deciding whether this is worth a fortnight.
+In the demo the footer becomes the way back, and sign-out is hidden, because
+signing out of borrowed numbers is meaningless.
+
 ### The calendar — the subtraction, on every square
 
 `lib/calendar.js` + the Calendar tab. The founder asked for it in one breath:

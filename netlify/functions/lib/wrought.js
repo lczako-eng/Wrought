@@ -430,9 +430,19 @@ export async function dayFacts(userId, profile, date) {
       sleep_say: sleepMin ? humanDuration(sleepMin) : null,
       sources: [...new Set(mets.map(m => m.metric))].length ? [...new Set(evs.concat(mets).map(x => x.source).filter(Boolean))] : [],
     },
+    // Each entry carries its OWN numbers, not just the day's sum. The founder's
+    // complaint, exactly: "one steak's up to the right and the pizza's to the
+    // left — should be altogether and then a total." A list of names with a
+    // single total above it makes the total unauditable; you cannot see which
+    // item is the 750 and which is the 300, so a mis-heard entry hides inside
+    // an average forever.
     log: evs.map(e => ({
       id: e.id, type: e.event_type, at: clockString(localMinutesFor(profile.timezone, new Date(e.occurred_at))),
       summary: e.summary, estimated: e.estimated,
+      calories:  e.detail?.calories  != null ? Math.round(num(e.detail.calories))  : null,
+      protein_g: e.detail?.protein_g != null ? Math.round(num(e.detail.protein_g)) : null,
+      carbs_g:   e.detail?.carbs_g   != null ? Math.round(num(e.detail.carbs_g))   : null,
+      fat_g:     e.detail?.fat_g     != null ? Math.round(num(e.detail.fat_g))     : null,
     })),
   };
 }
