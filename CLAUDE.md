@@ -48,6 +48,17 @@ nothing else.
   "roughly". The credibility dies the first time a guess is read as a fact.
 - **Not a medical device.** No diagnosis, no reading HRV as a clinical sign, no
   medication advice. Say so and point at a doctor.
+- **The app is optional, forever.** The founder, settling it: *"you can use
+  just the HTML and the connector to make this work. You don't need the app —
+  but if you want the Apple Health stuff, then we'll put the app in there
+  too."* Website + connector = the complete product on every platform. The iOS
+  app exists only for what the OS locks away (HealthKit's deduplicated
+  statistics, native push) and is the smoothest door to them — never the only
+  one. `/ingest` stays a documented public endpoint any client can feed.
+  Nothing may ever require the app: not a feature, not a screen, not a
+  notification. An app-required product halves the market, hands Apple review
+  a veto over the roadmap, and turns "works inside the AI you already have"
+  into a lie.
 
 ## Architecture (settled)
 
