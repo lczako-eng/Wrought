@@ -2696,6 +2696,51 @@ await test('the one-tap Shortcut panel is honest until the link exists', () => {
   assert.match(src, /Apple's rule/);
 });
 
+group('The statistics house — the iOS shell');
+
+await test('the app frames the website and owns only the native powers', () => {
+  // The founder's spec: same screens as the website, fed by the same server,
+  // everything run through the GPT — the app adds only what the web cannot do.
+  const read = f => readFileSync(new URL(`../ios/Wrought/${f}`, import.meta.url), 'utf8');
+  assert.match(read('WebView.swift'), /wrought\.fit\/app\.html/);
+  // No chat surface, by doctrine — capture lives in the connected AI.
+  for (const f of ['ContentView.swift', 'WebView.swift', 'HealthCourier.swift']) {
+    assert.ok(!/chat/i.test(read(f)) || /NO chat/i.test(read(f)), `${f} grew a chat`);
+  }
+  // The courier reads Apple's deduplicated statistics, not raw samples-summed.
+  assert.match(read('HealthCourier.swift'), /HKStatisticsQuery/);
+  assert.match(read('HealthCourier.swift'), /cumulativeSum/);
+  assert.match(read('HealthCourier.swift'), /enableBackgroundDelivery/);
+  // It posts to the same public door as every other client — no second protocol.
+  assert.match(read('IngestClient.swift'), /appendingPathComponent\("ingest"\)/);
+  assert.match(read('IngestClient.swift'), /wrought_ios/);
+  // The key is minted from the page's own session — the app can never feed a
+  // different account than the one on screen — and lives in the Keychain.
+  assert.match(read('IngestClient.swift'), /api-key/);
+  assert.match(read('Keychain.swift'), /kSecClassGenericPassword/);
+  assert.ok(!/UserDefaults/.test(read('IngestClient.swift')), 'the key is in UserDefaults');
+});
+
+await test('the Xcode project carries the entitlements, the id and the icon', () => {
+  const pbx = readFileSync(new URL('../ios/Wrought.xcodeproj/project.pbxproj', import.meta.url), 'utf8');
+  // Folder-synchronized group: every file in ios/Wrought/ is automatically in
+  // the target, so a new Swift file cannot be silently left out of the build.
+  assert.match(pbx, /PBXFileSystemSynchronizedRootGroup/);
+  assert.match(pbx, /fileSystemSynchronizedGroups/);
+  assert.match(pbx, /PRODUCT_BUNDLE_IDENTIFIER = fit\.wrought\.app/);
+  assert.match(pbx, /CODE_SIGN_ENTITLEMENTS = Wrought\/Wrought\.entitlements/);
+  // Health data demands a usage description or the app crashes at the prompt.
+  assert.match(pbx, /NSHealthShareUsageDescription/);
+
+  const ent = readFileSync(new URL('../ios/Wrought/Wrought.entitlements', import.meta.url), 'utf8');
+  assert.match(ent, /com\.apple\.developer\.healthkit<\/key>/);
+  assert.match(ent, /healthkit\.background-delivery/);
+
+  // The W rides along: the asset catalog carries the 1024 tile.
+  const icon = readFileSync(new URL('../ios/Wrought/Assets.xcassets/AppIcon.appiconset/Contents.json', import.meta.url), 'utf8');
+  assert.match(icon, /icon-1024\.png/);
+});
+
 group('The mark, everywhere a client might look for it');
 
 await test('the handshake carries the icon and the site', async () => {

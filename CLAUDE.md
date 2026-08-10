@@ -1026,6 +1026,20 @@ the genuine native functionality that makes this pattern approvable. Until it
 ships, Health Auto Export is the recommended watch route and /ingest reads its
 shape natively, workouts included.
 
+**The shell is WRITTEN: `ios/Wrought.xcodeproj`**, on the founder's direct
+instruction ("write it with Swift... put it into the GitHub"). Six Swift files:
+a WKWebView framing `wrought.fit/app.html` (the statistics house — same
+screens, same server, zero drift), a HealthKit courier using HKStatisticsQuery
+(the deduplicated watch-face numbers) with hourly background delivery posting
+the native shape to `/ingest` as source `wrought_ios`, and a key handshake
+that reads the page's own session to mint the device key — the app can never
+feed a different account than the one signed in on screen. Key in the
+Keychain, never UserDefaults. NOT COMPILED — no Xcode in the build container;
+`ios/README.md` has the founder's 10-minute build steps and honest caveats
+(email+password in-app; Google/Apple OAuth refuse embedded webviews; APNs
+push is the next native build). Harness tests pin the doctrine: no chat
+surface, statistics-not-samples, same `/ingest` door, entitlements present.
+
 **The "light app" is the PWA, and that is the right answer.** Installed, it has
 an icon, a splash, a standalone window with no browser chrome, and the lock
 screen — which is the entire reason to want an app here. Native would mean two
