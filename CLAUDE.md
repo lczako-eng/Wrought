@@ -1010,12 +1010,21 @@ query, so phone+watch always double and grouping does not fix it. Health Auto
 Export can, because it is a NATIVE app: HealthKit's HKStatisticsQuery (the
 deduplicated daily totals — the number on the watch face) plus background
 delivery are native-only APIs. So the first native build, after the fortnight
-of real use, is **a courier app**: one screen, sign in with the Wrought
-account, grant Health access, register background delivery, POST to /ingest.
-No UI beyond that — the PWA stays the product; the app only moves data. The
-founder already owns the US$99 account. Until it ships, Health Auto Export is
-the recommended watch route and /ingest reads its shape natively, workouts
-included.
+of real use, is **the app as the founder specified it**: *"the AI is basically
+the thing that's working it, but the app is the statistics house... the same
+stuff on the website is on the app... but everything's ran through the GTP."*
+Concretely: a native shell owning the three native-only powers — sign-in,
+HealthKit background delivery posting to /ingest, and real APNs push (the
+nightly verdict; same hand-rolled `.p8` JWT pattern as Apple sign-in, same
+developer account) — presenting the SAME screens the website serves, not a
+rebuilt copy. One set of screens means zero drift and dashboard fixes ship to
+both surfaces in one deploy; "sync" is free because no surface holds state —
+every screen draws from the server, which is the existing doctrine extended to
+a third window. NO chat in the app: capture and coaching stay in the connected
+AI. Apple rejects bare website wrappers (guideline 4.2); HealthKit + push are
+the genuine native functionality that makes this pattern approvable. Until it
+ships, Health Auto Export is the recommended watch route and /ingest reads its
+shape natively, workouts included.
 
 **The "light app" is the PWA, and that is the right answer.** Installed, it has
 an icon, a splash, a standalone window with no browser chrome, and the lock
