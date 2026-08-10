@@ -3034,6 +3034,11 @@ function demoData() {
   }
 }
 
+// The last payload, kept so redrawing does not mean refetching. Tapping a
+// calendar square is a change of what is SHOWN, not of what is known, and a
+// round trip per tap is slow on a phone and replays every entry animation.
+let lastPayload = null;
+
 async function load(token) {
   $('content').innerHTML = '<p class="empty">Loading…</p>';
   const res = await fetch(`/.netlify/functions/api-progress?days=${days}`, { headers: { Authorization: `Bearer ${token}` } });
@@ -3045,7 +3050,8 @@ async function load(token) {
     $('content').innerHTML = `<p class="empty">Could not load. Try signing in again.<br><small>${res.status} ${esc(detail).slice(0, 400)}</small></p>`;
     return;
   }
-  render(await res.json());
+  lastPayload = await res.json();
+  render(lastPayload);
 }
 
 // The day as one graphic. A ring reads as a proportion before it reads as a
@@ -3200,7 +3206,11 @@ async function saveFacts() {
 
   btn.disabled = true; msg.textContent = 'Working it out…';
   const { data } = await sb.auth.getSession();
-  if (!data.session) return;
+  if (!data.session) {
+    btn.disabled = false;
+    msg.textContent = 'Signed out. Sign in again and it will save.';
+    return;
+  }
   const res = await fetch('/.netlify/functions/api-profile', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${data.session.access_token}` },
@@ -3417,7 +3427,9 @@ function wireCalendar() {
     // Tapping the open day closes it, so the grid can be got back to without
     // hunting for a close button.
     calPicked = calPicked === b.dataset.cal ? null : b.dataset.cal;
-    refresh();
+    // Redraw from what is already in hand. Nothing on the server changed.
+    const held = DEMO ? demoData() : lastPayload;
+    if (held) render(held); else refresh();
   }));
   wireGoTabs();
 }
@@ -3459,7 +3471,7 @@ async function fixZone(tz) {
   const btn = $('fixtz');
   if (btn) btn.textContent = 'Setting…';
   const { data } = await sb.auth.getSession();
-  if (!data.session) return;
+  if (!data.session) { if (btn) btn.textContent = 'Signed out — sign in and try again.'; return; }
   const res = await fetch('/.netlify/functions/api-profile', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${data.session.access_token}` },
@@ -3599,6 +3611,9 @@ const trendWord = (w, u) =>
 // are the headline and the rest is detail.
 function entryRows(entries = []) {
   return entries.map(e => {
+    // Only food and drink belong in a calorie total. A weigh-in told "it counts
+    // for nothing in the day's total" is nonsense that reads as a bug.
+    const eats = e.type === 'food' || e.type === 'drink' || e.type === undefined;
     const macros = [
       e.protein_g != null ? `${e.protein_g}g protein` : null,
       e.carbs_g   != null ? `${e.carbs_g}g carbs` : null,
@@ -3610,8 +3625,10 @@ function entryRows(entries = []) {
         <b class="kc">${e.calories != null ? e.calories.toLocaleString() : '—'}</b>
         <span class="when">${esc(e.at)}</span>
       </summary>
-      <p class="sub dim">${macros || 'No macros on this one.'}${
-        e.calories == null ? ' Nothing was estimated for it, so it counts for nothing in the day\'s total — say roughly what it was and it will be corrected.' : ''}</p>
+      <p class="sub dim">${macros || (eats ? 'No macros on this one.' : esc(e.type || 'entry'))}${
+        eats && e.calories == null
+          ? ' Nothing was estimated for it, so it counts for nothing in the day\'s total — say roughly what it was and it will be corrected.'
+          : ''}</p>
     </details>`;
   }).join('');
 }

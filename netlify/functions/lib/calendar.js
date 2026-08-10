@@ -127,11 +127,19 @@ function roll(entries, label) {
   const withNet = entries.filter(e => e.net != null);
 
   const sum = (arr, k) => arr.reduce((a, e) => a + e[k], 0);
-  const inTotal  = sum(withIn, 'in');
-  const netTotal = sum(withNet, 'net');
-  const outTotal = withNet.reduce((a, e) => a + e.out, 0);
-
   const dayWord = k => `${k} day${k === 1 ? '' : 's'}`;
+
+  // THE THREE NUMBERS HAVE TO SUBTRACT. Averaging "in" over every logged day
+  // while averaging "out" over the days that also have a burn puts three
+  // figures side by side that visibly do not add up — and a screen whose own
+  // arithmetic is wrong is worse than one that says it does not know.
+  //
+  // So when any day has both halves, all three come from those days. When none
+  // does, "in" alone is still worth reporting and stands on its own.
+  const base = withNet.length ? withNet : withIn;
+  const inTotal  = sum(base, 'in');
+  const outTotal = withNet.length ? sum(withNet, 'out') : null;
+  const netTotal = withNet.length ? sum(withNet, 'net') : null;
 
   return {
     label,
@@ -141,22 +149,23 @@ function roll(entries, label) {
     days_logged: entries.filter(e => e.logged).length,
     // The denominator, named. An average over "the last 30 days" and an average
     // over "the 9 days you logged" are different claims and only one is true.
-    days_counted: withIn.length,
+    days_counted: base.length,
+    days_logged_food: withIn.length,
     days_with_both: withNet.length,
-    in_total: withIn.length ? Math.round(inTotal) : null,
-    in_avg: withIn.length ? Math.round(inTotal / withIn.length) : null,
-    out_total: withNet.length ? Math.round(outTotal) : null,
-    out_avg: withNet.length ? Math.round(outTotal / withNet.length) : null,
-    net_total: withNet.length ? Math.round(netTotal) : null,
-    net_avg: withNet.length ? Math.round(netTotal / withNet.length) : null,
+    in_total: base.length ? Math.round(inTotal) : null,
+    in_avg: base.length ? Math.round(inTotal / base.length) : null,
+    out_total: outTotal == null ? null : Math.round(outTotal),
+    out_avg: outTotal == null ? null : Math.round(outTotal / withNet.length),
+    net_total: netTotal == null ? null : Math.round(netTotal),
+    net_avg: netTotal == null ? null : Math.round(netTotal / withNet.length),
     sessions: sum(entries, 'sessions'),
     estimated: withIn.some(e => e.estimated),
-    say: !withIn.length
+    say: !base.length
       ? `Nothing logged in ${label}.`
       : withNet.length
-        ? `${label}: roughly ${Math.round(inTotal / withIn.length)} in and ${Math.round(outTotal / withNet.length)} out on an average logged day, ` +
-          `about ${Math.abs(Math.round(netTotal / withNet.length))} ${netTotal < 0 ? 'under' : 'over'}. Counted across ${dayWord(withIn.length)}, not the whole ${label.replace(/^the /, '')}.`
-        : `${label}: roughly ${Math.round(inTotal / withIn.length)} a day across ${dayWord(withIn.length)}. Calories out is not worked out yet.`,
+        ? `${label}: roughly ${Math.round(inTotal / base.length)} in and ${Math.round(outTotal / withNet.length)} out on an average logged day, ` +
+          `about ${Math.abs(Math.round(netTotal / withNet.length))} ${netTotal < 0 ? 'under' : 'over'}. Counted across ${dayWord(base.length)}, not the whole ${label.replace(/^the /, '')}.`
+        : `${label}: roughly ${Math.round(inTotal / base.length)} a day across ${dayWord(base.length)}. Calories out is not worked out yet.`,
   };
 }
 
@@ -166,11 +175,13 @@ function roll(entries, label) {
  * days of data is a fabrication wearing a long label.
  */
 export function calendarRollups(entries = []) {
-  const last = k => entries.slice(-k);
   const out = {};
-  if (entries.length >= 7)   out.week  = roll(last(7),   'the last 7 days');
-  if (entries.length >= 28)  out.month = roll(last(30),  'the last 30 days');
-  if (entries.length >= 300) out.year  = roll(last(365), 'the last year');
+  // The window has to be FULLY covered, not nearly. Reporting "the last 30
+  // days" off 28 of them, or "the last year" off 300, is the same fabrication
+  // the label is supposed to prevent — just small enough to feel harmless.
+  if (entries.length >= 7)   out.week  = roll(entries.slice(-7),   'the last 7 days');
+  if (entries.length >= 30)  out.month = roll(entries.slice(-30),  'the last 30 days');
+  if (entries.length >= 365) out.year  = roll(entries.slice(-365), 'the last year');
   return out;
 }
 

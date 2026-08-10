@@ -3004,6 +3004,39 @@ await test('the day carries what was actually eaten', () => {
   assert.ok(e.estimated, 'estimated meals are not flagged as estimates');
 });
 
+await test('the three numbers shown side by side actually subtract', () => {
+  // in averaged over every logged day while out averaged over the days that
+  // also have a burn puts three figures on screen that visibly do not add up,
+  // and a screen whose own arithmetic is wrong is worse than one that says it
+  // does not know.
+  const days = [
+    calDay('2026-08-01', { weight_kg: 84 }),
+    calDay('2026-08-02', { weight_kg: 84 }),
+    calDay('2026-08-03', { weight_kg: 84 }),
+    calDay('2026-08-04', { weight_kg: 84 }),
+    calDay('2026-08-05', { weight_kg: 84 }),
+    calDay('2026-08-06', { weight_kg: 84 }),
+    calDay('2026-08-07', { weight_kg: 84 }),
+  ];
+  const entries = calendarDays({ days, foodRows: [], profile: CAL_PROFILE });
+  // One day where the burn is unknowable — no weight anywhere near it.
+  entries[0].out = null; entries[0].net = null;
+  const r = calendarRollups(entries).week;
+  assert.equal(r.in_avg - r.out_avg, r.net_avg, 'the trio does not subtract');
+  assert.equal(r.in_total - r.out_total, r.net_total, 'the totals do not subtract');
+  assert.equal(r.days_counted, 6, 'it counted the day it could not work out');
+});
+
+await test('with no burn at all, calories in still stands on its own', () => {
+  const days = [calDay('2026-08-01'), calDay('2026-08-02'), calDay('2026-08-03'),
+                calDay('2026-08-04'), calDay('2026-08-05'), calDay('2026-08-06'), calDay('2026-08-07')];
+  const r = calendarRollups(calendarDays({ days, foodRows: [], profile: { timezone: 'UTC' } })).week;
+  assert.equal(r.in_avg, 2000);
+  assert.equal(r.out_avg, null);
+  assert.equal(r.net_avg, null);
+  assert.match(r.say, /Calories out is not worked out yet/);
+});
+
 await test('a window is only reported when the range actually covers it', () => {
   // "This year" computed from seven days is a fabrication wearing a long label.
   const mk = k => Array.from({ length: k }, (_, i) => calDay(`2026-08-${String((i % 28) + 1).padStart(2, '0')}`, { weight_kg: 84 }));
@@ -3011,6 +3044,14 @@ await test('a window is only reported when the range actually covers it', () => 
   assert.ok(week.week, 'no week rollup from 7 days');
   assert.equal(week.month, undefined, 'a month was reported from a week of data');
   assert.equal(week.year, undefined, 'a year was reported from a week of data');
+
+  // Fully covered, not nearly. "The last 30 days" off 28 of them, or "the last
+  // year" off 300, is the same fabrication just small enough to feel harmless.
+  assert.equal(calendarRollups(calendarDays({ days: mk(29), foodRows: [], profile: CAL_PROFILE })).month,
+    undefined, '29 days was reported as "the last 30 days"');
+  assert.ok(calendarRollups(calendarDays({ days: mk(30), foodRows: [], profile: CAL_PROFILE })).month);
+  assert.equal(calendarRollups(calendarDays({ days: mk(364), foodRows: [], profile: CAL_PROFILE })).year,
+    undefined, '364 days was reported as "the last year"');
 });
 
 await test('the page never does its own arithmetic', () => {
@@ -3021,6 +3062,25 @@ await test('the page never does its own arithmetic', () => {
   assert.ok(!/reduce\(/.test(view), 'the calendar view is summing things in the browser');
   // It reads the server's block and nothing else.
   assert.match(view, /const c = d\.calendar;/);
+});
+
+await test('only food is told it counts for nothing in the total', () => {
+  // A weigh-in or a session carrying "it counts for nothing in the day's total"
+  // is nonsense that reads as a bug, and it appeared on every one of them.
+  const src = page('app.html');
+  const fn = src.slice(src.indexOf('function entryRows('), src.indexOf('function todayPanel('));
+  assert.match(fn, /const eats = e\.type === 'food' \|\| e\.type === 'drink'/);
+  assert.match(fn, /eats && e\.calories == null/);
+});
+
+await test('redrawing the calendar does not refetch the whole record', () => {
+  // Tapping a square changes what is SHOWN, not what is known. A round trip per
+  // tap is slow on a phone and replays every entry animation.
+  const src = page('app.html');
+  const fn = src.slice(src.indexOf('function wireCalendar('), src.indexOf('function wireCalendar(') + 700);
+  assert.match(fn, /const held = DEMO \? demoData\(\) : lastPayload;/);
+  assert.match(fn, /if \(held\) render\(held\); else refresh\(\);/);
+  assert.match(src, /lastPayload = await res\.json\(\);/);
 });
 
 group('When a tool falls over');
