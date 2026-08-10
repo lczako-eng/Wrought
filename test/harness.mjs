@@ -2568,6 +2568,30 @@ await test('the icon is served cross-origin or a listing renders nothing', () =>
   assert.match(iconBlock, /Access-Control-Allow-Origin = "\*"/);
 });
 
+group('Addressed by name means the question is for WROUGHT');
+
+await test('the nicknames are all mapped, not just some of them', () => {
+  // "Hey Jim bro, what account am I on?" got answered about the ChatGPT
+  // account — confidently, uselessly wrong, and indistinguishable from right.
+  for (const name of ['jim bro', 'gym bro', 'broski', 'broheim', 'coach', 'trainer']) {
+    assert.ok(SERVER_INSTRUCTIONS.toLowerCase().includes(name), `"${name}" is not in the phrasebook`);
+  }
+});
+
+await test('a nickname forbids answering from the model\'s own context', () => {
+  assert.match(SERVER_INSTRUCTIONS, /BEING ADDRESSED BY NAME MEANS THE QUESTION IS FOR WROUGHT/);
+  assert.match(SERVER_INSTRUCTIONS, /MUST BE ANSWERED FROM A TOOL/);
+  assert.match(SERVER_INSTRUCTIONS, /Never answer it from what you already know/i);
+  // And a fallback, so an unmapped question still reaches a tool.
+  assert.match(SERVER_INSTRUCTIONS, /call get_profile and answer from that/i);
+});
+
+await test('asking which account is a mapped question', () => {
+  for (const phrase of ['what account am I on', 'who am I', 'is this connected', 'plugged in']) {
+    assert.ok(SERVER_INSTRUCTIONS.includes(phrase), `"${phrase}" maps to nothing`);
+  }
+});
+
 // ── Report ──────────────────────────────────────────────────────────────────
 
 console.log(results.join('\n'));

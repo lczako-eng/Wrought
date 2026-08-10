@@ -242,6 +242,18 @@ mentioned, and a care flag silences the whole voice instantly. Tested, because a
 persona that can outrank the flags is exactly how this feature would turn into
 the thing the flags exist to prevent.
 
+**Being addressed by name means the question is for WROUGHT.** *"Hey Jim bro,
+what account am I on?"* came back with the founder's **ChatGPT Plus** account —
+answered from the model's own context, never touching a tool. Confidently,
+uselessly wrong, and indistinguishable from right.
+
+So the instruction is explicit: a message opening with *jim bro*, *gym bro*,
+*broski*, *broheim*, *coach*, *trainer* or any nickname aimed at this connector
+is a question FOR WROUGHT and must be answered from a tool, never from what the
+model already knows. If no tool obviously fits, `get_profile` is the fallback.
+*"what account am I on"*, *"who am I"*, *"is this connected"* are mapped to it
+outright. Tested.
+
 ### Last night — the screen somebody actually opens
 
 `lastSession()` in `lib/training.js` + the top of the Record view. The founder
