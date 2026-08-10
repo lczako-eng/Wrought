@@ -2580,6 +2580,34 @@ await test('the record stays metric whatever the display says', () => {
   assert.equal(fromCm(null, true), '');
 });
 
+group('The device key, without the ceremony');
+
+await test('the first key mints itself and copies in one tap', () => {
+  // "Too many steps." Sign-in used to lead to a Generate button, then a copy,
+  // then a paste — two of those were ceremony. A first key now appears the
+  // moment somebody arrives signed in, with a Copy button. Existing keys keep
+  // the explicit button, because hashed keys can never be re-shown.
+  const src = page('connect.html');
+  assert.match(src, /async function autoKey\(\)/);
+  assert.match(src, /if \(\(state\.keys \|\| \[\]\)\.length\) return;/);
+  assert.match(src, /navigator\.clipboard\.writeText\(key\)/);
+  // One rendering of a fresh key — the manual button reuses it. (The existing-
+  // keys list also uses the keybox style, which is fine: it never holds a raw key.)
+  assert.equal([...src.matchAll(/id="keyval"/g)].length, 1, 'the fresh key is rendered in two places');
+});
+
+await test('the one-tap Shortcut panel is honest until the link exists', () => {
+  // Apple mints share links on-device only, so the pre-built Shortcut is the
+  // one artefact the repo cannot generate. Until the founder shares it once
+  // and pastes the URL, the panel says so — never a dead button.
+  const src = page('connect.html');
+  assert.match(src, /The easy way — three taps/);
+  assert.match(src, /const SHORTCUT_URL = ''/);
+  assert.match(src, /not published yet/);
+  // And the automation limit is stated as Apple's rule, not our laziness.
+  assert.match(src, /Apple's rule/);
+});
+
 group('The mark, everywhere a client might look for it');
 
 await test('the handshake carries the icon and the site', async () => {

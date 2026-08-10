@@ -224,7 +224,29 @@
     </div>
   </div>
 
-  <h3>Option A — the Shortcut (free, five taps)</h3>
+  <div class="panel" id="easypanel">
+    <h3 style="margin-top:0">The easy way — three taps</h3>
+    <ol style="margin:0 0 6px">
+      <li><b>Copy the key</b> above (it appears when you sign in).</li>
+      <li><b>Get the Shortcut</b> — one tap, everything pre-built.</li>
+      <li><b>Run it once</b> — paste the key when it asks, say yes to Health access. Done: it sends your stats every night.</li>
+    </ol>
+    <p id="easylink"></p>
+    <p class="muted" style="margin:0">The Shortcut asks for the key exactly once and keeps it. To make it
+    automatic, add one automation: Shortcuts → Automation → Time of Day 11pm → run <b>Send to Wrought</b>.
+    That single step is Apple's rule — no app or page is allowed to schedule it for you.</p>
+  </div>
+
+  <script>
+  // Built once on a phone, shared once, pasted here. Apple mints share links
+  // on-device only, so this is the one artefact the repo cannot generate.
+  const SHORTCUT_URL = '';
+  document.getElementById('easylink').innerHTML = SHORTCUT_URL
+    ? '<a class="btn" href="' + SHORTCUT_URL + '">Get the Shortcut</a>'
+    : '<span class="muted">The one-tap Shortcut link is not published yet — the recipe below builds the same thing by hand.</span>';
+  </script>
+
+  <h3>Option A — the Shortcut, built by hand (free, five taps)</h3>
   <ol>
     <li>Open <b>Shortcuts</b> on the iPhone → Automation → new <b>Personal Automation</b>.</li>
     <li>Trigger: <b>Time of Day</b> → 11:00 pm → <b>Run Immediately</b>.</li>
@@ -424,6 +446,41 @@ async function signedIn(t) {
   $('minter').hidden = false;
   $('keyintro').textContent = 'Generate a key for each phone. The key is shown once and cannot be recovered.';
   checkArrived();
+  autoKey();
+}
+
+// The grandma path. "Sign in, press Generate, copy, paste" was four steps and
+// two of them were ceremony. If the account has no device key yet, one is
+// minted the moment they arrive signed in and put on screen with a Copy
+// button — the page's job is to leave exactly two human steps: copy the key,
+// tap the Shortcut link. (Keys are stored hashed, so an EXISTING key can never
+// be re-shown — accounts that already have one keep the explicit button.)
+async function autoKey() {
+  try {
+    const res = await fetch('/.netlify/functions/api-key', { headers: { Authorization: `Bearer ${token}` } });
+    if (!res.ok) return;
+    const state = await res.json();
+    if ((state.keys || []).length) return;   // has keys — nothing to show twice
+
+    const mint = await fetch('/.netlify/functions/api-key', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ label: 'Apple Health' }),
+    });
+    if (!mint.ok) return;
+    const out = await mint.json();
+    showKey(out.key);
+  } catch { /* the manual button still exists */ }
+}
+
+function showKey(key) {
+  $('keyout').innerHTML = `<div class="keybox" id="keyval">${esc(key)}</div>
+    <button id="copykey" style="margin-top:10px">Copy the key</button>
+    <p class="msg">Stored hashed — it will never be shown again, so copy it before leaving this page.</p>`;
+  $('copykey').addEventListener('click', async () => {
+    try { await navigator.clipboard.writeText(key); $('copykey').textContent = 'Copied ✓'; }
+    catch { /* they can long-press the box */ }
+  });
 }
 
 // Email and password, same as the dashboard. Accounts are created there; this
@@ -505,9 +562,7 @@ $('mint').addEventListener('click', async () => {
   const out = await res.json();
   if (!res.ok) { $('msg').textContent = out.error || 'Could not generate a key.'; return; }
 
-  $('keyout').innerHTML = `<div class="keybox">${esc(out.key)}</div>
-    <p class="msg">Copy this now — it is stored hashed and will never be shown again.
-    Paste it into the Shortcut's Authorization header as <code>Bearer ${esc(out.key.slice(0, 8))}…</code></p>`;
+  showKey(out.key);
   $('msg').textContent = '';
 });
 
