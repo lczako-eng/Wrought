@@ -2744,6 +2744,35 @@ await test('/status says which sign-in doors are actually open', async () => {
   } finally { delete process.env.SUPABASE_ANON_KEY; }
 });
 
+group('Height, by thumb');
+
+await test('height is a slider, not a keyboard', () => {
+  // A bounded number on a phone should not open a keyboard.
+  const src = page('app.html');
+  assert.match(src, /id="f-height" type="range"/);
+  assert.match(src, /id="f-height-out"/);
+  // Ranges in the unit on screen: inches when imperial, centimetres when not.
+  assert.match(src, /min="\$\{imp \? 54 : 137\}" max="\$\{imp \? 84 : 214\}"/);
+});
+
+await test('an untouched slider is not an answer', () => {
+  // A slider always has a position. Reading an untouched one as a height is
+  // how somebody ends up with a number they never gave — and this is exactly
+  // the field the whole no-invented-numbers doctrine is about.
+  const src = page('app.html');
+  assert.match(src, /data-set="\$\{p\.height_cm == null \? '0' : '1'\}"/);
+  assert.match(src, /dataset\.set === '1'\s*\n?\s*\? \(\$\('f-units'\)/);
+  assert.match(src, /: null,/);
+  assert.match(src, /'not set'/);
+});
+
+await test('switching units moves the slider, not just the label', () => {
+  // Otherwise the same position quietly means a different height.
+  const src = page('app.html');
+  assert.match(src, /Convert the position rather than the label/);
+  assert.match(src, /el\.value = nowImp \? Math\.round\(cm \/ 2\.54\) : Math\.round\(cm\)/);
+});
+
 // ── Report ──────────────────────────────────────────────────────────────────
 
 console.log(results.join('\n'));

@@ -413,6 +413,37 @@ table.matrix td.rh.cold { color: var(--heat-3); }
   background: var(--iron); border: 1px solid var(--edge-lit); border-radius: 9px; padding: 9px 12px;
 }
 
+
+/* A slider beats a keyboard for a bounded number on a phone — and the readout
+   has to be big enough to check without leaning in. */
+.fields label.slider { gap: 2px; }
+.slabel { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.slabel output {
+  font-family: var(--mono); font-size: 19px; font-variant-numeric: tabular-nums;
+  color: var(--heat-4); text-transform: none; letter-spacing: 0;
+}
+.fields input[type="range"] {
+  -webkit-appearance: none; appearance: none; background: none;
+  padding: 0; border: 0; height: 34px; width: 100%;
+}
+.fields input[type="range"]::-webkit-slider-runnable-track {
+  height: 6px; border-radius: 3px; background: var(--scale-2); border: 1px solid var(--edge);
+}
+.fields input[type="range"]::-moz-range-track {
+  height: 6px; border-radius: 3px; background: var(--scale-2); border: 1px solid var(--edge);
+}
+.fields input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none; appearance: none; margin-top: -10px;
+  width: 26px; height: 26px; border-radius: 50%;
+  background: var(--heat-3); border: 2px solid var(--iron);
+  box-shadow: 0 2px 10px -2px rgba(242,100,25,.8);
+}
+.fields input[type="range"]::-moz-range-thumb {
+  width: 26px; height: 26px; border-radius: 50%; border: 2px solid var(--iron);
+  background: var(--heat-3);
+}
+.fields input[type="range"]:focus-visible { outline: 2px solid var(--heat-3); outline-offset: 4px; }
+
 /* ── Profile ──────────────────────────────────────────────────────────────
    A place to look, not a form. Two columns where there is room, one on a
    phone, and nothing marked required because nothing is. */
@@ -1444,10 +1475,13 @@ function renderProfile(d) {
       <label>Timezone
         <select id="f-tz">${ZONES.map(z => opt(z, p.timezone)).join('')}</select></label>
 
-      <label id="f-height-label">${imp ? 'Height (ft &amp; in)' : 'Height (cm)'}
-        <input id="f-height" type="text" inputmode="${imp ? 'text' : 'decimal'}"
-               value="${esc(fromCm(p.height_cm, imp))}"
-               placeholder="${imp ? "5'11 or 71" : '180'}"></label>
+      <label class="wide slider" id="f-height-label">
+        <span class="slabel">Height <output id="f-height-out">${p.height_cm == null ? 'not set' : esc(fromCm(p.height_cm, imp))}</output></span>
+        <input id="f-height" type="range"
+               min="${imp ? 54 : 137}" max="${imp ? 84 : 214}" step="1"
+               value="${p.height_cm == null ? (imp ? 69 : 175) : (imp ? Math.round(p.height_cm / 2.54) : Math.round(p.height_cm))}"
+               data-set="${p.height_cm == null ? '0' : '1'}"
+               aria-label="Height"></label>
 
       <label>Born
         <input id="f-year" type="number" min="1900" max="${new Date().getFullYear()}" value="${p.birth_year ?? ''}" placeholder="—"></label>
@@ -1481,14 +1515,29 @@ function renderProfile(d) {
     <p class="sub dim">${esc(d.note)}</p>`;
 
   $('prof-save').addEventListener('click', saveProfile);
+
+  // A slider always has a position, so an untouched one must not be read as an
+  // answer — that is how somebody ends up with a height they never gave.
+  const showHeight = () => {
+    const el = $('f-height');
+    const isImp = $('f-units').value === 'imperial';
+    $('f-height-out').textContent = el.dataset.set === '1'
+      ? fromCm(isImp ? Number(el.value) * 2.54 : Number(el.value), isImp)
+      : 'not set';
+  };
+  $('f-height').addEventListener('input', () => { $('f-height').dataset.set = '1'; showHeight(); });
   // Switching units rewrites the box in the new scale rather than leaving 180
   // sitting under a label that now says feet.
   $('f-units').addEventListener('change', () => {
+    const el = $('f-height');
     const nowImp = $('f-units').value === 'imperial';
-    const cm = toCm($('f-height').value, !nowImp);
-    $('f-height-label').childNodes[0].nodeValue = nowImp ? 'Height (ft & in)' : 'Height (cm)';
-    $('f-height').setAttribute('placeholder', nowImp ? "5'11 or 71" : '180');
-    if (Number.isFinite(cm)) $('f-height').value = fromCm(cm, nowImp);
+    // Convert the position rather than the label, or the slider silently means
+    // something different than it did a second ago.
+    const cm = nowImp ? Number(el.value) : Number(el.value) * 2.54;
+    el.min = nowImp ? 54 : 137;
+    el.max = nowImp ? 84 : 214;
+    el.value = nowImp ? Math.round(cm / 2.54) : Math.round(cm);
+    showHeight();
   });
   $('avfile').addEventListener('change', uploadAvatar);
   $('avdel')?.addEventListener('click', removeAvatar);
@@ -1509,7 +1558,9 @@ async function saveProfile() {
       bluntness: $('f-blunt').value,
       units: $('f-units').value,
       timezone: $('f-tz').value,
-      height_cm: toCm($('f-height').value, $('f-units').value === 'imperial'),
+      height_cm: $('f-height').dataset.set === '1'
+        ? ($('f-units').value === 'imperial' ? Number($('f-height').value) * 2.54 : Number($('f-height').value))
+        : null,
       birth_year: numOrNull('f-year'),
       sex: $('f-sex').value.trim() || null,
       activity_level: $('f-act').value || null,
