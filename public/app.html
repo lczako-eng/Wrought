@@ -1196,6 +1196,13 @@ function renderAccount(user, ids, factors) {
       it has been moved, and it all happens at once or not at all.</p>
 
       <div class="mergebox">
+        <p class="sub"><b>Easiest way.</b> Ask your assistant: <i>&ldquo;link my accounts&rdquo;</i>.
+        It reads out a six-character code. Paste it here. Nothing to remember, nothing to wait for.</p>
+        <input id="mo-code" type="text" placeholder="Code from your assistant" autocomplete="off"
+               maxlength="6" style="text-transform:uppercase;font-family:var(--mono);letter-spacing:.18em">
+        <button class="ghost" id="mo-code-go">Join them up</button>
+
+        <p class="sub dim" style="margin-top:16px">Or, if you know the other account's password:</p>
         <input id="mo-email" type="email" placeholder="The other account's email" autocomplete="off">
         <input id="mo-pass" type="password" placeholder="Its password" autocomplete="off">
         <button class="ghost" id="mo-go">Bring it into this account</button>
@@ -1214,6 +1221,7 @@ function renderAccount(user, ids, factors) {
   document.querySelectorAll('[data-unlink]').forEach(b => b.addEventListener('click', () => unlink(b.dataset.unlink, b.dataset.prov, ids)));
   document.querySelectorAll('[data-mergeprov]').forEach(b => b.addEventListener('click', () => mergeWithProvider(b.dataset.mergeprov)));
   $('mo-go').addEventListener('click', mergeWithPassword);
+  $('mo-code-go').addEventListener('click', mergeWithCode);
   loadProfile();
   loadConnections();
   loadPush();
@@ -1832,6 +1840,17 @@ function probeClient() {
   });
 }
 
+// The code route. Nothing to remember and nothing to receive — the assistant
+// already holds a live token for the other account, so it can vouch for it.
+async function mergeWithCode() {
+  const code = $('mo-code').value.trim().toUpperCase();
+  if (code.length < 6) { $('mergemsg').textContent = 'Six characters, from your assistant.'; return; }
+  $('mo-code-go').disabled = true;
+  $('mergemsg').textContent = 'Joining\u2026';
+  await runMerge(null, null, code);
+  $('mo-code-go').disabled = false;
+}
+
 async function mergeWithPassword() {
   const email = $('mo-email').value.trim();
   const password = $('mo-pass').value;
@@ -1869,7 +1888,7 @@ async function mergeWithProvider(provider) {
   }
 }
 
-async function runMerge(otherToken, keepTokenOverride) {
+async function runMerge(otherToken, keepTokenOverride, code) {
   let keep = keepTokenOverride;
   if (!keep) {
     const { data } = await sb.auth.getSession();
@@ -1880,7 +1899,7 @@ async function runMerge(otherToken, keepTokenOverride) {
   const res = await fetch('/.netlify/functions/api-merge', {
     method: 'POST',
     headers: { Authorization: `Bearer ${keep}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ other_token: otherToken }),
+    body: JSON.stringify(code ? { code } : { other_token: otherToken }),
   });
   const out = await res.json().catch(() => ({}));
   const el = $('mergemsg') || $('msg');

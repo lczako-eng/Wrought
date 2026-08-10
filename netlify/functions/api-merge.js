@@ -9,12 +9,21 @@
 // Linking an identity prevents it, and that is the path the dashboard pushes.
 // This is the repair for when the split already happened.
 //
-// The whole safety argument is in the first twenty lines of the handler: the
-// caller must present a LIVE TOKEN FOR EACH ACCOUNT. Not an email, not a user
-// id, not a code sent somewhere — proof, twice, that whoever is asking can
-// currently sign into both. An email address would be guessable and a user id is
-// visible in a JWT; either would turn this endpoint into a way to hoover up a
-// stranger's health record. There is no version of this that takes one token.
+// The whole safety argument: the caller must prove control of BOTH accounts.
+// Never an email and never a user id — an email is guessable and a user id sits
+// inside every JWT, so either alone would turn this into a way to hoover up a
+// stranger's health record.
+//
+// Two proofs are accepted for the second account, and they are equivalent:
+//
+//   a live session token — they signed into it, here, just now; or
+//   a code from the ASSISTANT signed into it — which is holding a token for
+//   that account, so it can vouch for it.
+//
+// The second exists because the first is unavailable to exactly the person who
+// needs this most: somebody locked out of the other account, whose reset email
+// is not arriving. Their assistant is still signed in and still working, and
+// that is a better proof of current control than a password they set once.
 
 import { supabase, getAuthUser } from './lib/wrought.js';
 
@@ -42,19 +51,48 @@ export const handler = async (event) => {
   try { body = JSON.parse(event.body || '{}'); }
   catch { return json(400, { error: 'bad_json' }); }
 
-  const otherToken = String(body.other_token || '').trim();
-  if (!otherToken) {
-    return json(400, {
-      error: 'other_account_proof_required',
-      message: 'Sign in to the other account as well. Merging needs proof you control both.',
-    });
-  }
+  // Proof two, in either of two forms. Both establish the same thing — that
+  // whoever is asking controls the other account as well — and neither is an
+  // email address, because an email is guessable and would turn this endpoint
+  // into a way to hoover up a stranger's health record.
+  let other = null;
 
-  // Token two: proof for the account being emptied. Verified the same way and
-  // against the same authority as the first.
-  const { data: otherData, error: otherErr } = await supabase.auth.getUser(otherToken);
-  const other = otherErr ? null : otherData?.user;
-  if (!other) return json(401, { error: 'other_account_not_verified' });
+  const code = String(body.code || '').trim();
+  if (code) {
+    // A code minted by the assistant, which is holding a live token for that
+    // account. That is proof of control more current than any password, and it
+    // is the only proof available to somebody who cannot get a reset email.
+    const { data: claimedId, error: claimErr } = await supabase.rpc('wrought_claim_link_code', { p_code: code });
+    if (claimErr) {
+      const missing = /could not find the function|does not exist/i.test(claimErr.message || '');
+      return json(500, {
+        error: missing ? 'migration_012_not_run' : 'code_check_failed',
+        message: missing
+          ? 'The linking table is not installed. Run schema/012_wrought_link_codes.sql in Supabase.'
+          : claimErr.message,
+      });
+    }
+    if (!claimedId) {
+      return json(400, {
+        error: 'bad_code',
+        message: 'That code is wrong, already used, or older than ten minutes. Ask your assistant to link the account again for a fresh one.',
+      });
+    }
+    const { data } = await supabase.auth.admin.getUserById(claimedId);
+    other = data?.user || null;
+    if (!other) return json(400, { error: 'other_account_missing' });
+  } else {
+    const otherToken = String(body.other_token || '').trim();
+    if (!otherToken) {
+      return json(400, {
+        error: 'other_account_proof_required',
+        message: 'Either the other account\'s password, or a code from the assistant signed into it. Merging needs proof you control both.',
+      });
+    }
+    const { data: otherData, error: otherErr } = await supabase.auth.getUser(otherToken);
+    other = otherErr ? null : otherData?.user;
+    if (!other) return json(401, { error: 'other_account_not_verified' });
+  }
 
   if (other.id === keeper.id) {
     return json(400, {

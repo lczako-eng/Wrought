@@ -67,6 +67,10 @@ ONE SENTENCE IS A COMPLETE LOG. The user will say "eggs and coffee, 40 minutes u
 
 NEVER SUBSTITUTE A PLAUSIBLE NUMBER FOR A MISSING ONE. Asked "how many calories do I have left" with no target on file, the tempting answer is "if we use 2,500 a day…". Nothing set 2,500. It is a made-up number wearing the clothes of a real one, it becomes the basis of every day after it, and it means the setup question never gets asked because the gap never shows. Responses carry setup_needed when something is missing — when you see it, ASK, do not fill in. This applies to calorie targets, resting burn, activity and body weight alike. "I don't know yet, tell me X" is a better answer than a confident invention, and it is the only one this product is allowed to give.
 
+TWO ACCOUNTS, ONE PERSON. If somebody says their dashboard is empty when they know they have logged, that the website shows a different email, that they signed in with Apple here and Google there, or simply asks to link or merge their accounts — call link_account. It mints a code they paste into wrought.fit, and it needs no password and no email, which matters because the person in that situation usually cannot get into the other account at all.
+
+An email address is not a person. Somebody can perfectly reasonably have their assistant on one address and the website on another; the job is to join them, never to tell them to pick one or to start logging again.
+
 A PLAN WITH AN END. start_block turns a programme into a dated schedule — the volume climbs and a DELOAD is already in the calendar before anybody feels they need one. That scheduling is the whole point: nobody takes a deload when they decide it themselves, they take it a fortnight late in the form of an injury or a month off.
 
 Reach for it when somebody asks what they should be running, wants structure for the next couple of months, or says they have no idea what to do in the gym. block_status answers "what am I doing today" and "how far through am I" — and it counts sessions actually done, never dates, so tell them plainly that a missed week is not a lost week. When the block finishes, SAY SO. "Week 8 of 8, done, 24 sessions" is the reason somebody showed up on the days they did not want to, and swallowing it wastes the only reward the structure had to give.
@@ -101,6 +105,7 @@ HOW PEOPLE ACTUALLY ASK. Nobody says "call the brief tool". They say one of a hu
   recall / search_log — "what did I do last Tuesday", "have I had this before", "when did I last", "find", "look up", "what was my best"
   undo_last — "scratch that", "take that off", "I didn't actually eat it", "never mind", "that never happened", "I was testing", "it never turned up", "delete the pizza", "remove that", "I changed my mind"
   earned_room — "have I earned it", "can I afford it", "do I have room", "treat"
+  link_account — "I have two accounts", "link my accounts", "merge them", "my dashboard is empty", "the website shows a different email", "it is not the same account", "join these up"
   get_profile — "what account am I on", "which account is this", "who am I", "what email is this", "what do you know about me", "what's my height", "what have you got on me", "am I set up", "is this connected", "plugged in", "are you working", "what account are you writing to"
 
 A GREETING IN THAT REGISTER IS A REQUEST, NOT SMALL TALK. "Hey jim bro", "gym bro", "morning", "coach" and the rest are not openers to be answered conversationally — they are the user asking for their read. CALL THE TOOL FIRST and lead with what comes back. Never reply "hey bro, what's up?" and wait: they already told you what's up. If genuinely nothing is logged yet, still call brief and say that, rather than making them ask twice.
@@ -544,6 +549,13 @@ const TOOLS = [
         pattern:   { type: 'string', description: 'Instead of a programme, list the good movements for one pattern: squat, hinge, horizontal push, vertical push, horizontal pull, vertical pull, lunge, carry, core, conditioning. Use for "what is a good back exercise" or when they want to swap something out mid-session.' },
       },
     },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+  },
+  {
+    name: 'link_account',
+    title: 'Join this account to the one on the website',
+    description: 'Mints a short code that joins the account this assistant is signed into with the account the person uses at wrought.fit, when those turn out to be two different ones. Use it the moment somebody says their dashboard is empty, that the website shows a different email, that they have two accounts, or asks to link or merge them. The code proves this side; being signed in on the website proves the other, so no password and no email is needed. READ THE CODE OUT CLEARLY and tell them to paste it into wrought.fit under Account. Nothing moves until they do — this only mints the proof. Everything then ends up on the account they are signed into on the website, and THIS CONNECTOR KEEPS WORKING with nothing to reconnect.',
+    inputSchema: { type: 'object', properties: {} },
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
   },
   {
@@ -1928,6 +1940,41 @@ async function setEatingWindow(args, user) {
   };
 }
 
+// ── Linking two accounts ───────────────────────────────────────────────────
+// The assistant holds a live token for this account, which is proof of control
+// more current than any password. So it can mint one, and the person carries it
+// across to the website rather than hunting for a reset email that never comes.
+
+const LINK_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';   // no 0/O or 1/I
+
+async function linkAccount(_args, user) {
+  let code = '';
+  for (let i = 0; i < 6; i++) code += LINK_ALPHABET[Math.floor(Math.random() * LINK_ALPHABET.length)];
+  const expires = new Date(Date.now() + 10 * 60 * 1000).toISOString();
+
+  const { error } = await supabase.from('wrought_link_codes')
+    .insert([{ code, user_id: user.id, expires_at: expires }]);
+
+  if (error) {
+    const missing = /does not exist|schema cache/i.test(error.message || '');
+    return {
+      error: missing ? 'migration_012_not_run' : 'could_not_mint',
+      say: missing
+        ? 'The linking table is not installed yet. Run schema/012_wrought_link_codes.sql in Supabase.'
+        : 'Could not make a code just now.',
+    };
+  }
+
+  return {
+    code,
+    expires_in_minutes: 10,
+    this_account: user.email || null,
+    say: `Code ${code}. Go to wrought.fit, sign in with the account you want to KEEP, then Account and paste it in. It lasts ten minutes.`,
+    note: 'Nothing has moved yet. This only proves this side. Everything ends up on whichever account they are signed into on the website, and this connector keeps working afterwards with nothing to reconnect.',
+    next_actions: ['Read the code out clearly', 'Tell them it goes in the Account tab at wrought.fit'],
+  };
+}
+
 // ── Blocks ─────────────────────────────────────────────────────────────────
 // The frozen plan lives on the server. A chat gets cleared, a phone dies, and
 // eight weeks of structure must not live in a conversation.
@@ -2351,6 +2398,7 @@ const IMPL = {
   set_eating_window: setEatingWindow,
   log_fast: logFast,
   programmes,
+  link_account: linkAccount,
   start_block: startBlock,
   block_status: blockStatus,
   end_block: endBlock,

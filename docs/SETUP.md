@@ -35,6 +35,7 @@ Or one at a time, top to bottom:
 | `009_wrought_photos.sql` | progress photos, and the private bucket they live in |
 | `010_wrought_profile_web.sql` | the profile screen — display name, picture, and the avatar bucket |
 | `011_wrought_membership.sql` | plans, trials, codes, and the admin people list |
+| `012_wrought_link_codes.sql` | joining two accounts with a code from the assistant |
 
 Each endpoint that needs a missing migration says which one by name rather than
 failing with something generic.

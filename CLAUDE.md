@@ -108,6 +108,16 @@ Three defences, in order:
 - **Merging** — `api-merge.js` + `006_wrought_identity.sql`, for when it already
   happened.
 
+**The proof that unblocked it.** Merging needs control of both accounts, and for
+the person who most needs it — locked out of the second one, reset email not
+arriving — neither a password nor an email was available. But their assistant is
+still signed in and still working, which is a **better** proof of current
+control than a password set once months ago. So `link_account` mints a
+six-character code from inside the conversation, and the dashboard takes it in
+place of the second token. Ten minutes, single use, claimed under a lock, and
+worthless without also being signed in on the surviving account — two proofs
+still, one of them just no longer a password. `012_wrought_link_codes.sql`.
+
 **Merging demands a live token for BOTH accounts** — never an email, never a
 user id. An email is guessable and a user id sits inside every JWT; either alone
 would make `/api/merge` a way to read a stranger's health record. The other

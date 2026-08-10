@@ -2630,6 +2630,62 @@ await test('switching accounts is reachable from every view', () => {
   assert.ok(src.indexOf('id="whoami"') > src.indexOf('id="content"'));
 });
 
+group('Two accounts, one person — without a password or an email');
+
+await test('the assistant can mint proof of the account it is on', () => {
+  assert.ok(TOOLS.some(t => t.name === 'link_account'), 'link_account is not declared');
+  const tool = TOOLS.find(t => t.name === 'link_account');
+  // It must not read as destructive: minting a code moves nothing.
+  assert.equal(tool.annotations.destructiveHint, false);
+  assert.match(tool.description, /paste it into wrought\.fit/i);
+  assert.match(tool.description, /KEEPS WORKING/);
+});
+
+await test('the code is a proof, not a password reset', () => {
+  const sql = readFileSync(new URL('../schema/012_wrought_link_codes.sql', import.meta.url), 'utf8');
+  // Single use, short lived, and claimed under a lock so two requests arriving
+  // together cannot both spend it.
+  assert.match(sql, /for update/);
+  assert.match(sql, /used_at is not null/);
+  assert.match(sql, /expires_at < now\(\)/);
+  // Unreachable from a browser.
+  assert.match(sql, /revoke all on function public\.wrought_claim_link_code\(text\) from authenticated/);
+  assert.match(sql, /grant execute on function public\.wrought_claim_link_code\(text\) to service_role/);
+});
+
+await test('the merge still refuses to take an email or an id', () => {
+  const src = readFileSync(new URL('../netlify/functions/api-merge.js', import.meta.url), 'utf8');
+  assert.ok(!/body\.(other_)?(email|user_id)\b/.test(src), 'the merge accepts something guessable');
+  // Both proofs, and both resolve to a verified user rather than a claim.
+  assert.match(src, /body\.code/);
+  assert.match(src, /body\.other_token/);
+  assert.match(src, /wrought_claim_link_code/);
+  assert.match(src, /auth\.admin\.getUserById\(claimedId\)/);
+});
+
+await test('a bad code says which of the three things it was', () => {
+  const src = readFileSync(new URL('../netlify/functions/api-merge.js', import.meta.url), 'utf8');
+  assert.match(src, /wrong, already used, or older than ten minutes/);
+});
+
+await test('the dashboard offers the code route first', () => {
+  // It is the one that works for somebody who cannot get into the other
+  // account at all, which is exactly who needs this.
+  const src = page('app.html');
+  assert.match(src, /id="mo-code"/);
+  assert.ok(src.indexOf('id="mo-code"') < src.indexOf('id="mo-email"'),
+    'the password route is offered before the code route');
+  assert.match(src, /link my accounts/i);
+});
+
+await test('the phrasebook knows what a split account sounds like', () => {
+  assert.match(SERVER_INSTRUCTIONS, /TWO ACCOUNTS, ONE PERSON/);
+  assert.match(SERVER_INSTRUCTIONS, /An email address is not a person/);
+  for (const phrase of ['I have two accounts', 'my dashboard is empty', 'link my accounts']) {
+    assert.ok(SERVER_INSTRUCTIONS.includes(phrase), `"${phrase}" maps to nothing`);
+  }
+});
+
 // ── Report ──────────────────────────────────────────────────────────────────
 
 console.log(results.join('\n'));
