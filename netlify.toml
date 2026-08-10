@@ -113,6 +113,14 @@
   to = "/.netlify/functions/api-export"
   status = 200
 
+# The hands-free door. "Hey Siri, gym bro" reaches this with the phone locked,
+# carrying the same device key the HealthKit courier holds — because a locked
+# phone cannot run an OAuth dance. Answers come back short: they are spoken.
+[[redirects]]
+  from = "/api/voice"
+  to = "/.netlify/functions/api-voice"
+  status = 200
+
 # The device door. Apple Shortcuts and Health Auto Export post here.
 [[redirects]]
   from = "/ingest"

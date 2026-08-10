@@ -25,6 +25,7 @@ import {
   fastLength, fastingSummary,
 } from './lib/wrought.js';
 import { allowed } from './lib/membership.js';
+import { pendingVoice } from './lib/voice.js';
 import { PROVIDERS, providerSummary, recommendRoute } from './lib/providers.js';
 import { nutritionTotals, composition, macroMatrix, yearOverYear } from './lib/nutrition.js';
 import {
@@ -163,6 +164,8 @@ THE MACHINE BEING TAKEN IS NORMAL, NOT A PROBLEM TO DISCUSS. "Someone's on it" m
 WHEN THE SESSION ENDS, NAME THE NEXT ONE. end_session returns next_workout and training_week. Close every workout with them, in one line: what they just did, anything that beat last time, and what is next — "Next up: Push A, week 3." This server can never speak first, so the end of one session is the only place the next one can be planted. If the block just finished, SAY SO — that is the only reward the structure had to give.
 
 A GREETING IN THAT REGISTER IS A REQUEST, NOT SMALL TALK. "Hey jim bro", "gym bro", "morning", "coach" and the rest are not openers to be answered conversationally — they are the user asking for their read. CALL THE TOOL FIRST and lead with what comes back. Never reply "hey bro, what's up?" and wait: they already told you what's up. If genuinely nothing is logged yet, still call brief and say that, rather than making them ask twice.
+
+WHAT THEY TOLD THE PHONE IS STILL WAITING FOR YOU. On an iPhone they can say "hey Siri, gym bro" hands-free and dictate a sentence with the screen off. There is no model on that end of the wire, so it lands word for word with no calories on it and counts for nothing in any total. brief hands these back as voice_pending, each with its id and exactly what was said. READ THEM AND CALL structure_entries IN THE SAME TURN, before you deliver the verdict — otherwise you are about to read out a day's figures that you already know are missing things. Then acknowledge it in one short clause, never a list: dictating has to feel free, and a recital of everything they mumbled at their phone yesterday is how it stops feeling that way. The same rules apply as to any other reading — estimate what was actually named, leave "had lunch" null rather than padding it into a number.
 
 "GYM BRO" IS A REGISTER, NOT A LICENCE. If they ask in that voice, answer in it — short, loud, no hedging, no corporate softness. It changes the DELIVERY and nothing else. Every number still comes from the tools, the honesty rules still hold, nothing about their body is ever mentioned, and a care flag silences the whole register instantly and completely. A persona is never a reason to say something the plain version would not say.
 
@@ -538,6 +541,33 @@ const TOOLS = [
       required: ['text'],
     },
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+  },
+  {
+    name: 'structure_entries',
+    title: 'Read the sentences dictated to the phone',
+    description: 'Fills in entries that were spoken to Siri and landed with no macros on them. The phone has no model behind it — a dictated sentence is stored word for word and counts for nothing in any total until something reads it. You are that something. brief returns these as voice_pending with their ids and exactly what was said; read each one and send back your reading. Do it in the same turn, without asking permission, and mention it in one short clause at most. Same rules as everywhere: estimate what was actually named, leave a vague mention null rather than padding it into a specific one.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        entries: {
+          type: 'array',
+          description: 'One object per pending entry. Skip any you genuinely cannot read rather than guessing at it.',
+          items: {
+            type: 'object',
+            properties: {
+              id:         { type: 'string', description: 'The id from voice_pending. Required — this updates that exact entry rather than creating a new one.' },
+              event_type: { type: 'string', enum: ['food','drink','workout','weight','measurement','sleep','symptom','mood','supplement','note','fast'] },
+              summary:    { type: 'string', description: 'The entry as it should read in the log — short, and faithful to what they said.' },
+              detail:     { type: 'object', description: 'Calories and macros for food, minutes and muscles for training, and so on — the same shape log.events uses. Leave a figure out entirely rather than guessing it.' },
+              estimated:  { type: 'boolean', description: 'True whenever a calorie figure was inferred from a description, which is almost always.' },
+            },
+            required: ['id'],
+          },
+        },
+      },
+      required: ['entries'],
+    },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   },
   {
     name: 'undo_last',
@@ -967,6 +997,67 @@ async function amendLast(args, user) {
   };
 }
 
+// Reading back what the phone could only hear.
+//
+// A sentence dictated to Siri arrives with no model behind it — there is
+// nothing at that end of the wire that could turn "two eggs and some toast"
+// into macros, and putting one there would mean an API key, a bill, and a
+// second parser to disagree with the first. So the words are kept and the
+// reading is deferred to the connected model, which is the same architecture
+// the photograph of a plate already uses: WROUGHT catches it on the way past
+// and the AI does the structuring, just not in the same minute.
+//
+// It updates by id rather than by recency, because these can be days old and
+// several at once — amend_last's "the last thing today" is exactly the wrong
+// target. Ids are checked against the caller's own rows before anything is
+// written: an id is guessable, and an unchecked one would let a stranger
+// rewrite somebody else's log.
+const VALID_EVENT_TYPES = new Set(
+  ['food','drink','workout','weight','measurement','sleep','symptom','mood','supplement','note','fast']);
+
+async function structureEntries(args, user) {
+  const list = Array.isArray(args.entries) ? args.entries.filter(e => e && e.id) : [];
+  if (!list.length) return { error: 'Pass the entries to fill in, each with the id from voice_pending.' };
+
+  const ids = [...new Set(list.map(e => String(e.id)))];
+  const { data: owned } = await supabase.from('wrought_events')
+    .select('id, event_type, summary, detail, local_date, source')
+    .eq('user_id', user.id).in('id', ids);
+
+  const byId = new Map((owned || []).map(r => [String(r.id), r]));
+  const updated = [];
+  const skipped = [];
+
+  for (const e of list) {
+    const prev = byId.get(String(e.id));
+    if (!prev) { skipped.push({ id: e.id, why: 'not found on this account' }); continue; }
+
+    const type = e.event_type && VALID_EVENT_TYPES.has(e.event_type) ? e.event_type : prev.event_type;
+    const { error } = await supabase.from('wrought_events').update({
+      event_type: type,
+      summary: String(e.summary || prev.summary).slice(0, 500),
+      // Merge, never replace — the same rule amend_last runs on. A reading that
+      // arrives later must not wipe something already known about the entry.
+      detail: { ...(prev.detail || {}), ...(e.detail && typeof e.detail === 'object' ? e.detail : {}) },
+      estimated: e.estimated != null ? !!e.estimated : true,
+    }).eq('id', prev.id).eq('user_id', user.id);
+
+    if (error) skipped.push({ id: e.id, why: error.message });
+    else updated.push({ id: prev.id, was: prev.summary, now: String(e.summary || prev.summary), type });
+  }
+
+  return {
+    updated: updated.length,
+    entries: updated,
+    ...(skipped.length ? { skipped } : {}),
+    say: updated.length
+      ? `Filled in ${updated.length} thing${updated.length === 1 ? '' : 's'} you told the phone: ${updated.map(u => u.now).join('; ')}.`
+      : 'Nothing was filled in.',
+    note: 'Housekeeping, not an event. One short clause at most — they already know what they said, and reciting it back at length makes dictating feel like it costs something. Then carry on with whatever they actually asked.',
+    next_actions: ['brief for the day\'s read now that it counts'],
+  };
+}
+
 async function undoLast(args, user) {
   // Naming what to retract is the common case once anything else has been
   // logged since — "take the pizza off" must not remove the weigh-in that
@@ -1097,10 +1188,26 @@ async function brief(args, user) {
     hasCalorieGoal: goals.some(g => g.metric === 'calories' && g.cadence === 'daily'),
   });
 
+  // Anything dictated to the phone since a week ago that nothing has read yet.
+  // The brief is the right place to hand these over because it is the call that
+  // happens anyway — a separate "check for voice notes" step is a step nobody
+  // takes, and an unread entry counts for nothing in the very totals this
+  // response is built from.
+  const { data: spoken } = await supabase.from('wrought_events')
+    .select('id, event_type, summary, detail, source, raw_input, local_date, occurred_at')
+    .eq('user_id', user.id).eq('source', 'voice')
+    .gte('local_date', addDays(date, -7)).lte('local_date', date)
+    .order('occurred_at', { ascending: true }).limit(50);
+  const waiting = pendingVoice(spoken || []);
+
   return {
     date, kind, facts, verdict,
     ...(flags.length ? { care_flags: flags } : {}),
     ...(setup ? { setup_needed: setup } : {}),
+    ...(waiting.length ? {
+      voice_pending: waiting,
+      voice_pending_note: `${waiting.length} thing${waiting.length === 1 ? '' : 's'} ${waiting.length === 1 ? 'was' : 'were'} dictated to the phone and stored word for word, with nothing to read ${waiting.length === 1 ? 'it' : 'them'}. ${waiting.length === 1 ? 'It counts' : 'They count'} for nothing in the figures above until you do. Read ${waiting.length === 1 ? 'it' : 'them'} now and call structure_entries in this same turn, before delivering the verdict — then say so in one short clause, not a list.`,
+    } : {}),
     say: verdict || `${date}: ${day.food.say} · ${day.training.say}`,
     note: flags.length
       ? 'Care flags are up. They override the honesty doctrine — follow their guidance exactly and do not coach intake down.'
@@ -2862,6 +2969,7 @@ const IMPL = {
   log_weight: logWeight,
   log_measurement: logMeasurement,
   amend_last: amendLast,
+  structure_entries: structureEntries,
   undo_last: undoLast,
   get_profile: getProfileTool,
   guide,

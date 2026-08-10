@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Deliberately almost empty.
+
+  GENERATE_INFOPLIST_FILE stays YES, so Xcode merges everything it already
+  generates (display name, health usage strings, orientations, scene manifest)
+  into this file at build time. Only the keys Xcode CANNOT express as an
+  INFOPLIST_KEY_ build setting live here — INAlternativeAppNames is an array of
+  dictionaries and there is no build-setting shape for that.
+
+  Keeping it minimal is the point: a hand-written full Info.plist would be a
+  second place for the health usage strings to live, and a missing usage string
+  is an upload rejection rather than a warning.
+
+  It sits BESIDE the Wrought folder rather than inside it, on purpose. That
+  folder is a synchronized root group, so anything dropped in gets target
+  membership automatically — which is exactly what makes adding a Swift file
+  free, and exactly what would make this file get copied into the bundle as an
+  ordinary resource while ALSO being the app's real Info.plist. Two Info.plists
+  in one bundle is a build failure with a misleading message.
+
+  These nicknames are what let somebody say "hey Siri, gym bro" and reach this
+  app. Every AppShortcut phrase must contain the application name, so the way to
+  make the real sentence work is to teach Siri that the app answers to the name
+  people actually use for it. "Jim Bro" is here because that is what dictation
+  makes of "gym bro" roughly half the time — the same reason the connector's
+  phrasebook carries it.
+-->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>INAlternativeAppNames</key>
+	<array>
+		<dict>
+			<key>INAlternativeAppName</key>
+			<string>Gym Bro</string>
+		</dict>
+		<dict>
+			<key>INAlternativeAppName</key>
+			<string>Jim Bro</string>
+		</dict>
+		<dict>
+			<key>INAlternativeAppName</key>
+			<string>Broski</string>
+		</dict>
+		<dict>
+			<key>INAlternativeAppName</key>
+			<string>Wrought</string>
+		</dict>
+		<dict>
+			<key>INAlternativeAppName</key>
+			<string>Coach</string>
+		</dict>
+	</array>
+</dict>
+</plist>

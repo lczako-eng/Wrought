@@ -187,6 +187,7 @@
 				DEVELOPMENT_TEAM = XV2M8W934A;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = Wrought;
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "Wrought does not write to Apple Health. This permission exists only because Apple requires declaring it alongside read access.";
@@ -220,6 +221,7 @@
 				DEVELOPMENT_TEAM = XV2M8W934A;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = Wrought;
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "Wrought does not write to Apple Health. This permission exists only because Apple requires declaring it alongside read access.";

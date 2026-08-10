@@ -73,7 +73,7 @@ nothing else.
   MCP brief and the web dashboard cannot disagree. `api-progress.js` exists
   purely so the dashboard calls the same code rather than recomputing in JS.
 - **MCP server**: `netlify/functions/mcp.js` at `/mcp` — stateless Streamable
-  HTTP, JSON-RPC. 33 tools. Doctrines ship in `SERVER_INSTRUCTIONS`.
+  HTTP, JSON-RPC. 37 tools. Doctrines ship in `SERVER_INSTRUCTIONS`.
 - **Auth**: OAuth 2.1 (PKCE, dynamic client registration) so "Sign in with
   Wrought" appears in ChatGPT/Claude. Supabase session JWTs also accepted as a
   fallback. Everything secret is stored SHA-256 hashed.
@@ -220,6 +220,61 @@ creating a second one.** Without it, "doing my workout" plus a later "that was
 legs, 40 minutes" becomes two phantom sessions and the day double-counts. It
 re-parses the original words together with the new ones and merges the detail,
 so nothing already known gets wiped.
+
+### Hands-free — Siri owns the wake word, and that is the whole design
+
+`api-voice.js` + `lib/voice.js` + `ios/Wrought/WroughtIntents.swift`. The
+founder: *"hey Siri, gym bro — and then gym bro knows it's on the mic right
+away, so what I'm saying is transcribing."*
+
+**A custom wake word cannot exist on iOS and never will.** Hotword detection
+runs on a coprocessor Apple exposes to nothing, and an app cannot hold the
+microphone open in the background waiting for its own phrase — it gets
+suspended, the orange indicator burns all day, the battery dies and review
+rejects it. So the wake word is Siri's. What follows it is ours, and
+`INAlternativeAppNames` is the lever: every `AppShortcut` phrase must contain
+the application name, so the app is taught to answer to **Gym Bro**, **Jim
+Bro** (what dictation makes of it half the time, same as the phrasebook),
+Broski and Coach. Then the sentence somebody actually says is the sentence that
+works.
+
+Two intents, and the list is short on purpose because **they run with the phone
+locked** — `openAppWhenRun = false` so nothing opens and no Face ID is demanded,
+`authenticationPolicy = .alwaysAllowed` so it works from a pocket. What that
+exposes is bounded by design: appending to your own log, and hearing your own
+day read back. **Nothing that deletes, exports or reads the record out in detail
+may ever be given an always-allowed intent**, and there is a test that greps for
+the attempt.
+
+**The bearer is the device key, not a session.** A locked phone cannot run a
+PKCE dance or show a sign-in sheet. It reuses the `wrought_ingest_keys` key the
+HealthKit courier already holds — one credential on the phone rather than two,
+revoked in the same place as everything else, and already in the Keychain with
+`AfterFirstUnlock` accessibility, which is exactly what makes a locked
+dictation work at all.
+
+**Speech is not a screen, so the answers are short.** A verdict can be a
+paragraph because eyes skim and can go back; a spoken answer past a couple of
+clauses becomes something to talk over. `lib/voice.js` owns that shape and does
+no arithmetic, and neither does the Swift — same doctrine as the connector, a
+third mouth relaying numbers computed once. A care flag is the **entire** spoken
+answer with nothing appended, because in speech "outranks everything" has to
+mean the sentence stops there. Flags get their own human sentences: `guidance`
+is written for a model and read aloud would be baffling.
+
+**Nothing parses at the phone end, and that is the point.** There is no model on
+that wire, so a dictated sentence lands verbatim marked `source: 'voice'` and
+Siri says *"saved, word for word"* — a description, not an apology. The
+connected AI does the structuring later, exactly as it does for the photograph
+of a plate: `brief` hands back `voice_pending` with each id and what was said,
+and `structure_entries` writes the reading back **by id** (`amend_last`'s "the
+last thing today" is the wrong target when these are days old and several at
+once; ids are checked against the caller's own rows first, because an unchecked
+id would let a stranger rewrite somebody else's log). This is what keeps the
+founder's objection answered — **the whole feature needs no API key.**
+
+Still optional, like everything native. The website and the connector remain the
+complete product; this is one more door.
 
 ### Training — a partner, not a diary
 
@@ -1004,7 +1059,7 @@ self-reporting scale removes the most-abandoned manual entry), then Strava.
 
 ## Conventions
 
-- `npm test` runs `test/harness.mjs` — 265 offline tests, no network, no database.
+- `npm test` runs `test/harness.mjs` — 384 offline tests, no network, no database.
   Run it before every push. It covers the JSON-RPC envelope (which fails as an
   uninformative "could not connect" inside ChatGPT) and all the arithmetic
   (which fails as a confidently wrong number in somebody's verdict).

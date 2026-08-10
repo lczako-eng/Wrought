@@ -29,6 +29,7 @@ import {
   windowStatus, weightTrend, trainingMatrix, summariseRange, careFlags, scoreGoals,
   eventsFromClient, fastLength, fastingSummary, needsMacros, matchEntries, setupNeeded,
 } from '../netlify/functions/lib/wrought.js';
+import { spokenBrief, spokenLog, spokenFlag, pendingVoice } from '../netlify/functions/lib/voice.js';
 
 let passed = 0, failed = 0;
 const results = [];
@@ -3974,6 +3975,169 @@ await test('a Supabase setting is named with the place it lives', () => {
   const src = page('app.html');
   assert.match(src, /manual linking is disabled/i);
   assert.match(src, /Authentication → Sign In \/ Providers/);
+});
+
+// ── Said out loud, from a locked phone ──────────────────────────────────────
+
+group('Hands-free — what the phone says back');
+
+await test('a care flag is the whole spoken answer, not a preface to one', () => {
+  // The doctrine says care flags outrank everything. In speech, "outrank" has
+  // to mean the sentence STOPS there — a training nudge tacked onto a warning
+  // about under-eating undoes the warning in the same breath that gave it.
+  const line = spokenBrief({
+    day: { food: { meals: 2, calories: 900, meals_uncounted: 0 }, training: { sessions: 1 }, device: { steps: 9000 } },
+    balance: { known: true, calories_in: 900, calories_out: 2500, net: -1600 },
+    week: { say: '1 of 4', done: 1, target: 4, days_left: 3, met: false },
+    flags: [{ flag: 'very_low_intake', detail: '4 of the last 6 logged days came in under 1,200 kcal.' }],
+  });
+  assert.match(line, /1,200/);
+  assert.match(line, /doctor/i);
+  // None of the ordinary read survives alongside it.
+  assert.doesNotMatch(line, /steps/i);
+  assert.doesNotMatch(line, /session/i);
+  assert.doesNotMatch(line, /2500|2,500/);
+});
+
+await test('every care flag has a sentence a person could actually hear', () => {
+  // `guidance` is written FOR A MODEL — "stop coaching intake down" spoken
+  // aloud is baffling. Each flag needs a human form, and a flag that lost its
+  // mapping must still be said rather than silently dropped.
+  for (const flag of ['very_low_intake', 'rapid_loss', 'no_rest']) {
+    const said = spokenFlag({ flag, detail: 'Something happened.' });
+    assert.ok(said && said.length > 20, `${flag} has no spoken form`);
+    assert.doesNotMatch(said, /do not suggest|stop coaching|follow the guidance/i);
+  }
+  assert.equal(spokenFlag({ flag: 'invented_later', detail: 'A new thing.' }), 'A new thing.');
+});
+
+await test('a spoken answer stays short enough to be heard', () => {
+  // Speech cannot be skimmed or re-read. Past a couple of clauses a spoken
+  // answer stops being information and becomes something to talk over.
+  const line = spokenBrief({
+    day: { food: { meals: 3, calories: 1840, meals_uncounted: 0 }, training: { sessions: 1 }, device: { steps: 8412 } },
+    balance: { known: true, calories_in: 1840, calories_out: 2510, net: -670 },
+    week: { say: '2 of 4', done: 2, target: 4, days_left: 3, met: false },
+  });
+  assert.ok(line.length < 200, `too long to speak: ${line.length} chars`);
+  assert.match(line, /Roughly 1840 in/);
+  assert.match(line, /670 down/);
+  assert.match(line, /2 of 4 sessions/);
+});
+
+await test('no meals and no burn is said plainly rather than as a zero', () => {
+  assert.equal(spokenBrief({ day: { food: { meals: 0 }, training: { sessions: 0 }, device: {} } }),
+               'Nothing logged today yet.');
+  // Meals with no macros are UNKNOWN, never nought — the same rule the screen
+  // follows, because a spoken "zero calories" is a confident lie.
+  const line = spokenBrief({ day: { food: { meals: 2, calories: 0, meals_uncounted: 2 }, training: {}, device: {} } });
+  assert.match(line, /no calories on them yet/i);
+  assert.doesNotMatch(line, /\b0 in\b|Roughly 0/);
+});
+
+await test('a dictated sentence is answered as saved, not as failed', () => {
+  // There is no model on the phone end, so nothing gets parsed there. That is
+  // the intended path, and the wording has to treat it as one — an apology
+  // teaches somebody the feature is broken and they stop using it.
+  const said = spokenLog({ written: [{ summary: 'two eggs and toast' }], parsed: false, text: 'two eggs and toast' });
+  assert.match(said, /Saved, word for word/);
+  assert.match(said, /No calories on it yet/);
+  assert.doesNotMatch(said, /error|sorry|could not|failed/i);
+  // And when something did read it, it says so without the caveat.
+  const parsed = spokenLog({ written: [{ summary: '2 eggs, 2 toast — 320 kcal' }], parsed: true });
+  assert.match(parsed, /^Logged:/);
+  assert.doesNotMatch(parsed, /word for word/);
+});
+
+await test('what the phone heard is handed to the AI, not left to rot', () => {
+  // A verbatim entry counts for nothing in every total until something reads
+  // it. pendingVoice is what stops it sitting there forever.
+  const waiting = pendingVoice([
+    { id: 'a', source: 'voice', event_type: 'note', detail: { note: 'two eggs and toast' }, raw_input: 'two eggs and toast', local_date: '2026-08-10' },
+    { id: 'b', source: 'voice', event_type: 'food', detail: { calories: 320 }, summary: 'eggs', local_date: '2026-08-10' },
+    { id: 'c', source: 'agent', event_type: 'note', detail: {}, summary: 'a note they typed', local_date: '2026-08-10' },
+  ]);
+  assert.equal(waiting.length, 1);
+  assert.equal(waiting[0].id, 'a');
+  assert.equal(waiting[0].said, 'two eggs and toast');
+});
+
+await test('the connector is told to read them before it reads the day out', () => {
+  const tool = TOOLS.find(t => t.name === 'structure_entries');
+  assert.ok(tool, 'structure_entries is missing');
+  assert.match(tool.description, /voice_pending/);
+  assert.match(tool.description, /same turn/i);
+  // The estimates doctrine survives the trip: a vague mention stays null.
+  assert.match(tool.description, /null rather than padding/i);
+  assert.match(SERVER_INSTRUCTIONS, /voice_pending/);
+  assert.match(SERVER_INSTRUCTIONS, /structure_entries/);
+});
+
+await test('the phone can only add to the log and hear the day back', () => {
+  // The intents run with the phone LOCKED, so what they can reach is the whole
+  // security question. Two actions, both bounded: append, and a summary line.
+  // Anything that could read the record out in detail or delete from it must
+  // never be given an .alwaysAllowed intent.
+  const src = readFileSync(new URL('../ios/Wrought/WroughtIntents.swift', import.meta.url), 'utf8');
+  const intents = src.match(/struct (\w+): AppIntent/g) || [];
+  assert.equal(intents.length, 2, `expected 2 intents, found ${intents.length}`);
+  assert.match(src, /SpeakBriefIntent/);
+  assert.match(src, /LogAloudIntent/);
+  // Comments stripped: the file is allowed to say why it cannot delete
+  // anything. Only the code is being checked for the ability.
+  const code = src.replace(/^\s*\/\/.*$/gm, '');
+  assert.doesNotMatch(code, /delete|undo_last|export|api\/log/i);
+  // Nothing opens — the entire point of hands-free.
+  assert.doesNotMatch(code, /openAppWhenRun: Bool = true/);
+});
+
+await test('the phone never composes a sentence about somebody training', () => {
+  // Same doctrine as the connector: the server computes, the mouth relays. A
+  // number formatted in Swift is a number that can disagree with the dashboard.
+  const src = readFileSync(new URL('../ios/Wrought/WroughtIntents.swift', import.meta.url), 'utf8');
+  assert.doesNotMatch(src, /kcal|calorie|protein|deficit|surplus/i);
+  assert.match(src, /out\?\["spoken"\] as\? String/);
+});
+
+await test('"gym bro" reaches the app because the app answers to it', () => {
+  // Every AppShortcut phrase must contain the application name, so the way to
+  // make the real sentence work is to give the app the nickname people use.
+  const plist = readFileSync(new URL('../ios/Info.plist', import.meta.url), 'utf8');
+  assert.match(plist, /INAlternativeAppNames/);
+  assert.match(plist, /Gym Bro/);
+  // "Jim bro" is what dictation makes of it half the time — the same reason the
+  // connector's phrasebook carries it.
+  assert.match(plist, /Jim Bro/);
+
+  const src = readFileSync(new URL('../ios/Wrought/WroughtIntents.swift', import.meta.url), 'utf8');
+  assert.match(src, /AppShortcutsProvider/);
+  // A phrase without the app name is silently never matched.
+  const phrases = src.match(/^\s+"[^"]*\\\(\.applicationName\)[^"]*",$/gm) || [];
+  assert.ok(phrases.length >= 8, `only ${phrases.length} phrases carry the app name`);
+});
+
+await test('the voice door takes the device key, not a session', () => {
+  // A locked phone cannot run a PKCE dance or show a sign-in sheet. It reuses
+  // the ingest key the HealthKit courier already holds — one credential on the
+  // phone, revocable in the same place as every other.
+  const src = readFileSync(new URL('../netlify/functions/api-voice.js', import.meta.url), 'utf8');
+  assert.match(src, /wrought_ingest_keys/);
+  assert.match(src, /hashToken/);
+  assert.match(src, /revoked/);
+  // Dictated entries are marked so they can be found again and read later.
+  assert.match(src, /source: 'voice'/);
+  // Every failure comes back speakable — Siri reading a stack trace helps nobody.
+  for (const block of src.split('return reply(').slice(1)) {
+    assert.match(block.slice(0, 400), /spoken:/, 'a reply with nothing to say');
+  }
+});
+
+await test('the hands-free door is routed and the app stays optional', () => {
+  const toml = readFileSync(new URL('../netlify.toml', import.meta.url), 'utf8');
+  assert.match(toml, /from = "\/api\/voice"/);
+  // Doctrine: nothing may ever REQUIRE the app. This is one more way in.
+  const claude = readFileSync(new URL('../CLAUDE.md', import.meta.url), 'utf8');
+  assert.match(claude, /The app is optional, forever/);
 });
 
 // ── Report ──────────────────────────────────────────────────────────────────

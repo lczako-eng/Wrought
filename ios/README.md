@@ -44,6 +44,47 @@ So this app is three things and refuses to be more:
    keeps one total per metric per day (newest claim wins), so resends and
    overlapping senders can never double a day.
 
+## Hands-free — "hey Siri, gym bro"
+
+Nothing to set up. Build, run once, and the phrases are registered by iOS.
+
+Say any of these with the phone locked, in a pocket:
+
+| Say | What happens |
+|---|---|
+| *"Hey Siri, gym bro, what's the damage"* | Siri reads the day back — roughly in, roughly out, where the week stands |
+| *"Hey Siri, gym bro, hit me"* | Same |
+| *"Hey Siri, gym bro, log this"* | Siri says "go on", you talk, it saves what you said |
+| *"Hey Siri, tell gym bro"* | Same |
+
+**"Gym bro" works because the app answers to it.** Every Siri phrase has to
+contain the app's name, so `ios/Info.plist` declares Gym Bro, Jim Bro (what
+dictation makes of it half the time), Broski and Coach as alternative names.
+Add your own there if you find yourself saying something else.
+
+Nothing opens and nothing asks for Face ID — that is the whole point. The
+trade-off is deliberate: what a locked phone can reach is appending to the log
+and hearing a one-line summary, nothing that deletes or reads the record out.
+
+**What Siri cannot do is work out calories.** There is no model on the phone
+end, so a dictated sentence is stored word for word and Siri says so. The next
+time you talk to ChatGPT it reads those back and fills in the numbers itself —
+that is why this needs no API key. If Siri mishears ("burrito" → "burrata"),
+the Log tab is where you catch it, same as always.
+
+If it says *"open Wrought once to connect it"*, the device key is missing —
+launch the app, sign in, and it mints one.
+
+### If a phrase does not match
+
+Siri matches these literally. Two fallbacks that are more reliable in a loud
+gym anyway:
+
+- **Back Tap** — Settings → Accessibility → Touch → Back Tap → Double Tap →
+  pick the Wrought shortcut. Double-tap the back of the phone.
+- **Action Button** (iPhone 15 Pro and later) — Settings → Action Button →
+  Shortcut → Wrought.
+
 ## How the key handshake works
 
 The app never asks for a password. It reads the signed-in session from the
@@ -53,6 +94,12 @@ the Keychain. The silent-fork lesson, applied to a new surface.
 
 ## Deliberately not here (yet)
 
+- **A custom wake word** — impossible, not unbuilt. Only Siri gets one on iOS;
+  hotword detection lives on a coprocessor Apple exposes to nothing, and an app
+  holding the mic open in the background gets suspended, burns the battery and
+  fails review. "Hey Siri, gym bro" is the real ceiling.
+- **A back-and-forth conversation with Siri** — the intents are one question,
+  one answer. Conversation stays in ChatGPT, where the connector lives.
 - **APNs push** — the nightly verdict on the lock screen. Needs a server-side
   sender (same hand-rolled `.p8` JWT pattern as Apple sign-in, same developer
   account) and a token registration endpoint. Next native build.
