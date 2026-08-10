@@ -2594,6 +2594,42 @@ await test('asking which account is a mapped question', () => {
   }
 });
 
+group('The phone screen actually fits');
+
+await test('the header does not become the containing block for the tab bar', () => {
+  // backdrop-filter on an ancestor makes it the containing block for anything
+  // position:fixed inside it. The header had one, so the bottom tab bar was
+  // pinned to the HEADER's bottom rather than the viewport's — and being taller
+  // than the header, it hung off the top of the screen with the first and last
+  // tabs clipped. Exactly what a phone showed.
+  const src = page('app.html');
+  const phone = src.slice(src.indexOf('@media (max-width: 700px)'));
+  assert.match(phone, /header \{ backdrop-filter: none/);
+  assert.match(phone, /position: fixed; z-index: 20; inset: auto 0 0 0;/);
+});
+
+await test('the tab row wraps rather than clipping', () => {
+  const src = page('app.html');
+  const phone = src.slice(src.indexOf('@media (max-width: 700px)'));
+  assert.match(phone, /\.views \{ flex-wrap: wrap/);
+  // Not growing: six tabs fit a row at this size, and growing forces a wrap
+  // that doubles the bar's height for nothing.
+  assert.match(phone, /flex: 0 1 auto/);
+  // And whatever height it ends up, nothing may be trapped underneath it.
+  assert.match(phone, /padding-bottom: calc\(132px/);
+});
+
+await test('switching accounts is reachable from every view', () => {
+  // It was buried at the bottom of one tab. Somebody juggling two accounts
+  // should not have to find a tab to get out.
+  const src = page('app.html');
+  assert.match(src, /id="whoami"/);
+  assert.match(src, /id="whoami-switch"/);
+  assert.match(src, /id="whoami-out"/);
+  // Outside <main>, so it survives every re-render of the content area.
+  assert.ok(src.indexOf('id="whoami"') > src.indexOf('id="content"'));
+});
+
 // ── Report ──────────────────────────────────────────────────────────────────
 
 console.log(results.join('\n'));

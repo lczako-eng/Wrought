@@ -94,7 +94,18 @@ header {
 .range:hover { border-color: var(--edge-lit); color: var(--bright); }
 .range[aria-pressed="true"] { background: var(--heat-3); border-color: var(--heat-3); color: #1A0A02; font-weight: 600; }
 
-main { padding-block: 26px 90px; display: flex; flex-direction: column; gap: 22px; }
+main { padding-block: 26px 0; display: flex; flex-direction: column; gap: 22px; }
+.whoami {
+  display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+  padding: 22px 0 40px; margin-top: 26px; border-top: 1px solid var(--edge);
+  font-size: 13px; color: var(--ash-dim);
+}
+.whoami #whoami-email { margin-right: auto; overflow-wrap: anywhere; }
+.linky {
+  font: inherit; font-size: 13px; background: none; border: 0; padding: 0;
+  color: var(--heat-3); cursor: pointer; text-decoration: underline;
+}
+.linky:hover { color: var(--heat-4); }
 
 /* ── Panels ─────────────────────────────────────────────────────────────── */
 /* ── Motion ───────────────────────────────────────────────────────────────
@@ -195,6 +206,14 @@ svg.ser .cursor { transition: opacity var(--quick) var(--ease); }
    content, and the same buttons ride in the header on a desktop. Components
    that already sit where an app puts them survive the move into one. */
 @media (max-width: 700px) {
+  /* backdrop-filter on an ancestor makes it the containing block for anything
+     position:fixed inside it. The header had one, so the bottom bar was pinned
+     to the HEADER's bottom rather than the viewport's — and being taller than
+     the header, it hung off the top of the screen with the first and last tabs
+     clipped. A solid header on a phone costs nothing and puts the bar back
+     where it belongs. */
+  header { backdrop-filter: none; -webkit-backdrop-filter: none; background: var(--iron); }
+
   .views {
     position: fixed; z-index: 20; inset: auto 0 0 0;
     justify-content: center; gap: 8px;
@@ -204,9 +223,20 @@ svg.ser .cursor { transition: opacity var(--quick) var(--ease); }
     -webkit-backdrop-filter: blur(18px) saturate(140%);
     border-top: 1px solid var(--edge);
   }
-  .views .range { flex: 1 1 0; max-width: 190px; padding: 11px 12px; font-size: 13.5px; }
+  /* Six tabs do not fit one row on a phone, and a centred row that overflows
+     is clipped at BOTH ends — which is how Record and Admin ended up half
+     off-screen. Wrapping always fits; scrolling is the fallback if a future
+     tab pushes it further. */
+  .views { flex-wrap: wrap; overflow-x: auto; scrollbar-width: none; }
+  .views::-webkit-scrollbar { display: none; }
+  .views .range {
+    /* Do not grow. Six tabs fit one row at this size; growing them forces a
+       wrap that makes the bar twice as tall for no reason. */
+    flex: 0 1 auto; min-width: 0;
+    padding: 10px 9px; font-size: 12.5px; white-space: nowrap;
+  }
   /* Clear the bar so the last panel is never trapped underneath it. */
-  main { padding-bottom: calc(78px + env(safe-area-inset-bottom)); }
+  main { padding-bottom: calc(132px + env(safe-area-inset-bottom)); }
 }
 .range { transition: background var(--quick) var(--ease), color var(--quick) var(--ease), border-color var(--quick) var(--ease); }
 
@@ -728,6 +758,13 @@ a.ghost { display: inline-block; }
     </div>
   </header>
   <main class="wrap" id="content"></main>
+  <!-- Always visible, on every view. Somebody juggling two accounts should not
+       have to find a tab to get out. -->
+  <div class="wrap whoami" id="whoami" hidden>
+    <span id="whoami-email"></span>
+    <button class="linky" id="whoami-switch">Switch account</button>
+    <button class="linky" id="whoami-out">Sign out</button>
+  </div>
 </div>
 
 <!-- The two public Supabase values, from the deploy environment.
@@ -774,6 +811,11 @@ async function boot() {
   if (await mfaNeeded()) { askForCode(); return; }
 
   $('app').hidden = false;
+  const who = data.session.user?.email;
+  if (who) {
+    $('whoami-email').textContent = `Signed in as ${who}`;
+    $('whoami').hidden = false;
+  }
   load(data.session.access_token);
   maybeAdmin(data.session.access_token);
 }
@@ -860,6 +902,9 @@ async function submitAuth() {
 $('send')?.addEventListener('click', submitAuth);
 $('pass')?.addEventListener('keydown', e => { if (e.key === 'Enter') submitAuth(); });
 $('email')?.addEventListener('keydown', e => { if (e.key === 'Enter') $('pass').focus(); });
+
+$('whoami-out')?.addEventListener('click', () => leave(false));
+$('whoami-switch')?.addEventListener('click', () => leave(true));
 
 document.querySelectorAll('.range[data-days]').forEach(b => b.addEventListener('click', async () => {
   document.querySelectorAll('.range[data-days]').forEach(x => x.setAttribute('aria-pressed', 'false'));
