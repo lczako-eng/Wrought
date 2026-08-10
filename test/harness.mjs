@@ -14,7 +14,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { handler, TOOLS, handleRpc, SERVER_INSTRUCTIONS } from '../netlify/functions/mcp.js';
-import { canonicalMetric, normalise, normaliseWorkout } from '../netlify/functions/ingest.js';
+import { canonicalMetric, normalise, normaliseWorkout, looseNumber } from '../netlify/functions/ingest.js';
 import { PROVIDERS, LIVE_PROVIDERS, providerSummary, recommendRoute } from '../netlify/functions/lib/providers.js';
 import { nutritionTotals, composition, macroMatrix, yearOverYear } from '../netlify/functions/lib/nutrition.js';
 import { MOVEMENTS, PROGRAMMES, PATTERNS, movementsFor, pickProgramme, buildProgramme } from '../netlify/functions/lib/library.js';
@@ -2578,6 +2578,27 @@ await test('the record stays metric whatever the display says', () => {
   assert.equal(fromCm(180, true), "5'11");
   assert.equal(fromCm(182.9, true), "6'0");   // must not render 5'12"
   assert.equal(fromCm(null, true), '');
+});
+
+group('What an Apple Shortcut actually types');
+
+await test('the number is dug out of whatever wrapping it arrived in', () => {
+  // A Health Sample dropped into a Text action renders human: "8,412",
+  // "331 lb", "54 count/min". Refusing the comma fails the exact person the
+  // /ingest door was built for — somebody hand-assembling a Shortcut at
+  // midnight. The unit still comes from the declared field, never parsed out
+  // of the value, so "331 lb" with unit lb converts once and not twice.
+  assert.equal(looseNumber('8,412'), 8412);
+  assert.equal(looseNumber('331 lb'), 331);
+  assert.equal(looseNumber('54 count/min'), 54);
+  assert.equal(looseNumber(82.6), 82.6);
+  assert.ok(Number.isNaN(looseNumber('')));
+  assert.ok(Number.isNaN(looseNumber('no numbers here')));
+
+  assert.deepEqual(normalise('steps', '8,412', 'count'), { value: 8412, unit: 'count' });
+  assert.equal(normalise('weight_kg', '331 lb', 'lb').value, 150.14);
+  assert.equal(normalise('resting_hr', '54 count/min', 'bpm').value, 54);
+  assert.equal(normalise('steps', 'nothing', 'count'), null);
 });
 
 group('The device key, without the ceremony');

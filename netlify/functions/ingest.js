@@ -175,9 +175,22 @@ export const canonicalMetric = name =>
 
 // Units arrive in whatever the device felt like. Storage is metric and minutes,
 // so conversion happens once, here, and never again.
+// What an Apple Shortcut actually types. A Health Sample variable dropped into
+// a Text action renders as a human string — "8,412", "331 lb", "54 count/min" —
+// and a hand-built Shortcut is the single most important client this endpoint
+// has. Refusing "8,412" because of the comma fails the exact person this door
+// was built for, so the number is dug out of whatever wrapping it arrived in.
+// The unit STILL comes from the declared unit field, never parsed out of the
+// value — "331 lb" with unit "lb" converts once, not twice.
+export function looseNumber(value) {
+  if (typeof value === 'number') return value;
+  const m = String(value ?? '').replace(/,/g, '').match(/-?\d+(?:\.\d+)?/);
+  return m ? Number(m[0]) : NaN;
+}
+
 export function normalise(metric, value, unit) {
   const u = String(unit || '').toLowerCase();
-  let v = Number(value);
+  let v = looseNumber(value);
   if (!Number.isFinite(v)) return null;
 
   if (metric === 'weight_kg') {
