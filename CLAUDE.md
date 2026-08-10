@@ -306,6 +306,32 @@ change" is how somebody stops believing the readout. Bodyweight work is carried
 with a null weight rather than a zero, which the Lifts panel got wrong once
 already.
 
+### Targets, drawn rather than described
+
+`scoreGoals()` gains `percent` / `over`; `targetsPanel()` draws them as rings
+directly under the day's hero. The founder: *"set some goals like 10,000 steps
+... it has to be visually stunning."* A goal in prose is a note to self; a goal
+as a ring is a fact taken in without reading — and "am I on track" is the
+second question anybody has, right after "what did I do".
+
+**The percentage is computed server-side** like every other number, so a ring
+and the brief can never disagree about the same day. An `at_most` goal fills as
+it is SPENT — 80% of a calorie ceiling means 80% eaten, the direction that
+reads correctly at a glance. The percentage is **uncapped** while the arc is
+capped: an overshoot is flagged and stated, never hidden behind a full circle.
+Colour is the verdict only — moss met, temper on the way, heat for a ceiling
+actually passed. Nothing red, nothing scolding: a half-full ring is
+information. `distance_km` and `active_minutes` became scoreable when the iOS
+app started sending them — a metric nothing can aim at is a dead end.
+
+**The baseline is asked for once**, the first time somebody trains or asks with
+no goals on file: one question, then targets in the same turn. Suggestions are
+pitched at where they actually are (steps a little above their current average,
+not a round number off a poster). **Changing a target is never a negotiation** —
+a goal somebody keeps missing is a goal set wrong, and lowering it to what they
+will really do is the correct move, because a target nobody hits stops being
+read at all.
+
 ### A body goal becomes numbers — computed, paced, floored
 
 `goalCall()` in `lib/training.js` + `intent` on `set_goal`. *"Should be getting

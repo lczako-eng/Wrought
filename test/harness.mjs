@@ -3099,6 +3099,80 @@ await test('a photo of the gym becomes an equipment list — and never reaches u
   assert.match(SERVER_INSTRUCTIONS, /Never build a plan around a machine their photos did not show/);
 });
 
+group('Targets, drawn rather than described');
+
+await test('the server computes how full a ring is, not the page', () => {
+  // Same rule as everywhere: the page draws, the server calculates, so a ring
+  // and the brief can never disagree about whether today was a good day.
+  const g = [{ goal: '10k steps', metric: 'steps', target_value: 10000, direction: 'at_least', cadence: 'daily' }];
+  const out = scoreGoals(g, { device: { steps: 4589 } }, {}, {})[0];
+  assert.equal(out.percent, 46);
+  assert.equal(out.hit, false);
+  assert.equal(out.actual, 4589);
+
+  // An at_most goal fills as it is SPENT — 80% of a calorie ceiling means 80%
+  // eaten, the direction that reads correctly at a glance.
+  const cal = scoreGoals(
+    [{ goal: 'under 2300', metric: 'calories', target_value: 2300, direction: 'at_most', cadence: 'daily' }],
+    { food: { calories: 1840 } }, {}, {})[0];
+  assert.equal(cal.percent, 80);
+  assert.equal(cal.over, false);
+  assert.equal(cal.hit, true);
+
+  // Over a ceiling is never hidden: uncapped percentage, flagged.
+  const over = scoreGoals(
+    [{ goal: 'under 2300', metric: 'calories', target_value: 2300, direction: 'at_most', cadence: 'daily' }],
+    { food: { calories: 3220 } }, {}, {})[0];
+  assert.equal(over.percent, 140);
+  assert.equal(over.over, true);
+});
+
+await test('distance and effort minutes can be aimed at', () => {
+  // The iPhone app sends both now; a metric nothing can score is a dead end.
+  const km = scoreGoals([{ goal: '8km', metric: 'distance_km', target_value: 8, direction: 'at_least', cadence: 'daily' }],
+    { device: { distance_km: 8.4 } }, {}, {})[0];
+  assert.equal(km.hit, true);
+  const mins = scoreGoals([{ goal: '30 min', metric: 'active_minutes', target_value: 30, direction: 'at_least', cadence: 'daily' }],
+    { device: { active_minutes: 41 } }, {}, {})[0];
+  assert.equal(mins.hit, true);
+  const tool = TOOLS.find(t => t.name === 'set_goal');
+  assert.ok(tool.inputSchema.properties.metric.enum.includes('distance_km'));
+  assert.ok(tool.inputSchema.properties.metric.enum.includes('active_minutes'));
+});
+
+await test('the dashboard draws the rings and never computes them', () => {
+  const src = page('app.html');
+  const fn = src.slice(src.indexOf('function targetRing('), src.indexOf('function targetsPanel('));
+  assert.match(fn, /g\.percent/);
+  // The ring is capped for drawing but the NUMBER is not — an overshoot must
+  // never be hidden by a full circle.
+  assert.match(fn, /Math\.min\(100, g\.percent/);
+  assert.ok(!/actual \/ .*target/.test(fn), 'the page is computing its own percentage');
+  // Colour carries the verdict, and nothing here scolds.
+  assert.match(fn, /var\(--moss\)/);
+  assert.match(fn, /var\(--temper\)/);
+
+  // No targets is an invitation, not an empty box.
+  const panel = src.slice(src.indexOf('function targetsPanel('), src.indexOf('function targetsPanel(') + 1400);
+  assert.match(panel, /Nothing to aim at yet/);
+  assert.match(panel, /10,000 steps a day/);
+});
+
+await test('the baseline is asked for once, and changing it is never a lecture', () => {
+  assert.match(SERVER_INSTRUCTIONS, /SET THE BASELINE THE FIRST TIME THEY TRAIN OR ASK/);
+  assert.match(SERVER_INSTRUCTIONS, /ask ONE short question/);
+  // Suggest, do not interrogate — and pitch it at where they actually are.
+  assert.match(SERVER_INSTRUCTIONS, /suggest, do not interrogate/);
+  assert.match(SERVER_INSTRUCTIONS, /rather than a round number off a poster/);
+  // A target somebody keeps missing is a target set wrong.
+  assert.match(SERVER_INSTRUCTIONS, /TARGETS ARE FLEXIBLE AND CHANGING ONE IS NORMAL/);
+  assert.match(SERVER_INSTRUCTIONS, /never a comment about commitment/);
+  assert.match(SERVER_INSTRUCTIONS, /lowering it to what they will actually do is the correct move/);
+  for (const phrase of ['10,000 steps a day', 'make it 8,000 instead']) {
+    assert.ok(SERVER_INSTRUCTIONS.includes(phrase), `"${phrase}" maps to nothing`);
+  }
+});
+
 group('A body goal becomes numbers, computed — never guessed');
 
 const { goalCall } = await import('../netlify/functions/lib/training.js');

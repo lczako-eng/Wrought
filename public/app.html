@@ -167,6 +167,47 @@ main { padding-block: 26px 0; display: flex; flex-direction: column; gap: 22px; 
 }
 .total b { font-size: 21px; font-variant-numeric: tabular-nums; }
 
+/* ── Targets ──────────────────────────────────────────────────────────────
+   A goal written as a sentence is a note to self. A goal drawn as a ring is
+   a thing you glance at and instantly know. These sit directly under the
+   day's hero because "am I on track" is the second question anybody has,
+   right after "what did I do".
+
+   The arc is drawn from a server-computed percentage — the page never works
+   out how full a ring is, same rule as everywhere else. Colour carries the
+   verdict and nothing else: moss for met, temper for on the way, heat only
+   when a ceiling has actually been passed. Nothing here is red, and nothing
+   scolds — a half-full ring is information, not a telling-off. */
+.targets { display: grid; grid-template-columns: repeat(auto-fit, minmax(104px, 1fr)); gap: 6px; }
+.tgt {
+  display: flex; flex-direction: column; align-items: center; gap: 2px;
+  padding: 14px 6px 12px; border-radius: 10px; background: var(--scale);
+  border: 1px solid var(--edge); position: relative;
+}
+.tgt svg { width: 76px; height: 76px; display: block; }
+.tgt .track { stroke: var(--heat-0); }
+.tgt .fill { stroke-linecap: round; transform: rotate(-90deg); transform-origin: 50% 50%;
+  animation: sweep 900ms var(--ease) both; }
+.tgt .mid {
+  position: absolute; top: 14px; left: 0; right: 0; height: 76px;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0;
+  pointer-events: none;
+}
+.tgt .num {
+  font-family: var(--grotesk); font-weight: 900; font-stretch: 80%;
+  font-size: 17px; line-height: 1; font-variant-numeric: tabular-nums;
+}
+.tgt .of { font-family: var(--mono); font-size: 8.5px; color: var(--ash-dim); margin-top: 2px; }
+.tgt .lab {
+  font-family: var(--mono); font-size: 9px; letter-spacing: .1em; text-transform: uppercase;
+  color: var(--ash-dim); margin-top: 6px; text-align: center; line-height: 1.3;
+}
+.tgt.met .num { color: var(--moss); }
+.tgt.over .num { color: var(--heat-3); }
+.tgt .tick { position: absolute; top: 8px; right: 9px; color: var(--moss); font-size: 12px; }
+.tgt.unscored { opacity: .55; }
+.tgt.unscored .num { color: var(--ash-dim); font-size: 14px; }
+
 /* ── Calendar ─────────────────────────────────────────────────────────────
    Everything else here is arithmetic ABOUT the record. This is the record laid
    out the way people already hold time in their heads: squares, seven across.
@@ -2848,8 +2889,16 @@ function demoData() {
       matrix: { muscles, weeks, grid, neglected: ['legs'] },
     },
     goals: [
-      { goal: '150g protein a day', scored: true, hit: false },
-      { goal: 'Gym 4 times a week', scored: true, hit: true },
+      { goal: '10,000 steps a day', metric: 'steps', scored: true, hit: false, over: false,
+        target: 10000, actual: 9840, percent: 98, unit: '', cadence: 'daily', direction: 'at_least' },
+      { goal: '150g protein a day', metric: 'protein_g', scored: true, hit: false, over: false,
+        target: 150, actual: 148, percent: 99, unit: 'g', cadence: 'daily', direction: 'at_least' },
+      { goal: '2,300 calories', metric: 'calories', scored: true, hit: true, over: false,
+        target: 2300, actual: 2140, percent: 93, unit: ' kcal', cadence: 'daily', direction: 'at_most' },
+      { goal: '8 km a day', metric: 'distance_km', scored: true, hit: true, over: false,
+        target: 8, actual: 8.4, percent: 105, unit: 'km', cadence: 'daily', direction: 'at_least' },
+      { goal: 'Gym 4 times a week', metric: 'workout_days', scored: true, hit: true, over: false,
+        target: 4, actual: 4, percent: 100, unit: '', cadence: 'weekly', direction: 'at_least' },
     ],
     lifts: [
       lift('Back Squat', 92.5, 102.5, 9),
@@ -3485,6 +3534,76 @@ async function fixZone(tz) {
   refresh();
 }
 
+// ── Targets ────────────────────────────────────────────────────────────────
+// "Set some goals like 10,000 steps... it has to be visually stunning."
+//
+// A goal in prose is a note to self; a goal as a ring is a fact you take in
+// without reading. Every percentage arrives computed from the server — the
+// page draws, it does not calculate, so a ring and the brief can never
+// disagree about whether today was a good day.
+const GOAL_LABEL = {
+  steps: 'Steps', calories: 'Calories', protein_g: 'Protein',
+  sleep_minutes: 'Sleep', workout_days: 'Sessions', weight_kg: 'Weight',
+  distance_km: 'Distance', active_minutes: 'Effort',
+};
+
+function targetRing(g) {
+  const R = 30, C = 2 * Math.PI * R;
+  // Uncapped truth, capped drawing: a ring cannot show 140%, but the number
+  // under it does, so an overshoot is never hidden by a full circle.
+  const pct = Math.max(0, Math.min(100, g.percent ?? 0));
+  const cls = g.over ? 'over' : g.hit ? 'met' : '';
+  const col = g.over ? 'var(--heat-3)' : g.hit ? 'var(--moss)' : 'var(--temper)';
+  const short = v => v == null ? '—'
+    : v >= 10000 ? `${Math.round(v / 1000)}k`
+    : v >= 1000 ? v.toLocaleString()
+    : `${Math.round(v * 10) / 10}`;
+  // Only a unit that fits inside a 60px circle. " kcal" pushed the line over
+  // the stroke, and the label underneath already says which number this is.
+  const unit = (g.unit || '').trim();
+  const fits = unit.length <= 2 ? unit : '';
+
+  return `<div class="tgt ${cls}">
+    ${g.hit && !g.over ? '<span class="tick">✓</span>' : ''}
+    <svg viewBox="0 0 72 72" aria-hidden="true">
+      <circle class="track" cx="36" cy="36" r="${R}" fill="none" stroke-width="7"/>
+      <circle class="fill" cx="36" cy="36" r="${R}" fill="none" stroke-width="7"
+              stroke="${col}" stroke-dasharray="${(pct / 100 * C).toFixed(1)} ${C.toFixed(1)}"/>
+    </svg>
+    <div class="mid">
+      <span class="num">${esc(short(g.actual))}</span>
+      <span class="of">of ${esc(short(g.target))}${esc(fits)}</span>
+    </div>
+    <span class="lab">${esc(GOAL_LABEL[g.metric] || g.goal)}${g.cadence === 'weekly' ? '<br>this week' : ''}</span>
+  </div>`;
+}
+
+function targetsPanel(d) {
+  const all = d.goals || [];
+  const scored = all.filter(g => g.scored && g.target != null);
+
+  // No targets is not an empty panel — it is the moment to offer the thing
+  // that makes every other number mean something. One line, one instruction,
+  // and it names the assistant because that is where goals get set.
+  if (!scored.length) {
+    return `<section class="panel">
+      <h2>Targets</h2>
+      <p class="sub">Nothing to aim at yet. Tell your assistant what you're going for —
+      <em>"I want to lose weight"</em>, <em>"10,000 steps a day"</em>, <em>"train 3 times a week"</em> —
+      and it works out the numbers from your own body and scores them here every day.</p>
+      ${all.length ? `<p class="sub dim">${all.map(g => esc(g.goal)).join(' · ')} — no number attached yet.</p>` : ''}
+    </section>`;
+  }
+
+  const hit = scored.filter(g => g.hit && !g.over).length;
+  return `<section class="panel">
+    <h2>Targets · today</h2>
+    <div class="targets">${scored.map(targetRing).join('')}</div>
+    <p class="sub">${hit} of ${scored.length} met.${
+      all.length > scored.length ? ` ${all.length - scored.length} more without a number on it.` : ''}</p>
+  </section>`;
+}
+
 function render(d) {
   const s = d.summary, wu = d.weight_unit, out = [];
 
@@ -3511,6 +3630,8 @@ function render(d) {
   // The graphic opens the page — care flags above it and nothing else, because
   // a flag is the one thing that outranks the day's arithmetic.
   out.push(hero(d));
+
+  out.push(targetsPanel(d));
 
   // Summary before detail: the verdict and today, then everything else.
   if (d.latest_verdict?.verdict) {

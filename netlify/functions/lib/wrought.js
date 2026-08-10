@@ -424,6 +424,8 @@ export async function dayFacts(userId, profile, date) {
     device: {
       steps: metricSum('steps'),
       active_calories: metricSum('active_calories'),
+      distance_km: metricSum('distance_km'),
+      active_minutes: metricSum('active_minutes'),
       resting_hr: metricAvg('resting_hr'),
       hrv: metricAvg('hrv'),
       sleep_minutes: sleepMin,
@@ -675,9 +677,21 @@ export function scoreGoals(goals, day, summary, profile) {
               : g.direction === 'reach'   ? Math.abs(actual - +g.target_value) < 0.5
               : actual >= +g.target_value;
     const gap = Math.round((actual - +g.target_value) * 10) / 10;
+    // How full the ring is, computed here so the page draws rather than
+    // calculates. An at_most goal fills as it is SPENT — a calorie ceiling at
+    // 80% means 80% eaten, which is the direction that reads correctly at a
+    // glance. Uncapped, because hiding an overshoot is the one thing a
+    // progress ring must never do; the shade says over, the number says
+    // by how much.
+    const pct = +g.target_value === 0 ? 0
+      : Math.max(0, Math.round((actual / +g.target_value) * 100));
     return {
       goal: g.goal, metric: g.metric, scored: true, hit,
       target: +g.target_value, actual: Math.round(actual * 10) / 10,
+      percent: pct,
+      over: g.direction === 'at_most' ? actual > +g.target_value : false,
+      direction: g.direction || 'at_least',
+      cadence: g.cadence || 'daily',
       gap, unit: g.target_unit || '',
       say: hit
         ? `${g.goal} — hit it (${Math.round(actual)}${g.target_unit || ''} vs ${g.target_value}).`
@@ -692,6 +706,8 @@ function goalActual(g, day, summary) {
     case 'calories':     return g.cadence === 'weekly' ? summary?.calories_avg : day?.food?.calories;
     case 'steps':        return g.cadence === 'weekly' ? summary?.steps_avg    : day?.device?.steps;
     case 'workout_days': return summary?.training_days ?? null;
+    case 'distance_km':  return g.cadence === 'weekly' ? summary?.distance_avg : day?.device?.distance_km;
+    case 'active_minutes': return g.cadence === 'weekly' ? summary?.active_minutes_avg : day?.device?.active_minutes;
     case 'sleep_minutes':return g.cadence === 'weekly' ? summary?.sleep_avg_minutes : day?.device?.sleep_minutes;
     case 'weight_kg':    return day?.body?.weight_kg ?? summary?.weight?.last ?? null;
     default:             return null;
