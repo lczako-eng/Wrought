@@ -1098,6 +1098,10 @@ $('mfaback')?.addEventListener('click', async (e) => {
 
 function providerError(msg, provider) {
   const who = PROVIDER_NAME[provider] || provider;
+  // Supabase's own wording names a setting without saying where it lives, and
+  // this is the exact screen somebody is on when they hit it.
+  if (/manual linking is disabled/i.test(msg))
+    return 'Linking is switched off in Supabase. Turn on "Enable manual linking" under Authentication → Sign In / Providers, then reload this page.';
   if (/not enabled|unsupported provider/i.test(msg))
     return `${who} sign-in is not switched on in Supabase yet.`;
   if (/already|exists|linked/i.test(msg))
@@ -1149,10 +1153,18 @@ async function loadAccount() {
   const { data: s } = await sb.auth.getSession();
   if (!s.session) return;
   let ids = null;
+  let linkNote = null;
   try {
     const { data } = await sb.auth.getUserIdentities();
     ids = data?.identities || [];
-  } catch { /* manual linking off, or an older SDK — the panel says so */ }
+  } catch (e) {
+    // Not fatal: the rest of the screen still works. But say which setting,
+    // because "could not read your sign-in methods" is unactionable.
+    ids = null;
+    linkNote = /manual linking is disabled/i.test(e?.message || '')
+      ? 'Turn on "Enable manual linking" in Supabase → Authentication → Sign In / Providers to add Apple or Google to this account.'
+      : null;
+  }
 
   let factors = [];
   try {
@@ -1160,10 +1172,10 @@ async function loadAccount() {
     factors = (data?.totp || []).filter(f => f.status === 'verified');
   } catch { /* nothing enrolled */ }
 
-  renderAccount(s.session.user, ids, factors);
+  renderAccount(s.session.user, ids, factors, linkNote);
 }
 
-function renderAccount(user, ids, factors) {
+function renderAccount(user, ids, factors, linkNote) {
   const have = new Set((ids || []).map(i => i.provider));
   const only = (ids || []).length <= 1;
 
@@ -1193,6 +1205,7 @@ function renderAccount(user, ids, factors) {
       <p class="sub dim">Every door below opens the same record. Your AI, your watch and
       this page all write to one account, whatever address each of them knows you by.</p>
       <div class="doors">${rows || '<p class="empty">Could not read your sign-in methods. If this persists, manual linking may be off in Supabase.</p>'}</div>
+      ${linkNote ? `<p class="sub" style="color:var(--heat-4)">${esc(linkNote)}</p>` : ''}
       ${offer ? `<div class="btnrow">${offer}</div>
       <p class="sub dim">Linking adds a way in. It never makes a second account, and it
       never moves your history anywhere.</p>` : ''}
@@ -1416,6 +1429,12 @@ function toCm(raw, imperial) {
 }
 
 
+// Newest first: somebody born in 1990 should not scroll past 1926 to find it.
+const YEARS = (() => {
+  const now = new Date().getFullYear();
+  return Array.from({ length: 92 }, (_, i) => now - 8 - i);
+})();
+
 const ZONES = (() => {
   try { return Intl.supportedValuesOf('timeZone'); }
   catch { return ['America/Toronto', 'America/New_York', 'America/Vancouver', 'Europe/London', 'UTC']; }
@@ -1484,7 +1503,10 @@ function renderProfile(d) {
                aria-label="Height"></label>
 
       <label>Born
-        <input id="f-year" type="number" min="1900" max="${new Date().getFullYear()}" value="${p.birth_year ?? ''}" placeholder="—"></label>
+        <select id="f-year">
+          <option value=""${p.birth_year ? '' : ' selected'}>—</option>
+          ${YEARS.map(y => opt(y, p.birth_year)).join('')}
+        </select></label>
 
       <label>Sex
         <input id="f-sex" type="text" value="${esc(p.sex || '')}" placeholder="your words"></label>
@@ -1561,7 +1583,7 @@ async function saveProfile() {
       height_cm: $('f-height').dataset.set === '1'
         ? ($('f-units').value === 'imperial' ? Number($('f-height').value) * 2.54 : Number($('f-height').value))
         : null,
-      birth_year: numOrNull('f-year'),
+      birth_year: $('f-year').value ? Number($('f-year').value) : null,
       sex: $('f-sex').value.trim() || null,
       activity_level: $('f-act').value || null,
       train_days: numOrNull('f-days'),

@@ -2772,6 +2772,23 @@ await test('switching units moves the slider, not just the label', () => {
   assert.match(src, /el\.value = nowImp \? Math\.round\(cm \/ 2\.54\) : Math\.round\(cm\)/);
 });
 
+await test('born is a picker, not a keyboard', () => {
+  const src = page('app.html');
+  assert.match(src, /<select id="f-year">/);
+  // Newest first — somebody born in 1990 should not scroll past 1926.
+  assert.match(src, /now - 8 - i/);
+  // Blank stays blank: an unanswered year is not a year.
+  assert.match(src, /birth_year: \$\('f-year'\)\.value \? Number/);
+});
+
+await test('a Supabase setting is named with the place it lives', () => {
+  // "Manual linking is disabled" names a setting without saying where, and it
+  // lands on the exact screen somebody is on when they try to link.
+  const src = page('app.html');
+  assert.match(src, /manual linking is disabled/i);
+  assert.match(src, /Authentication → Sign In \/ Providers/);
+});
+
 // ── Report ──────────────────────────────────────────────────────────────────
 
 console.log(results.join('\n'));
