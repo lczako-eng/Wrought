@@ -1922,11 +1922,26 @@ async function loadAdmin() {
   const res = await fetch('/.netlify/functions/api-admin', {
     headers: { Authorization: `Bearer ${data.session.access_token}` },
   });
-  if (!res.ok) {
-    $('content').innerHTML = `<p class="empty">Not available.<br><small>${res.status}</small></p>`;
-    return;
-  }
+  if (!res.ok) { $('content').innerHTML = failPanel('Operator', res, await res.text()); return; }
   renderAdmin(await res.json());
+}
+
+// A screen that says only "Not available." is a screen nobody can act on, and
+// it is usually one migration or one environment variable away from working.
+// The server already names both; this stops the page throwing that away.
+function failPanel(title, res, body) {
+  let out = {};
+  try { out = JSON.parse(body); } catch { /* not JSON */ }
+  const why = out.message || out.error || (res.status === 401 ? 'Not signed in.'
+    : res.status === 403 ? 'This account is not an administrator.'
+    : res.status === 402 ? 'This account is suspended.'
+    : `The server answered ${res.status}.`);
+  return `<section class="panel">
+    <h2>${esc(title)}</h2>
+    <p class="sub">${esc(why)}</p>
+    <p class="sub dim">HTTP ${res.status}. If this mentions a migration, run it in Supabase —
+    <a href="/status">/status</a> lists what is missing.</p>
+  </section>`;
 }
 
 let adminView = 'numbers';
@@ -1955,7 +1970,7 @@ async function loadPeople() {
   const res = await fetch('/.netlify/functions/api-admin?view=people', {
     headers: { Authorization: `Bearer ${s.session.access_token}` },
   });
-  if (!res.ok) { $('content').innerHTML = '<section class="panel"><p class="empty">Not available.</p></section>'; return; }
+  if (!res.ok) { $('content').innerHTML = adminTabs() + failPanel('People', res, await res.text()); return; }
   const d = await res.json();
 
   const rows = (d.people || []).map(p => `
@@ -2011,7 +2026,7 @@ async function loadCodes() {
   const res = await fetch('/.netlify/functions/api-admin?view=codes', {
     headers: { Authorization: `Bearer ${s.session.access_token}` },
   });
-  if (!res.ok) { $('content').innerHTML = '<section class="panel"><p class="empty">Not available.</p></section>'; return; }
+  if (!res.ok) { $('content').innerHTML = adminTabs() + failPanel('Codes', res, await res.text()); return; }
   const d = await res.json();
 
   const rows = (d.codes || []).map(c => `
@@ -3146,10 +3161,7 @@ async function loadPhotos() {
   const res = await fetch('/.netlify/functions/api-photos', {
     headers: { Authorization: `Bearer ${s.session.access_token}` },
   });
-  if (!res.ok) {
-    $('content').innerHTML = '<section class="panel"><h2>Photos</h2><p class="empty">Not available.</p></section>';
-    return;
-  }
+  if (!res.ok) { $('content').innerHTML = failPanel('Progress photos', res, await res.text()); return; }
   renderPhotos(await res.json());
 }
 

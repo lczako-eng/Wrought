@@ -13,7 +13,7 @@
 // yesterday's numbers with confidence, so anything carrying data is network
 // first and only falls back to cache when the network genuinely fails.
 
-const SHELL = 'wrought-shell-v2';
+const SHELL = 'wrought-shell-v3';
 
 // Only the frame: markup, icons, manifest. No API responses ever.
 const SHELL_FILES = [
@@ -55,8 +55,17 @@ self.addEventListener('fetch', (e) => {
 
   if (live || e.request.method !== 'GET') return;
 
+  // A page is never served from cache while the network is reachable. The
+  // fetch below is already network-first, but Safari will happily hold a
+  // stale HTML response — so navigations bypass the HTTP cache outright.
+  // Otherwise a fix ships and the phone keeps showing the old bug, which is
+  // indistinguishable from the fix not working.
+  const req = e.request.mode === 'navigate'
+    ? new Request(e.request, { cache: 'reload' })
+    : e.request;
+
   e.respondWith(
-    fetch(e.request)
+    fetch(req)
       .then((res) => {
         // Keep the shell fresh whenever the network answers.
         const copy = res.clone();
