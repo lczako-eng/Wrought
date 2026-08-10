@@ -698,9 +698,16 @@ square, because figure-ground contrast is the only thing that survives 32px once
 no serif is a pixel wide. Founder-approved after seeing five drawn options —
 *"that new symbol looks amazing, make that universal"*.
 
-The wordmark itself is **black, compressed, tight** (`--stamp`, weight 900,
-`font-stretch: 75%`), not the earlier wide airy setting. Wide read as
-considered; this reads as load-bearing.
+**The wordmark is the same bracketed slab as the tile, on every page** —
+`--stamp`, weight 700, Rockwell then Roboto Slab then the serifs every platform
+ships. A compressed grotesque beside a slab W reads as two different companies,
+which is exactly what happened: the landing page moved to the slab and the
+dashboard, connect, privacy and terms did not, so **signing in swapped the
+brand** and the founder's complaint was *"the page looks nothing like the
+advertising outside of it"*. The compressed grotesque keeps its real job under
+its own name, `--grotesk` — big display numbers and lift names. Two roles, two
+variables, and a test asserting all six pages set the word in the slab, because
+this drift is invisible on any page viewed by itself.
 
 `icon.svg` plus PNG at 512/192/180/32, wired into every page head,
 `.well-known/mcp.json` and `site.webmanifest`. Paths, never `<text>` — a favicon

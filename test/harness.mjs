@@ -2692,6 +2692,38 @@ await test('nothing else claims .bar — the header owns it', () => {
   assert.ok(!/class="bar"/.test(src), 'something is still using class="bar"');
 });
 
+group('One wordmark, on every page');
+
+await test('the word is set in the same slab everywhere', () => {
+  // "The page looks nothing like the advertising outside of it." It was the
+  // typeface: the landing page set WROUGHT in the bracketed slab that matches
+  // the tile, and the dashboard, connect, privacy and terms set it in a
+  // compressed grotesque — so signing in swapped the company. One mark.
+  const PAGES = {
+    'index.html':     /--stamp:\s*Rockwell/,
+    'app.html':       /--stamp:\s*Rockwell/,
+    'authorize.html': /\.mark \.name\{font-family:Rockwell/,
+    'connect.html':   /\.mark \.name\{font-family:Rockwell/,
+    'privacy.html':   /\.wordmark\{font-family:Rockwell/,
+    'terms.html':     /\.wordmark\{font-family:Rockwell/,
+  };
+  for (const [file, re] of Object.entries(PAGES)) {
+    assert.match(page(file), re, `${file} sets the wordmark in something else`);
+  }
+});
+
+await test('the compressed grotesque keeps its own variable', () => {
+  // The two roles drifted into one name once already. Big display numbers and
+  // lift names are --grotesk; the word is --stamp. Never the reverse.
+  const src = page('app.html');
+  assert.match(src, /--grotesk:\s*-apple-system/);
+  assert.match(src, /\.hero \.net \{\s*font-family: var\(--grotesk\)/);
+  // Nothing squashes the mark any more — font-stretch belongs to the grotesque.
+  const mark = src.match(/\.mark \.name \{([^}]*)\}/)[1];
+  assert.ok(!/font-stretch/.test(mark), 'the wordmark is being compressed again');
+  assert.match(mark, /font-family: var\(--stamp\)/);
+});
+
 group('Tabs at the top, and a reset that lands somewhere useful');
 
 await test('the view switcher sits in the header and scrolls sideways', () => {
