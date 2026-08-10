@@ -2498,14 +2498,13 @@ await test('signing out does not pretend to disconnect the assistant', () => {
 
 group('Height in whatever unit you actually think in');
 
-await test('the height field follows the unit setting', () => {
+await test('the height control follows the unit setting', () => {
   // It was hard-labelled "Height (cm)" whatever units somebody picked, so an
-  // imperial user typing 5'11 got nothing and typing 180 got a lie.
+  // imperial user got a box that meant something other than it said. It is a
+  // slider now, and the RANGE is what carries the unit.
   const src = page('app.html');
-  assert.match(src, /imp \? 'Height \(ft &amp; in\)' : 'Height \(cm\)'/);
-  assert.match(src, /toCm\(\$\('f-height'\)\.value/);
-  // Switching units rewrites the box rather than leaving a number under the
-  // wrong label.
+  assert.match(src, /min="\$\{imp \? 54 : 137\}"/);
+  assert.match(src, /fromCm\(isImp \? Number\(el\.value\) \* 2\.54 : Number\(el\.value\), isImp\)/);
   assert.match(src, /\$\('f-units'\)\.addEventListener\('change'/);
 });
 
