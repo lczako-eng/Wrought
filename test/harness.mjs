@@ -25,12 +25,13 @@ import {
   trainingBurn,
 } from '../netlify/functions/lib/training.js';
 import { activityBurn, activityTotal, matchActivity, ACTIVITIES, EFFORTS } from '../netlify/functions/lib/activity.js';
+import { warmupFor, sessionProgress } from '../netlify/functions/lib/warmup.js';
 const { goalCall, PACES, PUSH } = await import('../netlify/functions/lib/training.js');
 import {
   localDateFor, addDays, daysBetween, clockString, humanDuration,
   kgToLb, lbToKg, cmToIn, inToCm, sayWeight,
   windowStatus, weightTrend, trainingMatrix, summariseRange, careFlags, scoreGoals,
-  eventsFromClient, fastLength, fastingSummary, needsMacros, matchEntries, setupNeeded,
+  eventsFromClient, fastLength, fastingSummary, needsMacros, needsDuration, matchEntries, setupNeeded,
 } from '../netlify/functions/lib/wrought.js';
 import { spokenBrief, spokenLog, spokenFlag, pendingVoice } from '../netlify/functions/lib/voice.js';
 
@@ -3979,6 +3980,145 @@ await test('a Supabase setting is named with the place it lives', () => {
   const src = page('app.html');
   assert.match(src, /manual linking is disabled/i);
   assert.match(src, /Authentication → Sign In \/ Providers/);
+});
+
+// ── A saved workout, ticked off ─────────────────────────────────────────────
+
+group('Saved workouts, the checklist, and the five minutes before');
+
+await test('a workout is a percentage of sets, not of exercises', () => {
+  // "A checkmark that will calculate how much percent of your workout you've
+  // completed." Sets are the honest denominator — three of four exercises
+  // touched is not 75% done if the last one is six sets.
+  const plan = [
+    { name: 'Bench Press', sets: 4, reps: 8 },
+    { name: 'Row', sets: 3, reps: 10 },
+    { name: 'Curl', sets: 3, reps: 12 },
+  ];
+  const sets = [
+    ...Array(4).fill({ exercise: 'Bench Press' }),
+    ...Array(2).fill({ exercise: 'Row' }),
+  ];
+  const p = sessionProgress(plan, sets);
+  assert.equal(p.sets_planned, 10);
+  assert.equal(p.sets_done, 6);
+  assert.equal(p.percent, 60);
+  assert.equal(p.exercises[0].complete, true);
+  assert.equal(p.exercises[1].complete, false);
+  assert.equal(p.exercises[1].done, 2);
+  assert.equal(p.exercises_complete, 1);
+});
+
+await test('extra sets do not produce a number over 100', () => {
+  const plan = [{ name: 'Squat', sets: 3, reps: 5 }];
+  const p = sessionProgress(plan, Array(5).fill({ exercise: 'Squat' }));
+  assert.equal(p.percent, 100);
+  // Still capped per exercise, so the count underneath stays believable.
+  assert.equal(p.exercises[0].done, 3);
+});
+
+await test('the warm-up matches the session, not a poster', () => {
+  // A generic warm-up is obviously generic and gets skipped for that reason.
+  const legs = warmupFor([{ name: 'Back Squat', muscles: ['legs'] }, { name: 'Romanian Deadlift' }]);
+  assert.ok(legs.patterns.includes('squat'));
+  assert.ok(legs.patterns.includes('hinge'));
+  assert.doesNotMatch(legs.moves.join(' '), /band pull-aparts/i);
+
+  const push = warmupFor([{ name: 'Bench Press' }, { name: 'Overhead Press' }]);
+  assert.ok(push.patterns.includes('push'));
+  assert.match(push.moves.join(' '), /arm circles/i);
+});
+
+await test('nothing recognised still gets a warm-up rather than silence', () => {
+  const odd = warmupFor([{ name: 'Prowler medley' }]);
+  assert.ok(odd.moves.length >= 2);
+  assert.equal(odd.skippable, true);
+});
+
+await test('it is movement, never a held stretch before a heavy set', () => {
+  // Not a style preference: a long static stretch immediately before a heavy
+  // set measurably costs force for the next half hour. Static work belongs at
+  // the end, which is where it is offered.
+  const w = warmupFor([{ name: 'Back Squat' }]);
+  assert.match(w.style, /not held stretches/i);
+  assert.ok(w.cooldown.length, 'the static work was dropped rather than moved');
+  assert.match(w.cooldown.join(' '), /30 seconds/i);
+  assert.doesNotMatch(w.moves.join(' '), /hold .* stretch|static/i);
+});
+
+await test('a warm-up is never presented as treating an injury', () => {
+  const w = warmupFor([{ name: 'Bench Press' }], { limitations: ['left shoulder impingement'] });
+  assert.ok(w.caution, 'a limitation on file produced no caution');
+  assert.match(w.caution, /not treatment/i);
+  assert.match(w.caution, /leave it out rather than working through it/i);
+});
+
+await test('the write-up survives adding one movement to a routine', () => {
+  // A plan grows over weeks. Wiping the reason the session is in that order
+  // because somebody added calf raises is the same loss as an amend
+  // overwriting a detail that was already known.
+  const src = readFileSync(new URL('../netlify/functions/mcp.js', import.meta.url), 'utf8');
+  const fn = src.slice(src.indexOf('async function saveRoutine('), src.indexOf('async function listRoutines('));
+  assert.match(fn, /notes: args\.notes != null \? String\(args\.notes\)[^:]*: \(existing\?\.notes \|\| null\)/);
+
+  const tool = TOOLS.find(t => t.name === 'save_routine');
+  assert.ok(tool.inputSchema.properties.notes, 'save_routine cannot take a write-up');
+  assert.match(tool.inputSchema.properties.notes.description, /write-up/i);
+});
+
+await test('a session with no minutes on it is flagged, not silently free', () => {
+  // The founder: a workout decided through the assistant rather than measured
+  // by a watch still has to count. With no duration it contributes zero to
+  // calories out and looks perfectly logged, which is the worst combination.
+  const written = [
+    { id: 'a', event_type: 'workout', summary: 'chest and triceps' },
+    { id: 'b', event_type: 'workout', summary: 'outdoor walk 40 min' },
+    { id: 'c', event_type: 'workout', summary: 'watch run' },
+    { id: 'd', event_type: 'food', summary: 'eggs' },
+  ];
+  const events = [
+    { detail: {} },
+    { detail: { minutes: 40 } },
+    { detail: { calories: 500 } },
+    { detail: {} },
+  ];
+  const out = needsDuration(written, events);
+  assert.equal(out.length, 1);
+  assert.equal(out[0].id, 'a');
+});
+
+await test('a logged session burns something, scaled to their own weight', () => {
+  // 60 minutes of lifting is not the same number of calories for a 60kg and a
+  // 150kg person, and a "standard guide" figure is wrong for both.
+  const light = trainingBurn([{ detail: { kind: 'strength', minutes: 60 } }], 60);
+  const heavy = trainingBurn([{ detail: { kind: 'strength', minutes: 60 } }], 150);
+  assert.ok(heavy.kcal > light.kcal * 2, `${heavy.kcal} vs ${light.kcal}`);
+  assert.equal(heavy.source, 'estimate');
+  // A watch's own figure still wins outright.
+  const measured = trainingBurn([{ detail: { kind: 'strength', minutes: 60, calories: 700 } }], 150);
+  assert.equal(measured.kcal, 700);
+  assert.equal(measured.source, 'device');
+});
+
+await test('the rack screen and the assistant read one percentage', () => {
+  const api = readFileSync(new URL('../netlify/functions/api-session.js', import.meta.url), 'utf8');
+  assert.match(api, /sessionProgress/);
+  const page = readFileSync(new URL('../public/app.html', import.meta.url), 'utf8');
+  assert.match(page, /function checklistPanel/);
+  // The page draws what it was handed and computes nothing.
+  const fn = page.slice(page.indexOf('function checklistPanel'), page.indexOf('// ── The log'));
+  assert.doesNotMatch(fn, /\.reduce\(|\.filter\(/);
+  assert.match(fn, /p\.percent/);
+});
+
+await test('the connector is told to write up, tick off and warm up', () => {
+  assert.match(SERVER_INSTRUCTIONS, /A SAVED WORKOUT IS A NAME, AN ORDER, AND THE REASON/);
+  assert.match(SERVER_INSTRUCTIONS, /WARM UP FIRST, AND LET THEM SKIP IT IN ONE WORD/);
+  assert.match(SERVER_INSTRUCTIONS, /A WORKOUT WITH NO DURATION COUNTS FOR NOTHING/);
+  assert.match(SERVER_INSTRUCTIONS, /never work a percentage out yourself/i);
+  // And the phrasebook carries how people actually ask for a saved session.
+  assert.match(SERVER_INSTRUCTIONS, /remember this as my chest day/i);
+  assert.match(SERVER_INSTRUCTIONS, /what's in my leg day/i);
 });
 
 // ── The plan ────────────────────────────────────────────────────────────────

@@ -21,12 +21,13 @@ import {
   sayWeight, sayWeightDelta, sayLength, lbToKg, inToCm, kgToLb,
   getProfile, getMemory, getGoals, getWindow, windowStatus,
   dayFacts, rangeFacts, summariseRange, scoreGoals, careFlags,
-  parseLog, eventsFromClient, needsMacros, matchEntries, setupNeeded, insertEvents, writeVerdict, rememberFact,
+  parseLog, eventsFromClient, needsMacros, needsDuration, matchEntries, setupNeeded, insertEvents, writeVerdict, rememberFact,
   fastLength, fastingSummary,
 } from './lib/wrought.js';
 import { allowed } from './lib/membership.js';
 import { pendingVoice } from './lib/voice.js';
 import { activityBurn, EFFORTS } from './lib/activity.js';
+import { warmupFor, sessionProgress } from './lib/warmup.js';
 import { PROVIDERS, providerSummary, recommendRoute } from './lib/providers.js';
 import { nutritionTotals, composition, macroMatrix, yearOverYear } from './lib/nutrition.js';
 import {
@@ -140,6 +141,8 @@ HOW PEOPLE ACTUALLY ASK. Nobody says "call the brief tool". They say one of a hu
   my_plan — "what's my plan", "what am I on", "what am I actually doing", "what am I aiming for", "why that number", "what's my target", "remind me what this is", "what's my route" (dictation for WROUGHT), "how does this work for me"
   set_plan — "make it aggressive", "I want this off faster", "go harder on me", "chase me", "ease off", "nothing drastic", "stop nagging me", "leave me alone a bit", "make it four days a week", "I can only do three", "change my plan"
   log_activity — "I was at work all day", "worked at the petting zoo", "did a double shift", "on site since six", "been on my feet since seven", "spent the afternoon digging", "moved house today", "was doing the garden", "shovelled the drive", "long shift", "physical day", "grafting all day"
+  save_routine — "save that", "remember this as my chest day", "call it my S-tier workout", "keep that one", "that was good, keep it", "add calf raises to my leg day", "make it four sets", "write it up for me"
+  list_routines — "what workouts do I have", "my saved workouts", "what's in my leg day", "show me my routines", "what have I got saved"
   swap_exercise — "machine's taken"
   calibrate_lift — "I usually bench 185", "I can do 80 for 8", "my max is 315", "I think I can press about", "I used to squat", "someone's on it", "bench is busy", "rack's full", "it's occupied", "can't get on it", "there's a queue", "that machine's broken", "can we do something else"
   recall / search_log — "what did I do last Tuesday", "have I had this before", "when did I last", "find", "look up", "what was my best"
@@ -173,6 +176,14 @@ THE MACHINE BEING TAKEN IS NORMAL, NOT A PROBLEM TO DISCUSS. "Someone's on it" m
 WHEN THE SESSION ENDS, NAME THE NEXT ONE. end_session returns next_workout and training_week. Close every workout with them, in one line: what they just did, anything that beat last time, and what is next — "Next up: Push A, week 3." This server can never speak first, so the end of one session is the only place the next one can be planted. If the block just finished, SAY SO — that is the only reward the structure had to give.
 
 A GREETING IN THAT REGISTER IS A REQUEST, NOT SMALL TALK. "Hey jim bro", "gym bro", "morning", "coach" and the rest are not openers to be answered conversationally — they are the user asking for their read. CALL THE TOOL FIRST and lead with what comes back. Never reply "hey bro, what's up?" and wait: they already told you what's up. If genuinely nothing is logged yet, still call brief and say that, rather than making them ask twice.
+
+A SAVED WORKOUT IS A NAME, AN ORDER, AND THE REASON IT IS IN THAT ORDER. save_routine takes a notes field — the write-up. Write one whenever a routine is saved: what the session is for, why the order, what to push and what to leave a rep in the tank on. Without it a routine is a list of names, which is the part somebody already has in their phone. It is shown at the top every time the session starts, so it is worth a real paragraph. Saving the same name UPDATES it, so "add calf raises to my leg day" or "make it four sets" is one call with add[] and never a rebuild — and the write-up survives that.
+
+THE CHECKLIST AND THE PERCENTAGE ARE COMPUTED, NOT COUNTED BY YOU. start_session and log_set both return a checklist with a tick per exercise and a progress block carrying percent, sets_done and sets_planned. Read those out; never work a percentage out yourself, and never try to remember where in the session somebody is — the server holds it and the Trainer screen on their phone is drawing from the same numbers. Mention the percentage when they ask or when a milestone actually lands, not after every set.
+
+WARM UP FIRST, AND LET THEM SKIP IT IN ONE WORD. start_session returns a warmup. Offer it in one short line with the movements listed, say they can skip it in the same breath, and then give them the first exercise WITHOUT waiting for an answer. Nobody warms up on their own and the thing that gets skipped is always the thing nobody mentioned — but a warm-up that blocks the session is one people resent, and then a session they stop starting. It is deliberately dynamic movement rather than held stretches: holding a stretch right before a heavy set costs force for the next half hour, and the static work is offered at the end instead. If they have a limitation on file, never present any of it as treating or rehabilitating that — it is a warm-up, not physiotherapy.
+
+A WORKOUT WITH NO DURATION COUNTS FOR NOTHING. A session logged through you rather than measured by a watch still has to move calories out — and at a heavy bodyweight that is several hundred calories, not a rounding error. The server computes it from the minutes and their weight, so log returns needs_duration whenever a workout went in without one. Ask how long it took in the SAME message as the confirmation, one short question, then amend_last with the minutes. NEVER estimate the calories for a session yourself.
 
 NOBODY TRAINS BEFORE THEY KNOW WHAT THEY ARE TRAINING FOR. suggest_workout and start_session carry a plan block. When it says set: false, that person has never been told what plan they are on — so before the session, say in two lines what a plan is and ask for ALL of the missing parts in ONE message: what they are after, how fast (gentle / steady / aggressive), how hard WROUGHT should chase them (light / normal / relentless), and how many sessions a week they will honestly do. Then call set_plan and set_goal AND give them the workout in the same turn. Never make somebody ask twice for the session they came for, and never turn this into a form — a setup interview standing between somebody and their first workout is how the first workout stops happening. When set: true, open with the plan in one short line so the session has a reason attached, and get on with it.
 
@@ -407,7 +418,7 @@ const TOOLS = [
   {
     name: 'save_routine',
     title: 'Remember a workout by name',
-    description: 'Saves a named session they can call up forever — "remember this as my leg day". Also use after building a good session so they never rebuild it from scratch. Covers non-gym days too: kind "sport" holds five-a-side, hockey, climbing. Saving an existing name updates it rather than creating a duplicate.',
+    description: 'Saves a named session they can call up forever — "remember this as my leg day", "save that as my S-tier chest workout". Also use after building a good session so they never rebuild it from scratch. Covers non-gym days too: kind "sport" holds five-a-side, hockey, climbing. Saving an existing name updates it rather than creating a duplicate, so adding one movement or changing the reps never means rebuilding the whole thing. Write the notes field: a saved workout without the reason it is in that order is just a list, and the list is the part people already have.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -425,8 +436,10 @@ const TOOLS = [
                        muscles: { type: 'array', items: { type: 'string' } },
                        cue:     { type: 'string', description: 'One plain line on what it should feel like. Matters most for beginners.' },
                      } } },
+        notes: { type: 'string',
+          description: 'The write-up — how to run this session, in a short paragraph or a few lines. What it is for, the order and why, what to push and what to leave something in the tank on, anything to watch. This is what makes a saved workout a workout rather than a list of names, and it is shown at the top when the session starts. Write it in their register, not a textbook\'s.' },
         equipment:   { type: 'array', items: { type: 'string' } },
-        est_minutes: { type: 'integer' },
+        est_minutes: { type: 'integer', description: 'Roughly how long it takes. Used for the burn when no watch measured the session, so it is worth filling in.' },
         from_last_session: { type: 'boolean',
           description: 'Capture what they ACTUALLY did in their last finished session, in the order they did it, instead of passing exercises. This is how routines really get built — nobody authors a programme upfront, they have a good session and want it again. Use for "save that", "remember what I just did", "that was good, keep it".' },
         add: { type: 'array',
@@ -896,6 +909,7 @@ async function log(args, user) {
 
   const written = await insertEvents(user.id, profile, events, { rawInput: text });
   const hungry = needsMacros(written, events);
+  const untimed = needsDuration(written, events);
 
   const kinds = [...new Set(written.map(e => e.event_type))];
   const day = await dayFacts(user.id, profile, localDateFor(profile.timezone));
@@ -918,7 +932,12 @@ async function log(args, user) {
     // is the only thing that can fix it — it read the words. Asking here, in the
     // response it is currently reading, beats hoping the tool description landed.
     needs_macros: hungry.length ? hungry : undefined,
-    note: hungry.length
+    // Same shape as needs_macros, for the same reason: a session with no
+    // minutes on it contributes zero to calories out and looks logged.
+    needs_duration: untimed.length ? untimed : undefined,
+    note: untimed.length && !hungry.length
+      ? `Recorded, but ${untimed.map(u => `"${u.summary}"`).join(' and ')} went in with no duration, so ${untimed.length === 1 ? 'it counts' : 'they count'} for NOTHING in calories out. Ask how long it took — one short question, in the same message as the confirmation — then amend_last with the minutes. The server works the calories out from the minutes and their bodyweight; never estimate the calories yourself.`
+      : hungry.length
       ? `Recorded, but ${hungry.map(h => `"${h.summary}"`).join(' and ')} went in with no calories or macros, so ${hungry.length === 1 ? 'it counts' : 'they count'} for nothing in every total. You named the food, so you can estimate ${hungry.length === 1 ? 'it' : 'them'}: call amend_last NOW with your best figures and estimated: true. Do it without asking permission${args.quiet ? ', silently, and say nothing about it' : ' and mention the figures in one short line'}. Only leave macros null when the food itself was never named — "had lunch" stays empty, "two pepperettes" does not.`
       : args.quiet
         ? 'Caught in passing. Acknowledge in a short clause at most and return immediately to what they were actually talking about. No totals, no follow-up questions, no coaching.'
@@ -1874,13 +1893,29 @@ async function startSession(args, user) {
     };
   }
 
+  // The five minutes nobody does on their own. Offered rather than imposed:
+  // a warm-up standing between somebody and the bar is one they resent, and
+  // then a session they stop starting. Built from the patterns in THIS plan,
+  // because a generic warm-up is obviously generic and gets skipped for that
+  // reason alone.
+  const warmup = warmupFor(plan, {
+    minutes: routine?.est_minutes || args.minutes || null,
+    limitations: memory.filter(m => m.category === 'health').map(m => m.fact),
+  });
+
   return {
     session_id: session.id,
     block: blockNote,
     name, tier,
+    // The write-up, when the routine carries one. A saved workout is a name, an
+    // order, and the reason it is in that order — losing the third makes it a
+    // list, which is the thing people already have on their phone.
+    routine_notes: routine?.notes || null,
     exercises: plan.map(e => `${e.name} — ${e.sets}×${e.reps}`),
     checklist: planChecklist(plan, 0, 0),
+    progress: sessionProgress(plan, []),
     total_exercises: plan.length,
+    warmup,
     up_next: { ...first, set: 1, of: first.sets, load: opener },
     readiness: ready?.known ? ready : undefined,
     coaching: TIERS[tier]?.doctrine,
@@ -1888,7 +1923,9 @@ async function startSession(args, user) {
     note: (ready?.state === 'strained' || ready?.state === 'watch'
       ? 'READINESS FIRST, in one line, before the first exercise — the body gets a veto and today is a day to say so. It only ever softens: never turn a good reading into "add weight". '
       : '') +
-      'Call log_set after EVERY set they report, even a bare "done". The server tracks their position — never try to hold it yourself, and never re-state the whole plan between sets.',
+      'OFFER THE WARM-UP FIRST, in one short line with the movements listed, and say in the same breath that they can skip it. Then the first exercise. Do NOT wait for an answer before giving them the session — if they say skip, just carry on. It is dynamic movement, never held stretches: holding a stretch right before a heavy set costs force for the next half hour, and static work is offered at the end instead. Never present any of it as treating an injury. ' +
+      (routine?.notes ? 'The routine has a write-up on it (routine_notes) — mention the one line of it that matters today rather than reading it out. ' : '') +
+      'Call log_set after EVERY set they report, even a bare "done". The server tracks their position and returns the percentage complete — never try to hold it yourself, and never re-state the whole plan between sets.',
     next_actions: ['log_set when they finish a set', 'end_session when they are done'],
   };
 }
@@ -1955,6 +1992,10 @@ function planChecklist(plan, cursor, setsDoneHere = 0) {
     exercise: e.name,
     target: `${e.sets}\u00d7${e.reps}`,
     status: i < cursor ? 'done' : i === cursor ? 'current' : 'to_come',
+    // A tick per line, so the checklist reads the same in a conversation as it
+    // looks on the Trainer screen. Two representations of one thing that do
+    // not match is how somebody stops trusting either.
+    tick: i < cursor ? '[x]' : i === cursor ? '[>]' : '[ ]',
     ...(i === cursor ? { sets_done: setsDoneHere, sets_left: Math.max(0, (e.sets || 0) - setsDoneHere) } : {}),
   }));
 }
@@ -2060,8 +2101,11 @@ async function logSet(args, user) {
       exercise: `${cursor + 1} of ${plan.length}`,
     },
     checklist: planChecklist(plan, cursor, moreSetsHere ? setsDone : 0),
+    // How far through, computed here so the conversation and the Trainer
+    // screen can never quote two different percentages at the same moment.
+    progress: sessionProgress(plan, sofar || []),
     say: `${moreSetsHere ? 'Logged' : `${current.name} done`}. Rest ${nextExercise.rest_s}s, then ${nextExercise.name} set ${setNo} of ${nextExercise.sets}, ${nextExercise.reps} reps. ${load.say}`,
-    note: 'One or two lines only — they are standing in a gym holding a phone, not reading a report. The so_far numbers are there for the rest gap: offer them if they ask or if the moment fits, never after every single set.',
+    note: 'One or two lines only — they are standing in a gym holding a phone, not reading a report. The so_far numbers are there for the rest gap: offer them if they ask or if the moment fits, never after every single set. The percentage in progress is computed — say it, never work one out yourself, and only when they ask or a milestone lands.',
     next_actions: ['log_set for the next set', 'end_session if they stop early'],
   };
 }
@@ -2344,7 +2388,7 @@ async function saveRoutine(args, user) {
   // Saving the same name updates it. Two indistinguishable "leg day" routines
   // is worse than no routine at all.
   const { data: existing } = await supabase.from('wrought_routines')
-    .select('id, exercises').eq('user_id', user.id).eq('active', true).ilike('name', name).maybeSingle();
+    .select('id, exercises, notes').eq('user_id', user.id).eq('active', true).ilike('name', name).maybeSingle();
 
   // Nobody authors a twelve-week programme upfront. They have one good session
   // and want it again. Capturing what actually happened — in the order it
@@ -2393,6 +2437,10 @@ async function saveRoutine(args, user) {
     user_id: user.id, name, kind: args.kind || 'strength', tier,
     exercises, equipment: args.equipment || profile.equipment || null,
     est_minutes: args.est_minutes || null, updated_at: new Date().toISOString(),
+    // Keep the existing write-up when this save is only adding a movement —
+    // wiping the reason the session is in that order because somebody added
+    // calf raises is the same class of loss as an amend overwriting a detail.
+    notes: args.notes != null ? String(args.notes).slice(0, 4000) : (existing?.notes || null),
   };
 
   const { error } = existing
@@ -2404,8 +2452,11 @@ async function saveRoutine(args, user) {
     saved: name, updated: !!existing, exercises: exercises.length, tier,
     captured_from_session: !!args.from_last_session,
     exercise_names: exercises.map(e => e.name),
+    has_notes: !!row.notes,
+    total_sets: exercises.reduce((a, e) => a + (Number(e.sets) || 0), 0),
     say: `${existing ? 'Updated' : 'Saved'} "${name}" — ${exercises.map(e => `${e.name} ${e.sets}×${e.reps}`).join(', ')}. Say the name any time and it starts.`,
-    note: 'Read the exercise list back once so a mis-captured lift gets caught now. They can add to this later with save_routine and the add field — never make them rebuild it.',
+    note: 'Read the exercise list back once so a mis-captured lift gets caught now. They can add to this later with save_routine and the add field — never make them rebuild it.' +
+      (row.notes ? '' : ' NO WRITE-UP ON IT YET. Offer one in half a line — how to run it, what to push, what to leave in the tank — and write it with save_routine notes if they want it. It is what turns a saved list of names into a workout, and it is shown at the top every time the session starts.'),
     next_actions: [`start_session with routine "${name}"`, 'save_routine with add[] to grow it later'],
   };
 }
@@ -2415,13 +2466,18 @@ async function listRoutines(_args, user) {
   const today = localDateFor(profile.timezone);
 
   const { data } = await supabase.from('wrought_routines')
-    .select('name, kind, tier, exercises, est_minutes, times_used, last_used_on')
+    .select('name, kind, tier, exercises, notes, est_minutes, times_used, last_used_on')
     .eq('user_id', user.id).eq('active', true)
     .order('last_used_on', { ascending: false, nullsFirst: false });
 
   const routines = (data || []).map(r => ({
     name: r.name, kind: r.kind, tier: r.tier,
     exercises: (r.exercises || []).length,
+    // The movements themselves, so "what's in my chest day" is answered from
+    // this call rather than from whatever the model remembers of last week.
+    movements: (r.exercises || []).map(e => `${e.name} ${e.sets}\u00d7${e.reps}`),
+    sets: (r.exercises || []).reduce((a, e) => a + (Number(e.sets) || 0), 0),
+    notes: r.notes || null,
     minutes: r.est_minutes,
     times_used: r.times_used,
     last_used: r.last_used_on,

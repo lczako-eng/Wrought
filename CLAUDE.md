@@ -594,6 +594,47 @@ actually trains:
   `training_week`. The server can never speak first, so the close of one
   session is the only place the next one can be planted.
 
+### A saved workout, the tick list, and the five minutes before
+
+`lib/warmup.js` + `notes` on `wrought_routines` + the checklist panel. The
+founder: *"I want saved workouts like my S-tier workout that I can create with
+the GPT... it should have a name, the procedure, a write-up at least, with a
+checkmark that will calculate how much percent of your workout you've
+completed. And before workout it really should ask — recommend some stretches
+and so forth. You can always say skip it, but it should be part of the
+package."*
+
+- **The write-up is what makes it a workout rather than a list.** `save_routine`
+  takes `notes` — what the session is for, why that order, what to push and
+  what to leave a rep in the tank on — shown at the top every time it starts.
+  It **survives an `add[]`**: wiping the reasoning because somebody added calf
+  raises is the same loss as an amend overwriting a known detail.
+- **The percentage is over SETS, never exercises.** Three of four exercises
+  touched is not 75% when the last one is six sets. Capped at 100 while the
+  count underneath stays honest, and computed in `sessionProgress()` — the same
+  function `api-session.js` and `log_set` both call, so the screen on the rack
+  and the voice in the conversation can never quote two different numbers in
+  the same minute.
+- **The warm-up is built from the patterns in THIS plan.** A generic warm-up is
+  obviously generic and gets skipped for that reason alone. It is offered in
+  one line, skippable in one word, and **the session is handed over without
+  waiting for an answer** — a warm-up that blocks the workout is one people
+  resent and then a session they stop starting.
+- **Dynamic before, static after**, and that is content rather than taste: a
+  held stretch immediately before a heavy set measurably costs force for the
+  next half hour. The static work is real and is offered at the END.
+- **It is never physiotherapy.** With a limitation on file the warm-up still
+  runs but never claims to treat anything — the not-a-doctor line, in the place
+  it is most tempting to cross.
+
+**A session logged through the assistant now burns something.** `needsDuration`
+flags a workout that went in with no minutes, because it contributes exactly
+zero to calories out while looking perfectly logged — the same failure as a
+named food with no macros, in the place people are least likely to check. The
+figure is computed from minutes **and their own bodyweight**: sixty minutes of
+lifting is not the same number for a 60kg and a 150kg person, and a standard
+guide figure is wrong for both.
+
 ### Blocks — a plan with an end, and a deload nobody has to choose
 
 `buildBlock()` / `blockPosition()` in `lib/library.js`, `008_wrought_blocks.sql`,
@@ -1176,7 +1217,7 @@ self-reporting scale removes the most-abandoned manual entry), then Strava.
 
 ## Conventions
 
-- `npm test` runs `test/harness.mjs` — 404 offline tests, no network, no database.
+- `npm test` runs `test/harness.mjs` — 415 offline tests, no network, no database.
   Run it before every push. It covers the JSON-RPC envelope (which fails as an
   uninformative "could not connect" inside ChatGPT) and all the arithmetic
   (which fails as a confidently wrong number in somebody's verdict).

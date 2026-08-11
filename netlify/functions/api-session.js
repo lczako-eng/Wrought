@@ -15,6 +15,7 @@ import {
   supabase, getAuthUser, getProfile, localDateFor, kgToLb,
 } from './lib/wrought.js';
 import { lastPerformance, progressionCall, sessionTotals, exerciseKey } from './lib/training.js';
+import { sessionProgress } from './lib/warmup.js';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -39,7 +40,7 @@ export const handler = async (event) => {
   const unit = imperial ? 'lb' : 'kg';
 
   const { data: session } = await supabase.from('wrought_sessions')
-    .select('id, name, kind, plan, cursor_index, started_at, local_date')
+    .select('id, name, kind, plan, cursor_index, started_at, local_date, routine_id')
     .eq('user_id', user.id).eq('status', 'active').maybeSingle();
 
   if (!session) {
@@ -88,6 +89,11 @@ export const handler = async (event) => {
 
   const totals = sessionTotals(sets);
 
+  // How far through, computed by the same function the tools call. The screen
+  // and the assistant quoting two different percentages at the same moment is
+  // exactly the drift this whole endpoint exists to prevent.
+  const progress = sessionProgress(plan, sets);
+
   return json(200, {
     active: true,
     unit,
@@ -100,6 +106,7 @@ export const handler = async (event) => {
       position: at + 1,
       of: plan.length || null,
     },
+    progress,
     current: current && {
       name: current.name,
       set_number: doneHere.length + 1,

@@ -889,6 +889,29 @@ export function needsMacros(written = [], events = []) {
   return out;
 }
 
+// A workout with no duration on it counts NOTHING toward calories out, and it
+// does so silently — which is the same failure as a named food with no macros,
+// in the one place people are least likely to notice. Somebody logs "chest and
+// triceps", sees it in the log, and reasonably assumes their burn went up.
+//
+// The founder found this the direct way: a session put in through the assistant
+// rather than measured by a watch has to count, and at 150kg it is worth
+// several hundred calories, not nothing. The server can compute it from
+// minutes — so minutes are what has to be asked for, once, in the same breath.
+export function needsDuration(written = [], events = []) {
+  const out = [];
+  written.forEach((row, i) => {
+    if (row.event_type !== 'workout') return;
+    const detail = events[i]?.detail || {};
+    // A watch's own figure beats anything derived, so a session that arrived
+    // with calories on it needs nothing.
+    if (detail.calories != null) return;
+    if (Number(detail.minutes) > 0) return;
+    out.push({ id: row.id, summary: row.summary });
+  });
+  return out;
+}
+
 // Finding the entry somebody means when they say "take the pizza off". Deleting
 // is the one thing that cannot be undone, so this is deliberately literal: every
 // meaningful word in what they said has to appear in the entry. Better to come

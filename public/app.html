@@ -702,6 +702,35 @@ table.matrix td.rh.cold { color: var(--heat-3); }
 .progbar { height: 6px; border-radius: 4px; background: var(--scale); overflow: hidden; margin: 6px 0 12px; }
 .progbar i { display: block; height: 100%; background: linear-gradient(90deg, var(--heat-2), var(--heat-4)); }
 
+/* The workout, ticked off. The percentage is the headline because it is the
+   thing somebody mid-session actually wants — "how much more of this" — and
+   the set counts sit underneath so the number is auditable rather than magic. */
+.progtop { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.progpct { font-family: var(--grotesk); font-size: 34px; font-weight: 700; line-height: 1; }
+.progpct small { font-size: 15px; color: var(--ash-dim); margin-left: 2px; }
+.progsets {
+  font-family: var(--mono); font-size: 10px; letter-spacing: .12em;
+  text-transform: uppercase; color: var(--ash-dim);
+}
+.ticks { list-style: none; margin: 0; padding: 0; }
+.ticks li {
+  display: flex; align-items: center; gap: 10px;
+  padding: 9px 0; border-top: 1px solid var(--edge);
+  font-size: 15px; color: var(--ash-dim);
+}
+.ticks li i {
+  width: 19px; height: 19px; border-radius: 5px; flex: none;
+  border: 1px solid var(--edge); background: var(--scale);
+  display: grid; place-items: center; font-size: 12px; font-style: normal;
+  color: #1A0A02; font-weight: 700;
+}
+.ticks li.ticked { color: var(--ash); }
+.ticks li.ticked i { background: var(--heat-3); border-color: var(--heat-3); }
+/* Half-done reads as started, not as untouched — a set logged has to show. */
+.ticks li.part i { border-color: var(--heat-3); }
+.tkname { flex: 1; min-width: 0; }
+.tkcount { font-family: var(--mono); font-size: 11px; font-variant-numeric: tabular-nums; }
+
 .thennow { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 14px 0 8px; }
 .thennow img, .shot img { width: 100%; display: block; border-radius: 11px; background: var(--scale); }
 .thennow figcaption, .shot figcaption {
@@ -2567,19 +2596,46 @@ function renderTrainer(d) {
       ${restBlock}
       ${done ? `<div class="setpills">${done}</div>` : ''}
     </section>
+    ${checklistPanel(d.progress)}
     <div class="tiles">
       ${tile('Sets', String(d.totals.sets), 'this session')}
       ${tile('Reps', String(d.totals.reps), 'this session')}
       ${tile('Volume', `${n(d.totals.volume)}${d.unit}`, 'weight moved')}
     </div>
-    ${d.upcoming?.length ? `<section class="panel"><h2>Coming up</h2>
-      ${d.upcoming.map(u => `<p class="sub">${esc(u.name)} · ${u.sets}×${u.reps}</p>`).join('')}
-    </section>` : ''}
     <section class="panel"><h2>Logging</h2>
       <p class="sub">Say it to the assistant — "got 8" or "95 for 6" — and this screen follows.
       It reads the same session, so it cannot disagree with what the coach told you.</p>
     </section>`;
   stagger();
+}
+
+// The workout as a list you can tick off, with how far through you are.
+//
+// The founder asked for exactly this: "a checkmark that will calculate how much
+// percent of your workout you've completed." It replaces the old "coming up"
+// list, which showed what was left and nothing about what was done — half the
+// information, and the less motivating half.
+//
+// The percentage is computed server-side by sessionProgress, the same function
+// the assistant's log_set answer uses. Working it out here would mean the
+// screen and the voice could quote two different numbers in the same minute.
+function checklistPanel(p) {
+  if (!p || !p.exercises?.length) return '';
+  return `<section class="panel">
+    <h2>The workout</h2>
+    <div class="progtop">
+      <span class="progpct">${p.percent}<small>%</small></span>
+      <span class="progsets">${p.sets_done} of ${p.sets_planned} sets</span>
+    </div>
+    <div class="progbar"><i style="width:${p.percent}%"></i></div>
+    <ul class="ticks">
+      ${p.exercises.map(e => `<li class="${e.complete ? 'ticked' : e.done ? 'part' : ''}">
+        <i>${e.complete ? '✓' : ''}</i>
+        <span class="tkname">${esc(e.exercise)}</span>
+        <span class="tkcount">${e.done}/${e.sets}</span>
+      </li>`).join('')}
+    </ul>
+  </section>`;
 }
 
 // ── The log ───────────────────────────────────────────────────────────────
