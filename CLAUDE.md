@@ -338,29 +338,34 @@ corrects the pronunciation and never replies "did you mean Wrought?" — it just
 answers. Losing this breaks nothing loudly; the connector simply stops
 recognising its own name, which is the hardest regression to spot.
 
-### The Info.plist that failed two uploads
+### Three Siri synonyms, and the fix that was written before the error was read
 
-Worth recording because the error named nothing useful.
+**ITMS-90626: too many name synonyms in "en". No more than 3.** That was the
+whole cause of two failed uploads, and it is worth recording twice over —
+once for the limit, once for how it was handled.
 
-`INAlternativeAppNames` is an array of dictionaries and there is no
-`INFOPLIST_KEY_` build setting shape for that, so a real `Info.plist` had to
-exist. It was written holding **only that key**, on the assumption that
-`GENERATE_INFOPLIST_FILE = YES` would merge the rest in around it. That merge
-is real — and it is behaviour this repo cannot test, because there is no Xcode
-in the build container. "It should merge" was a guess dressed as a fact.
+`INAlternativeAppNames` is what makes "hey Siri, gym bro" reach the app, since
+every `AppShortcut` phrase must contain the application name. Apple caps the
+list at **three per language** and enforces it at UPLOAD rather than at build,
+so a fourth compiles, archives, and then fails validation with an error a long
+way from the file that caused it. Five were tried, then four. The three that
+survive are *Gym Bro*, *Jim Bro* (dictation's version, same as the phrasebook)
+and *Broski*. Adding a fourth means removing one.
 
-The archive succeeded both times, which is the tell: **the Swift compiled, the
-bundle was refused.** A bundle with no `CFBundleIdentifier` and no
-`CFBundleVersion` fails validation with a message naming neither the file nor
-the setting behind it.
+**The process failure is the more useful lesson.** The archive succeeded both
+times, which correctly says the Swift compiled and the bundle was refused — but
+that was then used to reason to the wrong culprit and ship a fix, when the
+upload log had the exact error in it the whole time. Two burned build numbers.
+**Read the error before writing the fix**, especially when the error is sitting
+in a log nobody has been asked for.
 
-Now the plist is **complete** and `GENERATE_INFOPLIST_FILE` is `NO`. The
-`INFOPLIST_KEY_` settings were deleted rather than left to rot: two places for
-the health usage strings is exactly how one of them goes stale, and a stale
-usage string is an App Review rejection rather than a warning. A test asserts
-every key a bundle is rejected without is present, and that generation stays
-off — the harness cannot run Xcode, but it can check the thing Xcode would
-have complained about.
+The plist is complete and `GENERATE_INFOPLIST_FILE` is `NO` regardless — not
+because it caused this, but because relying on a merge this repo cannot test is
+a standing risk. The `INFOPLIST_KEY_` settings were deleted rather than left
+inert: two places for the health usage strings is how one of them goes stale,
+and a stale usage string is an App Review rejection. A test pins the synonym
+count and the required keys — the harness cannot run Xcode, but it can check
+the things Xcode and App Store Connect would have complained about.
 
 ### Hands-free — Siri owns the wake word, and that is the whole design
 

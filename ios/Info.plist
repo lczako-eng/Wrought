@@ -3,19 +3,17 @@
 <!--
   The COMPLETE Info.plist, and complete on purpose.
 
-  The first version of this file held one key — INAlternativeAppNames — and
-  relied on GENERATE_INFOPLIST_FILE merging everything else in around it. That
-  merge is real, but it is behaviour this repo cannot test: there is no Xcode
-  in the build container, so "it should merge" was a guess dressed as a fact.
-  It was wrong often enough to fail two uploads, because a bundle with no
-  CFBundleIdentifier and no CFBundleVersion is rejected at validation with an
-  error that names neither this file nor the setting that caused it.
+  The first version held one key and relied on GENERATE_INFOPLIST_FILE merging
+  the rest in around it. That merge does work — the two failed uploads were
+  NOT caused by it, whatever the first fix here claimed. They were ITMS-90626:
+  too many Siri name synonyms. The lesson is the one below about reading the
+  error before writing the fix.
 
-  So GENERATE_INFOPLIST_FILE is now NO and every key the app needs is written
-  here, once, where it can be read and checked. The INFOPLIST_KEY_ build
-  settings have been removed from the project rather than left to rot — two
-  places for the health usage strings is exactly how one of them goes stale,
-  and a stale usage string is an App Review rejection.
+  It is complete anyway, and generation is off, because relying on a merge this
+  repo has no way to test is a standing risk even when it is not today's bug.
+  The INFOPLIST_KEY_ settings were removed rather than left inert: two places
+  for the health usage strings is how one of them goes stale, and a stale usage
+  string is an App Review rejection.
 
   The $(...) values are substituted by Xcode at build time from the build
   settings, so version and bundle id still live in one place.
@@ -23,9 +21,18 @@
   INAlternativeAppNames is why "hey Siri, gym bro" reaches this app at all.
   Every AppShortcut phrase must contain the application name, so the way to
   make the sentence somebody actually says work is to teach Siri the names they
-  actually use. "Jim Bro" is here because that is what dictation makes of "gym
-  bro" about half the time — the same reason the connector's phrasebook carries
-  it.
+  actually use.
+
+  THREE, AND NEVER MORE. Apple caps name synonyms at three per language and
+  enforces it at UPLOAD, not at build — so a fourth compiles, archives, and
+  then fails validation with ITMS-90626, which is a long way from the file that
+  caused it. Five were tried, then four; both were refused. If a new nickname
+  is ever wanted, one of these has to go.
+
+  These three earn their place: "Gym Bro" is what the founder asked for, "Jim
+  Bro" is what dictation makes of it about half the time (the same reason the
+  connector's phrasebook carries it), and "Broski" is what he actually types
+  when he opens a conversation.
 -->
 <plist version="1.0">
 <dict>
@@ -93,10 +100,6 @@
 		<dict>
 			<key>INAlternativeAppName</key>
 			<string>Broski</string>
-		</dict>
-		<dict>
-			<key>INAlternativeAppName</key>
-			<string>Coach</string>
 		</dict>
 	</array>
 </dict>

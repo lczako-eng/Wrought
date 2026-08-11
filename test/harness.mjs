@@ -4823,6 +4823,16 @@ await test('the Info.plist carries every key a bundle is rejected without', () =
     assert.ok(plist.includes(`<key>${k}</key>`), `Info.plist is missing ${k}`);
   }
 
+  // THREE SIRI SYNONYMS, MAXIMUM. Apple caps them at three per language and
+  // enforces it at UPLOAD rather than at build, so a fourth compiles, archives
+  // and then fails with ITMS-90626 — an error a long way from the file that
+  // caused it. Five were tried, then four; both were refused, and each cost a
+  // build number and a round trip.
+  const names = plist.match(/<key>INAlternativeAppName<\/key>/g) || [];
+  assert.ok(names.length <= 3, `${names.length} Siri synonyms — Apple allows 3`);
+  assert.ok(names.length >= 1, 'no Siri synonyms, so "gym bro" reaches nothing');
+  assert.ok(plist.includes('<string>Gym Bro</string>'), 'the founder\'s own name for it is gone');
+
   const proj = readFileSync(new URL('../ios/Wrought.xcodeproj/project.pbxproj', import.meta.url), 'utf8');
   assert.match(proj, /GENERATE_INFOPLIST_FILE = NO;/);
   assert.match(proj, /INFOPLIST_FILE = Info\.plist;/);
