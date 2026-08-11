@@ -93,7 +93,19 @@ const METRIC_ALIASES = {
 
   total_calories: 'total_calories',
   totalcaloriesburnedrecord: 'total_calories',
-  basal_energy_burned: 'total_calories',
+
+  // Apple's own resting figure. NOT the same thing as a total, and mapping it
+  // there was quietly wrong — a basal number filed as "everything burned"
+  // reads as a day of doing nothing. Kept apart so it can be compared with
+  // restingBurn() rather than replacing it: Apple derives this from height,
+  // weight and age exactly as we do, so it is a second estimate, not a
+  // measurement, and letting it silently override ours would swap one guess
+  // for another while looking like an upgrade.
+  basal_energy_burned: 'resting_calories',
+  basal_calories: 'resting_calories',
+  resting_calories: 'resting_calories',
+  basalmetabolicraterecord: 'resting_calories',
+  hkquantitytypeidentifierbasalenergyburned: 'resting_calories',
 
   // movement — the metrics that matter for runners, which is most people who
   // wear a watch at all
@@ -107,8 +119,105 @@ const METRIC_ALIASES = {
   active_minutes: 'active_minutes',
   exercise_time: 'active_minutes',
   apple_exercise_time: 'active_minutes',
+  hkquantitytypeidentifierappleexercisetime: 'active_minutes',
   exercisesessionrecord: 'active_minutes',
   moving_time: 'active_minutes',                          // Strava
+
+  // ── The rest of the rings, and the things only a watch knows ─────────────
+  // The founder: "all the matrix that is captured by this watch should be on
+  // that app — like times standing on your feet, blah blah. There's so many
+  // things that could be on there."
+  //
+  // He is right, and the reason is the moat rather than the feature list: a
+  // metric nothing is storing is a metric nobody can ever ask a question about
+  // in two years. Catching them costs almost nothing today and cannot be done
+  // retroactively — Apple keeps the samples on the phone, but nobody goes back
+  // and backfills a year of stand hours they never thought to collect.
+
+  // Hours with at least a minute of standing in them — the blue ring.
+  stand_hours: 'stand_hours',
+  apple_stand_hours: 'stand_hours',
+  apple_stand_hour: 'stand_hours',
+  hkcategorytypeidentifierapplestandhour: 'stand_hours',
+  standing_hours: 'stand_hours',
+
+  // Actual minutes upright, which is a different question from the ring.
+  stand_minutes: 'stand_minutes',
+  apple_stand_time: 'stand_minutes',
+  hkquantitytypeidentifierapplestandtime: 'stand_minutes',
+  standing_time: 'stand_minutes',
+
+  flights_climbed: 'flights',
+  flights: 'flights',
+  floors_climbed: 'flights',
+  elevationgainedrecord: 'flights',
+  hkquantitytypeidentifierflightsclimbed: 'flights',
+
+  // Kept apart from walking distance rather than summed into it: a cyclist
+  // whose "distance" silently includes 40km of riding has a step-equivalent
+  // figure that means nothing.
+  distance_cycling: 'distance_cycling_km',
+  distance_cycling_km: 'distance_cycling_km',
+  cycling_distance: 'distance_cycling_km',
+  distance_swimming: 'distance_swimming_km',
+  swimming_distance: 'distance_swimming_km',
+  hkquantitytypeidentifierdistanceswimming: 'distance_swimming_km',
+
+  // ── Heart, beyond the resting number ────────────────────────────────────
+  walking_heart_rate_average: 'walking_hr',
+  walking_heart_rate: 'walking_hr',
+  hkquantitytypeidentifierwalkingheartrateaverage: 'walking_hr',
+
+  // How fast the heart drops in the minute after effort. One of the better
+  // fitness markers there is, and almost nothing surfaces it.
+  heart_rate_recovery: 'hr_recovery',
+  heart_rate_recovery_one_minute: 'hr_recovery',
+  hkquantitytypeidentifierheartraterecoveryoneminute: 'hr_recovery',
+
+  // ── Breathing ───────────────────────────────────────────────────────────
+  hkquantitytypeidentifierrespiratoryrate: 'respiratory_rate',
+  respiratoryraterecord: 'respiratory_rate',
+
+  // ── Gait: the quiet half of the health data nobody looks at ─────────────
+  // Recorded as trends against a person's own history and NEVER read as a
+  // clinical sign — Apple's own steadiness measure produces a fall-risk
+  // classification, and repeating that back is diagnosis, which this is not.
+  walking_speed: 'walking_speed',
+  hkquantitytypeidentifierwalkingspeed: 'walking_speed',
+  walking_step_length: 'step_length',
+  hkquantitytypeidentifierwalkingsteplength: 'step_length',
+  walking_asymmetry_percentage: 'walking_asymmetry',
+  hkquantitytypeidentifierwalkingasymmetrypercentage: 'walking_asymmetry',
+  walking_double_support_percentage: 'double_support',
+  hkquantitytypeidentifierwalkingdoublesupportpercentage: 'double_support',
+  apple_walking_steadiness: 'steadiness',
+  hkquantitytypeidentifierapplewalkingsteadiness: 'steadiness',
+  six_minute_walk_test_distance: 'six_min_walk',
+  hkquantitytypeidentifiersixminutewalktestdistance: 'six_min_walk',
+  stair_ascent_speed: 'stair_speed',
+  hkquantitytypeidentifierstairascentspeed: 'stair_speed',
+
+  // ── Everything else the phone happens to know ───────────────────────────
+  mindful_minutes: 'mindful_minutes',
+  mindful_session: 'mindful_minutes',
+  hkcategorytypeidentifiermindfulsession: 'mindful_minutes',
+
+  water: 'water_ml',
+  dietary_water: 'water_ml',
+  hydration: 'water_ml',
+  hydrationrecord: 'water_ml',
+  hkquantitytypeidentifierdietarywater: 'water_ml',
+
+  // Hearing is health, and it is one of the few genuinely irreversible things
+  // a phone can warn about early.
+  environmental_audio_exposure: 'sound_exposure',
+  headphone_audio_exposure: 'sound_exposure',
+  hkquantitytypeidentifierenvironmentalaudioexposure: 'sound_exposure',
+  hkquantitytypeidentifierheadphoneaudioexposure: 'sound_exposure',
+
+  body_mass_index: 'bmi',
+  bmi: 'bmi',
+  hkquantitytypeidentifierbodymassindex: 'bmi',
 
   // ── Blood: the half of "how am I doing" that no fitness app touches ──────
   // A hub that holds every step you took and nothing about your blood is not a
@@ -164,14 +273,35 @@ const METRIC_ALIASES = {
   vo2_max: 'vo2max',
   vo2max: 'vo2max',
   vo2maxrecord: 'vo2max',
+  hkquantitytypeidentifiervo2max: 'vo2max',
   blood_oxygen_saturation: 'spo2',
   oxygen_saturation: 'spo2',
   oxygensaturationrecord: 'spo2',
+  hkquantitytypeidentifieroxygensaturation: 'spo2',
   spo2: 'spo2',
 };
 
-export const canonicalMetric = name =>
-  METRIC_ALIASES[String(name || '').toLowerCase().replace(/[\s-]+/g, '_')] || null;
+// Metrics that are recorded but must NEVER be read back as a clinical finding.
+// Blood oxygen, respiratory rate and Apple's steadiness score are the three
+// people most reliably frighten themselves with, and steadiness ships with a
+// fall-risk label attached — repeating that back IS a diagnosis. They are here
+// because a hub that drops them is not a hub; they are flagged because the
+// not-a-doctor rule is worth more than the feature.
+export const CLINICAL_CAUTION = new Set([
+  'spo2', 'respiratory_rate', 'steadiness', 'walking_asymmetry',
+  'double_support', 'systolic', 'diastolic', 'glucose', 'body_temp',
+]);
+
+// Every name this vocabulary actually stores under. A canonical name is always
+// itself, which stops the alias table needing a self-referencing line per
+// metric — and stops the one that gets forgotten from silently rejecting a
+// client that sent exactly the right word.
+const CANONICAL = new Set(Object.values(METRIC_ALIASES));
+
+export const canonicalMetric = name => {
+  const k = String(name || '').toLowerCase().replace(/[\s-]+/g, '_');
+  return METRIC_ALIASES[k] || (CANONICAL.has(k) ? k : null);
+};
 
 // Units arrive in whatever the device felt like. Storage is metric and minutes,
 // so conversion happens once, here, and never again.
@@ -239,10 +369,53 @@ export function normalise(metric, value, unit) {
     if (u === 'in' || u === 'inch' || u === 'inches') v = v * 2.54;
     return { value: Math.round(v * 10) / 10, unit: 'cm' };
   }
-  if (metric === 'active_minutes') {
+  if (metric === 'active_minutes' || metric === 'stand_minutes' || metric === 'mindful_minutes') {
     if (u === 's' || u === 'sec' || u === 'seconds') v = v / 60;
     if (u === 'h' || u === 'hr' || u === 'hours') v = v * 60;
     return { value: Math.round(v), unit: 'min' };
+  }
+  if (metric === 'spo2' || metric === 'walking_asymmetry' || metric === 'double_support' ||
+      metric === 'body_fat_pct' || metric === 'steadiness') {
+    // The trap in this whole group. HealthKit hands percentages back as a
+    // FRACTION — blood oxygen arrives as 0.97, not 97 — while Health Auto
+    // Export and every scale send 97. Stored as a percentage either way,
+    // because "your blood oxygen is 1%" is the kind of number somebody rings
+    // a doctor about. Anything at or under 1 that claims to be a percentage
+    // is a fraction; nothing in this group is legitimately below 1%.
+    if (u === '%' || u === 'percent' || u === '' || u === 'fraction') { if (v > 0 && v <= 1) v = v * 100; }
+    return { value: Math.round(v * 10) / 10, unit: '%' };
+  }
+  if (metric === 'stand_hours' || metric === 'flights') {
+    return { value: Math.round(v), unit: metric === 'flights' ? 'count' : 'h' };
+  }
+  if (metric === 'distance_cycling_km' || metric === 'distance_swimming_km' || metric === 'six_min_walk') {
+    if (u === 'm' || u === 'metres' || u === 'meters') v = v / 1000;
+    if (u === 'mi' || u === 'mile' || u === 'miles') v = v * 1.609344;
+    if (u === 'yd' || u === 'yard' || u === 'yards') v = v * 0.0009144;
+    return { value: Math.round(v * 100) / 100, unit: 'km' };
+  }
+  if (metric === 'walking_speed' || metric === 'stair_speed') {
+    // Stored in m/s, which is what HealthKit uses and what makes a step length
+    // and a speed comparable without a second conversion.
+    if (u === 'km/h' || u === 'kph') v = v / 3.6;
+    if (u === 'mph' || u === 'mi/h') v = v * 0.44704;
+    return { value: Math.round(v * 100) / 100, unit: 'm/s' };
+  }
+  if (metric === 'step_length') {
+    if (u === 'm' || u === 'metres' || u === 'meters') v = v * 100;
+    if (u === 'in' || u === 'inch' || u === 'inches') v = v * 2.54;
+    return { value: Math.round(v * 10) / 10, unit: 'cm' };
+  }
+  if (metric === 'water_ml') {
+    if (u === 'l' || u === 'litre' || u === 'litres' || u === 'liter') v = v * 1000;
+    if (u === 'floz' || u === 'fl_oz' || u === 'oz') v = v * 29.5735;
+    if (u === 'cup' || u === 'cups') v = v * 236.588;
+    return { value: Math.round(v), unit: 'mL' };
+  }
+  if (metric === 'resting_calories') {
+    if (u === 'kj') v = v / 4.184;
+    if (u === 'cal') v = v / 1000;
+    return { value: Math.round(v), unit: 'kcal' };
   }
   return { value: Math.round(v * 100) / 100, unit: unit || '' };
 }

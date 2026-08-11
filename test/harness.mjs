@@ -14,7 +14,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { handler, TOOLS, handleRpc, SERVER_INSTRUCTIONS } from '../netlify/functions/mcp.js';
-import { canonicalMetric, normalise, normaliseWorkout, looseNumber } from '../netlify/functions/ingest.js';
+import { canonicalMetric, normalise, normaliseWorkout, looseNumber, CLINICAL_CAUTION } from '../netlify/functions/ingest.js';
 import { PROVIDERS, LIVE_PROVIDERS, providerSummary, recommendRoute } from '../netlify/functions/lib/providers.js';
 import { nutritionTotals, composition, macroMatrix, yearOverYear } from '../netlify/functions/lib/nutrition.js';
 import { MOVEMENTS, PROGRAMMES, PATTERNS, movementsFor, pickProgramme, buildProgramme } from '../netlify/functions/lib/library.js';
@@ -2730,7 +2730,10 @@ await test('the app frames the website and owns only the native powers', () => {
   assert.match(courier, /distanceCycling/);
   assert.match(courier, /"metric": "distance_km"/);
   assert.match(courier, /appleExerciseTime/);
-  assert.match(courier, /"metric": "active_minutes"/);
+  // Metrics are table-driven now, so the name lives in the table rather than
+  // in a literal at the send site — one line to add one metric, and the
+  // permission list cannot drift from what is actually sent.
+  assert.match(courier, /name: "active_minutes"/);
 
   // THE WORKOUTS THEMSELVES. A run is a session, not a lump of calories — it
   // has to reach the training matrix or the brief calls a run day a rest day.
@@ -3980,6 +3983,125 @@ await test('a Supabase setting is named with the place it lives', () => {
   const src = page('app.html');
   assert.match(src, /manual linking is disabled/i);
   assert.match(src, /Authentication → Sign In \/ Providers/);
+});
+
+// ── Everything the watch keeps ──────────────────────────────────────────────
+
+group('The wide door — every metric a watch actually records');
+
+await test('the rings are all three, not just the red one', () => {
+  // "Times standing on your feet" — the blue ring, asked for by name.
+  assert.equal(canonicalMetric('HKCategoryTypeIdentifierAppleStandHour'), 'stand_hours');
+  assert.equal(canonicalMetric('apple_stand_hours'), 'stand_hours');
+  assert.equal(canonicalMetric('HKQuantityTypeIdentifierAppleStandTime'), 'stand_minutes');
+  assert.equal(canonicalMetric('HKQuantityTypeIdentifierAppleExerciseTime'), 'active_minutes');
+  assert.equal(canonicalMetric('flights_climbed'), 'flights');
+});
+
+await test('the rest of what a watch knows has a name at the door', () => {
+  const expected = {
+    'HKQuantityTypeIdentifierWalkingHeartRateAverage': 'walking_hr',
+    'HKQuantityTypeIdentifierHeartRateRecoveryOneMinute': 'hr_recovery',
+    'HKQuantityTypeIdentifierVO2Max': 'vo2max',
+    'HKQuantityTypeIdentifierOxygenSaturation': 'spo2',
+    'HKQuantityTypeIdentifierRespiratoryRate': 'respiratory_rate',
+    'HKQuantityTypeIdentifierWalkingSpeed': 'walking_speed',
+    'HKQuantityTypeIdentifierWalkingStepLength': 'step_length',
+    'HKQuantityTypeIdentifierAppleWalkingSteadiness': 'steadiness',
+    'HKQuantityTypeIdentifierSixMinuteWalkTestDistance': 'six_min_walk',
+    'HKCategoryTypeIdentifierMindfulSession': 'mindful_minutes',
+    'HKQuantityTypeIdentifierDietaryWater': 'water_ml',
+    'HKQuantityTypeIdentifierEnvironmentalAudioExposure': 'sound_exposure',
+    'HKQuantityTypeIdentifierBodyMassIndex': 'bmi',
+  };
+  for (const [apple, canon] of Object.entries(expected)) {
+    assert.equal(canonicalMetric(apple), canon, `${apple} has no home`);
+  }
+});
+
+await test('a fraction from HealthKit is not a 1% blood oxygen reading', () => {
+  // The trap in this whole group, and the same shape as the glucose 18× bug.
+  // HealthKit hands percentages back as a FRACTION — 0.97, not 97 — while a
+  // scale and Health Auto Export send 97. "Your blood oxygen is 1%" is the
+  // kind of number somebody rings a doctor about.
+  assert.deepEqual(normalise('spo2', 0.975, '%'), { value: 97.5, unit: '%' });
+  assert.deepEqual(normalise('spo2', 97.5, '%'), { value: 97.5, unit: '%' });
+  assert.deepEqual(normalise('walking_asymmetry', 0.042, '%'), { value: 4.2, unit: '%' });
+  // 100% is a real reading and must not be divided or doubled.
+  assert.deepEqual(normalise('steadiness', 100, '%'), { value: 100, unit: '%' });
+});
+
+await test('Apple\'s resting figure is kept apart from a day\'s total', () => {
+  // Filing basal energy as "total calories" reads as a day of doing nothing.
+  // And it must not override restingBurn either — Apple derives it from
+  // height, weight and age exactly as we do, so it is a second estimate, not
+  // a measurement, and swapping one guess for another is not an upgrade.
+  assert.equal(canonicalMetric('HKQuantityTypeIdentifierBasalEnergyBurned'), 'resting_calories');
+  assert.equal(canonicalMetric('basal_energy_burned'), 'resting_calories');
+  assert.notEqual(canonicalMetric('basal_energy_burned'), 'total_calories');
+});
+
+await test('a ride is not silently added to how far somebody walked', () => {
+  assert.equal(canonicalMetric('distance_cycling'), 'distance_cycling_km');
+  assert.equal(canonicalMetric('HKQuantityTypeIdentifierDistanceSwimming'), 'distance_swimming_km');
+  assert.equal(canonicalMetric('HKQuantityTypeIdentifierDistanceWalkingRunning'), 'distance_km');
+  assert.deepEqual(normalise('distance_cycling_km', 40000, 'm'), { value: 40, unit: 'km' });
+});
+
+await test('speeds, lengths and volumes land in one unit each', () => {
+  assert.deepEqual(normalise('walking_speed', 4.752, 'km/h'), { value: 1.32, unit: 'm/s' });
+  assert.deepEqual(normalise('step_length', 0.74, 'm'), { value: 74, unit: 'cm' });
+  assert.deepEqual(normalise('water_ml', 2.1, 'L'), { value: 2100, unit: 'mL' });
+  assert.deepEqual(normalise('stand_hours', 11, 'h'), { value: 11, unit: 'h' });
+  assert.deepEqual(normalise('mindful_minutes', 600, 's'), { value: 10, unit: 'min' });
+});
+
+await test('the readings people frighten themselves with are flagged', () => {
+  // They are recorded, because a hub that drops them is not a hub. They are
+  // flagged, because the not-a-doctor rule outranks the feature.
+  for (const m of ['spo2', 'respiratory_rate', 'steadiness', 'systolic', 'glucose']) {
+    assert.ok(CLINICAL_CAUTION.has(m), `${m} is not marked`);
+  }
+  assert.ok(!CLINICAL_CAUTION.has('steps'));
+  assert.match(SERVER_INSTRUCTIONS, /NOT YOURS TO INTERPRET/);
+  assert.match(SERVER_INSTRUCTIONS, /fall-risk label/i);
+  // Reassurance is the same act as alarm — both are readings of the number.
+  assert.match(SERVER_INSTRUCTIONS, /do not reassure either/i);
+});
+
+await test('a metric added at the door reaches the screen with no third edit', () => {
+  // The whole point of the generic path. A bespoke line per reading is how a
+  // hub stops accepting new things, because each one costs three files.
+  const page = readFileSync(new URL('../public/app.html', import.meta.url), 'utf8');
+  assert.match(page, /function readingsPanel/);
+  const fn = page.slice(page.indexOf('function readingsPanel'), page.indexOf('function targetsPanel'));
+  // It draws whatever arrived, including a metric it has never heard of.
+  assert.match(fn, /const known = READING_NAMES\[r\.metric\]/);
+  assert.match(fn, /r\.metric\.replace\(/);
+  // And computes nothing.
+  assert.doesNotMatch(fn, /\.reduce\(/);
+
+  const lib = readFileSync(new URL('../netlify/functions/lib/wrought.js', import.meta.url), 'utf8');
+  assert.match(lib, /readings: \[\.\.\.new Set\(mets\.map/);
+});
+
+await test('the courier asks for what it sends, and sends what it asks for', () => {
+  // A HealthKit type read without permission returns nothing at all, silently,
+  // which looks exactly like somebody who does not own that sensor. The tables
+  // drive both the permission set and the send, so they cannot drift.
+  const src = readFileSync(new URL('../ios/Wrought/HealthCourier.swift', import.meta.url), 'utf8');
+  assert.match(src, /static let DAILY_TOTALS: \[Metric\]/);
+  assert.match(src, /static let LATEST_READINGS: \[Metric\]/);
+  assert.match(src, /for id in Self\.DAILY_TOTALS\.map\(\\\.id\) \+ Self\.LATEST_READINGS\.map\(\\\.id\)/);
+  // Stand hours and mindful minutes are CATEGORY samples — asking for them as
+  // quantities returns nothing and looks like a person who never stands up.
+  assert.match(src, /categoryType\(forIdentifier: \.appleStandHour\)/);
+  assert.match(src, /HKCategoryValueAppleStandHour\.stood/);
+  assert.match(src, /categoryType\(forIdentifier: \.mindfulSession\)/);
+  // Every name in the tables has somewhere to land at the door.
+  for (const m of src.matchAll(/name: "([a-z0-9_]+)"/g)) {
+    assert.ok(canonicalMetric(m[1]), `${m[1]} is sent but the door does not know it`);
+  }
 });
 
 // ── A saved workout, ticked off ─────────────────────────────────────────────

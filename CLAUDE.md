@@ -1189,6 +1189,52 @@ additional named gyms go to `remember` (category `gym`); "I'm at the home gym"
 passes that inventory to `start_session`/`suggest_workout`. Never build a plan
 around a machine the photos did not show.
 
+### Everything the watch keeps — the wide door, widened
+
+The founder: *"all the matrix that is captured by this watch should be on that
+app — like times standing on your feet. There's so many things that could be on
+there."*
+
+He is right, and the reason is the moat rather than the feature list: **a metric
+nothing is storing is a metric nobody can ask a question about in two years**,
+and it cannot be backfilled. Apple keeps the samples on the phone, but nobody
+goes back and collects a year of stand hours they never thought to capture.
+
+Now carried: stand hours (the blue ring, asked for by name) and stand minutes,
+exercise minutes, flights, cycling and swimming distance kept **apart** from
+walking, walking heart rate, one-minute heart-rate recovery, VO₂ max,
+respiratory rate, blood oxygen, walking speed, step length, gait asymmetry,
+double support, Apple's steadiness, six-minute walk, stair speed, mindful
+minutes, water, sound exposure, BMI, lean mass, waist.
+
+- **The courier is table-driven.** `DAILY_TOTALS` and `LATEST_READINGS` in
+  `HealthCourier.swift` feed both the permission set and the send, so they
+  cannot drift — and a HealthKit type read without permission returns nothing
+  at all, silently, which looks exactly like somebody who does not own that
+  sensor. A test asserts every name sent has a home at the door.
+- **Stand hours and mindful minutes are CATEGORY samples**, not quantities.
+  Asking for them as quantities returns nothing and reads as a person who never
+  stands up, which is why they get their own query.
+- **A HealthKit percentage is a FRACTION.** Blood oxygen arrives as `0.97`, not
+  97 — same shape as the glucose 18× bug, and "your blood oxygen is 1%" is what
+  somebody rings a doctor about. Anything at or under 1 in that group is
+  converted once, at the door.
+- **Apple's basal energy is a second estimate, not a measurement.** It used to
+  be filed as `total_calories`, which reads as a day of doing nothing. It is
+  now `resting_calories`, kept beside `restingBurn()` rather than overriding
+  it: Apple derives it from height, weight and age exactly as we do, and
+  swapping one guess for another is not an upgrade.
+- **`dayFacts.device.readings` is generic**, and so is the dashboard panel. A
+  metric added at the ingest door draws on screen the same day with no second
+  edit. A bespoke line per reading is how a hub stops accepting new things.
+- **Nothing is interpreted.** `CLINICAL_CAUTION` marks blood oxygen,
+  respiratory rate, blood pressure, glucose, temperature, gait asymmetry and
+  steadiness — the readings people frighten themselves with. Apple's steadiness
+  ships with a **fall-risk label**, and repeating that back IS a diagnosis. The
+  screen marks them with a hairline, never a warning colour, and the
+  instructions forbid reassurance as firmly as alarm: telling somebody their
+  blood oxygen is fine is the same act as telling them it is not.
+
 ### Devices — two doors, not fifteen integrations
 
 The founder asked for "Apple Watch and Samsung watch and Oura and Nike Run —
@@ -1217,7 +1263,7 @@ self-reporting scale removes the most-abandoned manual entry), then Strava.
 
 ## Conventions
 
-- `npm test` runs `test/harness.mjs` — 415 offline tests, no network, no database.
+- `npm test` runs `test/harness.mjs` — 424 offline tests, no network, no database.
   Run it before every push. It covers the JSON-RPC envelope (which fails as an
   uninformative "could not connect" inside ChatGPT) and all the arithmetic
   (which fails as a confidently wrong number in somebody's verdict).

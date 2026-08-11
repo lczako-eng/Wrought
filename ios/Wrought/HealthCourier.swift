@@ -28,20 +28,94 @@ final class HealthCourier: ObservableObject {
         switch state {
         case .connected: return "Connected — your watch reports in on its own."
         case .failed:    return "Not connected yet."
-        default:         return "Steps, distance, burn, workouts, heart rate, weight and sleep — read the way the Health app reads them, sent to your record automatically."
+        default:         return "Steps, distance, stand hours, exercise minutes, flights, burn, workouts, heart rate, HRV, VO2 max, weight and sleep — read the way the Health app reads them, sent to your record automatically."
         }
     }
 
+    // ── Everything the watch actually keeps ─────────────────────────────
+    //
+    // The founder: "all the matrix that is captured by this watch should be on
+    // that app — like times standing on your feet. There's so many things that
+    // could be on there."
+    //
+    // Declared as tables rather than a wall of if-lets so that adding a metric
+    // is one line in one place and the permission list can never drift out of
+    // step with what is actually sent — a type read without permission returns
+    // nothing at all, silently, which looks exactly like a person who does not
+    // own that sensor.
+    //
+    // The split is between quantities that ADD UP over a day and readings that
+    // are a point in time. Summing a heart rate is meaningless; taking the
+    // latest step count throws the day away.
+
+    struct Metric {
+        let id: HKQuantityTypeIdentifier
+        let name: String
+        let unit: HKUnit
+        let label: String
+        var days: Int = 2          // how far back a latest-reading may look
+        var round: Double = 1      // decimal places, as a power of ten
+    }
+
+    private static let hzPerMin = HKUnit.count().unitDivided(by: .minute())
+
+    static let DAILY_TOTALS: [Metric] = [
+        .init(id: .activeEnergyBurned, name: "active_calories", unit: .kilocalorie(), label: "kcal"),
+        // Apple's own resting figure. Sent so it can sit BESIDE our estimate
+        // rather than replace it — Apple derives it from height, weight and age
+        // exactly as we do, so it is a second opinion, not a measurement.
+        .init(id: .basalEnergyBurned, name: "resting_calories", unit: .kilocalorie(), label: "kcal"),
+        .init(id: .appleExerciseTime, name: "active_minutes", unit: .minute(), label: "min"),
+        .init(id: .appleStandTime, name: "stand_minutes", unit: .minute(), label: "min"),
+        .init(id: .flightsClimbed, name: "flights", unit: .count(), label: "count"),
+        .init(id: .distanceCycling, name: "distance_cycling_km", unit: .meterUnit(with: .kilo), label: "km", round: 100),
+        .init(id: .distanceSwimming, name: "distance_swimming_km", unit: .meterUnit(with: .kilo), label: "km", round: 100),
+        .init(id: .dietaryWater, name: "water_ml", unit: .literUnit(with: .milli), label: "mL"),
+    ]
+
+    static let LATEST_READINGS: [Metric] = [
+        .init(id: .restingHeartRate, name: "resting_hr", unit: hzPerMin, label: "bpm"),
+        .init(id: .walkingHeartRateAverage, name: "walking_hr", unit: hzPerMin, label: "bpm", days: 7),
+        .init(id: .heartRateVariabilitySDNN, name: "hrv", unit: .secondUnit(with: .milli), label: "ms"),
+        .init(id: .heartRateRecoveryOneMinute, name: "hr_recovery", unit: hzPerMin, label: "bpm", days: 14),
+        .init(id: .vo2Max, name: "vo2max",
+              unit: HKUnit(from: "ml/kg*min"), label: "ml/kg/min", days: 60, round: 10),
+        .init(id: .respiratoryRate, name: "respiratory_rate", unit: hzPerMin, label: "count/min", days: 7, round: 10),
+        // HealthKit hands percentages back as a FRACTION — 0.97, not 97. The
+        // server converts anything at or under 1, but sending the honest
+        // HealthKit unit means it converts once and cannot double up.
+        .init(id: .oxygenSaturation, name: "spo2", unit: .percent(), label: "fraction", days: 7, round: 1000),
+        .init(id: .bodyFatPercentage, name: "body_fat_pct", unit: .percent(), label: "fraction", days: 365, round: 1000),
+        .init(id: .leanBodyMass, name: "lean_mass_kg", unit: .gramUnit(with: .kilo), label: "kg", days: 365, round: 100),
+        .init(id: .bodyMassIndex, name: "bmi", unit: .count(), label: "count", days: 365, round: 10),
+        .init(id: .waistCircumference, name: "waist_cm", unit: .meterUnit(with: .centi), label: "cm", days: 365, round: 10),
+        // Gait. Recorded as trends against their own history and NEVER read
+        // back as a clinical sign — Apple's steadiness ships with a fall-risk
+        // label attached, and repeating that would be a diagnosis.
+        .init(id: .walkingSpeed, name: "walking_speed",
+              unit: HKUnit.meter().unitDivided(by: .second()), label: "m/s", days: 7, round: 100),
+        .init(id: .walkingStepLength, name: "step_length", unit: .meterUnit(with: .centi), label: "cm", days: 7, round: 10),
+        .init(id: .walkingAsymmetryPercentage, name: "walking_asymmetry", unit: .percent(), label: "fraction", days: 7, round: 1000),
+        .init(id: .walkingDoubleSupportPercentage, name: "double_support", unit: .percent(), label: "fraction", days: 7, round: 1000),
+        .init(id: .appleWalkingSteadiness, name: "steadiness", unit: .percent(), label: "fraction", days: 30, round: 1000),
+        .init(id: .sixMinuteWalkTestDistance, name: "six_min_walk", unit: .meter(), label: "m", days: 60),
+        .init(id: .stairAscentSpeed, name: "stair_speed",
+              unit: HKUnit.meter().unitDivided(by: .second()), label: "m/s", days: 14, round: 100),
+        .init(id: .environmentalAudioExposure, name: "sound_exposure", unit: .decibelAWeightedSoundPressureLevel(), label: "dBASPL", days: 2, round: 10),
+    ]
+
     private var readTypes: Set<HKObjectType> {
         var t = Set<HKObjectType>()
-        for id: HKQuantityTypeIdentifier in [
-            .stepCount, .activeEnergyBurned, .restingHeartRate, .bodyMass,
-            .distanceWalkingRunning, .distanceCycling, .appleExerciseTime,
-            .heartRate, .heartRateVariabilitySDNN,
-        ] {
+        for id in Self.DAILY_TOTALS.map(\.id) + Self.LATEST_READINGS.map(\.id)
+            + [HKQuantityTypeIdentifier.stepCount, .bodyMass, .heartRate, .distanceWalkingRunning] {
             if let q = HKObjectType.quantityType(forIdentifier: id) { t.insert(q) }
         }
         if let sleep = HKObjectType.categoryType(forIdentifier: .sleepAnalysis) { t.insert(sleep) }
+        // Stand hours and mindful minutes are CATEGORY samples, not quantities
+        // — asking for them as quantities silently returns nothing, which is
+        // the worst failure shape: permission granted, data never arrives.
+        if let stand = HKObjectType.categoryType(forIdentifier: .appleStandHour) { t.insert(stand) }
+        if let mind = HKObjectType.categoryType(forIdentifier: .mindfulSession) { t.insert(mind) }
         // The workouts themselves — a run is not a number, it is a session, and
         // it belongs in the training matrix next to the lifting.
         t.insert(HKObjectType.workoutType())
@@ -135,6 +209,43 @@ final class HealthCourier: ObservableObject {
         }
     }
 
+    /// Hours today with at least a minute of standing in them — the blue ring.
+    ///
+    /// A category sample rather than a quantity, so no statistics query can
+    /// reach it. Apple records one sample per hour with a stood/idle value;
+    /// counting the stood ones IS the ring, which is why this is worth the
+    /// separate code path rather than approximating it from stand minutes.
+    private func standHoursToday() async -> Double? {
+        guard let type = HKObjectType.categoryType(forIdentifier: .appleStandHour) else { return nil }
+        let (start, end) = todayInterval()
+        let predicate = HKQuery.predicateForSamples(withStart: start, end: end, options: .strictStartDate)
+        return await withCheckedContinuation { cont in
+            let q = HKSampleQuery(sampleType: type, predicate: predicate,
+                                  limit: HKObjectQueryNoLimit, sortDescriptors: nil) { _, samples, _ in
+                let stood = (samples as? [HKCategorySample] ?? [])
+                    .filter { $0.value == HKCategoryValueAppleStandHour.stood.rawValue }.count
+                cont.resume(returning: stood > 0 ? Double(stood) : nil)
+            }
+            store.execute(q)
+        }
+    }
+
+    /// Minutes of mindful session logged today, summed from the intervals.
+    private func mindfulMinutesToday() async -> Double? {
+        guard let type = HKObjectType.categoryType(forIdentifier: .mindfulSession) else { return nil }
+        let (start, end) = todayInterval()
+        let predicate = HKQuery.predicateForSamples(withStart: start, end: end, options: .strictStartDate)
+        return await withCheckedContinuation { cont in
+            let q = HKSampleQuery(sampleType: type, predicate: predicate,
+                                  limit: HKObjectQueryNoLimit, sortDescriptors: nil) { _, samples, _ in
+                let mins = (samples as? [HKCategorySample] ?? [])
+                    .reduce(0.0) { $0 + $1.endDate.timeIntervalSince($1.startDate) / 60 }
+                cont.resume(returning: mins > 0 ? mins : nil)
+            }
+            store.execute(q)
+        }
+    }
+
     /// Last night's sleep: asleep-stage intervals since 6pm yesterday, summed.
     private func lastNightSleepMinutes() async -> Double? {
         guard let type = HKObjectType.categoryType(forIdentifier: .sleepAnalysis) else { return nil }
@@ -172,33 +283,43 @@ final class HealthCourier: ObservableObject {
         if let kcal = await total(.activeEnergyBurned, unit: .kilocalorie()) {
             metrics.append(["metric": "active_calories", "value": kcal.rounded(), "unit": "kcal", "measured_at": now])
         }
-        if let (bpm, at) = await latest(.restingHeartRate, unit: HKUnit.count().unitDivided(by: .minute()), within: 2) {
-            metrics.append(["metric": "resting_hr", "value": bpm.rounded(), "unit": "bpm", "measured_at": iso.string(from: at)])
-        }
-        // The other recovery signal. Read as a trend against their own
-        // baseline, never as a clinical number.
-        if let (ms, at) = await latest(.heartRateVariabilitySDNN, unit: .secondUnit(with: .milli), within: 2) {
-            metrics.append(["metric": "hrv", "value": ms.rounded(), "unit": "ms", "measured_at": iso.string(from: at)])
-        }
         if let (kg, at) = await latest(.bodyMass, unit: .gramUnit(with: .kilo), within: 365) {
             metrics.append(["metric": "weight_kg", "value": (kg * 100).rounded() / 100, "unit": "kg", "measured_at": iso.string(from: at)])
         }
         if let sleep = await lastNightSleepMinutes() {
             metrics.append(["metric": "sleep_minutes", "value": sleep.rounded(), "unit": "min", "measured_at": now])
         }
-        // Ground covered — walking, running and cycling summed, because "how
-        // far did I go today" is one question, not three.
-        var km = 0.0
-        for id: HKQuantityTypeIdentifier in [.distanceWalkingRunning, .distanceCycling] {
-            km += await total(id, unit: .meterUnit(with: .kilo)) ?? 0
-        }
-        if km > 0 {
+        // Ground covered on foot. Cycling and swimming go separately now — a
+        // walking figure quietly containing 40km of riding is a number that
+        // cannot be compared with anything, including itself last week.
+        if let km = await total(.distanceWalkingRunning, unit: .meterUnit(with: .kilo)), km > 0 {
             metrics.append(["metric": "distance_km", "value": (km * 100).rounded() / 100, "unit": "km", "measured_at": now])
         }
-        // The green ring: minutes the watch judged to be real effort. A better
-        // read on a day than steps, which reward pacing around a kitchen.
-        if let mins = await total(.appleExerciseTime, unit: .minute()) {
-            metrics.append(["metric": "active_minutes", "value": mins.rounded(), "unit": "min", "measured_at": now])
+
+        // Everything that adds up over a day.
+        for m in Self.DAILY_TOTALS {
+            guard let v = await total(m.id, unit: m.unit), v > 0 else { continue }
+            metrics.append(["metric": m.name, "value": (v * m.round).rounded() / m.round,
+                            "unit": m.label, "measured_at": now])
+        }
+
+        // The blue ring. A category sample, not a quantity — one entry per hour
+        // that had a minute of standing in it, which is the number on the watch
+        // face and the one the founder actually asked for.
+        if let hours = await standHoursToday() {
+            metrics.append(["metric": "stand_hours", "value": hours, "unit": "h", "measured_at": now])
+        }
+        if let mind = await mindfulMinutesToday() {
+            metrics.append(["metric": "mindful_minutes", "value": mind.rounded(), "unit": "min", "measured_at": now])
+        }
+
+        // Point-in-time readings. A latest value, each with its own sensible
+        // window — a VO2max estimate is months old and still the current one;
+        // a resting heart rate from last week is not.
+        for m in Self.LATEST_READINGS {
+            guard let (v, at) = await latest(m.id, unit: m.unit, within: m.days) else { continue }
+            metrics.append(["metric": m.name, "value": (v * m.round).rounded() / m.round,
+                            "unit": m.label, "measured_at": iso.string(from: at)])
         }
 
         let workouts = await recentWorkouts()

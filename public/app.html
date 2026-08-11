@@ -731,6 +731,25 @@ table.matrix td.rh.cold { color: var(--heat-3); }
 .tkname { flex: 1; min-width: 0; }
 .tkcount { font-family: var(--mono); font-size: 11px; font-variant-numeric: tabular-nums; }
 
+/* Everything the watch saw, as a grid that copes with three readings or
+   thirty. auto-fill rather than a fixed column count, because the whole point
+   is that a metric added at the door draws here without a second edit. */
+.rdgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 1px; background: var(--edge); border: 1px solid var(--edge); border-radius: 11px; overflow: hidden; }
+.rd { background: var(--scale-2); padding: 11px 10px; min-width: 0; }
+.rdv {
+  display: block; font-family: var(--grotesk); font-size: 19px; font-weight: 700;
+  font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.rdv small { font-size: 11px; font-weight: 600; color: var(--ash); margin-left: 2px; }
+.rdl {
+  display: block; margin-top: 3px; font-family: var(--mono); font-size: 9px;
+  letter-spacing: .1em; text-transform: uppercase; color: var(--ash-dim);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+/* A hairline, not a warning colour. These are recorded and not interpreted,
+   and painting a blood-oxygen reading red would BE the interpretation. */
+.rd.care { box-shadow: inset 2px 0 0 var(--temper); }
+
 .thennow { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 14px 0 8px; }
 .thennow img, .shot img { width: 100%; display: block; border-radius: 11px; background: var(--scale); }
 .thennow figcaption, .shot figcaption {
@@ -2970,7 +2989,27 @@ function demoData() {
               calories: 2140, protein_g: 148, carbs_g: 196, fat_g: 71, estimated: true },
       training: { say: '1 session, 44 min — legs, glutes, core' },
       body: { weight_kg: series[Math.max(0, N - 1)].weight },
-      device: { steps: 9840, active_calories: 740, sleep_minutes: 402 },
+      device: { steps: 9840, active_calories: 740, sleep_minutes: 402,
+        // The wide door, shown full. Somebody deciding whether this is worth a
+        // fortnight should see what a watch actually fills in.
+        readings: [
+          { metric: 'steps', value: 9840, unit: 'count', cumulative: true },
+          { metric: 'stand_hours', value: 11, unit: 'h', cumulative: true },
+          { metric: 'active_minutes', value: 52, unit: 'min', cumulative: true },
+          { metric: 'flights', value: 14, unit: 'count', cumulative: true },
+          { metric: 'active_calories', value: 740, unit: 'kcal', cumulative: true },
+          { metric: 'distance_km', value: 7.8, unit: 'km', cumulative: true },
+          { metric: 'resting_hr', value: 55, unit: 'bpm', cumulative: false },
+          { metric: 'walking_hr', value: 96, unit: 'bpm', cumulative: false },
+          { metric: 'hrv', value: 48, unit: 'ms', cumulative: false },
+          { metric: 'vo2max', value: 41.2, unit: 'ml/kg/min', cumulative: false },
+          { metric: 'sleep_minutes', value: 402, unit: 'min', cumulative: true },
+          { metric: 'spo2', value: 97.5, unit: '%', cumulative: false },
+          { metric: 'respiratory_rate', value: 14.2, unit: '%', cumulative: false },
+          { metric: 'walking_speed', value: 1.32, unit: 'm/s', cumulative: false },
+          { metric: 'step_length', value: 74, unit: 'cm', cumulative: false },
+          { metric: 'water_ml', value: 2100, unit: 'mL', cumulative: true },
+        ] },
       // Each with its own numbers, so the demo shows the addition rather than
       // asserting a total — the whole point of the day card.
       entries: [
@@ -3754,6 +3793,101 @@ function targetRing(g) {
   </div>`;
 }
 
+// Everything the watch actually saw today.
+//
+// The founder: "all the matrix that is captured by this watch should be on
+// that app — like times standing on your feet. There's so many things that
+// could be on there."
+//
+// Deliberately generic. It draws whatever arrived rather than a fixed list, so
+// a metric added at the ingest door appears here the same day with no edit to
+// this file. The alternative — a bespoke line per reading — is exactly how a
+// hub stops accepting new things, because every addition costs three files.
+//
+// Nothing here is interpreted. A blood oxygen figure is shown and never
+// commented on, a steadiness score is a number and never a fall risk. Recording
+// a reading and diagnosing from it are different jobs and only the first one is
+// this product's.
+const READING_NAMES = {
+  steps: ['Steps', v => n(Math.round(v))],
+  stand_hours: ['Stood', v => `${Math.round(v)}|hrs`],
+  stand_minutes: ['On your feet', v => `${Math.round(v)}|min`],
+  active_minutes: ['Exercise', v => `${Math.round(v)}|min`],
+  flights: ['Flights', v => `${Math.round(v)}`],
+  active_calories: ['Moved', v => `${n(Math.round(v))}|kcal`],
+  resting_calories: ['Apple resting', v => `${n(Math.round(v))}|kcal`],
+  distance_km: ['On foot', v => `${Math.round(v * 10) / 10}|km`],
+  distance_cycling_km: ['Cycled', v => `${Math.round(v * 10) / 10}|km`],
+  distance_swimming_km: ['Swam', v => `${Math.round(v * 100) / 100}|km`],
+  resting_hr: ['Resting HR', v => `${Math.round(v)}|bpm`],
+  walking_hr: ['Walking HR', v => `${Math.round(v)}|bpm`],
+  hr_recovery: ['HR recovery', v => `${Math.round(v)}|bpm`],
+  hrv: ['HRV', v => `${Math.round(v)}|ms`],
+  vo2max: ['VO₂ max', v => `${Math.round(v * 10) / 10}`],
+  spo2: ['Blood oxygen', v => `${Math.round(v * 10) / 10}|%`],
+  respiratory_rate: ['Breathing', v => `${Math.round(v * 10) / 10}|/min`],
+  sleep_minutes: ['Slept', v => `${Math.floor(v / 60)}h ${String(Math.round(v % 60)).padStart(2, '0')}m`],
+  walking_speed: ['Walking speed', v => `${Math.round(v * 100) / 100}|m/s`],
+  step_length: ['Step length', v => `${Math.round(v)}|cm`],
+  walking_asymmetry: ['Asymmetry', v => `${Math.round(v * 10) / 10}|%`],
+  double_support: ['Double support', v => `${Math.round(v * 10) / 10}|%`],
+  steadiness: ['Steadiness', v => `${Math.round(v)}|%`],
+  stair_speed: ['Stairs', v => `${Math.round(v * 100) / 100}|m/s`],
+  six_min_walk: ['6-min walk', v => `${Math.round(v)}|m`],
+  mindful_minutes: ['Mindful', v => `${Math.round(v)}|min`],
+  water_ml: ['Water', v => `${n(Math.round(v))}|mL`],
+  sound_exposure: ['Sound', v => `${Math.round(v)}|dB`],
+  weight_kg: ['Weight', v => `${Math.round(v * 10) / 10}|kg`],
+  body_fat_pct: ['Body fat', v => `${Math.round(v * 10) / 10}|%`],
+  lean_mass_kg: ['Lean mass', v => `${Math.round(v * 10) / 10}|kg`],
+  bmi: ['BMI', v => `${Math.round(v * 10) / 10}`],
+  waist_cm: ['Waist', v => `${Math.round(v * 10) / 10}|cm`],
+  glucose: ['Glucose', v => `${Math.round(v * 10) / 10}|mmol/L`],
+  systolic: ['Systolic', v => `${Math.round(v)}`],
+  diastolic: ['Diastolic', v => `${Math.round(v)}`],
+  body_temp: ['Temperature', v => `${Math.round(v * 10) / 10}|°C`],
+};
+
+// Readings people frighten themselves with. Shown, because a hub that drops
+// them is not a hub — and marked, because the one thing this must never do is
+// let a number read as a finding. Apple's steadiness ships with a fall-risk
+// label attached; repeating that would be a diagnosis.
+const CLINICAL = new Set(['spo2', 'respiratory_rate', 'steadiness', 'walking_asymmetry',
+                          'double_support', 'systolic', 'diastolic', 'glucose', 'body_temp']);
+
+function readingsPanel(d) {
+  const rows = d.today?.device?.readings || [];
+  if (!rows.length) return '';
+
+  // An unknown metric still draws — that is the whole point of the generic
+  // path. A tidied-up name beats hiding data because nobody wrote a label.
+  const cells = rows.map(r => {
+    const known = READING_NAMES[r.metric];
+    const label = known ? known[0] : r.metric.replace(/_/g, ' ');
+    const value = known ? known[1](r.value) : `${r.value}${r.unit ? `|${r.unit}` : ''}`;
+    // The unit rides at a smaller size so the NUMBER always fits — "740 kcal"
+    // set solid at headline size truncates to "740 k…" in a 96px cell, which
+    // is a readout that has stopped being a readout. The split is declared with
+    // a pipe rather than guessed with a regex, because a guess mangles the
+    // compound ones: "6h 42m" is a single number and has no unit to demote.
+    const [num, suffix = ''] = String(value).split('|');
+    return `<div class="rd${CLINICAL.has(r.metric) ? ' care' : ''}">
+      <span class="rdv">${esc(num)}${suffix ? `<small>${esc(suffix)}</small>` : ''}</span>
+      <span class="rdl">${esc(label)}</span>
+    </div>`;
+  }).join('');
+
+  const anyClinical = rows.some(r => CLINICAL.has(r.metric));
+
+  return `<section class="panel">
+    <h2>What your watch saw · today</h2>
+    <div class="rdgrid">${cells}</div>
+    ${anyClinical ? `<p class="caveat">Marked readings are recorded, not interpreted.
+      WROUGHT does not read them as medical signs and neither should this screen —
+      anything that worries you is a doctor\'s question.</p>` : ''}
+  </section>`;
+}
+
 function targetsPanel(d) {
   const all = d.goals || [];
   const scored = all.filter(g => g.scored && g.target != null);
@@ -3808,6 +3942,7 @@ function render(d) {
   out.push(hero(d));
 
   out.push(targetsPanel(d));
+  out.push(readingsPanel(d));
 
   // Summary before detail: the verdict and today, then everything else.
   if (d.latest_verdict?.verdict) {

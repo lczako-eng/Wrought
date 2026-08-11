@@ -446,6 +446,30 @@ export async function dayFacts(userId, profile, date) {
       hrv: metricAvg('hrv'),
       sleep_minutes: sleepMin,
       sleep_say: sleepMin ? humanDuration(sleepMin) : null,
+      // EVERYTHING ELSE THE DEVICE SENT, whatever it was.
+      //
+      // The named fields above exist because something computes against them.
+      // This is the other half of the founder's ask — "all the matrix that is
+      // captured by this watch should be on that app, there's so many things"
+      // — and it is deliberately generic: a metric added at the door shows up
+      // on the dashboard the same day, with no second edit here and no third
+      // one on the page. The alternative is a bespoke line per metric, which
+      // is exactly how a hub stops accepting new things.
+      readings: [...new Set(mets.map(m => m.metric))].map(name => {
+        const rows = mets.filter(m => m.metric === name);
+        // Counts and durations add up over a day; a heart rate does not.
+        const cumulative = /calories|steps|distance|minutes|flights|water|hours/.test(name);
+        const value = cumulative
+          ? rows.reduce((a, m) => a + num(m.value), 0)
+          : rows.reduce((a, m) => a + num(m.value), 0) / rows.length;
+        return {
+          metric: name,
+          value: Math.round(value * 100) / 100,
+          unit: rows[0].unit || '',
+          samples: rows.length,
+          cumulative,
+        };
+      }).sort((a, b) => a.metric.localeCompare(b.metric)),
       sources: [...new Set(mets.map(m => m.metric))].length ? [...new Set(evs.concat(mets).map(x => x.source).filter(Boolean))] : [],
     },
     // Each entry carries its OWN numbers, not just the day's sum. The founder's
