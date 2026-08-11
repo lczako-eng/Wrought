@@ -44,10 +44,31 @@ export const handler = async (event) => {
     .eq('user_id', user.id).eq('status', 'active').maybeSingle();
 
   if (!session) {
+    // Between sessions the question is "what am I doing next", and the answer
+    // is one of their own saved workouts. Fetched here rather than cached from
+    // another tab, so opening Trainer directly still answers it.
+    const { data: saved } = await supabase.from('wrought_routines')
+      .select('name, kind, exercises, notes, est_minutes, times_used, last_used_on')
+      .eq('user_id', user.id).eq('active', true)
+      .order('last_used_on', { ascending: false, nullsFirst: false });
+
+    const today = localDateFor(profile.timezone);
     return json(200, {
       active: false,
       unit,
-      say: 'No session on the go. Tell the assistant to start one and this screen fills in.',
+      routines: (saved || []).map(r => ({
+        name: r.name, kind: r.kind,
+        exercises: (r.exercises || []).length,
+        movements: (r.exercises || []).map(e => ({ name: e.name, sets: e.sets, reps: e.reps })),
+        sets: (r.exercises || []).reduce((a, e) => a + (Number(e.sets) || 0), 0),
+        notes: r.notes || null,
+        minutes: r.est_minutes || null,
+        times_used: r.times_used,
+        days_since: r.last_used_on
+          ? Math.round((new Date(`${today}T00:00:00Z`) - new Date(`${r.last_used_on}T00:00:00Z`)) / 86400000)
+          : null,
+      })),
+      say: 'No session on the go. Say the name of one of these to your AI and it starts.',
     });
   }
 

@@ -4042,6 +4042,40 @@ await test('the rolling numbers are computed on the server', () => {
   assert.match(src, /sessions: rolling\(/);
 });
 
+await test('Trainer answers what next when nothing is running', () => {
+  // A tab that says "nothing is running" and stops is a dead screen, and the
+  // question somebody opens Trainer to ask between sessions is what to do
+  // next. The routines are fetched by the endpoint rather than cached from
+  // another tab, so opening Trainer directly still answers it.
+  const api = readFileSync(new URL('../netlify/functions/api-session.js', import.meta.url), 'utf8');
+  const idle = api.slice(api.indexOf('if (!session) {'), api.indexOf('const plan ='));
+  assert.match(idle, /wrought_routines/);
+  assert.match(idle, /movements:/);
+  assert.match(idle, /notes: r\.notes/);
+
+  const page = readFileSync(new URL('../public/app.html', import.meta.url), 'utf8');
+  const fn = page.slice(page.indexOf('function renderTrainer'), page.indexOf('// The workout as a list'));
+  assert.match(fn, /routinesPanel\(/);
+});
+
+await test('the screen says whether the phone is even talking', () => {
+  // "Where are my workouts" has three answers — the phone never sent, the
+  // server refused, or they are there — and none was visible from any screen.
+  // Working it out took weeks and three wrong guesses.
+  const page = readFileSync(new URL('../public/app.html', import.meta.url), 'utf8');
+  const fn = page.slice(page.indexOf('function devicePanel2'), page.indexOf('function routinesPanel'));
+  // Each branch names ONE next thing; a diagnostic offering three options is
+  // one nobody acts on.
+  assert.match(fn, /Open the Wrought app/);
+  assert.match(fn, /015_wrought_ingest_dedupe_fix/);
+  assert.match(fn, /Everything is arriving/);
+  assert.match(fn, /connections\?\.length/);
+
+  const api = readFileSync(new URL('../netlify/functions/api-progress.js', import.meta.url), 'utf8');
+  assert.match(api, /wrought_connections/);
+  assert.match(api, /workouts_from_device/);
+});
+
 await test('a saved workout can be opened and read on the website', () => {
   // "A name, the procedure, a write-up at least." The assistant could recite
   // all of it while the website showed a row saying "Leg day · 4 lifts".

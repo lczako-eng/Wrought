@@ -2686,6 +2686,10 @@ async function startTrainer() {
   trainerTimer = setInterval(() => { if (view === 'trainer') loadTrainer(); else stopTrainer(); }, 5000);
 }
 
+// Saved workouts, cached from the last progress load so the Trainer tab can
+// show them without a second round trip on every 5-second poll.
+let trainerRoutines = [];
+
 async function loadTrainer() {
   const { data } = await sb.auth.getSession();
   if (!data.session) return;
@@ -2702,9 +2706,14 @@ async function loadTrainer() {
 
 function renderTrainer(d) {
   if (!d.active) {
+    // A tab that says "nothing is running" and stops is a dead screen. The
+    // question somebody opens Trainer to answer between sessions is "what am I
+    // doing next", and the answer is one of their own saved workouts — so they
+    // live here rather than three panels down the Record tab.
     $('content').innerHTML = `<section class="panel hero">
       <h2>Trainer</h2>
-      <p class="caveat">${esc(d.say)}</p></section>`;
+      <p class="caveat">${esc(d.say)}</p></section>
+      ${routinesPanel({ routines: d.routines?.length ? d.routines : trainerRoutines })}`;
     stagger();
     return;
   }
@@ -3267,6 +3276,12 @@ function demoData() {
       { name: 'Tuesday five-a-side', kind: 'sport', date: series[Math.max(0, N - 5)].date, minutes: 70, days_ago: 4 },
       { name: 'Pull A', kind: 'strength', date: series[Math.max(0, N - 7)].date, minutes: 47, days_ago: 6 },
     ],
+    devices: {
+      connections: [
+        { provider: 'wrought_ios', mode: 'push', status: 'active', last_sync_at: '2026-08-11T09:40:00Z', hours_ago: 0 },
+      ],
+      workouts_total: 13, workouts_from_device: 9, sources: ['wrought_ios', 'agent'],
+    },
     routines: [
       { name: 'Leg day', kind: 'strength', exercises: 4, sets: 13, times_used: 11, days_since: 0, minutes: 55,
         notes: 'Squats first while you are fresh — everything else is accessory to them. Leave a rep in the tank on the RDLs; the point is the hamstrings, not the ego. Calves last and take them close to failure, they can handle it.',
@@ -4130,6 +4145,8 @@ function targetsPanel(d) {
 
 function render(d) {
   const s = d.summary, wu = d.weight_unit, out = [];
+  // Kept so the Trainer tab can list them without its own request.
+  trainerRoutines = d.routines || [];
 
   // The same payload, laid out as squares. Not a separate endpoint and not a
   // second set of sums — the calendar and the dashboard must never be able to
@@ -4227,6 +4244,7 @@ function render(d) {
   }
 
   out.push(`<div class="grid-2">${sessionsPanel(d)}${routinesPanel(d)}</div>`);
+  out.push(devicePanel2(d));
   if (d.notes?.length) out.push(notesPanel(d));
 
   $('content').innerHTML = out.join('');
@@ -4981,6 +4999,51 @@ function sessionsPanel(d) {
 // "Leg day · 4 lifts". A memory product that cannot show you what it remembers
 // is asking for trust it has not earned, and that applies to a routine exactly
 // as it applies to a meal from three weeks ago.
+// Is the phone talking, and is what it sends landing?
+//
+// "Where are my workouts" has three possible answers — the phone never sent,
+// the server refused, or they are there and you are looking in the wrong place
+// — and none of them was visible from any screen. Working that out took weeks
+// and three wrong guesses, so it is a panel now.
+//
+// It only appears once a device has ever synced. On an account that has never
+// connected a phone it would be a permanent complaint about a feature nobody
+// switched on.
+function devicePanel2(d) {
+  const dv = d.devices;
+  if (!dv?.connections?.length) return '';
+
+  const rows = dv.connections.map(c => {
+    const ago = c.hours_ago == null ? 'never'
+      : c.hours_ago < 1 ? 'within the hour'
+      : c.hours_ago < 24 ? `${c.hours_ago}h ago`
+      : `${Math.round(c.hours_ago / 24)}d ago`;
+    const stale = c.hours_ago == null || c.hours_ago > 24;
+    return `<div class="row"><span>${esc(c.provider)} <span class="chip ${stale ? 'stale' : ''}">${esc(c.mode || 'push')}</span></span>
+      <span class="when">${esc(ago)}</span></div>`;
+  }).join('');
+
+  // The decision tree, stated rather than left to be inferred. Each branch
+  // names the ONE next thing, because a diagnostic offering three options is
+  // one nobody acts on.
+  const recent = dv.connections.some(c => c.hours_ago != null && c.hours_ago <= 24);
+  let verdict;
+  if (!recent) {
+    verdict = 'Nothing has arrived from a device in the last day. Open the Wrought app on your phone — it sends on launch, and the courier re-sends the last 7 days, so nothing is lost.';
+  } else if (dv.workouts_from_device === 0) {
+    verdict = 'Your phone is sending, but no workouts from it have landed. That is the server refusing them — run schema/015_wrought_ingest_dedupe_fix.sql in the Supabase SQL editor and open the app again.';
+  } else {
+    verdict = `${dv.workouts_from_device} workout${dv.workouts_from_device === 1 ? '' : 's'} from a device in this range. Everything is arriving.`;
+  }
+
+  return `<section class="panel"><h2>Devices · is it arriving</h2>
+    <div class="rows">${rows}</div>
+    <p class="sub">${esc(verdict)}</p>
+    <p class="sub dim">${dv.workouts_total} workout${dv.workouts_total === 1 ? '' : 's'} logged in this range${
+      dv.sources.length ? `, from ${esc(dv.sources.join(', '))}` : ''}.</p>
+  </section>`;
+}
+
 function routinesPanel(d) {
   const rows = (d.routines || []).map(r => {
     const stale = r.days_since != null && r.days_since >= 7;

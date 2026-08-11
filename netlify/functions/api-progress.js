@@ -78,7 +78,7 @@ export const handler = async (event) => {
   const to   = params.to || localDateFor(profile.timezone);
   const from = addDays(to, -(span - 1));
 
-  const [range, today, goals, win, setRows, sessions, routines, foodRows, brief] = await Promise.all([
+  const [range, today, goals, win, setRows, sessions, connections, routines, foodRows, brief, workoutRows] = await Promise.all([
     rangeFacts(user.id, profile, from, to),
     dayFacts(user.id, profile, to),
     getGoals(user.id),
@@ -92,6 +92,18 @@ export const handler = async (event) => {
       .select('id, name, kind, local_date, started_at, ended_at, status')
       .eq('user_id', user.id).eq('status', 'done')
       .order('ended_at', { ascending: false }).limit(12)
+      .then(r => r.data || []),
+    // Is the phone even talking, and is anything it sends landing?
+    //
+    // "Where are my workouts" has three possible answers — the phone never
+    // sent, the server refused, or they are there and you are looking in the
+    // wrong place — and until now none of them was visible from a screen.
+    // Every /ingest call stamps last_sync_at, so this separates the first case
+    // from the other two in one look.
+    supabase.from('wrought_connections')
+      .select('provider, mode, status, last_sync_at')
+      .eq('user_id', user.id)
+      .order('last_sync_at', { ascending: false, nullsFirst: false })
       .then(r => r.data || []),
     supabase.from('wrought_routines')
       .select('name, kind, tier, exercises, notes, est_minutes, times_used, last_used_on')
@@ -107,6 +119,14 @@ export const handler = async (event) => {
       .select('local_date, kind, verdict').eq('user_id', user.id)
       .order('local_date', { ascending: false }).limit(1).maybeSingle()
       .then(r => r.data),
+    // Workouts that came from a DEVICE rather than being typed or dictated.
+    // The one number that separates "the server refused them" from "the phone
+    // never sent them", and it cost nothing to surface.
+    supabase.from('wrought_events')
+      .select('source, local_date, summary')
+      .eq('user_id', user.id).eq('event_type', 'workout')
+      .gte('local_date', from).lte('local_date', to).limit(500)
+      .then(r => r.data || []),
   ]);
 
   // The running block, and how far through it they are. A missed week is a
@@ -277,6 +297,21 @@ export const handler = async (event) => {
           ? Math.max(1, Math.round((new Date(s.ended_at) - new Date(s.started_at)) / 60000)) : null,
         days_ago: daysBetween(s.local_date, to),
       })),
+      // What has actually reached the server from a device, and when. Counted
+      // over the loaded range so the answer moves with the window rather than
+      // quoting all time and looking healthy on a dead week.
+      devices: {
+        connections: connections.map(c => ({
+          provider: c.provider, mode: c.mode, status: c.status,
+          last_sync_at: c.last_sync_at,
+          hours_ago: c.last_sync_at
+            ? Math.round((Date.now() - new Date(c.last_sync_at).getTime()) / 3600000) : null,
+        })),
+        // 'agent' is the assistant; anything else came off a device.
+        workouts_total: workoutRows.length,
+        workouts_from_device: workoutRows.filter(w => w.source && w.source !== 'agent').length,
+        sources: [...new Set(workoutRows.map(w => w.source).filter(Boolean))],
+      },
       routines: routines.map(r => ({
         name: r.name, kind: r.kind, tier: r.tier,
         exercises: (r.exercises || []).length,
