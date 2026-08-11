@@ -174,6 +174,28 @@ function roll(entries, label) {
  * loaded range actually covers it — a "this year" figure computed from seven
  * days of data is a fabrication wearing a long label.
  */
+/**
+ * The loaded window as ONE running total, whatever length it happens to be.
+ *
+ * The founder, looking at the dashboard after tapping 7d: "look at the seven
+ * day — should be yesterday, today to this point. The same with the month.
+ * It's not running total." He is right, and the gap was real: every window
+ * figure on the page was an AVERAGE per logged day, and the range buttons
+ * changed nothing above the fold at all. An average answers "what is a normal
+ * day"; a running total answers "where am I, right now, in this stretch" —
+ * and that second question is the one somebody has at four in the afternoon
+ * on day five of a week they are trying to hold.
+ *
+ * Same arithmetic as every other window here, which is the point of reusing
+ * `roll` rather than summing in the page: logged days only, all three figures
+ * off the same days so they visibly subtract, and the denominator said out
+ * loud. Today counts as it stands — partial, because it IS partial.
+ */
+export function rangeRollup(entries = [], label = 'this window') {
+  if (!entries.length) return null;
+  return roll(entries, label);
+}
+
 export function calendarRollups(entries = []) {
   const out = {};
   // The window has to be FULLY covered, not nearly. Reporting "the last 30

@@ -3877,7 +3877,7 @@ await test('the demo is reachable from inside the app, and has a way back', () =
 
 group('The calendar — both halves of the sum, on every square');
 
-const { calendarDays, calendarRollups, calendarMissing } =
+const { calendarDays, calendarRollups, calendarMissing, rangeRollup } =
   await import('../netlify/functions/lib/calendar.js');
 
 const CAL_PROFILE = { height_cm: 180, birth_year: 1990, sex: 'male', activity_level: 'moderate', timezone: 'America/Toronto' };
@@ -4017,6 +4017,123 @@ await test('a window is only reported when the range actually covers it', () => 
   assert.ok(calendarRollups(calendarDays({ days: mk(30), foodRows: [], profile: CAL_PROFILE })).month);
   assert.equal(calendarRollups(calendarDays({ days: mk(364), foodRows: [], profile: CAL_PROFILE })).year,
     undefined, '364 days was reported as "the last year"');
+});
+
+await test('the chosen window adds up, and today counts as it stands', () => {
+  // "Look at the seven day — should be yesterday, today to this point. The same
+  // with the month. It's not running total." Every window figure on the page
+  // was an average per logged day, which answers "what does a normal day look
+  // like" when the question at four in the afternoon is "where am I in this
+  // stretch, right now".
+  const days = Array.from({ length: 5 }, (_, i) =>
+    calDay(`2026-08-0${i + 1}`, { weight_kg: 84 }));
+  const entries = calendarDays({ days, foodRows: [], profile: CAL_PROFILE });
+  const r = rangeRollup(entries, 'the last 5 days');
+
+  assert.equal(r.span_days, 5);
+  assert.equal(r.in_total, 2000 * 5, 'the running total is not a total');
+  // The same rule as every other window here: all three off the same days, so
+  // they visibly subtract on screen.
+  assert.equal(r.in_total - r.out_total, r.net_total);
+  assert.equal(r.label, 'the last 5 days');
+
+  // A day nobody logged is still not a zero-calorie day — the running total
+  // obeys the rule the rest of the calendar does.
+  const withGap = calendarDays({
+    days: days.concat([calDay('2026-08-06', { logged: false, calories: null, meals: 0, weight_kg: 84 })]),
+    foodRows: [], profile: CAL_PROFILE,
+  });
+  const g = rangeRollup(withGap, 'the last 6 days');
+  assert.equal(g.span_days, 6);
+  assert.equal(g.days_counted, 5, 'a forgotten day was counted as a perfect fast');
+  assert.equal(g.in_total, 2000 * 5);
+
+  // Nothing at all is null rather than a pile of zeroes.
+  assert.equal(rangeRollup([], 'the last 7 days'), null);
+});
+
+await test('the dashboard opens on today, and the range is what moves', () => {
+  const src = page('app.html');
+  // "When we open it up, it should always be on the first day."
+  assert.match(src, /^let days = 1;$/m, 'the dashboard no longer opens on today');
+  const btns = src.slice(src.indexOf('id="rangebtns"'), src.indexOf('</div>', src.indexOf('id="rangebtns"')));
+  assert.match(btns, /data-days="1"\s+aria-pressed="true"/, '1d is not the pressed button');
+  assert.equal((btns.match(/aria-pressed="true"/g) || []).length, 1, 'two ranges look selected');
+
+  // And the range now does something above the fold, or it reads as broken.
+  assert.match(src, /out\.push\(windowPanel\(d\)\);/);
+  assert.match(src, /function windowPanel\(d\)/);
+  // It draws the server's figures and sums nothing itself.
+  const panel = src.slice(src.indexOf('function windowPanel('), src.indexOf('function trainingTodayPanel('));
+  assert.ok(!/reduce\(/.test(panel), 'the running total is being summed in the browser');
+  assert.match(panel, /const r = d\.window;/);
+  // The denominator is said out loud, exactly as the calendar says it.
+  assert.match(panel, /not the whole/);
+});
+
+await test('a quiet morning is not a brand new account', () => {
+  // The first-run screen used to be decided from the loaded window. Harmless at
+  // 30 days, a lie at one: somebody with a month of history who has not logged
+  // anything yet today would be handed the new-account page — on the one
+  // product whose entire promise is that it remembers.
+  const src = page('app.html');
+  const fn = src.slice(src.indexOf('function isFirstRun('), src.indexOf('function firstRun('));
+  assert.match(fn, /d\.has_history/, 'first run is still judged from the window alone');
+
+  const api = readFileSync(new URL('../netlify/functions/api-progress.js', import.meta.url), 'utf8');
+  assert.match(api, /has_history: hasHistory/);
+  // Counted over ALL time, never between from and to.
+  const count = api.slice(api.indexOf('const { count: everCount }'), api.indexOf('const hasHistory'));
+  assert.ok(!/local_date/.test(count), 'the all-time count was bounded by the window');
+});
+
+await test('a window is not a memory — last night survives the 1d view', () => {
+  // Sets used to be fetched over the selected range alone, so on a one-day view
+  // "last night" had no sets attached and nothing to compare against: the panel
+  // drew a session with nothing in it, which reads exactly like a workout that
+  // failed to save.
+  const api = readFileSync(new URL('../netlify/functions/api-progress.js', import.meta.url), 'utf8');
+  assert.match(api, /const histFrom = addDays\(to, -Math\.max\(span - 1, 59\)\)/);
+  assert.match(api, /gte\('local_date', histFrom\)/, 'the set query is still bounded by the range');
+  assert.match(api, /lastSession\(sessions, histSets/, 'last night is still read from the window');
+  // Trends stay bounded by the chosen range, or the buttons stop meaning anything.
+  assert.match(api, /const setRows = histSets\.filter\(s => s\.local_date >= from\)/);
+});
+
+await test("today's own training is on the day view, and a shift is not a session", () => {
+  // "It's not showing on the first day my workout, my exercise." A run that came
+  // off the watch an hour ago belonged to no panel: the matrix is arithmetic
+  // ABOUT training and last_session is the assistant's own session table, so the
+  // day it happened on showed a burn that included it and nothing saying what it
+  // was.
+  const src = page('app.html');
+  assert.match(src, /out\.push\(trainingTodayPanel\(d\)\);/);
+  const panel = src.slice(src.indexOf('function trainingTodayPanel('), src.indexOf('// \u2500\u2500 Calendar'));
+  assert.match(panel, /d\.today\?\.training/);
+  assert.match(panel, /avg_hr/, 'the training spike is dropped on the day it happened');
+  // Work is listed because it burned calories and for no other reason.
+  assert.match(panel, /A SHIFT IS NOT A SESSION/);
+  assert.match(panel, /chip">work/);
+  // No praise anywhere near it.
+  assert.ok(!/well done|great|nice work|proud/i.test(panel), 'a shift is being praised');
+});
+
+await test('a ledger bar actually paints, rather than leaving a grey slot', () => {
+  // The fill is a <span>, and a bare span is INLINE — height and background
+  // paint against the line box rather than the track, so every in-versus-out
+  // bar rendered as an empty grey slot. It reads as a number the page failed
+  // to draw, which on a screen about somebody's eating is worse than no bar.
+  const src = page('app.html');
+  assert.match(src, /\.fill \{ display: block;/, 'the ledger fill is inline again');
+});
+
+await test('a one-day view says trends need longer rather than drawing nine blanks', () => {
+  // Nine panels all reading "not enough data yet" is what the first-run screen
+  // exists to prevent, and opening on 1d would have recreated it.
+  const src = page('app.html');
+  assert.match(src, /const trends = \(d\.span_days \|\| 1\) >= 7;/);
+  assert.match(src, /if \(trends\) \{\s*\n\s*out\.push\(focusPanel\(d\)\);/);
+  assert.match(src, /Tap <strong>7d<\/strong> or <strong>30d<\/strong>/);
 });
 
 await test('the page never does its own arithmetic', () => {

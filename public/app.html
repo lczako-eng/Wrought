@@ -513,7 +513,10 @@ svg.ser .cursor { transition: opacity var(--quick) var(--ease); }
 .lrow .lbl { font-family: var(--mono); font-size: 10.5px; letter-spacing: .12em; text-transform: uppercase; color: var(--ash-dim); }
 .lrow .val { font-family: var(--mono); font-variant-numeric: tabular-nums; font-size: 13.5px; text-align: right; }
 .track { height: 11px; background: var(--scale-2); border-radius: 2px; overflow: hidden; }
-.fill { height: 100%; border-radius: 2px; }
+/* display:block matters. A bare <span> is inline, height and background paint
+   against the line box rather than the track, and the bar renders as an empty
+   grey slot — which reads as a number the page failed to draw. */
+.fill { display: block; height: 100%; border-radius: 2px; }
 .fill.in  { background: linear-gradient(90deg, var(--heat-2), var(--heat-3)); }
 .fill.out { background: linear-gradient(90deg, var(--temper-dk), var(--temper)); }
 .net { display: flex; align-items: baseline; gap: 11px; flex-wrap: wrap; border-top: 1px solid var(--edge); padding-top: 12px; }
@@ -639,6 +642,15 @@ table.matrix td.rh.cold { color: var(--heat-3); }
   padding: 2px 7px; border-radius: 2px; border: 1px solid var(--edge); color: var(--ash-dim);
 }
 .chip.stale { border-color: var(--heat-1); color: var(--heat-3); }
+/* A session or a shift, on the day it happened. The name leads, the numbers
+   sit under it — a run is "Outdoor run" first and "5.2 km" second. */
+.wkrow {
+  display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px;
+  padding: 11px 0; border-top: 1px solid var(--edge);
+}
+.wkrow:first-child { border-top: 0; }
+.wkrow .nm { font-size: 14px; font-weight: 600; flex: 1 1 100%; min-width: 0; }
+.wkrow .sub { margin: 0; font-family: var(--mono); font-size: 11.5px; }
 .quote { font-family: var(--serif); font-style: italic; color: var(--ash); }
 
 .empty { color: var(--ash-dim); font-size: 13.5px; padding: 14px 0; }
@@ -1182,9 +1194,9 @@ a.ghost { display: inline-block; }
         <button class="range view" data-view="admin" aria-pressed="false" id="admintab" hidden>Admin</button>
       </nav>
       <div class="ranges" id="rangebtns" role="group" aria-label="Time range">
-        <button class="range" data-days="1"   aria-pressed="false">1d</button>
+        <button class="range" data-days="1"   aria-pressed="true">1d</button>
         <button class="range" data-days="7"   aria-pressed="false">7d</button>
-        <button class="range" data-days="30"  aria-pressed="true">30d</button>
+        <button class="range" data-days="30"  aria-pressed="false">30d</button>
         <button class="range" data-days="90"  aria-pressed="false">90d</button>
         <button class="range" data-days="365" aria-pressed="false">1y</button>
       </div>
@@ -1221,7 +1233,12 @@ const $ = id => document.getElementById(id);
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;' }[c]));
 const n = v => (v == null ? '—' : Number(v).toLocaleString());
 
-let days = 30;
+// IT OPENS ON TODAY. The founder: "when we open it up, it should always be on
+// the first day." Opening on a 30-day window meant the first thing anybody saw
+// was a month of averages — the answer to a question nobody has at 7am. What
+// they came for is what today looks like so far, and the longer windows are
+// something you go and ask for.
+let days = 1;
 let view = 'record';
 let logCursor = null;
 let logDays = [];
@@ -3099,6 +3116,7 @@ function demoData() {
   const end = Date.now();
   const N = days;
   const wave = (i, p, a) => Math.sin(i / p) * a;
+  let demoWindow = null;   // set while the calendar squares are built, below
 
   const series = Array.from({ length: N }, (_, i) => {
     const date = iso(end - (N - 1 - i) * 86400000);
@@ -3203,7 +3221,21 @@ function demoData() {
       date: series[Math.max(0, N - 1)].date,
       food: { say: 'Roughly 2,140 kcal · 148g protein · 196g carbs · 71g fat (estimated from what you described)',
               calories: 2140, protein_g: 148, carbs_g: 196, fat_g: 71, estimated: true },
-      training: { say: '1 session, 44 min — legs, glutes, core' },
+      training: { say: '2 sessions, 78 min — legs, glutes, core',
+        // What actually happened today, with its own numbers. The matrix and
+        // the volume bars are arithmetic ABOUT training; this is the training,
+        // on the day it happened, which is what the 1d view is for.
+        entries: [
+          { event_type: 'workout', summary: 'Leg day · 44 min',
+            detail: { kind: 'strength', minutes: 44, calories: 430, avg_hr: 128, max_hr: 161 } },
+          { event_type: 'workout', summary: 'Outdoor run · 5.6 km · 34 min',
+            detail: { kind: 'run', minutes: 34, distance_km: 5.6, calories: 412, avg_hr: 149, max_hr: 172 } },
+        ] },
+      // A shift, listed because it burned calories and for no other reason —
+      // never counted toward the weekly target and never praised.
+      activity: { count: 1, minutes: 420,
+        entries: [{ event_type: 'activity', summary: 'Petting zoo, animal care',
+                    detail: { hours: 7, kcal: 980 } }] },
       body: { weight_kg: series[Math.max(0, N - 1)].weight },
       device: { steps: 9840, active_calories: 740, sleep_minutes: 402,
         // The wide door, shown full. Somebody deciding whether this is worth a
@@ -3448,8 +3480,17 @@ function demoData() {
       const rollups = {};
       if (cd.length >= 7)  rollups.week  = roll(cd.slice(-7),  'the last 7 days');
       if (cd.length >= 28) rollups.month = roll(cd.slice(-30), 'the last 30 days');
+      // The same squares, added up once for the whole loaded window, so the
+      // demo's range buttons do the thing the real ones do.
+      demoWindow = cd.length > 1
+        ? roll(cd, N === 7 ? 'the last 7 days' : N === 30 ? 'the last 30 days'
+                 : N >= 365 ? 'the last year' : `the last ${N} days`)
+        : null;
       return { days: cd, rollups, blocking: [], note: null };
     })(),
+    // Object properties evaluate in order, so the calendar above has already
+    // built the squares this counts.
+    window: demoWindow,
   };
 
   function macroSet(cal, pro, carb, sug, fib, fat, meals, dayz) {
@@ -3515,7 +3556,16 @@ async function load(token) {
 // number, which is the point — you should know how the day went in the moment
 // before you start reading. The gap goes in the middle because that is the
 // thing being asked about; the two sides sit underneath as the working.
+// A BRAND NEW ACCOUNT, never a quiet morning.
+//
+// This used to be decided from the loaded window, which was harmless at 30
+// days and became a lie the moment the page opened on one: somebody with a
+// month of history who has not logged anything yet today would be handed the
+// new-account screen. `has_history` is counted over all time on the server,
+// so the two cases can no longer be confused. The window heuristic stays as
+// the fallback for the demo, which sends no such field.
 function isFirstRun(d) {
+  if (d.has_history != null) return !d.has_history;
   const s = d.summary || {};
   const logged = (s.days_logged || 0) > 0;
   const trained = (s.training_days || 0) > 0;
@@ -3854,6 +3904,116 @@ function burnSplit(b) {
     </div>
     ${b.logged_activity?.count ? `<div class="bswork">${esc(b.logged_activity.entries.map(e => e.summary).join(' · '))}</div>` : ''}
   </div>`;
+}
+
+// The chosen window, added up rather than averaged.
+//
+// The founder, after tapping 7d and finding the top of the page unchanged:
+// "look at the seven day — should be yesterday, today to this point. The same
+// with the month. It's not running total." Two real faults in one sentence.
+// The range buttons changed nothing above the fold, so they read as broken;
+// and every window figure on the page was a per-day average, which answers
+// "what does a normal day look like" when the question at four in the
+// afternoon on day five is "where am I in this stretch, right now".
+//
+// Computed in lib/calendar.js off the same squares the calendar draws, by the
+// same function the week and month rollups use — so the running total, the
+// calendar and the brief can never quote three different figures for the same
+// Tuesday. Logged days only, all three numbers off the same days so they
+// visibly subtract, and the denominator said out loud. Today counts as it
+// stands, because it IS partial and pretending otherwise is the error that
+// overstates a deficit.
+function windowPanel(d) {
+  const r = d.window;
+  if (!r) return '';
+  const title = `Running total · ${esc(r.label)}`;
+
+  if (!r.days_counted) {
+    return `<section class="panel"><h2>${title}</h2>
+      <p class="empty">Nothing logged across ${r.span_days} days, so there is no total to add up.</p></section>`;
+  }
+
+  const inT = r.in_total, outT = r.out_total, netT = r.net_total;
+  const max = Math.max(inT || 0, outT || 0) || 1;
+  const cls = netT == null ? '' : netT < -150 ? 'good' : netT > 150 ? 'hot' : '';
+  const word = netT == null ? '' : netT < 0 ? 'under' : netT > 0 ? 'over' : 'level';
+
+  return `<section class="panel">
+    <h2>${title}</h2>
+    <div class="ledger">
+      <div class="lrow"><span class="lbl">In</span>
+        <span class="track"><span class="fill in" style="width:${((inT || 0) / max * 100).toFixed(1)}%"></span></span>
+        <span class="val">${n(inT)}</span></div>
+      <div class="lrow"><span class="lbl">Out</span>
+        <span class="track"><span class="fill out" style="width:${((outT || 0) / max * 100).toFixed(1)}%"></span></span>
+        <span class="val">${n(outT)}</span></div>
+      ${netT == null ? '' : `<div class="net">
+        <span class="big ${cls}">${n(Math.abs(netT))}</span>
+        <span class="sub">${word} across the stretch${r.sessions ? ` · ${r.sessions} session${r.sessions === 1 ? '' : 's'}` : ''}</span>
+      </div>`}
+    </div>
+    <p class="sub">${r.in_avg != null ? `About ${n(r.in_avg)} in` : ''}${
+      r.out_avg != null ? ` and ${n(r.out_avg)} out` : ''} on an average logged day.
+      Counted across ${r.days_counted} day${r.days_counted === 1 ? '' : 's'}, not the whole ${esc(r.label.replace(/^the /, ''))} —
+      a day nobody logged is not a zero-calorie day.</p>
+    ${outT == null ? '<p class="caveat">Calories out is not worked out for these days yet, so only what went in is totalled.</p>' : ''}
+  </section>`;
+}
+
+// Today's training, on the day view, with its own numbers.
+//
+// The founder: "it's not showing on the first day my workout, my exercise."
+// Everything about training on this page was either arithmetic ABOUT it — the
+// matrix, the volume bars, the weekly count — or the last FINISHED session
+// from the assistant's own session table. A run that came off the watch an
+// hour ago belonged to neither, so the day it happened on showed a burn that
+// included it and nothing that said what it was.
+function trainingTodayPanel(d) {
+  const t = d.today?.training || {};
+  const a = d.today?.activity || {};
+  const workouts = t.entries || [];
+  const shifts = a.entries || [];
+  if (!workouts.length && !shifts.length) return '';
+
+  const line = (label, bits, extra = '') => `<div class="wkrow">
+    <span class="nm">${esc(label)}</span>
+    <span class="sub dim">${esc(bits.filter(Boolean).join(' · '))}</span>
+    ${extra}
+  </div>`;
+
+  const rows = workouts.map(w => {
+    const x = w.detail || {};
+    // A device summary is already "run · 5.6 km · 34 min", so repeating the
+    // distance and the minutes underneath it reads as a rendering bug rather
+    // than as detail. Whatever the name already says, the line below drops.
+    const name = w.summary || x.kind || 'Session';
+    const said = s => new RegExp(s).test(name);
+    return line(name, [
+      x.minutes && !said('\\bmin\\b') ? `${x.minutes} min` : null,
+      x.distance_km && !said('\\bkm\\b') ? `${x.distance_km} km` : null,
+      x.calories ? `${Number(x.calories).toLocaleString()} kcal` : null,
+      // The training spike, on the day it happened rather than three months on.
+      x.avg_hr ? `${x.avg_hr} bpm avg` : null,
+      x.max_hr ? `${x.max_hr} bpm peak` : null,
+    ]);
+  }).concat(shifts.map(s => {
+    const x = s.detail || {};
+    // A SHIFT IS NOT A SESSION. It is listed here because it burned calories
+    // and for no other reason — never counted toward the weekly target, never
+    // in the matrix, and never praised.
+    return line(s.summary || 'Work', [
+      x.hours ? `${x.hours}h on task` : null,
+      x.kcal ? `${Number(x.kcal).toLocaleString()} kcal, estimated` : null,
+    ], '<span class="chip">work</span>');
+  })).join('');
+
+  return `<section class="panel">
+    <h2>Training · today</h2>
+    <div class="rows">${rows}</div>
+    ${workouts.length ? `<p class="sub">${esc(t.say)}</p>` : ''}
+    ${workouts.some(w => !w.detail?.minutes) ? `<p class="caveat">A session logged with no minutes on it
+      contributes nothing to calories out — say roughly how long it was and the day's burn corrects itself.</p>` : ''}
+  </section>`;
 }
 
 // ── Calendar ───────────────────────────────────────────────────────────────
@@ -4265,8 +4425,14 @@ function render(d) {
   // a flag is the one thing that outranks the day's arithmetic.
   out.push(hero(d));
 
+  // Directly under the day, because that is where the range buttons were doing
+  // nothing. Null on the 1d view — a running total over one day is the hero
+  // above it, printed twice.
+  out.push(windowPanel(d));
+
   out.push(targetsPanel(d));
   out.push(readingsPanel(d));
+  out.push(trainingTodayPanel(d));
 
   // Summary before detail: the verdict and today, then everything else.
   if (d.latest_verdict?.verdict) {
@@ -4296,24 +4462,39 @@ function render(d) {
     ${balancePanel(d)}
   </div>`);
 
-  out.push(`<div class="grid-2">
-    ${chart('Weight', s.weight.say, d.series.weight, 'var(--heat-3)', wu,
-            { trend: d.trends?.weight })}
-    ${chart('Protein', 'Grams per day. Gaps are unlogged days.', d.series.protein, 'var(--moss)', 'g',
-            { trend: d.trends?.protein, target: d.targets?.protein })}
-  </div>`);
+  // A TREND NEEDS MORE THAN A DAY, and saying so once beats nine panels each
+  // reading "not enough data yet" — which is what the day view would otherwise
+  // be, and it reads as broken software rather than a short window. Same
+  // reasoning as the first-run screen.
+  const trends = (d.span_days || 1) >= 7;
 
-  out.push(`<div class="grid-2">
-    ${chart('Calories', 'Estimated from what you described.', d.series.calories, 'var(--temper)', 'kcal',
-            { trend: d.trends?.calories, target: d.targets?.calories })}
-    ${chart('Sessions a week', 'A rolling seven-day count — the number the whole expectation rests on.',
-            d.series.sessions, 'var(--heat-4)', 'sessions')}
-  </div>`);
+  if (!trends) {
+    out.push(`<section class="panel">
+      <h2>Trends</h2>
+      <p class="sub">Charts, the training matrix and the weekday pattern all need more than
+      one day to say anything true. Tap <strong>7d</strong> or <strong>30d</strong> above and they fill in —
+      along with the running total for that stretch.</p>
+    </section>`);
+  } else {
+    out.push(`<div class="grid-2">
+      ${chart('Weight', s.weight.say, d.series.weight, 'var(--heat-3)', wu,
+              { trend: d.trends?.weight })}
+      ${chart('Protein', 'Grams per day. Gaps are unlogged days.', d.series.protein, 'var(--moss)', 'g',
+              { trend: d.trends?.protein, target: d.targets?.protein })}
+    </div>`);
 
-  out.push(`<div class="grid-2">
-    ${bars('Training volume', 'Sets × reps × load, per session.', d.series.volume)}
-    ${chart('Steps', 'Per day, straight off the phone.', d.series.steps, 'var(--temper)', 'steps')}
-  </div>`);
+    out.push(`<div class="grid-2">
+      ${chart('Calories', 'Estimated from what you described.', d.series.calories, 'var(--temper)', 'kcal',
+              { trend: d.trends?.calories, target: d.targets?.calories })}
+      ${chart('Sessions a week', 'A rolling seven-day count — the number the whole expectation rests on.',
+              d.series.sessions, 'var(--heat-4)', 'sessions')}
+    </div>`);
+
+    out.push(`<div class="grid-2">
+      ${bars('Training volume', 'Sets × reps × load, per session.', d.series.volume)}
+      ${chart('Steps', 'Per day, straight off the phone.', d.series.steps, 'var(--temper)', 'steps')}
+    </div>`);
+  }
 
   // Last night before any average. The founder asked for this first, twice:
   // "how many reps you did last night, your workout that you've done, what are
@@ -4322,14 +4503,18 @@ function render(d) {
   // after.
   out.push(lastSessionPanel(d));
   out.push(blockPanel(d));
-  out.push(focusPanel(d));
-  out.push(liftsPanel(d));
-  out.push(matrixPanel(s.matrix));
+  if (trends) {
+    out.push(focusPanel(d));
+    out.push(liftsPanel(d));
+    out.push(matrixPanel(s.matrix));
+  }
   out.push(nutritionPanel(d.nutrition));
-  out.push(devicePanel(d.device_matrix));
-  out.push(weekPanel(d.weekday));
+  if (trends) {
+    out.push(devicePanel(d.device_matrix));
+    out.push(weekPanel(d.weekday));
+  }
 
-  if (d.exercise_order?.findings?.length) {
+  if (trends && d.exercise_order?.findings?.length) {
     const f = d.exercise_order.findings[0];
     out.push(callout('note', 'Order is costing you',
       `<strong>${esc(f.exercise)}</strong> averages ${f.early_avg_kg}${wu} when it goes first or second,
