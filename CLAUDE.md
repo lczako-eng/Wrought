@@ -73,7 +73,7 @@ nothing else.
   MCP brief and the web dashboard cannot disagree. `api-progress.js` exists
   purely so the dashboard calls the same code rather than recomputing in JS.
 - **MCP server**: `netlify/functions/mcp.js` at `/mcp` — stateless Streamable
-  HTTP, JSON-RPC. 41 tools. Doctrines ship in `SERVER_INSTRUCTIONS`.
+  HTTP, JSON-RPC. 42 tools. Doctrines ship in `SERVER_INSTRUCTIONS`.
 - **Auth**: OAuth 2.1 (PKCE, dynamic client registration) so "Sign in with
   Wrought" appears in ChatGPT/Claude. Supabase session JWTs also accepted as a
   fallback. Everything secret is stored SHA-256 hashed.
@@ -1365,6 +1365,57 @@ somebody to eat less than they need. Until something is logged there is no
 ring: the burn is shown as the burn, labelled *"to burn today"*, and the caveat
 says it is the whole day's estimate rather than what has been spent so far.
 
+### Built, correct, and nowhere to look at it
+
+The founder: *"a lot of things are not showing up on the website."* He was
+right, and the audit found one pattern rather than eleven bugs: **every one of
+these was built as a TOOL ANSWER and never given a PANEL.** The arithmetic was
+done, tested and shipping; the website simply had no surface for it. A memory
+product that cannot show you what it knows is asking for trust it has not
+earned — and several of these he had asked for in exactly those words: *"I need
+to see it."*
+
+Now on the dashboard: **the plan** (`lib/plan.js` — pace, push, days, and the
+target **never** without its maintenance and weekly rate beside it), **the
+week** against what was agreed, **recovery**, **runs read as a progression**,
+**the form watch** with its evidence and his own words, **fasting and the
+eating window**, and **the computed target options** where a number used to be
+invented.
+
+- **`planRead()` is shared with `my_plan`.** Two readers is how the plan
+  somebody is TOLD and the plan somebody can LOOK at drift apart, and then
+  neither is worth reading.
+- **The Targets panel used to say "tell your assistant" when nothing was set.**
+  That is the vacuum, on the website — the same one that produced the invented
+  2,600. It now shows maintenance and all three paced cuts, computed and
+  floored, and showing them sets nothing.
+
+**Three real bugs the demo had been hiding**, which is the more useful half:
+
+- **`formWatch` returns `evidence` as a SENTENCE** from two of its three
+  builders, and the demo was handing the page an array. `.map()` on a string
+  throws — the panel would have died on the first real finding while the demo
+  looked perfect. The demo now carries the real shape, because a demo that
+  disagrees with the server hides bugs instead of showing the product.
+- **`windowStatus` has no `set` field**, and the panel was gated on it, so the
+  eating window could never draw.
+- **Four tabs returned silently without a session.** `loadTrainer`,
+  `loadPhotos`, `loadAccount` and `loadAdmin` all began `if (!s.session)
+  return;` — the tab lit up as selected and the previous screen stayed on. In
+  the demo that is three of seven tabs doing nothing when tapped, on the screen
+  somebody uses to decide whether this is worth a fortnight. `needsSession()`
+  says why instead.
+
+**And the one that mattered most.** Care flags, the week's count, recovery and
+earned room were all read off the SELECTED range — harmless at thirty days and
+broken at one. **Care flags need three logged days and a fortnight, so on the
+1d view the dashboard now opens on they could not fire at all** — the one thing
+that outranks everything else in this product, structurally silent. The week's
+count read off a single day is not a missing number, it is a WRONG one, on the
+figure the whole plan rests on. They get their own thirty days whatever the
+buttons say. Third time this rule has had to be applied: **a window is not a
+memory.**
+
 ### The workout nobody closed — the data was there the whole time
 
 `lib/session.js`. The founder, twice: *"it's not logging my training again."*
@@ -1723,7 +1774,7 @@ self-reporting scale removes the most-abandoned manual entry), then Strava.
 
 ## Conventions
 
-- `npm test` runs `test/harness.mjs` — 471 offline tests, no network, no database.
+- `npm test` runs `test/harness.mjs` — 477 offline tests, no network, no database.
   Run it before every push. It covers the JSON-RPC envelope (which fails as an
   uninformative "could not connect" inside ChatGPT) and all the arithmetic
   (which fails as a confidently wrong number in somebody's verdict).

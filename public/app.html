@@ -648,7 +648,7 @@ table.matrix td.rh.cold { color: var(--heat-3); }
   display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px;
   padding: 11px 0; border-top: 1px solid var(--edge);
 }
-.wkrow:first-child { border-top: 0; }
+.wkrow:first-of-type { border-top: 0; }
 .wkrow .nm { font-size: 14px; font-weight: 600; flex: 1 1 100%; min-width: 0; }
 .wkrow .sub { margin: 0; font-family: var(--mono); font-size: 11.5px; }
 .quote { font-family: var(--serif); font-style: italic; color: var(--ash); }
@@ -749,6 +749,40 @@ table.matrix td.rh.cold { color: var(--heat-3); }
 .fields textarea { resize: vertical; line-height: 1.5; }
 .fields input:focus, .fields select:focus, .fields textarea:focus { outline: none; border-color: var(--heat-3); }
 @media (max-width: 520px) { .fields { grid-template-columns: 1fr; } }
+
+/* The plan: the target, and the two numbers that make it a decision rather
+   than a rule handed down. They are never allowed to appear apart. */
+.plantop { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 14px; margin-bottom: 14px; }
+.planbig { font-family: var(--grotesk); font-size: 40px; font-weight: 700; line-height: 1; color: var(--bright); }
+.planbig em { font-family: var(--mono); font-size: 11px; font-style: normal; letter-spacing: .12em;
+              text-transform: uppercase; color: var(--ash-dim); margin-left: 8px; }
+.planvs { font-size: 13.5px; color: var(--ash); flex: 1 1 100%; }
+.planrows { display: flex; flex-direction: column; }
+.planrow {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 12px;
+  padding: 9px 0; border-top: 1px solid var(--edge); font-size: 14px;
+}
+.planrow:first-of-type { border-top: 0; }
+.planrow .lbl { font-family: var(--mono); font-size: 10.5px; letter-spacing: .12em;
+                text-transform: uppercase; color: var(--ash-dim); }
+/* Only the SETTING names are capitalised. A goal is the user's own sentence —
+   title-casing "lose weight steadily" makes their words look like a product
+   feature, which is the small end of putting words in somebody's mouth. */
+.planrow b.cap, .ls-ex-top b.cap { text-transform: capitalize; }
+.planrow .sub { display: inline; font-size: 11.5px; }
+
+/* A run against the last one. The best gets a mark; a flat pace gets a word
+   and no colour, because it is information and not a failure. */
+.cardio { padding: 12px 0; border-top: 1px solid var(--edge); }
+.cardio:first-of-type { border-top: 0; }
+.cardio.best .ls-ex-top b { color: var(--heat-4); }
+.finding { padding: 12px 0; border-top: 1px solid var(--edge); }
+.finding:first-of-type { border-top: 0; }
+.ownwords { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--edge); }
+.ownwords .quote { margin: 0 0 8px; font-size: 13.5px; }
+/* A signal worth noticing gets a hairline, never a warning colour — this is
+   recorded, not interpreted, and an alarming colour is an interpretation. */
+.setpill.care { border-color: var(--temper-dk); }
 
 /* ── The plan, and the photographs ────────────────────────────────────────── */
 .weeks { display: flex; gap: 6px; flex-wrap: wrap; margin: 14px 0 10px; }
@@ -1589,9 +1623,33 @@ document.querySelectorAll('#gate .oauth').forEach(b => b.addEventListener('click
   if (error) $('msg').textContent = providerError(error.message, provider);
 }));
 
+// A view that needs a live session, asked for without one.
+//
+// loadTrainer, loadPhotos, loadAccount and loadAdmin all began with
+// `if (!s.session) return;` — a SILENT return that left the previous view's
+// content on screen while the tab lit up as selected. In the demo that is
+// three of seven tabs doing nothing at all when tapped, on the screen somebody
+// is using to decide whether this product is worth a fortnight. A tab that
+// does nothing reads as broken software; a tab that says why reads as a tab.
+async function needsSession(title, what) {
+  const { data } = sb ? await sb.auth.getSession() : { data: {} };
+  if (data?.session) return data.session;
+  $('content').innerHTML = `<section class="panel">
+    <h2>${esc(title)}</h2>
+    <p class="sub">${DEMO
+      ? `${esc(what)} reads your own record, so there is nothing to borrow for the demo.
+         Sign in and it fills in from your log.`
+      : `Sign in to see ${esc(what.toLowerCase())}.`}</p>
+    ${DEMO ? '<p class="sub dim"><a class="linky" href="/app.html">Leave the demo</a></p>' : ''}
+  </section>`;
+  stagger();
+  return null;
+}
+
 async function loadAccount() {
-  const { data: s } = await sb.auth.getSession();
-  if (!s.session) return;
+  const session = await needsSession('Account', 'Your account, sign-in methods and connected assistants');
+  if (!session) return;
+  const s = { session };
   let ids = null;
   let linkNote = null;
   try {
@@ -2496,8 +2554,9 @@ async function finishProviderMerge() {
 // product is not a licence to read the health data in it. The server refuses
 // too, so this is not the only thing standing in the way.
 async function loadAdmin() {
-  const { data } = await sb.auth.getSession();
-  if (!data.session) return;
+  const session = await needsSession('Admin', 'The operator view');
+  if (!session) return;
+  const data = { session };
   const res = await fetch('/.netlify/functions/api-admin', {
     headers: { Authorization: `Bearer ${data.session.access_token}` },
   });
@@ -2729,8 +2788,9 @@ async function startTrainer() {
 let trainerRoutines = [];
 
 async function loadTrainer() {
-  const { data } = await sb.auth.getSession();
-  if (!data.session) return;
+  const session = await needsSession('Trainer', 'The live session at the rack');
+  if (!session) { stopTrainer(); return; }
+  const data = { session };
   const res = await fetch('/.netlify/functions/api-session', {
     headers: { Authorization: `Bearer ${data.session.access_token}` },
   });
@@ -3491,6 +3551,48 @@ function demoData() {
     // Object properties evaluate in order, so the calendar above has already
     // built the squares this counts.
     window: demoWindow,
+
+    // The plan, and everything else that used to be answerable only through
+    // the assistant. The demo runs the same render path, so if these are not
+    // here the shop window shows a dashboard nobody actually gets.
+    plan: {
+      set: true, intent: 'lose', goal: 'lose weight steadily',
+      pace: 'steady', push: 'normal',
+      pace_say: 'The default. About half a percent of bodyweight a week — fast enough to see, slow enough to keep muscle.',
+      push_say: 'Normal. Mentions where the week stands, suggests the session when you are short.',
+      train_days: 4, tier: 'intermediate',
+      calorie_target: 2500, maintenance: 3260, deficit: 760,
+      projected_kg_per_week: -0.69, protein_target_g: 165,
+      resting_burn: 1770, missing: null,
+    },
+    no_target_set: null,
+    training_week: { week_start: series[Math.max(0, N - 1)].date, done: 3, target: 4, days_left: 2,
+      met: false, say: 'Three of four done with two days left. One more and the week is met.' },
+    readiness: { known: true, state: 'ready', signals: [
+      { say: 'Resting heart rate 55, in line with your fortnight', notable: false },
+      { say: 'Slept 6h 42m, about your average', notable: false },
+    ], say: 'Nothing is off. Train as planned.' },
+    cardio: { known: true, sessions: 14, personal_best: true, reads: [{
+      kind: 'run', sessions: 14,
+      latest: { date: series[Math.max(0, N - 1)].date, km: 5.6, minutes: 31, pace: '5:32/km', avg_hr: 149 },
+      best_pace_over_similar: '5:41/km', longest_km: 8.2, personal_best: true, trend_pct: 6.4,
+      say: 'Best run yet over that distance — 5.6km at 5:32/km, past your 5:41/km. Pace is 6.4% quicker than when you started, across 14 sessions.',
+    }] },
+    form: { known: true, sessions_read: 11,
+      findings: [{ exercise: 'Bench press', kind: 'last_set_collapse',
+        say: 'The last set on bench has fallen off a cliff three sessions running — 8, 8, 8, then 4. That weight holds for three sets, not four. Take 5kg off the last set rather than grinding it.',
+        // A STRING, as lastSetCollapse and grinding actually return — the demo
+        // must carry the real shape or it hides bugs instead of showing the product.
+        evidence: '3 of the last 4 sessions dropped more than a third of the reps on the last set.',
+        verdict: 'Take 5kg off the last set rather than grinding it.' }],
+      your_words: [{ note: 'third set I rushed it', exercise: 'Squat', date: series[Math.max(0, N - 3)].date }],
+      limits: 'WROUGHT cannot see you lift. Nothing here is an assessment of your technique — it is what your own log shows, and what to change about the training because of it.',
+      say: 'One thing worth changing.' },
+    fasting: { count: 9, average_hours: 15.4, longest_hours: 20,
+      say: '9 fasts logged, averaging 15.4h. Longest 20h.' },
+    eating_window: { open: true, opens_at: '12:00', closes_at: '20:00', strictness: 'soft',
+      now_local: '16:04', minutes_left: 236, minutes_until_open: null,
+      say: 'Window is open until 20:00 — 3h 56m left.' },
   };
 
   function macroSet(cal, pro, carb, sug, fib, fat, meals, dayz) {
@@ -3904,6 +4006,227 @@ function burnSplit(b) {
     </div>
     ${b.logged_activity?.count ? `<div class="bswork">${esc(b.logged_activity.entries.map(e => e.summary).join(' · '))}</div>` : ''}
   </div>`;
+}
+
+// ── The plan, stated ───────────────────────────────────────────────────────
+// The founder asked for this twice: "your plans to tailor-made plan for you —
+// aggressive, non-aggressive fat burning — and how hard this thing's gonna
+// prompt you", and "it might say you're allowed 2,400 a day, but it should
+// also let you know that your maintenance is this while what you're trying to
+// achieve is that."
+//
+// Every part of it existed and NONE of it was answerable from a screen. The
+// plan was something you could be told by the assistant and nowhere you could
+// go and look — on the product whose entire promise is that it remembers.
+//
+// THE TARGET NEVER APPEARS ALONE. On its own it is a rule handed down and it
+// reads as arbitrary; beside its maintenance and the weekly rate it is a
+// decision somebody can judge. Computed in lib/plan.js, by the same reader
+// my_plan uses, so the panel and the assistant cannot state different plans.
+function planPanel(d) {
+  const p = d.plan;
+  if (!p) return '';
+
+  const bits = [
+    p.goal || p.intent ? ['Aiming at', esc(p.goal || p.intent)] : null,
+    p.pace ? ['Pace', esc(p.pace), true] : null,
+    p.push ? ['Pushing', esc(p.push), true] : null,
+    p.train_days ? ['Sessions', `${p.train_days} a week`] : null,
+  ].filter(Boolean);
+
+  // Nothing set at all: say what is missing and where it gets set, rather than
+  // drawing an empty frame. Changing any of it is one sentence — never a form.
+  if (!p.set && !p.calorie_target && !bits.length) {
+    return `<section class="panel">
+      <h2>Your plan</h2>
+      <p class="sub">No plan on file yet. Tell your assistant what you are after and how fast —
+      <em>"I want to lose weight, steady pace"</em> — and it works the numbers out from your own
+      body and shows them here.</p>
+      ${p.maintenance ? `<p class="sub dim">For reference, maintenance for you is about
+        <strong>${n(p.maintenance)}</strong> a day.</p>` : ''}
+    </section>`;
+  }
+
+  const t = p.calorie_target;
+  return `<section class="panel">
+    <h2>Your plan</h2>
+    ${t != null ? `<div class="plantop">
+      <span class="planbig">${n(t)}<em>a day</em></span>
+      ${p.maintenance != null ? `<span class="planvs">against a maintenance of
+        <strong>${n(p.maintenance)}</strong>${p.deficit != null ? ` — about ${n(Math.abs(p.deficit))}
+        ${p.deficit >= 0 ? 'down' : 'up'} a day` : ''}${p.projected_kg_per_week != null
+          ? `, roughly ${Math.abs(p.projected_kg_per_week)}kg a week` : ''}</span>` : ''}
+    </div>` : ''}
+    <div class="planrows">
+      ${bits.map(([k, v, cap]) => `<div class="planrow"><span class="lbl">${k}</span><b${cap ? ' class="cap"' : ''}>${v}</b></div>`).join('')}
+      ${p.protein_target_g ? `<div class="planrow"><span class="lbl">Protein</span><b>${p.protein_target_g}g a day</b></div>` : ''}
+    </div>
+    ${p.pace_say ? `<p class="sub dim">${esc(p.pace_say)}</p>` : ''}
+    ${p.push_say ? `<p class="sub dim">${esc(p.push_say)}</p>` : ''}
+    ${p.missing?.length ? `<p class="sub">Still to settle: ${esc(p.missing.join('; '))}.</p>` : ''}
+    <p class="caveat">Every figure is an estimate, and the weekly trend on the scale corrects it —
+    never the other way round. Any part of this changes in one sentence to your assistant:
+    <em>"make it aggressive"</em>, <em>"ease off"</em>, <em>"stop nagging me"</em>. It is never a negotiation.</p>
+  </section>`;
+}
+
+// Defensible numbers, exactly where a model used to reach for a plausible one.
+//
+// THE NAMED FAILURE, on the website. Asked "how many am I allowed today" with
+// no goal on file, the connector once answered 2,600 — invented, and below
+// even the aggressive pace the product itself would apply. The fix was never
+// more forbidding; it was removing the vacuum. The Targets panel used to say
+// "tell your assistant" in exactly that vacuum, so the same computed options
+// now sit on the screen. Showing them sets nothing.
+function targetOptionsPanel(d) {
+  const o = d.no_target_set;
+  if (!o) return '';
+  if (!o.known) {
+    return `<section class="panel"><h2>No calorie target set</h2>
+      <p class="sub">${esc(o.say)}</p></section>`;
+  }
+  const row = (label, kcal, rate) => `<div class="planrow">
+    <span class="lbl">${esc(label)}</span>
+    <b>${n(kcal)}${rate ? ` <span class="sub dim">· about ${Math.abs(rate)}kg a week</span>` : ''}</b>
+  </div>`;
+  const L = o.to_lose || {};
+  return `<section class="panel">
+    <h2>No calorie target set</h2>
+    <p class="sub">Nothing is set. These are worked out from your own height, weight, age, sex and
+    activity level — not picked off a chart — and none of them applies until you choose one.</p>
+    <div class="planrows">
+      ${row('Maintenance', o.maintenance, null)}
+      ${L.gentle ? row('Gentle cut', L.gentle.calories, L.gentle.kg_per_week) : ''}
+      ${L.steady ? row('Steady cut', L.steady.calories, L.steady.kg_per_week) : ''}
+      ${L.aggressive ? row('Aggressive cut', L.aggressive.calories, L.aggressive.kg_per_week) : ''}
+      ${o.to_gain ? row('To gain', o.to_gain, null) : ''}
+    </div>
+    <p class="caveat">Every one of these floors at 1,200 and stays under the rate WROUGHT would warn
+    you about. Say which you want to your assistant and it gets set — and scored here from that day on.</p>
+  </section>`;
+}
+
+// The week, against what was agreed. Sessions never roll over and a missed
+// week is information, never a debt — guilt is how a training log dies.
+function weekPanelSoFar(d) {
+  const w = d.training_week;
+  if (!w) return '';
+  const pct = w.target ? Math.min(100, Math.round(w.done / w.target * 100)) : null;
+  return `<section class="panel">
+    <h2>This week</h2>
+    <div class="progtop">
+      <span class="progpct">${w.done}${w.target ? `<span class="sub"> of ${w.target}</span>` : ''}</span>
+      <span class="sub">${w.days_left} day${w.days_left === 1 ? '' : 's'} left</span>
+    </div>
+    ${pct != null ? `<div class="progbar"><i style="width:${pct}%"></i></div>` : ''}
+    <p class="sub">${esc(w.say)}</p>
+  </section>`;
+}
+
+// Runs, read as a progression. "I've been running about a month straight and
+// today was my best run yet, because I pay attention to it. I need that
+// progression. I need to see it. I need to see where my walls are."
+//
+// A personal best is over a COMPARABLE distance, the trend is first third
+// against last third, and a flat pace is named as the wall and never scolded —
+// it does not know whether it was heat, hills, sleep or a heavy week.
+function cardioPanel(d) {
+  const c = d.cardio;
+  if (!c?.known || !c.reads?.length) return '';
+  return `<section class="panel">
+    <h2>Runs and rides</h2>
+    ${c.reads.map(r => `<div class="cardio${r.personal_best ? ' best' : ''}">
+      <div class="ls-ex-top">
+        <b class="cap">${esc(r.kind)}</b>
+        ${r.personal_best ? '<span class="delta up">best</span>'
+          : Math.abs(r.trend_pct) < 1.5 ? '<span class="delta">flat</span>'
+          : `<span class="delta ${r.trend_pct > 0 ? 'up' : 'down'}">${r.trend_pct > 0 ? '+' : ''}${r.trend_pct}%</span>`}
+      </div>
+      <p class="sub">${esc(r.say)}</p>
+      <div class="ls-sets">
+        <span class="setpill">${r.latest.km}km · ${esc(r.latest.pace)}</span>
+        ${r.latest.avg_hr ? `<span class="setpill">${r.latest.avg_hr} bpm avg</span>` : ''}
+        ${r.best_pace_over_similar ? `<span class="setpill">best at this distance ${esc(r.best_pace_over_similar)}</span>` : ''}
+        <span class="setpill">longest ${r.longest_km}km</span>
+      </div>
+    </div>`).join('')}
+  </section>`;
+}
+
+// The body's veto. It only ever SOFTENS — "ready" means train as planned and
+// nothing more, because turning a good reading into "add weight" is how a tool
+// argues somebody into an injury on a day they already felt off. Never a
+// diagnosis: an elevated resting heart rate has a hundred causes this cannot
+// tell apart, so no condition is ever named.
+function readinessPanel(d) {
+  const r = d.readiness;
+  if (!r?.known) return '';
+  const word = r.state === 'strained' ? 'Take today lighter'
+             : r.state === 'watch' ? 'Worth watching' : 'Ready';
+  return `<section class="panel">
+    <h2>Recovery · today</h2>
+    <div class="ls-ex-top">
+      <b>${word}</b>
+      <span class="delta ${r.state === 'ready' ? 'up' : r.state === 'strained' ? 'down' : ''}">${esc(r.state)}</span>
+    </div>
+    <div class="ls-sets">${(r.signals || []).filter(s => s.say).map(s =>
+      `<span class="setpill${s.notable ? ' care' : ''}">${esc(s.say)}</span>`).join('')}</div>
+    <p class="sub">${esc(r.say)}</p>
+  </section>`;
+}
+
+// The shadow technique leaves in the record — never a claim about the lifter.
+//
+// IT CANNOT SEE THEM LIFT, and "your form is breaking down" would be an
+// assertion about something never observed. What the log does carry is the
+// last set falling off a cliff repeatedly, the same weight costing more, and
+// grinding. Every finding ships with the rows it came from, and it only ever
+// softens: no finding may ever end in "add weight".
+function formPanel(d) {
+  const f = d.form;
+  if (!f?.known || (!f.findings?.length && !f.your_words?.length)) return '';
+  return `<section class="panel">
+    <h2>What the log shows</h2>
+    ${f.findings?.length ? f.findings.map(x => {
+      // evidence is a SENTENCE from one builder and a list from another. Both
+      // are legitimate; assuming either one is how a panel throws on real data
+      // while looking perfect against invented data.
+      const ev = x.evidence == null ? []
+               : Array.isArray(x.evidence) ? x.evidence : [x.evidence];
+      return `<div class="finding">
+      <b>${esc(x.exercise || x.finding || 'Noted')}</b>
+      <p class="sub">${esc(x.say)}</p>
+      ${ev.length ? `<div class="ls-sets">${ev.map(e =>
+        `<span class="setpill">${esc(typeof e === 'string' ? e : (e.say || ''))}</span>`).join('')}</div>` : ''}
+      ${x.verdict ? `<p class="sub dim">${esc(x.verdict)}</p>` : ''}
+    </div>`; }).join('') : `<p class="sub">${esc(f.say)}</p>`}
+    ${f.your_words?.length ? `<div class="ownwords">
+      <p class="sub dim">Your own words, quoted and not interpreted.</p>
+      ${f.your_words.slice(0, 6).map(w => `<p class="quote">&ldquo;${esc(w.note || w)}&rdquo;${
+        w.exercise ? ` <span class="sub dim">— ${esc(w.exercise)}${w.date ? `, ${esc(w.date)}` : ''}${
+          // A note about PAIN is a report about a body, never a coaching cue.
+          w.about_body ? ' · a doctor\'s question, not a form one' : ''}</span>` : ''}</p>`).join('')}
+    </div>` : ''}
+    <p class="caveat">${esc(f.limits)}</p>
+  </section>`;
+}
+
+// The fast, and the eating window. A record, never a plan and NEVER a score:
+// the moment this gets a target or a streak it becomes a reason to skip
+// breakfast to keep a number alive.
+function fastingPanel(d) {
+  const f = d.fasting, w = d.eating_window;
+  if (!f?.count && !w) return '';
+  return `<section class="panel">
+    <h2>Fasting</h2>
+    ${w ? `<p class="sub">${esc(w.say)}</p>` : ''}
+    ${f?.count ? `<div class="planrows">
+      <div class="planrow"><span class="lbl">Logged</span><b>${f.count}</b></div>
+      ${f.average_hours ? `<div class="planrow"><span class="lbl">Average</span><b>${f.average_hours}h</b></div>` : ''}
+      ${f.longest_hours ? `<div class="planrow"><span class="lbl">Longest</span><b>${f.longest_hours}h</b></div>` : ''}
+    </div>` : ''}
+    <p class="sub dim">Recorded, not graded. There is no target here and no streak on purpose.</p>
+  </section>`;
 }
 
 // The chosen window, added up rather than averaged.
@@ -4431,7 +4754,16 @@ function render(d) {
   out.push(windowPanel(d));
 
   out.push(targetsPanel(d));
+  // Where a target would have been invented. Only drawn when nothing is set.
+  out.push(targetOptionsPanel(d));
   out.push(readingsPanel(d));
+
+  // The plan, then the week it is being run in. Above the day's detail
+  // because they are the answer to "what am I actually doing" — the question
+  // every number below is only meaningful against.
+  out.push(planPanel(d));
+  out.push(weekPanelSoFar(d));
+  out.push(readinessPanel(d));
   out.push(trainingTodayPanel(d));
 
   // Summary before detail: the verdict and today, then everything else.
@@ -4502,6 +4834,8 @@ function render(d) {
   // the training, and it is what somebody opens the app to see the morning
   // after.
   out.push(lastSessionPanel(d));
+  out.push(cardioPanel(d));
+  out.push(formPanel(d));
   out.push(blockPanel(d));
   if (trends) {
     out.push(focusPanel(d));
@@ -4509,6 +4843,7 @@ function render(d) {
     out.push(matrixPanel(s.matrix));
   }
   out.push(nutritionPanel(d.nutrition));
+  out.push(fastingPanel(d));
   if (trends) {
     out.push(devicePanel(d.device_matrix));
     out.push(weekPanel(d.weekday));
@@ -4873,8 +5208,9 @@ function blockPanel(d) {
 // Nothing here reads the image. No estimate is derived from a photograph, ever,
 // and the copy on this screen says so where somebody will actually see it.
 async function loadPhotos() {
-  const { data: s } = await sb.auth.getSession();
-  if (!s.session) return;
+  const session = await needsSession('Progress photos', 'Your own photographs');
+  if (!session) return;
+  const s = { session };
   $('content').innerHTML = '<section class="panel"><p class="empty">Loading…</p></section>';
 
   const res = await fetch('/.netlify/functions/api-photos', {
