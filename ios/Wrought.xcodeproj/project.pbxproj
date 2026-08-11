@@ -183,19 +183,11 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = Wrought/Wrought.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 5;
+				CURRENT_PROJECT_VERSION = 6;
 				DEVELOPMENT_TEAM = XV2M8W934A;
 				ENABLE_PREVIEWS = YES;
-				GENERATE_INFOPLIST_FILE = YES;
+				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = Wrought;
-				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
-				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "Wrought does not write to Apple Health. This permission exists only because Apple requires declaring it alongside read access.";
-				INFOPLIST_KEY_NSHealthShareUsageDescription = "Wrought reads your activity and body data — steps, distance, stand and exercise time, flights, energy burned, workouts, heart rate, HRV, VO2 max, respiratory rate, blood oxygen, walking measurements, weight, body composition, water and sleep — so your training record fills in without you typing it. Readings are recorded and shown back to you, never interpreted as medical findings. Nothing is read beyond what you approve, and everything can be exported or deleted from wrought.fit.";
-				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
-				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
-				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
-				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = UIInterfaceOrientationPortrait;
 				IPHONEOS_DEPLOYMENT_TARGET = 16.4;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -217,19 +209,11 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = Wrought/Wrought.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 5;
+				CURRENT_PROJECT_VERSION = 6;
 				DEVELOPMENT_TEAM = XV2M8W934A;
 				ENABLE_PREVIEWS = YES;
-				GENERATE_INFOPLIST_FILE = YES;
+				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = Wrought;
-				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
-				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "Wrought does not write to Apple Health. This permission exists only because Apple requires declaring it alongside read access.";
-				INFOPLIST_KEY_NSHealthShareUsageDescription = "Wrought reads your activity and body data — steps, distance, stand and exercise time, flights, energy burned, workouts, heart rate, HRV, VO2 max, respiratory rate, blood oxygen, walking measurements, weight, body composition, water and sleep — so your training record fills in without you typing it. Readings are recorded and shown back to you, never interpreted as medical findings. Nothing is read beyond what you approve, and everything can be exported or deleted from wrought.fit.";
-				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
-				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
-				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
-				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = UIInterfaceOrientationPortrait;
 				IPHONEOS_DEPLOYMENT_TARGET = 16.4;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",

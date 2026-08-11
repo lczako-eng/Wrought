@@ -338,6 +338,30 @@ corrects the pronunciation and never replies "did you mean Wrought?" — it just
 answers. Losing this breaks nothing loudly; the connector simply stops
 recognising its own name, which is the hardest regression to spot.
 
+### The Info.plist that failed two uploads
+
+Worth recording because the error named nothing useful.
+
+`INAlternativeAppNames` is an array of dictionaries and there is no
+`INFOPLIST_KEY_` build setting shape for that, so a real `Info.plist` had to
+exist. It was written holding **only that key**, on the assumption that
+`GENERATE_INFOPLIST_FILE = YES` would merge the rest in around it. That merge
+is real — and it is behaviour this repo cannot test, because there is no Xcode
+in the build container. "It should merge" was a guess dressed as a fact.
+
+The archive succeeded both times, which is the tell: **the Swift compiled, the
+bundle was refused.** A bundle with no `CFBundleIdentifier` and no
+`CFBundleVersion` fails validation with a message naming neither the file nor
+the setting behind it.
+
+Now the plist is **complete** and `GENERATE_INFOPLIST_FILE` is `NO`. The
+`INFOPLIST_KEY_` settings were deleted rather than left to rot: two places for
+the health usage strings is exactly how one of them goes stale, and a stale
+usage string is an App Review rejection rather than a warning. A test asserts
+every key a bundle is rejected without is present, and that generation stays
+off — the harness cannot run Xcode, but it can check the thing Xcode would
+have complained about.
+
 ### Hands-free — Siri owns the wake word, and that is the whole design
 
 `api-voice.js` + `lib/voice.js` + `ios/Wrought/WroughtIntents.swift`. The
@@ -1365,7 +1389,7 @@ self-reporting scale removes the most-abandoned manual entry), then Strava.
 
 ## Conventions
 
-- `npm test` runs `test/harness.mjs` — 436 offline tests, no network, no database.
+- `npm test` runs `test/harness.mjs` — 437 offline tests, no network, no database.
   Run it before every push. It covers the JSON-RPC envelope (which fails as an
   uninformative "could not connect" inside ChatGPT) and all the arithmetic
   (which fails as a confidently wrong number in somebody's verdict).

@@ -1,34 +1,85 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!--
-  Deliberately almost empty.
-
-  GENERATE_INFOPLIST_FILE stays YES, so Xcode merges everything it already
-  generates (display name, health usage strings, orientations, scene manifest)
-  into this file at build time. Only the keys Xcode CANNOT express as an
-  INFOPLIST_KEY_ build setting live here — INAlternativeAppNames is an array of
-  dictionaries and there is no build-setting shape for that.
-
-  Keeping it minimal is the point: a hand-written full Info.plist would be a
-  second place for the health usage strings to live, and a missing usage string
-  is an upload rejection rather than a warning.
-
-  It sits BESIDE the Wrought folder rather than inside it, on purpose. That
-  folder is a synchronized root group, so anything dropped in gets target
-  membership automatically — which is exactly what makes adding a Swift file
-  free, and exactly what would make this file get copied into the bundle as an
-  ordinary resource while ALSO being the app's real Info.plist. Two Info.plists
-  in one bundle is a build failure with a misleading message.
-
-  These nicknames are what let somebody say "hey Siri, gym bro" and reach this
-  app. Every AppShortcut phrase must contain the application name, so the way to
-  make the real sentence work is to teach Siri that the app answers to the name
-  people actually use for it. "Jim Bro" is here because that is what dictation
-  makes of "gym bro" roughly half the time — the same reason the connector's
-  phrasebook carries it.
--->
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  The COMPLETE Info.plist, and complete on purpose.
+
+  The first version of this file held one key — INAlternativeAppNames — and
+  relied on GENERATE_INFOPLIST_FILE merging everything else in around it. That
+  merge is real, but it is behaviour this repo cannot test: there is no Xcode
+  in the build container, so "it should merge" was a guess dressed as a fact.
+  It was wrong often enough to fail two uploads, because a bundle with no
+  CFBundleIdentifier and no CFBundleVersion is rejected at validation with an
+  error that names neither this file nor the setting that caused it.
+
+  So GENERATE_INFOPLIST_FILE is now NO and every key the app needs is written
+  here, once, where it can be read and checked. The INFOPLIST_KEY_ build
+  settings have been removed from the project rather than left to rot — two
+  places for the health usage strings is exactly how one of them goes stale,
+  and a stale usage string is an App Review rejection.
+
+  The $(...) values are substituted by Xcode at build time from the build
+  settings, so version and bundle id still live in one place.
+
+  INAlternativeAppNames is why "hey Siri, gym bro" reaches this app at all.
+  Every AppShortcut phrase must contain the application name, so the way to
+  make the sentence somebody actually says work is to teach Siri the names they
+  actually use. "Jim Bro" is here because that is what dictation makes of "gym
+  bro" about half the time — the same reason the connector's phrasebook carries
+  it.
+-->
 <plist version="1.0">
 <dict>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>$(DEVELOPMENT_LANGUAGE)</string>
+	<key>CFBundleDisplayName</key>
+	<string>Wrought</string>
+	<key>CFBundleExecutable</key>
+	<string>$(EXECUTABLE_NAME)</string>
+	<key>CFBundleIdentifier</key>
+	<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundleName</key>
+	<string>$(PRODUCT_NAME)</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>$(MARKETING_VERSION)</string>
+	<key>CFBundleVersion</key>
+	<string>$(CURRENT_PROJECT_VERSION)</string>
+	<key>LSRequiresIPhoneOS</key>
+	<true/>
+
+	<!-- Declared so TestFlight skips the export-compliance questionnaire on
+	     every single upload. The app uses HTTPS and nothing else. -->
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
+
+	<!-- SwiftUI lifecycle needs a scene manifest; one window, no multitasking. -->
+	<key>UIApplicationSceneManifest</key>
+	<dict>
+		<key>UIApplicationSupportsMultipleScenes</key>
+		<false/>
+	</dict>
+	<key>UIApplicationSupportsIndirectInputEvents</key>
+	<true/>
+	<!-- An empty dict is the modern launch screen. Without it iOS letterboxes
+	     the app on tall devices, which looks like a broken build. -->
+	<key>UILaunchScreen</key>
+	<dict/>
+	<key>UISupportedInterfaceOrientations</key>
+	<array>
+		<string>UIInterfaceOrientationPortrait</string>
+	</array>
+
+	<!-- Both are required. Apple rejects an upload that reads HealthKit
+	     without declaring the write string too, even though this app never
+	     writes. The read string has to describe what is ACTUALLY read. -->
+	<key>NSHealthShareUsageDescription</key>
+	<string>Wrought reads your activity and body data — steps, distance, stand and exercise time, flights, energy burned, workouts, heart rate, HRV, VO2 max, respiratory rate, blood oxygen, walking measurements, weight, body composition, water and sleep — so your training record fills in without you typing it. Readings are recorded and shown back to you, never interpreted as medical findings. Nothing is read beyond what you approve, and everything can be exported or deleted from wrought.fit.</string>
+	<key>NSHealthUpdateUsageDescription</key>
+	<string>Wrought does not write to Apple Health. This permission exists only because Apple requires declaring it alongside read access.</string>
+
 	<key>INAlternativeAppNames</key>
 	<array>
 		<dict>
@@ -42,10 +93,6 @@
 		<dict>
 			<key>INAlternativeAppName</key>
 			<string>Broski</string>
-		</dict>
-		<dict>
-			<key>INAlternativeAppName</key>
-			<string>Wrought</string>
 		</dict>
 		<dict>
 			<key>INAlternativeAppName</key>

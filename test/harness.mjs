@@ -2773,7 +2773,10 @@ await test('the Xcode project carries the entitlements, the id and the icon', ()
   assert.match(pbx, /PRODUCT_BUNDLE_IDENTIFIER = fit\.wrought\.app/);
   assert.match(pbx, /CODE_SIGN_ENTITLEMENTS = Wrought\/Wrought\.entitlements/);
   // Health data demands a usage description or the app crashes at the prompt.
-  assert.match(pbx, /NSHealthShareUsageDescription/);
+  // It lives in Info.plist now rather than a build setting — one place, so it
+  // cannot go stale in the copy nobody is reading.
+  const plist = readFileSync(new URL('../ios/Info.plist', import.meta.url), 'utf8');
+  assert.match(plist, /NSHealthShareUsageDescription/);
 
   const ent = readFileSync(new URL('../ios/Wrought/Wrought.entitlements', import.meta.url), 'utf8');
   assert.match(ent, /com\.apple\.developer\.healthkit<\/key>/);
@@ -4800,6 +4803,33 @@ await test('the phone never composes a sentence about somebody training', () => 
   const src = readFileSync(new URL('../ios/Wrought/WroughtIntents.swift', import.meta.url), 'utf8');
   assert.doesNotMatch(src, /kcal|calorie|protein|deficit|surplus/i);
   assert.match(src, /out\?\["spoken"\] as\? String/);
+});
+
+await test('the Info.plist carries every key a bundle is rejected without', () => {
+  // Two uploads failed because this file held ONE key and relied on Xcode
+  // merging the rest in. That merge is real but untestable from here — there
+  // is no Xcode in this container — so "it should merge" was a guess dressed
+  // as a fact, and a bundle with no CFBundleIdentifier or CFBundleVersion is
+  // refused at validation with an error naming neither this file nor the
+  // setting behind it. It is complete now, and generation is off.
+  const plist = readFileSync(new URL('../ios/Info.plist', import.meta.url), 'utf8');
+  for (const k of ['CFBundleIdentifier', 'CFBundleVersion', 'CFBundleShortVersionString',
+                   'CFBundleExecutable', 'CFBundleName', 'CFBundlePackageType',
+                   'CFBundleInfoDictionaryVersion', 'LSRequiresIPhoneOS',
+                   'UIApplicationSceneManifest', 'UILaunchScreen',
+                   'UISupportedInterfaceOrientations', 'ITSAppUsesNonExemptEncryption',
+                   'NSHealthShareUsageDescription', 'NSHealthUpdateUsageDescription',
+                   'INAlternativeAppNames']) {
+    assert.ok(plist.includes(`<key>${k}</key>`), `Info.plist is missing ${k}`);
+  }
+
+  const proj = readFileSync(new URL('../ios/Wrought.xcodeproj/project.pbxproj', import.meta.url), 'utf8');
+  assert.match(proj, /GENERATE_INFOPLIST_FILE = NO;/);
+  assert.match(proj, /INFOPLIST_FILE = Info\.plist;/);
+  assert.doesNotMatch(proj, /GENERATE_INFOPLIST_FILE = YES;/);
+  // One place for the usage strings. Two is how one of them goes stale, and a
+  // stale usage string is an App Review rejection rather than a warning.
+  assert.doesNotMatch(proj, /INFOPLIST_KEY_/);
 });
 
 await test('"gym bro" reaches the app because the app answers to it', () => {
