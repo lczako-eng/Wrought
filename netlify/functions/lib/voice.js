@@ -103,6 +103,58 @@ export function spokenLog({ written = [], parsed = false, text = '' } = {}) {
 }
 
 /**
+ * The nightly read, written without a model.
+ *
+ * This file is about what a phone says out loud, and a nightly brief is not
+ * speech — but it is the same job: compose an honest line out of numbers that
+ * were already computed, with nothing invented. Same rule, different mouth,
+ * so it lives here rather than in a file of its own.
+ *
+ * It exists because the nightly channel could not fire at all without it.
+ * brief-nightly asked writeVerdict for a paragraph, writeVerdict needs an
+ * OPENAI_API_KEY, and with no key it returned null and the whole send was
+ * skipped — so the one surface that can genuinely speak first was silently
+ * dead for exactly the reason the founder did not want to pay for a key.
+ *
+ * The written verdict is still better when a key exists. This is what goes out
+ * when one does not, and it is facts rather than opinion: no coaching, no
+ * praise, no instruction. A number and its direction is worth a notification.
+ * An invented sentence is not.
+ */
+export function plainBrief({ facts = {}, flags = [], balance = null } = {}) {
+  // Care flags outrank everything, and in a notification that has to mean the
+  // message IS the flag — there is no room to bury it under a total.
+  if (flags.length) return spokenFlag(flags[0]);
+
+  const lines = [];
+  const food = facts.food || {};
+  const training = facts.training || {};
+  const device = facts.device || {};
+
+  if (balance?.known) {
+    const net = Math.round(Number(balance.net) || 0);
+    lines.push(`Roughly ${Math.round(balance.calories_in)} in against about ${Math.round(balance.calories_out)} out — ` +
+      (net < -150 ? `${Math.abs(net)} down on the day.` : net > 150 ? `${net} over.` : 'about level.'));
+  } else if (food.meals) {
+    lines.push(food.meals_uncounted === food.meals
+      ? `${food.meals} thing${food.meals === 1 ? '' : 's'} logged with no macros on them yet.`
+      : `Roughly ${Math.round(food.calories)} kcal and ${Math.round(food.protein_g)}g of protein.`);
+  }
+
+  if (training.sessions) lines.push(training.say);
+  if (device.steps) lines.push(`${Math.round(device.steps).toLocaleString('en-US')} steps.`);
+
+  const week = facts.training_week;
+  if (week?.say && week.target) lines.push(week.say);
+
+  // Nothing logged is not worth waking somebody up for. A nightly nag is how a
+  // product gets muted for good, and muted is permanent.
+  if (!lines.length) return null;
+
+  return lines.join(' ') + ' Estimates, as always — ask WROUGHT for the read.';
+}
+
+/**
  * Entries that were dictated and never read by anything.
  *
  * A sentence spoken to Siri arrives with no model behind it, so it lands

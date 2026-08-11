@@ -287,6 +287,48 @@ contribute **nothing** to calories out unless a watch measured it, so the
 person most likely to be logging by hand was the person whose training counted
 for zero.
 
+### The nightly read finally fires, and it needs no key
+
+`plainBrief()` in `lib/voice.js`. `brief-nightly` asked `writeVerdict` for a
+paragraph, `writeVerdict` returns null without `OPENAI_API_KEY`, and the send
+loop skipped on a null verdict — so **the one surface that can genuinely speak
+first had never once spoken**, silently, for exactly the reason the founder did
+not want to pay for a key.
+
+The fallback composes the line from facts already computed: in, out, the net,
+sessions, steps, where the week stands. No opinion, no coaching, no praise —
+a number and its direction is worth a notification and an invented sentence is
+not. A care flag is the **entire** message, because a lock screen has no room
+to bury one. Nothing logged still sends nothing; a nightly nag is how a product
+gets muted permanently.
+
+The written verdict stays better when a key exists, and is still preferred.
+
+**The hour is theirs.** `brief_hour` existed in the schema and was settable from
+nowhere — now `set_profile` takes it, validated 0–23 so a bad value comes back
+as a sentence rather than a constraint violation. *"Send it at nine"* is 21.
+The function runs hourly because 9pm is a different instant for everybody.
+
+### Runs read as a progression
+
+`cardioProgress()` in `lib/form.js`. The founder: *"I've been running about a
+month straight and today was my best run yet, because I pay attention to it. I
+need that progression. I need to see it. I need to see where my walls are."*
+
+`progressionCall` answers this for a barbell and cannot answer it for a run —
+no top set, no double progression, nothing to add. What a run has is **pace**,
+and pace stalls in a way somebody can feel and not name.
+
+- **A personal best is over a COMPARABLE distance** (within 20%). Beating a 5k
+  pace on a 1km sprint is not a better run, and calling it one is how the
+  number stops being believed.
+- **The trend is first third against last third**, so one good day cannot carry
+  it and one bad day cannot sink it.
+- **A flat pace is named as the wall and never scolded.** It does not know
+  whether it was heat, hills, sleep or a heavy week, and does not guess.
+- Carried on `brief` so a best gets said **the day it happens** — that is the
+  entire reason somebody goes out again tomorrow.
+
 ### Form — the shadow it leaves, never a claim about the lifter
 
 `lib/form.js` + the `form_check` tool. The founder: *"sometimes I do skip and
@@ -1437,7 +1479,7 @@ self-reporting scale removes the most-abandoned manual entry), then Strava.
 
 ## Conventions
 
-- `npm test` runs `test/harness.mjs` — 445 offline tests, no network, no database.
+- `npm test` runs `test/harness.mjs` — 450 offline tests, no network, no database.
   Run it before every push. It covers the JSON-RPC envelope (which fails as an
   uninformative "could not connect" inside ChatGPT) and all the arithmetic
   (which fails as a confidently wrong number in somebody's verdict).

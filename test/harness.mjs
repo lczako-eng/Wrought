@@ -26,7 +26,7 @@ import {
 } from '../netlify/functions/lib/training.js';
 import { activityBurn, activityTotal, matchActivity, ACTIVITIES, EFFORTS } from '../netlify/functions/lib/activity.js';
 import { warmupFor, sessionProgress } from '../netlify/functions/lib/warmup.js';
-import { formWatch } from '../netlify/functions/lib/form.js';
+import { formWatch, cardioProgress } from '../netlify/functions/lib/form.js';
 const { goalCall, PACES, PUSH } = await import('../netlify/functions/lib/training.js');
 import {
   localDateFor, addDays, daysBetween, clockString, humanDuration,
@@ -34,7 +34,7 @@ import {
   windowStatus, weightTrend, trainingMatrix, summariseRange, careFlags, scoreGoals,
   eventsFromClient, fastLength, fastingSummary, needsMacros, needsDuration, matchEntries, setupNeeded,
 } from '../netlify/functions/lib/wrought.js';
-import { spokenBrief, spokenLog, spokenFlag, pendingVoice } from '../netlify/functions/lib/voice.js';
+import { spokenBrief, spokenLog, spokenFlag, pendingVoice, plainBrief } from '../netlify/functions/lib/voice.js';
 
 let passed = 0, failed = 0;
 const results = [];
@@ -4103,6 +4103,94 @@ await test('the connector is forbidden from asserting technique', () => {
   // And the note is the point of voice logging, so it is told to capture it.
   assert.match(SERVER_INSTRUCTIONS, /WHAT THEY SAID MID-SET/);
   assert.match(SERVER_INSTRUCTIONS, /verbatim/);
+});
+
+await test('a run is a progression too, and a best is said out loud', () => {
+  // "I've been running a month straight and today was my best run yet." A
+  // barbell log has no shape for that — no top set, nothing to add load to.
+  // Pace is the number, and whether it is moving is the question.
+  const run = (date, km, mins) => ({
+    local_date: date, summary: 'Outdoor Run',
+    detail: { source_name: 'Outdoor Run', distance_km: km, minutes: mins },
+  });
+  const out = cardioProgress([run('2026-07-12', 5, 32), run('2026-07-19', 5, 31),
+                              run('2026-07-26', 5, 30.5), run('2026-08-02', 5, 30),
+                              run('2026-08-11', 5, 28.5)]);
+  assert.ok(out.known);
+  assert.equal(out.personal_best, true);
+  assert.match(out.say, /Best run yet/);
+  assert.match(out.say, /5:42\/km/);
+  assert.ok(out.reads[0].trend_pct > 5, 'a month of improvement read as flat');
+});
+
+await test('a sprint does not count as a personal best over a 5k', () => {
+  // Beating your 5k pace on a 1km effort is not a better run, and calling it
+  // one is how the number stops being believed.
+  const run = (date, km, mins) => ({
+    local_date: date, summary: 'Outdoor Run',
+    detail: { source_name: 'Outdoor Run', distance_km: km, minutes: mins },
+  });
+  const out = cardioProgress([run('2026-07-12', 5, 30), run('2026-07-19', 5, 30),
+                              run('2026-08-11', 1, 4.5)]);
+  assert.equal(out.reads[0].personal_best, false, 'a 1km sprint beat a 5k');
+});
+
+await test('a flat pace is information, never a scolding', () => {
+  const run = (date, km, mins) => ({
+    local_date: date, summary: 'Outdoor Run',
+    detail: { source_name: 'Outdoor Run', distance_km: km, minutes: mins },
+  });
+  const out = cardioProgress([run('2026-07-12', 5, 30), run('2026-07-19', 5, 30),
+                              run('2026-07-26', 5, 30), run('2026-08-02', 5, 30)]);
+  assert.match(out.say, /flat|wall/i);
+  assert.doesNotMatch(out.say, /should|need to|try harder|disappoint/i);
+  // And it never guesses at a cause it cannot know.
+  assert.match(out.note, /must not guess/i);
+});
+
+await test('the nightly read fires without an OpenAI key', () => {
+  // writeVerdict returns null with no key, and the send loop skipped on a null
+  // verdict — so the ONE surface that can genuinely speak first was silently
+  // dead, for exactly the reason the founder did not want to pay for a key.
+  const line = plainBrief({
+    facts: {
+      food: { meals: 3, calories: 1520, protein_g: 57, meals_uncounted: 0 },
+      training: { sessions: 1, say: '1 session, 44 min' },
+      device: { steps: 9945 },
+      training_week: { say: '2 of 3 sessions this week, 2 days left.', target: 3 },
+    },
+    balance: { known: true, calories_in: 1520, calories_out: 3213, net: -1693 },
+  });
+  assert.match(line, /1520 in/);
+  assert.match(line, /1693 down/);
+  assert.match(line, /2 of 3 sessions/);
+  assert.match(line, /[Ee]stimates/);
+
+  // A care flag is the whole message — a lock screen has no room to bury it.
+  const flagged = plainBrief({
+    facts: { food: { meals: 3, calories: 900 } },
+    flags: [{ flag: 'very_low_intake', detail: '4 of the last 6 days came in under 1,200 kcal.' }],
+  });
+  assert.match(flagged, /1,200/);
+  assert.doesNotMatch(flagged, /steps|session/i);
+
+  // Nothing logged gets nothing. A nightly nag is how a product gets muted.
+  assert.equal(plainBrief({ facts: {} }), null);
+
+  const src = readFileSync(new URL('../netlify/functions/brief-nightly.js', import.meta.url), 'utf8');
+  assert.match(src, /plainBrief/);
+});
+
+await test('the nightly hour is theirs to move', () => {
+  // "It should be a daily analysis at 9pm." A notification at the wrong hour
+  // is how somebody mutes an app for good.
+  const tool = TOOLS.find(t => t.name === 'set_profile');
+  assert.ok(tool.inputSchema.properties.brief_hour, 'brief_hour cannot be set');
+  assert.match(tool.inputSchema.properties.brief_hour.description, /21/);
+  const src = readFileSync(new URL('../netlify/functions/mcp.js', import.meta.url), 'utf8');
+  const fn = src.slice(src.indexOf('async function setProfile('), src.indexOf('async function setGoal('));
+  assert.match(fn, /'brief_hour'/);
+  assert.match(fn, /h < 0 \|\| h > 23/);
 });
 
 // ── Lines that say whether it is working ────────────────────────────────────

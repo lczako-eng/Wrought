@@ -221,3 +221,138 @@ export function formWatch({ sets = [], targetReps = null, exerciseKey = null } =
       : 'Say it in one line and move on. Do not hunt for something to correct.',
   };
 }
+
+// ── Cardio: the progression a lifting log has no shape for ──────────────────
+//
+// The founder: "I've been running about a month straight and today was my best
+// run yet, because I pay attention to it. I need that progression. I need to
+// see it. I need to see where my walls are."
+//
+// progressionCall answers this for a barbell and cannot answer it for a run —
+// there is no top set, no double progression, no load to add. What a run has is
+// PACE, and pace is the number that stalls in a way somebody can feel and not
+// name. So this reads distance, duration and pace out of the workout events a
+// watch already sends, and answers the two questions actually being asked:
+// was today the best one, and is the line going the right way.
+//
+// Same rule as everything else in this file: it reports what the record holds.
+// It does not know why a run was slow — heat, hills, sleep, a heavy week — and
+// it does not guess between them.
+
+const KIND_OF = name => {
+  const s = String(name || '').toLowerCase();
+  if (/swim/.test(s)) return 'swim';
+  if (/cycl|bike|ride|spin/.test(s)) return 'ride';
+  if (/walk|hik/.test(s)) return 'walk';
+  if (/run|jog|treadmill/.test(s)) return 'run';
+  return null;
+};
+
+const paceSay = minPerKm => {
+  if (minPerKm == null) return null;
+  const m = Math.floor(minPerKm);
+  const sec = Math.round((minPerKm - m) * 60);
+  return `${m}:${String(sec).padStart(2, '0')}/km`;
+};
+
+/**
+ * Runs, rides, swims and walks read as a progression.
+ *
+ * `workouts` are wrought_events rows of type 'workout' with detail carrying
+ * distance_km and minutes — which is exactly what the HealthKit courier sends.
+ */
+export function cardioProgress(workouts = [], { kind = null } = {}) {
+  const rows = workouts
+    .map(w => {
+      const d = w.detail || {};
+      const k = KIND_OF(d.source_name || w.summary || d.kind);
+      const km = Number(d.distance_km);
+      const mins = Number(d.minutes);
+      if (!k || !(km > 0) || !(mins > 0)) return null;
+      return {
+        kind: k, date: w.local_date, km: Math.round(km * 100) / 100,
+        minutes: Math.round(mins), pace: mins / km,
+        avg_hr: d.avg_hr ?? null,
+      };
+    })
+    .filter(Boolean)
+    .filter(r => !kind || r.kind === kind)
+    .sort((a, b) => a.date.localeCompare(b.date));
+
+  if (rows.length < 2) {
+    return {
+      known: false, sessions: rows.length,
+      say: rows.length
+        ? 'One session with distance and time on it. A second one and the progression starts to mean something.'
+        : 'No runs, rides or swims with both a distance and a duration on them yet.',
+    };
+  }
+
+  const byKind = new Map();
+  for (const r of rows) {
+    if (!byKind.has(r.kind)) byKind.set(r.kind, []);
+    byKind.get(r.kind).push(r);
+  }
+
+  const reads = [];
+  for (const [k, list] of byKind) {
+    if (list.length < 2) continue;
+    const latest = list[list.length - 1];
+    const prior = list.slice(0, -1);
+
+    // A personal best is over COMPARABLE distance. Beating your 5k pace on a
+    // 1k sprint is not a better run, and calling it one is how the number
+    // stops being believed.
+    const similar = prior.filter(r => Math.abs(r.km - latest.km) / latest.km <= 0.2);
+    const bestPace = similar.length ? Math.min(...similar.map(r => r.pace)) : null;
+    const bestEver = Math.min(...prior.map(r => r.pace));
+    const longest = Math.max(...prior.map(r => r.km));
+
+    const paceBest = bestPace != null && latest.pace < bestPace;
+    const distBest = latest.km > longest;
+
+    // The trend: first third against last third, so one good day cannot carry
+    // it and one bad day cannot sink it.
+    const third = Math.max(1, Math.floor(list.length / 3));
+    const early = list.slice(0, third);
+    const late = list.slice(-third);
+    const avg = a => a.reduce((x, r) => x + r.pace, 0) / a.length;
+    const shift = avg(early) - avg(late);
+    const shiftPct = Math.round((shift / avg(early)) * 1000) / 10;
+
+    reads.push({
+      kind: k,
+      sessions: list.length,
+      latest: { date: latest.date, km: latest.km, minutes: latest.minutes,
+                pace: paceSay(latest.pace), avg_hr: latest.avg_hr },
+      best_pace_over_similar: bestPace != null ? paceSay(bestPace) : null,
+      longest_km: Math.round(Math.max(longest, latest.km) * 100) / 100,
+      personal_best: paceBest || distBest,
+      trend_pct: shiftPct,
+      say: (paceBest
+              ? `Best ${k} yet over that distance — ${latest.km}km at ${paceSay(latest.pace)}, past your ${paceSay(bestPace)}.`
+            : distBest
+              ? `Longest ${k} yet — ${latest.km}km at ${paceSay(latest.pace)}.`
+            : `${latest.km}km at ${paceSay(latest.pace)}.`) +
+           (Math.abs(shiftPct) < 1.5
+              ? ` Pace is flat across ${list.length} sessions — that is the wall.`
+              : shiftPct > 0
+                ? ` Pace is ${shiftPct}% quicker than when you started, across ${list.length} sessions.`
+                : ` Pace is ${Math.abs(shiftPct)}% slower than when you started, across ${list.length} sessions.`),
+    });
+  }
+
+  if (!reads.length) {
+    return { known: false, sessions: rows.length,
+             say: 'Not enough of any one kind yet — two runs, or two rides, and the line starts.' };
+  }
+
+  return {
+    known: true,
+    sessions: rows.length,
+    reads,
+    personal_best: reads.some(r => r.personal_best),
+    say: reads.map(r => r.say).join(' '),
+    note: 'A personal best is compared over a SIMILAR distance — beating a 5k pace on a 1km sprint is not a better run. Say a best out loud when there is one; it is the whole reason somebody keeps going out. A flat pace is information, not a failure, and must not be delivered as one — WROUGHT does not know whether it was heat, hills, sleep or a heavy week, and must not guess.',
+  };
+}

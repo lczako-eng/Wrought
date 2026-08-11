@@ -28,7 +28,7 @@ import { allowed } from './lib/membership.js';
 import { pendingVoice } from './lib/voice.js';
 import { activityBurn, EFFORTS } from './lib/activity.js';
 import { warmupFor, sessionProgress } from './lib/warmup.js';
-import { formWatch } from './lib/form.js';
+import { formWatch, cardioProgress } from './lib/form.js';
 import { PROVIDERS, providerSummary, recommendRoute } from './lib/providers.js';
 import { nutritionTotals, composition, macroMatrix, yearOverYear } from './lib/nutrition.js';
 import {
@@ -139,7 +139,7 @@ HOW PEOPLE ACTUALLY ASK. Nobody says "call the brief tool". They say one of a hu
   suggest_workout / programmes — "what should I train", "give me a workout", "what's today", "programme me", "build me something", "I've got 40 minutes", "what am I neglecting", "proper programme", "what should I be running"
   start_session — "let's go", "starting now", "at the gym", "I'm going to the gym", "heading to the gym", "gym in ten", "leg day", "chest day", "I'm at the rack", "warmed up"
   log_set — "done", "got it", "got 8", "8 at 225", "that's up", "failed at 5", "couldn't finish", "one more in the tank"
-  form_check — "why am I stalling", "check my form", "why did that feel awful", "am I grinding", "my form went", "that was ugly", "I rushed it", "why can't I hit this any more", "this used to be easy"
+  form_check — "am I getting faster", "was that my best run", "how's my running going", "is my pace improving", "where's my wall", "why am I stalling", "check my form", "why did that feel awful", "am I grinding", "my form went", "that was ugly", "I rushed it", "why can't I hit this any more", "this used to be easy"
   my_plan — "what's my plan", "what am I on", "what am I actually doing", "what am I aiming for", "why that number", "what's my target", "remind me what this is", "what's my route" (dictation for WROUGHT), "how does this work for me"
   set_plan — "make it aggressive", "I want this off faster", "go harder on me", "chase me", "ease off", "nothing drastic", "stop nagging me", "leave me alone a bit", "make it four days a week", "I can only do three", "change my plan"
   log_activity — "I was at work all day", "worked at the petting zoo", "did a double shift", "on site since six", "been on my feet since seven", "spent the afternoon digging", "moved house today", "was doing the garden", "shovelled the drive", "long shift", "physical day", "grafting all day"
@@ -710,6 +710,7 @@ const TOOLS = [
         activity_level: { type: 'string', enum: ['sedentary', 'light', 'moderate', 'active', 'very_active'],
                           description: 'How much they move OUTSIDE deliberate training — the job and the day, not the gym. sedentary = desk, little walking. light = on their feet some of the day. moderate = moving most of it. active = on their feet all day. very_active = physical work. Without this and without a watch, calories out is the resting figure alone, which counts a working day as nothing and overstates every deficit.' },
         bluntness:    { type: 'string',  enum: ['gentle', 'honest', 'brutal'], description: 'How hard the verdict hits. Their choice, honoured exactly.' },
+        brief_hour:   { type: 'integer', description: 'The hour, 0-23 in THEIR timezone, when the nightly read lands as a notification and an email. Defaults to 22. "Send it at nine" is 21. A notification at the wrong hour is how somebody mutes an app for good, so change it the moment they mention a time.' },
         notes:        { type: 'string' },
       },
     },
@@ -1140,6 +1141,15 @@ async function formCheck(args, user) {
   const key = args.exercise ? exerciseKey(args.exercise) : null;
   if (key) q = q.eq('exercise_key', key);
 
+  // Running, riding and swimming have no top set and nothing to add load to,
+  // so progressionCall cannot answer for them. Pace can, and "am I getting
+  // faster" arrives in the same breath as "why am I stalling".
+  const { data: cardio } = await supabase.from('wrought_events')
+    .select('summary, detail, local_date')
+    .eq('user_id', user.id).eq('event_type', 'workout')
+    .gte('local_date', addDays(today, -span))
+    .order('local_date', { ascending: true }).limit(400);
+
   const { data: sets } = await q;
   const read = formWatch({
     sets: sets || [],
@@ -1147,10 +1157,14 @@ async function formCheck(args, user) {
     exerciseKey: key,
   });
 
+  const runs = cardioProgress(cardio || []);
+
   return {
     ...read,
+    ...(runs.known ? { cardio: runs } : {}),
     exercise: args.exercise || null,
     days: span,
+    say: [read.say, runs.known ? runs.say : null].filter(Boolean).join(' '),
     next_actions: read.findings?.length
       ? ['log_set with the lighter load next session', 'progress for the full curve on this lift']
       : ['suggest_workout for what is actually overdue'],
@@ -1540,6 +1554,15 @@ async function brief(args, user) {
     // on the table every single time they talk.
     training_week: weekSoFar(range.days, { today: date, target: profile.train_days }),
     readiness: readiness({ days: range.days, today: date }),
+    // Running, riding and swimming, read as a progression. A best is worth
+    // saying out loud on the day it happens — it is the entire reason somebody
+    // goes out again tomorrow.
+    cardio: cardioProgress(
+      (await supabase.from('wrought_events')
+        .select('summary, detail, local_date')
+        .eq('user_id', user.id).eq('event_type', 'workout')
+        .gte('local_date', addDays(date, -90)).lte('local_date', date)
+        .order('local_date', { ascending: true }).limit(400)).data || []),
   };
 
   // Cache the verdict per day so re-asking is free and last Tuesday's read is
@@ -2771,10 +2794,22 @@ async function guide() {
 }
 
 async function setProfile(args, user) {
-  const fields = ['timezone','units','height_cm','birth_year','sex','training_age','equipment','train_days','dietary','bluntness','notes','activity_level'];
+  const fields = ['timezone','units','height_cm','birth_year','sex','training_age','equipment','train_days','dietary','bluntness','notes','activity_level','brief_hour'];
   const patch = {};
   for (const f of fields) if (args[f] !== undefined) patch[f] = args[f];
   if (!Object.keys(patch).length) return { error: 'Nothing to save.' };
+
+  // Checked here so a bad hour comes back as a sentence rather than a Postgres
+  // constraint violation. The nightly send reads this per user, in their own
+  // zone — 9pm is a different instant for everybody, which is why the function
+  // runs hourly and serves only the people it is currently 9pm for.
+  if (patch.brief_hour !== undefined) {
+    const h = parseInt(patch.brief_hour, 10);
+    if (!Number.isInteger(h) || h < 0 || h > 23) {
+      return { error: 'The nightly read needs an hour between 0 and 23 — 21 for nine in the evening.' };
+    }
+    patch.brief_hour = h;
+  }
 
   patch.user_id = user.id;
   patch.updated_at = new Date().toISOString();

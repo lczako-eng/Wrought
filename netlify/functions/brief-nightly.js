@@ -27,6 +27,8 @@ import {
   dayFacts, rangeFacts, summariseRange, scoreGoals, careFlags, writeVerdict,
 } from './lib/wrought.js';
 import { sendPush, vapidConfigured } from './lib/push.js';
+import { plainBrief } from './lib/voice.js';
+import { energyBalance } from './lib/training.js';
 
 const SEND_HOUR = 22;
 
@@ -71,9 +73,28 @@ export async function buildBriefFor(userId, now = new Date()) {
     goals: scoreGoals(goals, day, summary, profile),
   };
 
-  const verdict = await writeVerdict({ facts, profile, goals, memory, flags, kind: 'evening' });
+  let verdict = await writeVerdict({ facts, profile, goals, memory, flags, kind: 'evening' });
+  let written = !!verdict;
 
-  if (verdict) {
+  // WITHOUT A KEY THIS CHANNEL WAS SIMPLY DEAD. writeVerdict returns null with
+  // no OPENAI_API_KEY, the send loop skipped on a null verdict, and so the one
+  // surface that can genuinely speak first never spoke — silently, and for
+  // exactly the reason the founder did not want to pay for a key in the first
+  // place. The computed version is not as good as the written one. It is
+  // enormously better than nothing, and it is facts rather than opinion.
+  if (!verdict) {
+    const bal = energyBalance({
+      profile, weightKg: day.body.weight_kg,
+      caloriesIn: day.food.calories,
+      activeCalories: day.device.active_calories,
+      foodEstimated: day.food.estimated,
+      workouts: day.training.entries,
+      activities: day.activity.entries,
+    });
+    verdict = plainBrief({ facts, flags, balance: bal });
+  }
+
+  if (verdict && written) {
     await supabase.from('wrought_briefs').upsert(
       { user_id: userId, local_date: date, kind: 'evening', facts, verdict },
       { onConflict: 'user_id,local_date,kind' });
@@ -171,6 +192,8 @@ export const handler = async () => {
 
     try {
       const out = await buildBriefFor(userId, now);
+      // A day with nothing computable in it produces no line at all, and that
+      // is the one case worth staying quiet for.
       if (!out.verdict) { skipped++; continue; }
       built++;
 
