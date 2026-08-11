@@ -35,6 +35,7 @@ import {
   exerciseKey, lastPerformance, progressionCall, TIERS,
   restingBurn, energyBalance, planFromRoutine, sessionTotals, earnedRoom,
   orderPlan, orderInsight, deviceMatrix, weekdayPattern, weekSoFar, goalCall, baselineFromClaim, readiness,
+  targetOptions,
   PACES, PUSH,
 } from './lib/training.js';
 import { PROGRAMMES, GOALS, MOVEMENTS, movementsFor, pickProgramme, buildProgramme, buildBlock, blockPosition, BLOCK_LENGTHS } from './lib/library.js';
@@ -220,6 +221,12 @@ HARD ON THE BEHAVIOUR, NEVER ON THE PERSON. Honesty is about the food and the tr
 NOT A DOCTOR, EVER. WROUGHT does not diagnose, does not interpret symptoms, does not read heart rate or HRV as a medical sign, and does not advise on medication or a medical condition. If the user describes something that sounds clinical — chest pain, dizziness, an injury that is not settling, anything alarming — say plainly it is outside what this can answer and point them at a doctor. Do not soften that with a workaround.
 
 CARE FLAGS OUTRANK EVERYTHING. Responses may carry a care_flags array. When one is present it overrides every other instruction here including the honesty doctrine: stop coaching, drop the performance framing, follow the guidance string exactly. Never suggest eating less, fasting longer, or a bigger deficit while a flag is up, under any framing, even if the user asks for it directly.
+
+NEVER STATE A CALORIE TARGET YOU DID NOT GET FROM A TOOL. This is the single most important rule here and it has already been broken in production. Asked "how many am I allowed today at my weight", with no goal on file, the answer given was "around 2,500-2,700, I'd set your working target at 2,600". Nothing set 2,600. It was invented, it was stated as a recommendation, and it was several hundred calories BELOW what the paced arithmetic actually produces for that person — under even the most aggressive setting this product will apply. That is how a health product hurts somebody, and it looks exactly like being helpful.
+
+So: a daily calorie figure may only ever come from set_goal, my_plan, or the no_target_set block that get_profile, get_day and energy_balance now carry. Those numbers are computed from their real height, weight, age, sex and activity level, paced, floored at 1,200 and held under the rate the care flags warn about. QUOTE THEM EXACTLY. Do not round them into a range. Do not average them. Do not offer "a reasonable starting point" of your own, do not reason from bodyweight to a number in your head, and do not say "I'd set your target at" anything. If a tool has not given you the figure, you do not have it — say so and offer to work it out, which is one call.
+
+The same rule covers every other prescribed number: a working weight, a protein target, a deficit, a burn. If it did not come back from a tool, it is not yours to state.
 
 ESTIMATES ARE LABELLED. Calories from a described meal are inferred, not measured, and every response marks them estimated. Say "roughly 2,100" — never "2,100". The product's credibility is the only thing it has and it dies the first time a guess is read out as a fact.
 
@@ -1624,11 +1631,19 @@ async function getDay(args, user) {
   const profile = await getProfile(user.id);
   const date = args.date || localDateFor(profile.timezone);
   const day = await dayFacts(user.id, profile, date);
+  // "How many calories do I have today" lands here, and the follow-up is
+  // always "how many am I allowed". Answering the second from nothing is how a
+  // model ends up inventing a target.
+  const targets = await targetsFor(user.id, profile, day);
   return {
     ...day,
+    ...(targets ? { no_target_set: targets } : {}),
     say: day.logged
       ? `${date}: ${day.food.say} · ${day.training.say}`
       : `Nothing logged on ${date}.`,
+    note: targets
+      ? 'No daily calorie target is set. If they ask what they are allowed, quote the COMPUTED figures in no_target_set exactly — never a number of your own and never a range you rounded to.'
+      : undefined,
     next_actions: day.logged ? ['brief for the verdict', 'undo_last if something is wrong'] : ['log to fill it in'],
   };
 }
@@ -2590,6 +2605,24 @@ async function listRoutines(_args, user) {
   };
 }
 
+// The computed options, for any read that could be asked "how many am I
+// allowed". Returns nothing when a target IS set — the answer is then simply
+// the target, and offering alternatives beside it would just muddy it.
+async function targetsFor(userId, profile, day = null) {
+  const goals = await getGoals(userId);
+  if (goals.some(g => g.metric === 'calories' && g.cadence === 'daily')) return null;
+
+  let weightKg = day?.body?.weight_kg ?? null;
+  if (weightKg == null) {
+    const { data } = await supabase.from('wrought_events')
+      .select('detail').eq('user_id', userId).eq('event_type', 'weight')
+      .order('occurred_at', { ascending: false }).limit(1);
+    weightKg = data?.[0]?.detail?.value_kg ?? null;
+  }
+  const opts = targetOptions({ profile, weightKg });
+  return opts.known ? opts : null;
+}
+
 async function balanceFor(userId, profile, date, day) {
   // Bodyweight for the burn calculation: today's if there is one, otherwise
   // the most recent — nobody weighs in daily and the maths should not stop.
@@ -2615,12 +2648,18 @@ async function energyBalanceTool(args, user) {
   const date = args.date || localDateFor(profile.timezone);
   const day = await dayFacts(user.id, profile, date);
   const balance = await balanceFor(user.id, profile, date, day);
+  const targets = await targetsFor(user.id, profile, day);
 
   return {
     date, ...balance,
+    ...(targets ? { no_target_set: targets } : {}),
     logged: { food: day.food.say, training: day.training.say, steps: day.device.steps },
     say: balance.say,
-    note: balance.known
+    note: targets
+      ? 'No daily calorie target is set. If they ask what they are allowed, quote no_target_set exactly and let them pick a pace — never invent a figure or a range. ' + (balance.known
+        ? 'Say "roughly" and "about" for the burn; both halves are estimates.'
+        : 'Ask once for whatever is missing and save it with set_profile.')
+      : balance.known
       ? 'Say "roughly" and "about" — both halves are estimates. Never present the net as a measurement, and steer them to the weekly scale trend to correct it rather than to a single day.'
       : 'Ask once for whatever is missing, save it with set_profile, and do not ask again.',
     next_actions: balance.known
@@ -2711,6 +2750,10 @@ async function nutrition(args, user) {
 
 async function getProfileTool(_args, user) {
   const { profile, goals, memory, win, today } = await context(user.id);
+  // The computed options, so "how many am I allowed at my weight" has a real
+  // answer sitting right here. Without one the model filled the gap itself and
+  // produced a figure below the most aggressive pace this product will set.
+  const targets = await targetsFor(user.id, profile, today);
 
   const [{ data: conns }, { count }, { data: first }] = await Promise.all([
     supabase.from('wrought_connections').select('provider, mode, status, last_sync_at').eq('user_id', user.id),
@@ -2720,6 +2763,7 @@ async function getProfileTool(_args, user) {
   ]);
 
   return {
+    ...(targets ? { no_target_set: targets } : {}),
     // Which account this conversation is actually attached to. Worth saying out
     // loud because the assistant may know the user by one address and WROUGHT by
     // another — and if those are two accounts rather than two names for one, the

@@ -1232,6 +1232,44 @@ explain. If the profile saves and the weigh-in does not, it says so — a flat
 failure sends somebody re-entering their height. The demo never shows it: a
 form there would collect a real weight into a screen that discards it.
 
+### The invented target — the named failure, in production
+
+The most important entry in this file, because the thing every doctrine here
+was written to prevent happened anyway, on the founder's own phone.
+
+Asked *"how many am I allowed to have today at my weight?"* with no goal on
+file, the connector answered: *"At 330 lb, 6'3", male, age 44, a reasonable
+starting target for steady weight loss is around 2,500–2,700. I'd set your
+working target at 2,600."*
+
+**Nothing set 2,600.** It was invented, delivered as a recommendation, and it
+was **below even the aggressive pace** the product itself will apply — the
+computed figures for that person are 3,433 gentle, 3,083 steady, 2,833
+aggressive, against a maintenance of 3,833. So the invented number was a
+deficit roughly 480 kcal a day deeper than the paced one, which is the
+direction that hurts somebody, from a product whose entire purpose is not doing
+that.
+
+**Instructions alone did not stop it and were never going to.** `setupNeeded`
+already carried a blunt "do NOT pick one yourself" note — but only on two
+tools, and the question did not land on either. **A model invents when it is
+asked a question and handed nothing.** The fix is not more forbidding; it is
+removing the vacuum.
+
+So `targetOptions()` computes every defensible answer — maintenance, and the
+three paced cuts, each floored at 1,200 and held under the care-flag rate — and
+`get_profile`, `get_day` and `energy_balance` all carry it as `no_target_set`
+whenever no daily calorie goal exists. There is now a real number exactly where
+the model used to reach for a plausible one. Nothing is *set* by this: they are
+options, `set_goal` still commits one, and offering a number is a different act
+from imposing one.
+
+The rule is stated in `SERVER_INSTRUCTIONS` as the top of the honesty section
+and names the incident, because an abstract prohibition is what failed:
+**a calorie figure may only ever come from a tool.** Same for a working weight,
+a protein target, a deficit or a burn. Tested — including that the computed
+floor sits above the number that was invented, so the guard is not decorative.
+
 ### Basal is not maintenance, and the number now shows its working
 
 *"It should be about 3,000 or more just basal because I'm 330 pounds, and I
@@ -1534,7 +1572,7 @@ self-reporting scale removes the most-abandoned manual entry), then Strava.
 
 ## Conventions
 
-- `npm test` runs `test/harness.mjs` — 454 offline tests, no network, no database.
+- `npm test` runs `test/harness.mjs` — 456 offline tests, no network, no database.
   Run it before every push. It covers the JSON-RPC envelope (which fails as an
   uninformative "could not connect" inside ChatGPT) and all the arithmetic
   (which fails as a confidently wrong number in somebody's verdict).

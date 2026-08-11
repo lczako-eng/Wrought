@@ -22,7 +22,7 @@ import {
   exerciseKey, loadStep, progressionCall, TIERS,
   restingBurn, energyBalance, planFromRoutine, sessionTotals, earnedRoom,
   orderPlan, orderInsight, deviceMatrix, weekdayPattern, ACTIVITY, focusCall,
-  trainingBurn,
+  trainingBurn, targetOptions,
 } from '../netlify/functions/lib/training.js';
 import { activityBurn, activityTotal, matchActivity, ACTIVITIES, EFFORTS } from '../netlify/functions/lib/activity.js';
 import { warmupFor, sessionProgress } from '../netlify/functions/lib/warmup.js';
@@ -3634,6 +3634,51 @@ await test('a weigh-in is found outside the loaded window', () => {
   assert.match(block, /wrought_events/);
   assert.match(block, /event_type', 'weight'/);
   assert.match(block, /order\('occurred_at'/);
+});
+
+await test('a missing target is filled by the server, not by the model', () => {
+  // THE NAMED FAILURE, IN PRODUCTION. Asked "how many am I allowed today at my
+  // weight" with no goal on file, the answer was "around 2,500-2,700, I'd set
+  // your working target at 2,600". Nothing set 2,600 — and it was several
+  // hundred BELOW what the paced arithmetic gives, under even the most
+  // aggressive setting this product will apply. Instructions alone did not
+  // stop it and were never going to: a model invents when it is asked a
+  // question and handed nothing. So it is handed something.
+  const p = { height_cm: 190.5, birth_year: 1982, sex: 'male', activity_level: 'moderate' };
+  const t = targetOptions({ profile: p, weightKg: 149.7 });
+  assert.ok(t.known);
+  assert.equal(t.set, false, 'options must never read as a target already set');
+  assert.ok(t.maintenance > 3000);
+  for (const pace of ['gentle', 'steady', 'aggressive']) {
+    assert.ok(t.to_lose[pace].calories >= 1200, `${pace} broke the floor`);
+    assert.ok(Math.abs(t.to_lose[pace].kg_per_week) < 1.2, `${pace} paces into the care flag`);
+  }
+  // Faster means fewer, in order, and every one is well above the invented 2,600.
+  assert.ok(t.to_lose.aggressive.calories < t.to_lose.steady.calories);
+  assert.ok(t.to_lose.steady.calories < t.to_lose.gentle.calories);
+  assert.ok(t.to_lose.aggressive.calories > 2600,
+    'the computed floor is below the number that was invented — the guard is pointless');
+  assert.match(t.note, /never round them into a range/i);
+
+  // Missing facts produce a refusal, never a guess.
+  const blind = targetOptions({ profile: {}, weightKg: null });
+  assert.equal(blind.known, false);
+  assert.match(blind.say, /rather than estimating one/i);
+});
+
+await test('every read that gets asked "what am I allowed" carries the answer', () => {
+  const src = readFileSync(new URL('../netlify/functions/mcp.js', import.meta.url), 'utf8');
+  assert.match(src, /async function targetsFor\(/);
+  // The three tools that question actually lands on.
+  for (const fn of ['getProfileTool', 'getDay', 'energyBalanceTool']) {
+    const body = src.slice(src.indexOf(`async function ${fn}(`), src.indexOf(`async function ${fn}(`) + 2200);
+    assert.match(body, /targetsFor\(/, `${fn} cannot answer it`);
+    assert.match(body, /no_target_set/, `${fn} does not carry the options`);
+  }
+  // And the rule, stated where it cannot be missed.
+  assert.match(SERVER_INSTRUCTIONS, /NEVER STATE A CALORIE TARGET YOU DID NOT GET FROM A TOOL/);
+  assert.match(SERVER_INSTRUCTIONS, /2,600/);
+  assert.match(SERVER_INSTRUCTIONS, /do not say "I'd set your target at" anything/i);
 });
 
 await test('the resting figure shows its working', () => {

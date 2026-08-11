@@ -1155,6 +1155,55 @@ export function goalCall({ profile = {}, weightKg = null, intent = 'maintain', p
   };
 }
 
+/**
+ * Every target this person could defensibly be given, computed.
+ *
+ * THIS EXISTS BECAUSE THE NAMED FAILURE HAPPENED IN PRODUCTION. Asked "how
+ * many calories am I allowed today at my weight", with no goal on file, the
+ * model answered "around 2,500-2,700, I'd set your working target at 2,600".
+ * Nothing set 2,600. It was a plausible number in place of a real one — the
+ * exact mistake goalCall was written to make impossible — and it came out
+ * several hundred BELOW what the paced arithmetic actually gives, which is the
+ * direction that hurts somebody.
+ *
+ * Instructions alone did not stop it, and were never going to: a model invents
+ * when it is asked a question and handed nothing. So the fix is to hand it
+ * something. Every read that could plausibly be asked "what am I allowed"
+ * carries these, already worked out, with the pace named. There is then no gap
+ * to fill and no reason to reach for a round number.
+ *
+ * Nothing here is SET. They are options, and set_goal is still what commits
+ * one — offering a number and imposing one are different acts.
+ */
+export function targetOptions({ profile = {}, weightKg = null } = {}) {
+  const rest = restingBurn(profile, weightKg);
+  if (rest.kcal == null) {
+    return { known: false, missing: rest.missing,
+             say: `A target needs ${rest.missing.join(' and ')} before it can be worked out. Ask for those rather than estimating one.` };
+  }
+
+  const opts = {};
+  for (const pace of Object.keys(PACES)) {
+    const c = goalCall({ profile, weightKg, intent: 'lose', pace });
+    if (c.known) opts[pace] = { calories: c.calorie_target, kg_per_week: c.projected_kg_per_week, ...(c.held ? { held: c.held } : {}) };
+  }
+  const maintain = goalCall({ profile, weightKg, intent: 'maintain' });
+  const gain = goalCall({ profile, weightKg, intent: 'gain' });
+
+  return {
+    known: true,
+    set: false,
+    maintenance: maintain.known ? maintain.calorie_target : null,
+    protein_target_g: maintain.known ? maintain.protein_target_g : null,
+    to_lose: opts,
+    to_gain: gain.known ? gain.calorie_target : null,
+    resting_basis: rest.basis || null,
+    say: `Nothing is set yet. From ${rest.basis?.say || 'their own numbers'} maintenance is about ${maintain.calorie_target}. ` +
+         `A steady cut is about ${opts.steady?.calories}, gentle about ${opts.gentle?.calories}, aggressive about ${opts.aggressive?.calories}.`,
+    note: 'These are COMPUTED from their height, weight, age, sex and activity level — quote them exactly and never round them into a range of your own. None of them is set: offer, let them pick, then call set_goal with the intent and pace so the brief can score it. If they do not choose, leave it unset rather than assuming one.',
+  };
+}
+
 // ── A number they remember is a claim, not a load ───────────────────────────
 // For a lift with no history, progressionCall refuses to invent a weight — the
 // right refusal, and also a dead end for somebody who has benched for years
