@@ -27,6 +27,7 @@ import {
 import { activityBurn, activityTotal, matchActivity, ACTIVITIES, EFFORTS } from '../netlify/functions/lib/activity.js';
 import { warmupFor, sessionProgress } from '../netlify/functions/lib/warmup.js';
 import { formWatch, cardioProgress } from '../netlify/functions/lib/form.js';
+import { INTAKE, intakeState } from '../netlify/functions/lib/intake.js';
 const { goalCall, PACES, PUSH } = await import('../netlify/functions/lib/training.js');
 import {
   localDateFor, addDays, daysBetween, clockString, humanDuration,
@@ -3634,6 +3635,60 @@ await test('a weigh-in is found outside the loaded window', () => {
   assert.match(block, /wrought_events/);
   assert.match(block, /event_type', 'weight'/);
   assert.match(block, /order\('occurred_at'/);
+});
+
+await test('a target is never quoted without its maintenance', () => {
+  // "It might say you're allowed 2,400 a day, but it should also let you know
+  // that your maintenance is this while what you're trying to achieve is
+  // that." A number alone is a rule handed down; a number against maintenance
+  // and a rate is a decision somebody can judge.
+  const src = readFileSync(new URL('../netlify/functions/mcp.js', import.meta.url), 'utf8');
+  const fn = src.slice(src.indexOf('async function myPlan('), src.indexOf('async function setPlan('));
+  assert.match(fn, /maintenance,/);
+  assert.match(fn, /deficit,/);
+  assert.match(fn, /projected_kg_per_week: rate/);
+  assert.match(fn, /against a maintenance of about/);
+  assert.match(SERVER_INSTRUCTIONS, /THE TARGET IS ALWAYS QUOTED BESIDE ITS MAINTENANCE/);
+  assert.match(SERVER_INSTRUCTIONS, /Never quote the target alone/);
+});
+
+await test('twenty questions exist and are never asked at once', () => {
+  // The founder wanted a twenty-question intake. He is right that the context
+  // helps and wrong about the delivery — a twenty-question form at signup is
+  // the most reliable way to make somebody close the tab. So the questions
+  // exist and get picked up one at a time, in passing.
+  assert.ok(INTAKE.length >= 20, `only ${INTAKE.length} things are tracked`);
+
+  const blank = intakeState({ profile: {}, goals: [], memory: [] });
+  // The five that stop the arithmetic are marked, and nothing else is.
+  assert.equal(blank.blocking.length, 5);
+  assert.equal(blank.complete, false);
+  // One at a time, and the list is never presented.
+  assert.match(blank.note, /ask for those together in one message/i);
+
+  const started = intakeState({
+    profile: { height_cm: 190, birth_year: 1982, sex: 'male', activity_level: 'moderate' },
+    weightKg: 149.7, goals: [], memory: [],
+  });
+  assert.equal(started.blocking.length, 0);
+  assert.match(started.note, /NEVER ask more than ONE of these at a time/);
+  assert.match(started.note, /do not mention that a list exists/i);
+  // Injuries jump the queue: programming around one nobody mentioned is how
+  // this hurts somebody.
+  assert.match(started.ask_next, /injur/i);
+
+  // Recorded, never advised on — the not-a-doctor line, in the place it is
+  // most tempting to cross.
+  const meds = INTAKE.find(i => i.key === 'medication');
+  assert.match(meds.asks, /never advised on/i);
+
+  assert.match(SERVER_INSTRUCTIONS, /TWENTY THINGS ARE WORTH KNOWING AND YOU MAY ASK ONE/);
+  assert.match(SERVER_INSTRUCTIONS, /never present it as a form/i);
+
+  const src = readFileSync(new URL('../netlify/functions/mcp.js', import.meta.url), 'utf8');
+  const fn = src.slice(src.indexOf('async function getProfileTool('), src.indexOf('async function guide('));
+  assert.match(fn, /intakeState\(/);
+  assert.match(fn, /intake,/);
 });
 
 await test('a missing target is filled by the server, not by the model', () => {

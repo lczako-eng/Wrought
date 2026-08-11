@@ -1232,6 +1232,46 @@ explain. If the profile saves and the weigh-in does not, it says so — a flat
 failure sends somebody re-entering their height. The demo never shows it: a
 form there would collect a real weight into a screen that discards it.
 
+### A target beside its maintenance, and twenty questions nobody sits through
+
+Two asks from one message, and they pull in opposite directions.
+
+**The number needs its context.** The founder: *"it might say you're allowed
+2,400 a day, but it should also let you know that your maintenance is this
+while what you're trying to achieve is that."* Exactly right. `my_plan` gave a
+bare `calorie_target`, and a target on its own is a rule handed down — it reads
+as arbitrary and invites exactly the argument the invented-2,600 incident
+turned into. It now carries `maintenance`, `deficit` and
+`projected_kg_per_week` beside it, and the instruction is to say all three
+every time: *"2,833 against a maintenance of 3,833, so about a thousand down a
+day and roughly 0.9kg a week."* That is a decision somebody can judge.
+
+**And twenty questions, asked one at a time.** He wanted a twenty-question
+intake. He is right that the context makes the coaching better and wrong about
+the delivery: a twenty-question form at signup is the most reliable way to make
+somebody close the tab, and it contradicts the settled five-facts doctrine.
+
+So `lib/intake.js` holds the list — twenty-five things, from the five that
+block arithmetic through injuries, medication, sleep, how they actually eat,
+where their eating falls apart, and how they want to be spoken to. `get_profile`
+carries what is known, what is not, and **`ask_next`: one item, never a list.**
+
+- **The hard five are still asked together, once**, the first time a number
+  needs them. Nothing changed there.
+- **Everything else is picked up in passing**, only when the conversation has
+  already walked into it — somebody mentioning a sore knee is the moment to ask
+  about injuries and no other moment is. Never a form, never two in a turn, and
+  the model is told not to mention that a list exists.
+- **Limitations jump the queue** among the soft ones. Programming around an
+  injury nobody mentioned is how this hurts somebody.
+- **Medication and conditions are recorded, never advised on** — the
+  not-a-doctor line, in the place it is most tempting to cross.
+- **Somebody who ASKS to be set up properly gets the whole thing**, because
+  they asked. Available on demand, never imposed.
+
+No migration: soft answers land in `wrought_memory` under their category, which
+is why free text survives intact.
+
 ### The invented target — the named failure, in production
 
 The most important entry in this file, because the thing every doctrine here
@@ -1572,7 +1612,7 @@ self-reporting scale removes the most-abandoned manual entry), then Strava.
 
 ## Conventions
 
-- `npm test` runs `test/harness.mjs` — 456 offline tests, no network, no database.
+- `npm test` runs `test/harness.mjs` — 458 offline tests, no network, no database.
   Run it before every push. It covers the JSON-RPC envelope (which fails as an
   uninformative "could not connect" inside ChatGPT) and all the arithmetic
   (which fails as a confidently wrong number in somebody's verdict).

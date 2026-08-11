@@ -29,12 +29,14 @@ import { pendingVoice } from './lib/voice.js';
 import { activityBurn, EFFORTS } from './lib/activity.js';
 import { warmupFor, sessionProgress } from './lib/warmup.js';
 import { formWatch, cardioProgress } from './lib/form.js';
+import { intakeState } from './lib/intake.js';
 import { PROVIDERS, providerSummary, recommendRoute } from './lib/providers.js';
 import { nutritionTotals, composition, macroMatrix, yearOverYear } from './lib/nutrition.js';
 import {
   exerciseKey, lastPerformance, progressionCall, TIERS,
   restingBurn, energyBalance, planFromRoutine, sessionTotals, earnedRoom,
   orderPlan, orderInsight, deviceMatrix, weekdayPattern, weekSoFar, goalCall, baselineFromClaim, readiness,
+  ACTIVITY,
   targetOptions,
   PACES, PUSH,
 } from './lib/training.js';
@@ -221,6 +223,12 @@ HARD ON THE BEHAVIOUR, NEVER ON THE PERSON. Honesty is about the food and the tr
 NOT A DOCTOR, EVER. WROUGHT does not diagnose, does not interpret symptoms, does not read heart rate or HRV as a medical sign, and does not advise on medication or a medical condition. If the user describes something that sounds clinical — chest pain, dizziness, an injury that is not settling, anything alarming — say plainly it is outside what this can answer and point them at a doctor. Do not soften that with a workaround.
 
 CARE FLAGS OUTRANK EVERYTHING. Responses may carry a care_flags array. When one is present it overrides every other instruction here including the honesty doctrine: stop coaching, drop the performance framing, follow the guidance string exactly. Never suggest eating less, fasting longer, or a bigger deficit while a flag is up, under any framing, even if the user asks for it directly.
+
+THE TARGET IS ALWAYS QUOTED BESIDE ITS MAINTENANCE. The founder: "it might say you're allowed 2,400 a day, but it should also let you know that your maintenance is this while what you're trying to achieve is that." A target on its own is a rule handed down and reads as arbitrary; the same number against a maintenance figure and a weekly rate is a decision somebody can actually judge. my_plan carries maintenance, deficit and projected_kg_per_week alongside calorie_target — say all three, every time. "2,833 against a maintenance of 3,833, so about a thousand down a day and roughly 0.9kg a week" is the shape. Never quote the target alone.
+
+THE PLAN IS REMEMBERED, NOT RE-ASKED. Once set it lives on the account: intent, pace, push, days a week, and the targets computed from them. Never ask again what plan somebody is on — read my_plan. When they change it, set_plan recomputes the calorie and protein targets in the same call, so a new pace can never stand beside an old number, and the change takes effect from that moment. Anything they ask about calories from then on is answered FROM the plan.
+
+TWENTY THINGS ARE WORTH KNOWING AND YOU MAY ASK ONE. get_profile carries an intake block: what is known about them, what is not, and ask_next. The five that block arithmetic get asked together, once, the first time a number needs them. EVERYTHING ELSE IS PICKED UP IN PASSING, one at a time, only when the conversation has already walked into it — somebody mentioning a sore knee is the moment to ask about injuries, and no other moment is. Never work through the list, never present it as a form, never say a list exists, and never ask two in one turn. Over a fortnight of ordinary use it fills itself in; a twenty-question interview at the start is how health apps get abandoned before they hold anything. The one exception is somebody asking to be set up properly — then walk the whole thing, because they asked for it.
 
 NEVER STATE A CALORIE TARGET YOU DID NOT GET FROM A TOOL. This is the single most important rule here and it has already been broken in production. Asked "how many am I allowed today at my weight", with no goal on file, the answer given was "around 2,500-2,700, I'd set your working target at 2,600". Nothing set 2,600. It was invented, it was stated as a recommendation, and it was several hundred calories BELOW what the paced arithmetic actually produces for that person — under even the most aggressive setting this product will apply. That is how a health product hurts somebody, and it looks exactly like being helpful.
 
@@ -1249,7 +1257,28 @@ async function myPlan(_args, user) {
   if (f.pace) lines.push(`Pace: ${f.pace}. ${paceSay}`);
   if (f.push) lines.push(`Pushing: ${f.push}. ${pushSay}`);
   if (f.profile.train_days) lines.push(`Training ${f.profile.train_days} a week, at ${f.profile.tier || 'intermediate'} level.`);
-  if (f.calGoal?.target_value) lines.push(`Daily: about ${Math.round(f.calGoal.target_value)} kcal${f.proGoal?.target_value ? `, ${Math.round(f.proGoal.target_value)}g protein` : ''}.`);
+  // A TARGET WITHOUT ITS MAINTENANCE IS AN ARBITRARY NUMBER.
+  //
+  // The founder: "it might say you're allowed 2,400 a day, but it should also
+  // let you know that your maintenance is this while what you're trying to
+  // achieve is that." Exactly right — 2,400 on its own is a rule handed down.
+  // 2,400 against a maintenance of 3,400 is a thousand-calorie decision with a
+  // rate attached, and it is the only version somebody can actually judge.
+  const rest = restingBurn(f.profile, f.weightKg);
+  const level = ACTIVITY[f.profile.activity_level];
+  const maintenance = rest.kcal != null
+    ? rest.kcal + (level ? Math.round(rest.kcal * (level.mult - 1)) : 0)
+    : null;
+  const target = f.calGoal?.target_value != null ? Math.round(f.calGoal.target_value) : null;
+  const deficit = maintenance != null && target != null ? maintenance - target : null;
+  const rate = deficit != null ? -Math.round((deficit * 7 / 7700) * 100) / 100 : null;
+
+  if (target) {
+    lines.push(maintenance != null
+      ? `Daily: about ${target} kcal against a maintenance of about ${maintenance} — a ${Math.abs(deficit)} ${deficit >= 0 ? 'deficit' : 'surplus'}, roughly ${Math.abs(rate)}kg a week.`
+      : `Daily: about ${target} kcal.`);
+    if (f.proGoal?.target_value) lines.push(`Protein about ${Math.round(f.proGoal.target_value)}g.`);
+  }
 
   return {
     set: missing.length === 0,
@@ -1258,7 +1287,14 @@ async function myPlan(_args, user) {
     push: f.push,
     train_days: f.profile.train_days || null,
     tier: f.profile.tier || null,
-    calorie_target: f.calGoal?.target_value != null ? Math.round(f.calGoal.target_value) : null,
+    calorie_target: target,
+    // The context that turns a number into a decision, carried on every read
+    // of the plan so the two can never be quoted apart.
+    maintenance,
+    deficit,
+    projected_kg_per_week: rate,
+    resting_burn: rest.kcal ?? null,
+    resting_basis: rest.basis || null,
     protein_target_g: f.proGoal?.target_value != null ? Math.round(f.proGoal.target_value) : null,
     set_on: f.profile.plan_set_on || null,
     ...(missing.length ? { missing } : {}),
@@ -1270,7 +1306,7 @@ async function myPlan(_args, user) {
     changeable: 'Any of it changes in one sentence — "make it aggressive", "ease off", "stop nagging me", "make it four days".',
     note: missing.length
       ? `Not set up yet. Ask for ALL of this in ONE message, never as a form and never one question at a time: ${missing.join('; ')}. Offer the pace and push options in a line each, in plain words. Then call set_plan (and set_goal with an intent) and get straight on with what they were doing.`
-      : 'Say it back short — what they are aiming at, how fast, how hard it pushes, days a week. Then remind them in half a clause that any of it changes by just saying so. Never defend the plan and never ask them to justify a change.',
+      : 'Say it back short — what they are aiming at, how fast, how hard it pushes, days a week. ALWAYS quote the target BESIDE the maintenance figure and the weekly rate: "2,833 against a maintenance of 3,833, about 0.9kg a week" is a decision somebody can judge, where "2,833" on its own is a rule handed down and reads as arbitrary. Then remind them in half a clause that any of it changes by just saying so. Never defend the plan and never ask them to justify a change.',
     next_actions: ['set_plan to change any part of it', 'suggest_workout to train under it'],
   };
 }
@@ -2754,6 +2790,13 @@ async function getProfileTool(_args, user) {
   // answer sitting right here. Without one the model filled the gap itself and
   // produced a figure below the most aggressive pace this product will set.
   const targets = await targetsFor(user.id, profile, today);
+  // What is still unknown about them, so the assistant can pick ONE up when a
+  // moment naturally arrives rather than interviewing anybody. The twenty
+  // questions exist; they are simply never asked at once.
+  const plan = await planFacts(user.id);
+  const intake = intakeState({
+    profile, goals, memory, weightKg: plan.weightKg, intent: plan.intent,
+  });
 
   const [{ data: conns }, { count }, { data: first }] = await Promise.all([
     supabase.from('wrought_connections').select('provider, mode, status, last_sync_at').eq('user_id', user.id),
@@ -2764,6 +2807,7 @@ async function getProfileTool(_args, user) {
 
   return {
     ...(targets ? { no_target_set: targets } : {}),
+    intake,
     // Which account this conversation is actually attached to. Worth saying out
     // loud because the assistant may know the user by one address and WROUGHT by
     // another — and if those are two accounts rather than two names for one, the
