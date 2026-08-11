@@ -1277,6 +1277,13 @@ Three things made it invisible:
   surfaced. **A swallowed error is worse than a crash**; a crash is visible.
 - Nothing else writes events through `/ingest`, so no other feature broke.
 
+**The phone now shows a receipt.** `IngestClient.Receipt` reads
+`events_written` and `events_error` off the response and the connect card
+prints one line — *"Last sync: 14 readings, 2 of 2 workouts saved."* An absence
+of workouts and a silent app look identical from the outside, and telling those
+two apart used to mean reading a database. A 200 carrying an error inside it
+still reads as a failure.
+
 `015` drops the predicate. Nothing is lost: a unique index already treats NULLs
 as distinct, so hand-logged rows stay unconstrained — the partial clause was
 never buying the protection it appeared to buy, only making the index unusable
@@ -1358,7 +1365,7 @@ self-reporting scale removes the most-abandoned manual entry), then Strava.
 
 ## Conventions
 
-- `npm test` runs `test/harness.mjs` — 433 offline tests, no network, no database.
+- `npm test` runs `test/harness.mjs` — 434 offline tests, no network, no database.
   Run it before every push. It covers the JSON-RPC envelope (which fails as an
   uninformative "could not connect" inside ChatGPT) and all the arithmetic
   (which fails as a confidently wrong number in somebody's verdict).

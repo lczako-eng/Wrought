@@ -20,6 +20,10 @@ final class HealthCourier: ObservableObject {
 
     @Published var state: State = .idle
     @Published var lastError: String?
+    /// What the last send actually achieved, in one line. Not decoration — an
+    /// absence of workouts and a silent app look exactly the same, and telling
+    /// those two apart used to take a week.
+    @Published var lastSync: String?
 
     private let store = HKHealthStore()
     private weak var web: WebViewStore?
@@ -325,8 +329,15 @@ final class HealthCourier: ObservableObject {
         let workouts = await recentWorkouts()
 
         guard !metrics.isEmpty || !workouts.isEmpty else { return }
-        do { try await IngestClient.post(metrics: metrics, workouts: workouts) }
-        catch { lastError = "Send failed: \(error.localizedDescription)" }
+        do {
+            let receipt = try await IngestClient.post(metrics: metrics, workouts: workouts)
+            lastSync = receipt.line
+            // A rejected write is an error even though the request succeeded.
+            lastError = receipt.error == nil ? nil
+                      : "Workouts were rejected by the server. Run schema/015 in Supabase."
+        } catch {
+            lastError = "Send failed: \(error.localizedDescription)"
+        }
     }
 
     // MARK: - The sessions themselves

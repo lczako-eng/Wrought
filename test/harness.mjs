@@ -4081,6 +4081,24 @@ await test('the dedupe index is not partial, because ON CONFLICT cannot infer on
   assert.doesNotMatch(create.split(';')[0], /where/i);
 });
 
+await test('the phone shows what the last sync actually achieved', () => {
+  // An absence of workouts and a silent app look identical from the outside.
+  // Telling those two apart used to mean reading a database, which is how the
+  // partial-index bug survived for weeks.
+  const client = readFileSync(new URL('../ios/Wrought/IngestClient.swift', import.meta.url), 'utf8');
+  assert.match(client, /struct Receipt/);
+  assert.match(client, /out\["events_error"\]/);
+  assert.match(client, /out\["events_written"\]/);
+
+  const courier = readFileSync(new URL('../ios/Wrought/HealthCourier.swift', import.meta.url), 'utf8');
+  assert.match(courier, /@Published var lastSync/);
+  // A 200 carrying an error inside it still has to read as a failure.
+  assert.match(courier, /receipt\.error == nil/);
+
+  const view = readFileSync(new URL('../ios/Wrought/ContentView.swift', import.meta.url), 'utf8');
+  assert.match(view, /courier\.lastSync/);
+});
+
 await test('a failed event write is reported, never swallowed', () => {
   // The reason this survived for weeks: the endpoint answered 200 with a
   // cheerful events_written count while the insert underneath was erroring.

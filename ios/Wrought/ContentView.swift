@@ -61,6 +61,16 @@ struct ContentView: View {
                     .foregroundColor(Color(red: 0.91, green: 0.45, blue: 0.30))
                     .fixedSize(horizontal: false, vertical: true)
             }
+
+            // The receipt. An absence of workouts and a silent app look exactly
+            // the same from here, and telling those two apart used to mean
+            // asking somebody to read a database. Now it is a line on a card.
+            if let sync = courier.lastSync {
+                Text(sync)
+                    .font(.system(size: 12, design: .monospaced))
+                    .foregroundColor(Color(red: 0.36, green: 0.56, blue: 0.69)) // --temper
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
         .padding(18)
         .background(Color(red: 0.106, green: 0.086, blue: 0.078)) // --scale

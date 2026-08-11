@@ -50,7 +50,29 @@ enum IngestClient {
 
     /// Metrics AND workouts in one call — the endpoint takes both, and a run
     /// is not a number: it is a session that belongs in the training matrix.
-    static func post(metrics: [[String: Any]], workouts: [[String: Any]] = []) async throws {
+    /// What the server actually did with a send.
+    ///
+    /// The whole reason a broken workout write survived for weeks is that
+    /// nobody could see this. The endpoint answered 200, the app said nothing,
+    /// and the only symptom was an absence — which looks identical to a watch
+    /// that recorded nothing. A receipt costs one struct and turns "where are
+    /// my workouts" into a line on the screen.
+    struct Receipt {
+        var metrics = 0
+        var sessionsSent = 0
+        var sessionsSaved = 0
+        var error: String?
+
+        var line: String {
+            if let error { return "Last sync: \(sessionsSent) workouts rejected — \(error)" }
+            var bits = ["\(metrics) readings"]
+            if sessionsSent > 0 { bits.append("\(sessionsSaved) of \(sessionsSent) workouts saved") }
+            return "Last sync: " + bits.joined(separator: ", ") + "."
+        }
+    }
+
+    @discardableResult
+    static func post(metrics: [[String: Any]], workouts: [[String: Any]] = []) async throws -> Receipt {
         guard let key = storedKey() else { throw IngestError.noKey }
 
         var body: [String: Any] = ["source": "wrought_ios"]
@@ -68,5 +90,15 @@ enum IngestClient {
         guard code == 200 else {
             throw IngestError.badResponse(code, String(data: data, encoding: .utf8) ?? "")
         }
+
+        let out = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] ?? [:]
+        return Receipt(
+            metrics: out["metrics_written"] as? Int ?? 0,
+            sessionsSent: out["sessions_received"] as? Int ?? 0,
+            sessionsSaved: out["events_written"] as? Int ?? 0,
+            // A 200 with an error inside it is exactly the shape that hid the
+            // bug. Read it out rather than trusting the status code.
+            error: out["events_error"] as? String
+        )
     }
 }
