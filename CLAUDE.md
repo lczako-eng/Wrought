@@ -1232,6 +1232,30 @@ explain. If the profile saves and the weigh-in does not, it says so — a flat
 failure sends somebody re-entering their height. The demo never shows it: a
 form there would collect a real weight into a screen that discards it.
 
+### Two bugs a screenshot at 7am found
+
+Both looked like amnesia and neither was.
+
+**The 1d view lost the weight.** The burn's weight fallback searched only the
+LOADED range — and a one-day range usually has no weigh-in on it, so
+`restingBurn` came back missing, and the whole five-facts form reappeared
+asking for a height the profile was holding perfectly well. It now falls back
+to the most recent weigh-in anywhere, which is what `balanceFor` in the MCP
+layer always did. **A window is not a memory.**
+
+**And the form asked for everything regardless.** Even with height on file it
+rendered an empty Height box, which reads as forgetting. It now renders only
+what is genuinely missing, pre-fills what is known, and counts anything on file
+as answered rather than demanding it be typed again.
+
+**Nothing eaten yet is not a deficit.** Resting burn is a WHOLE DAY's figure,
+so at 7am against no food the subtraction said *"3,833 under"* — an artifact of
+the day being four hours old rather than a reading, and one that runs in the
+dangerous direction, since an overstated deficit is the number that tells
+somebody to eat less than they need. Until something is logged there is no
+ring: the burn is shown as the burn, labelled *"to burn today"*, and the caveat
+says it is the whole day's estimate rather than what has been spent so far.
+
 ### The zone the days are filed under
 
 A pizza eaten at 11:44 landed on **yesterday**, stamped 23:28, because the
@@ -1479,7 +1503,7 @@ self-reporting scale removes the most-abandoned manual entry), then Strava.
 
 ## Conventions
 
-- `npm test` runs `test/harness.mjs` — 450 offline tests, no network, no database.
+- `npm test` runs `test/harness.mjs` — 452 offline tests, no network, no database.
   Run it before every push. It covers the JSON-RPC envelope (which fails as an
   uninformative "could not connect" inside ChatGPT) and all the arithmetic
   (which fails as a confidently wrong number in somebody's verdict).

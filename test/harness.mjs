@@ -3588,7 +3588,8 @@ await test('the five facts sit on the panel that refuses to draw', () => {
   // form nobody fills in.
   const src = page('app.html');
   const hero = src.slice(src.indexOf('function hero(d) {'), src.indexOf('function hero(d) {') + 900);
-  assert.match(hero, /factsForm\(b\)/);
+  // It is handed what is already on file so it can ask for only the gap.
+  assert.match(hero, /factsForm\(b, d\.profile_known/);
   for (const id of ['ff-h', 'ff-w', 'ff-y', 'ff-s', 'ff-a']) {
     assert.ok(src.includes(`id="${id}"`), `${id} is not on the form`);
   }
@@ -3604,8 +3605,10 @@ await test('it names what is still missing rather than half-saving', () => {
   assert.match(fn, /Still need \$\{list\}/);
   // Height, a weight and a birth year are the three the arithmetic cannot do
   // without. Sex and activity level are optional and flagged, never demanded.
-  assert.match(fn, /!body\.height_cm && 'height'/);
-  assert.match(fn, /!body\.weight && 'a weight'/);
+  // Anything already on file counts as answered — it is not missing just
+  // because it was not typed again into a form that never showed the box.
+  assert.match(fn, /!body\.height_cm && known\.height_cm == null && 'height'/);
+  assert.match(fn, /!body\.weight && known\.weight_kg == null && 'a weight'/);
   assert.match(fn, /!body\.birth_year/);
   assert.ok(!/!body\.sex/.test(fn), 'sex is being demanded');
   assert.ok(!/!body\.activity_level/.test(fn), 'activity level is being demanded');
@@ -3615,10 +3618,36 @@ await test('the demo never asks for facts it cannot use', () => {
   // Borrowed numbers. A form on the demo would collect somebody's real weight
   // into a screen that throws it away.
   const src = page('app.html');
-  const hero = src.slice(src.indexOf('function hero(d) {'), src.indexOf('function hero(d) {') + 500);
+  const hero = src.slice(src.indexOf('function hero(d) {'), src.indexOf('function hero(d) {') + 900);
   assert.match(hero, /if \(DEMO\)/);
-  assert.ok(hero.indexOf('if (DEMO)') < hero.indexOf('factsForm(b)'),
+  assert.ok(hero.indexOf('if (DEMO)') < hero.indexOf('factsForm(b,'),
     'the demo reaches the form before it is turned away');
+});
+
+await test('a weigh-in is found outside the loaded window', () => {
+  // Switching to the 1d view lost the weight — one day, usually with no
+  // weigh-in on it — so the burn could not be computed and the whole five-facts
+  // form reappeared. It read as the product having forgotten a height it was
+  // holding perfectly well, on the panel where that is most alarming.
+  const src = readFileSync(new URL('../netlify/functions/api-progress.js', import.meta.url), 'utf8');
+  const block = src.slice(src.indexOf('let weightKg = today.body.weight_kg'), src.indexOf('const balance = energyBalance('));
+  assert.match(block, /wrought_events/);
+  assert.match(block, /event_type', 'weight'/);
+  assert.match(block, /order\('occurred_at'/);
+});
+
+await test('nothing eaten yet is not a deficit', () => {
+  // The resting burn is a WHOLE DAY's figure, so at 7am with no food logged the
+  // subtraction reads "3,833 under" — an artifact of the day being four hours
+  // old, not a reading. And it runs in the dangerous direction: an overstated
+  // deficit is the number that tells somebody to eat less than they need.
+  const src = page('app.html');
+  const hero = src.slice(src.indexOf('function hero(d) {'), src.indexOf('function burnSplit('));
+  assert.match(hero, /if \(!b\.calories_in\)/);
+  assert.match(hero, /to burn today/);
+  assert.match(hero, /whole day's estimate/);
+  // The ring is only drawn once there is a ratio to draw.
+  assert.ok(hero.indexOf('if (!b.calories_in)') < hero.indexOf('const ratio'));
 });
 
 group('The zone the days are filed under');

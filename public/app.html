@@ -407,6 +407,14 @@ svg.ser .cursor { transition: opacity var(--quick) var(--ease); }
   font-family: var(--mono); font-size: 11px; letter-spacing: .18em;
   text-transform: uppercase; color: var(--ash-dim);
 }
+/* The no-food-yet state: the burn on its own, no ring, because there is
+   nothing to draw a ratio against. Centred and stacked rather than a bare
+   number floating in the panel. */
+.hero .net.big {
+  display: flex; flex-direction: column; align-items: center; gap: 6px;
+  border-top: 0; padding-top: 0; margin: 22px 0 4px;
+}
+.hero .net.big .netword { font-size: 10.5px; }
 .hero .legs { display: flex; gap: 26px; justify-content: center; margin-top: 6px; }
 .hero .leg { display: flex; flex-direction: column; gap: 2px; }
 .hero .leg b { font-size: 19px; font-weight: 650; font-variant-numeric: tabular-nums; }
@@ -3580,39 +3588,53 @@ const wireFirstRun = wireGoTabs;
 // So the form lives on the panel that is refusing to draw. Five inputs, once,
 // and the number appears. It is never shown once the burn is known — this is a
 // gap being filled, not a settings page that follows people around.
-function factsForm(b) {
+// It fills the gap and asks for nothing else.
+//
+// The form used to render all five fields whatever was already on file, so a
+// profile holding a height perfectly well still put an empty Height box on the
+// screen — which reads as "it forgot", on the one panel where that is most
+// alarming. Now it shows only what is actually missing, and pre-fills what is
+// known so nothing has to be typed twice.
+function factsForm(b, known = {}) {
   const yr = new Date().getFullYear();
   const years = Array.from({ length: 90 }, (_, i) => yr - 14 - i);
+
+  const needH = known.height_cm == null;
+  const needW = known.weight_kg == null;
+  const needY = known.birth_year == null;
+
   return `<div class="facts">
     <p class="caveat">${esc(b?.say || 'Calories out needs a few things before it can be worked out.')}</p>
     <div class="fgrid">
-      <label>Height
+      ${needH ? `<label>Height
         <span class="pair">
           <input id="ff-h" type="number" inputmode="decimal" placeholder="180">
           <select id="ff-hu"><option value="cm">cm</option><option value="in">in</option></select>
         </span>
-      </label>
-      <label>Weight now
+      </label>` : ''}
+      ${needW ? `<label>Weight now
         <span class="pair">
           <input id="ff-w" type="number" inputmode="decimal" placeholder="84">
           <select id="ff-wu"><option value="kg">kg</option><option value="lb">lb</option></select>
         </span>
-      </label>
-      <label>Born
+      </label>` : ''}
+      ${needY ? `<label>Born
         <select id="ff-y"><option value="">—</option>${years.map(y => `<option value="${y}">${y}</option>`).join('')}</select>
-      </label>
+      </label>` : ''}
       <label>Sex
         <select id="ff-s">
-          <option value="">—</option><option value="male">Male</option><option value="female">Female</option>
+          <option value="">—</option>
+          <option value="male"${known.sex === 'male' ? ' selected' : ''}>Male</option>
+          <option value="female"${known.sex === 'female' ? ' selected' : ''}>Female</option>
         </select>
       </label>
       <label class="wide">On your feet in a normal day
         <select id="ff-a">
           <option value="">—</option>
-          <option value="sedentary">Desk job, little walking</option>
-          <option value="light">Some walking</option>
-          <option value="moderate">On my feet a fair bit</option>
-          <option value="very">Physical job, most of the day</option>
+          <option value="sedentary"${known.activity_level === 'sedentary' ? ' selected' : ''}>Desk job, little walking</option>
+          <option value="light"${known.activity_level === 'light' ? ' selected' : ''}>Some walking</option>
+          <option value="moderate"${known.activity_level === 'moderate' ? ' selected' : ''}>On my feet a fair bit</option>
+          <option value="very"${known.activity_level === 'very' ? ' selected' : ''}>Physical job, most of the day</option>
         </select>
       </label>
     </div>
@@ -3621,19 +3643,28 @@ function factsForm(b) {
   </div>`;
 }
 
-async function saveFacts() {
+async function saveFacts(known = {}) {
   const msg = $('ff-msg'), btn = $('ff-go');
-  const h = Number($('ff-h').value), w = Number($('ff-w').value);
+  // Fields the form did not render because the answer was already on file.
+  // Reading .value off a missing element used to throw, which would have taken
+  // the whole panel down the moment the form got smarter.
+  const val = id => $(id)?.value ?? '';
+  const h = Number(val('ff-h')), w = Number(val('ff-w'));
   const body = {};
-  if (h > 0) body.height_cm = $('ff-hu').value === 'in' ? Math.round(h * 2.54 * 10) / 10 : h;
-  if (w > 0) { body.weight = w; body.weight_unit = $('ff-wu').value; }
-  if ($('ff-y').value) body.birth_year = Number($('ff-y').value);
-  if ($('ff-s').value) body.sex = $('ff-s').value;
-  if ($('ff-a').value) body.activity_level = $('ff-a').value;
+  if (h > 0) body.height_cm = val('ff-hu') === 'in' ? Math.round(h * 2.54 * 10) / 10 : h;
+  if (w > 0) { body.weight = w; body.weight_unit = val('ff-wu'); }
+  if (val('ff-y')) body.birth_year = Number(val('ff-y'));
+  if (val('ff-s')) body.sex = val('ff-s');
+  if (val('ff-a')) body.activity_level = val('ff-a');
 
   // Say which one is still missing rather than saving three of five and
-  // redrawing the same refusal with no explanation.
-  const need = [!body.height_cm && 'height', !body.weight && 'a weight', !body.birth_year && 'the year you were born'].filter(Boolean);
+  // redrawing the same refusal with no explanation. Anything already on file
+  // counts as answered — it is not missing just because it was not re-typed.
+  const need = [
+    !body.height_cm && known.height_cm == null && 'height',
+    !body.weight && known.weight_kg == null && 'a weight',
+    !body.birth_year && known.birth_year == null && 'the year you were born',
+  ].filter(Boolean);
   if (need.length) {
     const list = need.length > 1 ? `${need.slice(0, -1).join(', ')} and ${need[need.length - 1]}` : need[0];
     msg.textContent = `Still need ${list}.`;
@@ -3658,8 +3689,8 @@ async function saveFacts() {
   refresh();
 }
 
-function wireFacts() {
-  $('ff-go')?.addEventListener('click', saveFacts);
+function wireFacts(known = {}) {
+  $('ff-go')?.addEventListener('click', () => saveFacts(known));
 }
 
 function hero(d) {
@@ -3670,7 +3701,25 @@ function hero(d) {
         <p class="caveat">${esc(b?.say || 'Nothing to draw yet.')}</p></section>`;
     }
     return `<section class="panel hero"><h2>In vs out · today</h2>
-      ${factsForm(b)}</section>`;
+      ${factsForm(b, d.profile_known || {})}</section>`;
+  }
+
+  // NOTHING EATEN YET IS NOT A DEFICIT.
+  //
+  // The resting burn is a WHOLE DAY's figure, so at 7am with no food logged the
+  // subtraction says "3,833 under" — which is not a reading, it is an artifact
+  // of the day being four hours old. And it runs in the dangerous direction:
+  // an overstated deficit is the number that tells somebody to eat less than
+  // they need. So until something is logged, the burn is shown as the burn and
+  // no net is drawn at all.
+  if (!b.calories_in) {
+    return `<section class="panel hero">
+      <h2>In vs out · today</h2>
+      <p class="net big">${n(b.calories_out)}<span class="netword">to burn today</span></p>
+      ${burnSplit(b)}
+      <p class="caveat">Nothing logged yet, so there is no in-versus-out to draw.
+        That figure is the whole day's estimate, not what you have burned so far.</p>
+    </section>`;
   }
 
   const R = 86, C = 2 * Math.PI * R;
@@ -4249,7 +4298,7 @@ function render(d) {
 
   $('content').innerHTML = out.join('');
   wireZone();
-  wireFacts();
+  wireFacts(d.profile_known || {});
   wireGoTabs();
   stagger();
 }

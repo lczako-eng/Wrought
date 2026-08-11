@@ -165,10 +165,22 @@ export const handler = async (event) => {
   const w = kg => (kg == null ? null : imperial ? kgToLb(kg) : kg);
 
   // ── Energy, and the room it has earned ────────────────────────────────────
+  // The most recent weigh-in ANYWHERE, not the most recent one inside the
+  // loaded window. Searching only the range meant that switching to the 1d
+  // view — one day, usually with no weigh-in on it — lost the weight, so the
+  // burn could not be computed and the whole five-facts form reappeared. It
+  // read as the product having forgotten a height it knew perfectly well, on
+  // the one screen where that is most alarming.
   let weightKg = today.body.weight_kg;
   if (weightKg == null) {
     const recent = range.days.filter(d => d.weight_kg != null).pop();
     weightKg = recent?.weight_kg ?? null;
+  }
+  if (weightKg == null) {
+    const { data: lastWeight } = await supabase.from('wrought_events')
+      .select('detail').eq('user_id', user.id).eq('event_type', 'weight')
+      .order('occurred_at', { ascending: false }).limit(1);
+    weightKg = lastWeight?.[0]?.detail?.value_kg ?? null;
   }
 
   const balance = energyBalance({
@@ -327,6 +339,16 @@ export const handler = async (event) => {
         times_used: r.times_used,
         days_since: r.last_used_on ? daysBetween(r.last_used_on, to) : null,
       })),
+      // What is already on file, so a form that fills a gap can show only the
+      // gap. Asking again for a height it is holding is how a product looks
+      // amnesiac when it is merely narrow.
+      profile_known: {
+        height_cm: profile.height_cm ?? null,
+        birth_year: profile.birth_year ?? null,
+        sex: profile.sex ?? null,
+        activity_level: profile.activity_level ?? null,
+        weight_kg: weightKg,
+      },
       series: {
         weight:   range.days.map(d => ({ date: d.date, value: w(d.weight_kg) })),
         calories: range.days.map(d => ({ date: d.date, value: d.calories })),
