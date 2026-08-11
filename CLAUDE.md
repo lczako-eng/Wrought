@@ -73,7 +73,7 @@ nothing else.
   MCP brief and the web dashboard cannot disagree. `api-progress.js` exists
   purely so the dashboard calls the same code rather than recomputing in JS.
 - **MCP server**: `netlify/functions/mcp.js` at `/mcp` — stateless Streamable
-  HTTP, JSON-RPC. 40 tools. Doctrines ship in `SERVER_INSTRUCTIONS`.
+  HTTP, JSON-RPC. 41 tools. Doctrines ship in `SERVER_INSTRUCTIONS`.
 - **Auth**: OAuth 2.1 (PKCE, dynamic client registration) so "Sign in with
   Wrought" appears in ChatGPT/Claude. Supabase session JWTs also accepted as a
   fallback. Everything secret is stored SHA-256 hashed.
@@ -286,6 +286,49 @@ nobody can act on.
 contribute **nothing** to calories out unless a watch measured it, so the
 person most likely to be logging by hand was the person whose training counted
 for zero.
+
+### Form — the shadow it leaves, never a claim about the lifter
+
+`lib/form.js` + the `form_check` tool. The founder: *"sometimes I do skip and
+the form goes out the window, and I think more form is more important."* He is
+right, and this is the one place where being useful and being honest pull
+hardest against each other — because the useful sentence is the one nothing
+here is entitled to say.
+
+**IT CANNOT SEE THEM LIFT.** No camera, no bar-speed sensor, nothing on the
+bar. "Your form is breaking down" is an assertion about something never
+observed — the same offence as reading a body-fat percentage off a photograph,
+and it would poison every honest number the product has. So nothing here
+describes technique.
+
+What the record *does* carry is the shadow technique leaves behind:
+
+- **The last set falling off a cliff, repeatedly.** 8, 8, 8, 4 is not a bad
+  day — it is a weight that only holds for three sets. Requires it across
+  sessions, because one collapsed set is a phone call or somebody taking the
+  rack. The verdict is priced in kilos, not exhortation.
+- **The same weight costing more.** RPE climbing while the load stands still.
+  It says the cost went up and **refuses to say why** — recovery, food,
+  technique, a bad fortnight at work are not separable from here.
+- **Grinding.** RPE 9 and still short of target. The combination is the point:
+  missing at RPE 7 means the weight is wrong; missing at 9.5 means nothing is
+  being practised but failure.
+- **Their own words, quoted and never interpreted.** The most valuable thing in
+  the file and the least clever.
+
+**Every finding ships with its evidence**, and the evidence is always rows the
+log actually contains — a verdict without them is an opinion wearing a number.
+It **only ever softens**: no finding may ever end in "add weight". And it is
+deliberately quiet, because a coach who finds a fault every session is one
+people stop listening to.
+
+**This is the real argument for logging by voice.** A notebook has a column for
+weight and a column for reps and nowhere at all for *"third set I rushed it"* —
+so the one fact that explains the number six weeks later is the one paper
+structurally cannot hold. The instructions tell the model to pass anything
+about how a set FELT into `log_set` verbatim, including vague ones, and never
+to tidy it into an assessment. Words about pain are marked as a report about a
+body rather than a coaching cue: a doctor's question, not a form one.
 
 ### The plan — stated before the first session, changed in one sentence
 
@@ -1394,7 +1437,7 @@ self-reporting scale removes the most-abandoned manual entry), then Strava.
 
 ## Conventions
 
-- `npm test` runs `test/harness.mjs` — 437 offline tests, no network, no database.
+- `npm test` runs `test/harness.mjs` — 445 offline tests, no network, no database.
   Run it before every push. It covers the JSON-RPC envelope (which fails as an
   uninformative "could not connect" inside ChatGPT) and all the arithmetic
   (which fails as a confidently wrong number in somebody's verdict).

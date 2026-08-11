@@ -28,6 +28,7 @@ import { allowed } from './lib/membership.js';
 import { pendingVoice } from './lib/voice.js';
 import { activityBurn, EFFORTS } from './lib/activity.js';
 import { warmupFor, sessionProgress } from './lib/warmup.js';
+import { formWatch } from './lib/form.js';
 import { PROVIDERS, providerSummary, recommendRoute } from './lib/providers.js';
 import { nutritionTotals, composition, macroMatrix, yearOverYear } from './lib/nutrition.js';
 import {
@@ -138,6 +139,7 @@ HOW PEOPLE ACTUALLY ASK. Nobody says "call the brief tool". They say one of a hu
   suggest_workout / programmes — "what should I train", "give me a workout", "what's today", "programme me", "build me something", "I've got 40 minutes", "what am I neglecting", "proper programme", "what should I be running"
   start_session — "let's go", "starting now", "at the gym", "I'm going to the gym", "heading to the gym", "gym in ten", "leg day", "chest day", "I'm at the rack", "warmed up"
   log_set — "done", "got it", "got 8", "8 at 225", "that's up", "failed at 5", "couldn't finish", "one more in the tank"
+  form_check — "why am I stalling", "check my form", "why did that feel awful", "am I grinding", "my form went", "that was ugly", "I rushed it", "why can't I hit this any more", "this used to be easy"
   my_plan — "what's my plan", "what am I on", "what am I actually doing", "what am I aiming for", "why that number", "what's my target", "remind me what this is", "what's my route" (dictation for WROUGHT), "how does this work for me"
   set_plan — "make it aggressive", "I want this off faster", "go harder on me", "chase me", "ease off", "nothing drastic", "stop nagging me", "leave me alone a bit", "make it four days a week", "I can only do three", "change my plan"
   log_activity — "I was at work all day", "worked at the petting zoo", "did a double shift", "on site since six", "been on my feet since seven", "spent the afternoon digging", "moved house today", "was doing the garden", "shovelled the drive", "long shift", "physical day", "grafting all day"
@@ -178,6 +180,10 @@ WHEN THE SESSION ENDS, NAME THE NEXT ONE. end_session returns next_workout and t
 A GREETING IN THAT REGISTER IS A REQUEST, NOT SMALL TALK. "Hey jim bro", "gym bro", "morning", "coach" and the rest are not openers to be answered conversationally — they are the user asking for their read. CALL THE TOOL FIRST and lead with what comes back. Never reply "hey bro, what's up?" and wait: they already told you what's up. If genuinely nothing is logged yet, still call brief and say that, rather than making them ask twice.
 
 THE WATCH SENDS MORE THAN STEPS NOW, AND MOST OF IT IS NOT YOURS TO INTERPRET. get_day and brief carry device.readings — stand hours, exercise minutes, flights, walking heart rate, heart-rate recovery, VO2 max, respiratory rate, blood oxygen, walking speed, step length, gait asymmetry, steadiness, mindful minutes, water, sound exposure. Report any of them plainly when asked, as a number and a trend against their own history. NEVER read one as a medical sign. Blood oxygen, respiratory rate, blood pressure, glucose, temperature, gait asymmetry and Apple's steadiness score are the ones people frighten themselves with — Apple's steadiness even ships with a fall-risk label, and repeating that back IS a diagnosis. Say what the number is, say it is recorded rather than interpreted, and say that anything worrying is a doctor's question. Do not name a condition, do not say "this could indicate", and do not reassure either: telling somebody their blood oxygen is fine is the same act as telling them it is not.
+
+FORM MATTERS AND YOU CANNOT SEE IT. When somebody says a lift felt awful, that they rushed it, that their form went, or asks why they are stalling — call form_check. It reads their set history for the shadow technique leaves behind: the last set collapsing repeatedly, effort climbing at a load that has not changed, RPE 9 with the reps still short. NEVER SAY THEIR FORM IS BREAKING DOWN OR THAT THEY ARE LIFTING SOMETHING WRONG. Nothing in this system watched them do it, and a confident claim about technique nobody observed is the same offence as reading a body-fat percentage off a photograph — it would poison every honest number this product has. Report what the LOG shows, quote the evidence with it, and change the LOAD. "Your last set has dropped from 8 to 4 three sessions running, take 10% off" is a real form intervention and defensible. "Your form is going" is not.
+
+WHAT THEY SAID MID-SET IS THE POINT OF LOGGING BY VOICE. A notebook has a column for weight and a column for reps and nowhere at all for "third set I rushed it" or "shoulder felt off" — so the one fact that explains the number six weeks later is the one paper cannot hold. Pass anything they say about how a set FELT into log_set as the note, verbatim, even when it is vague and even when it is mid-conversation. Never tidy it into an assessment. form_check hands those words back exactly as they were said, and they are quoted, never interpreted — WROUGHT does not get to decide what "it felt weird" meant, and if the words are about pain rather than execution it is a doctor's question, not a coaching one.
 
 A SAVED WORKOUT IS A NAME, AN ORDER, AND THE REASON IT IS IN THAT ORDER. save_routine takes a notes field — the write-up. Write one whenever a routine is saved: what the session is for, why the order, what to push and what to leave a rep in the tank on. Without it a routine is a list of names, which is the part somebody already has in their phone. It is shown at the top every time the session starts, so it is worth a real paragraph. Saving the same name UPDATES it, so "add calf raises to my leg day" or "make it four sets" is one call with add[] and never a rebuild — and the write-up survives that.
 
@@ -575,6 +581,20 @@ const TOOLS = [
       required: ['text'],
     },
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+  },
+  {
+    name: 'form_check',
+    title: 'Why a lift is coming apart',
+    description: 'Reads the SET HISTORY for signs a weight has gone past where it can be held together — the last set collapsing, effort climbing at a load that has not changed, grinding at RPE 9 and still missing reps — plus anything they said mid-set about how it felt. Use it for "why am I stalling", "check my form", "why did that feel awful", "am I grinding", and when somebody mentions their form going. IT CANNOT SEE THEM LIFT. Never state that their technique is wrong; report what the log shows, quote their own words back, and change the load. With nothing to say it says so.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        exercise: { type: 'string', description: 'One lift by name. Omit to read everything they have been training.' },
+        target_reps: { type: 'integer', description: 'The rep target being worked to, if known — it is what makes "grinding" distinguishable from "the weight is simply too heavy".' },
+        days: { type: 'integer', description: 'How far back to read. Default 60.' },
+      },
+    },
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   },
   {
     name: 'my_plan',
@@ -1094,6 +1114,49 @@ async function amendLast(args, user) {
 // target. Ids are checked against the caller's own rows before anything is
 // written: an id is guessable, and an unchecked one would let a stranger
 // rewrite somebody else's log.
+// Why a lift is coming apart, read off the record.
+//
+// The founder: "sometimes I do skip and the form goes out the window, and I
+// think form is more important." Agreed — and this is the place where being
+// useful and being honest pull hardest against each other, because the useful
+// sentence ("your form is going") is one nothing here is entitled to say.
+//
+// So it reads the shadow technique leaves in the log instead: the last set
+// falling off a cliff, the same weight costing more every week, RPE 9 with the
+// reps still short. And it hands back what they said at the time, which is the
+// single most useful thing in here and the one a paper notebook has no column
+// for.
+async function formCheck(args, user) {
+  const profile = await getProfile(user.id);
+  const today = localDateFor(profile.timezone);
+  const span = Math.min(Math.max(parseInt(args.days, 10) || 60, 14), 365);
+
+  let q = supabase.from('wrought_sets')
+    .select('exercise, exercise_key, session_id, set_number, position, reps, weight_kg, rpe, note, local_date')
+    .eq('user_id', user.id)
+    .gte('local_date', addDays(today, -span))
+    .order('logged_at', { ascending: true }).limit(4000);
+
+  const key = args.exercise ? exerciseKey(args.exercise) : null;
+  if (key) q = q.eq('exercise_key', key);
+
+  const { data: sets } = await q;
+  const read = formWatch({
+    sets: sets || [],
+    targetReps: args.target_reps != null ? Number(args.target_reps) : null,
+    exerciseKey: key,
+  });
+
+  return {
+    ...read,
+    exercise: args.exercise || null,
+    days: span,
+    next_actions: read.findings?.length
+      ? ['log_set with the lighter load next session', 'progress for the full curve on this lift']
+      : ['suggest_workout for what is actually overdue'],
+  };
+}
+
 // ── The plan ────────────────────────────────────────────────────────────────
 //
 // The founder: "your plans to tailor-made plan for you — aggressive,
@@ -3347,6 +3410,7 @@ const IMPL = {
   log_weight: logWeight,
   log_measurement: logMeasurement,
   amend_last: amendLast,
+  form_check: formCheck,
   my_plan: myPlan,
   set_plan: setPlan,
   log_activity: logActivity,

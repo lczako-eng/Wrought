@@ -26,6 +26,7 @@ import {
 } from '../netlify/functions/lib/training.js';
 import { activityBurn, activityTotal, matchActivity, ACTIVITIES, EFFORTS } from '../netlify/functions/lib/activity.js';
 import { warmupFor, sessionProgress } from '../netlify/functions/lib/warmup.js';
+import { formWatch } from '../netlify/functions/lib/form.js';
 const { goalCall, PACES, PUSH } = await import('../netlify/functions/lib/training.js');
 import {
   localDateFor, addDays, daysBetween, clockString, humanDuration,
@@ -3986,6 +3987,122 @@ await test('a Supabase setting is named with the place it lives', () => {
   const src = page('app.html');
   assert.match(src, /manual linking is disabled/i);
   assert.match(src, /Authentication → Sign In \/ Providers/);
+});
+
+// ── Form, read from the record ──────────────────────────────────────────────
+
+group('Form — the shadow technique leaves in the log');
+
+const SESSION = (date, reps, weight = 100, rpe = null, note = null) =>
+  reps.map((r, i) => ({
+    exercise: 'Bench Press', exercise_key: 'bench press', session_id: date,
+    set_number: i + 1, position: 1, reps: r, weight_kg: weight,
+    rpe: Array.isArray(rpe) ? rpe[i] : rpe, note: i === 0 ? note : null, local_date: date,
+  }));
+
+await test('it never claims to have watched anybody lift', () => {
+  // The whole design constraint. There is no camera and no bar sensor, so a
+  // sentence like "your form is breaking down" is an assertion about something
+  // that was never observed — the same offence as reading a body-fat figure
+  // off a photograph, and it would poison every honest number here.
+  // Asserted on the OUTPUT rather than the source: the file legitimately has to
+  // name the forbidden sentence in order to forbid it, and a grep cannot tell
+  // a prohibition from a violation. What reaches a person is what matters.
+  const scenarios = [
+    [...SESSION('2026-08-01', [8, 8, 8, 3]), ...SESSION('2026-08-05', [8, 8, 7, 3]), ...SESSION('2026-08-09', [8, 8, 7, 4])],
+    [...SESSION('2026-08-01', [6, 6, 6], 100, 7), ...SESSION('2026-08-05', [6, 6, 6], 100, 8), ...SESSION('2026-08-09', [6, 6, 6], 100, 9.5)],
+    SESSION('2026-08-09', [8, 8, 6], 100, null, 'rushed it, form went'),
+  ];
+
+  for (const sets of scenarios) {
+    const out = formWatch({ sets, targetReps: 8 });
+    assert.match(out.limits, /cannot see you lift/i);
+    // Everything spoken to a person, checked for an assertion about technique.
+    const spoken = [out.say, ...out.findings.flatMap(f => [f.say, f.verdict, f.evidence])].join(' ');
+    assert.doesNotMatch(spoken, /your form|your technique|form is breaking|bad form|poor technique|doing it wrong/i);
+    for (const f of out.findings) {
+      // Every finding carries the rows behind it. A verdict without evidence
+      // is an opinion wearing a number.
+      assert.ok(f.evidence && f.evidence.length > 20, `${f.finding} has no evidence`);
+    }
+  }
+});
+
+await test('a last set falling off a cliff is caught, and priced in kilos', () => {
+  const out = formWatch({ sets: [...SESSION('2026-08-01', [8, 8, 8, 3]),
+                                 ...SESSION('2026-08-05', [8, 8, 7, 3]),
+                                 ...SESSION('2026-08-09', [8, 8, 7, 4])] });
+  const f = out.findings.find(x => x.finding === 'last_set_collapse');
+  assert.ok(f, 'the collapse was missed');
+  // The verdict is a change to the training, never an instruction to try harder.
+  assert.match(f.verdict, /10%|90|take/i);
+  assert.doesNotMatch(f.say, /push through|dig in|try harder/i);
+});
+
+await test('one bad set is a bad day, not a finding', () => {
+  // A coach who finds a fault every session is one people stop listening to.
+  const out = formWatch({ sets: [...SESSION('2026-08-01', [8, 8, 8, 8]),
+                                 ...SESSION('2026-08-05', [8, 8, 8, 8]),
+                                 ...SESSION('2026-08-09', [8, 8, 8, 3])] });
+  assert.equal(out.findings.filter(f => f.finding === 'last_set_collapse').length, 0);
+  assert.match(out.say, /nothing in the log is coming apart/i);
+});
+
+await test('the same weight costing more is reported without a cause', () => {
+  // RPE climbing at a fixed load is real. WHY it is climbing — recovery, food,
+  // technique, a bad fortnight at work — is not knowable from here and must
+  // not be guessed between.
+  const out = formWatch({ sets: [...SESSION('2026-08-01', [6, 6, 6], 100, 7),
+                                 ...SESSION('2026-08-05', [6, 6, 6], 100, 8),
+                                 ...SESSION('2026-08-09', [6, 6, 6], 100, 9)] });
+  const f = out.findings.find(x => x.finding === 'effort_creep');
+  assert.ok(f, 'the creep was missed');
+  assert.match(f.evidence, /RPE 7 to RPE 9/);
+  assert.doesNotMatch(f.say, /because|overtrained|under-?recovered|not eating/i);
+  // It only ever softens — adding load on top of this is the injury.
+  assert.match(f.verdict, /hold|back off|light/i);
+});
+
+await test('adding weight is never the answer to a stall', () => {
+  const out = formWatch({ sets: [...SESSION('2026-08-01', [6, 6, 6], 100, 7),
+                                 ...SESSION('2026-08-05', [6, 6, 6], 100, 8),
+                                 ...SESSION('2026-08-09', [6, 6, 6], 100, 9.5)] });
+  for (const f of out.findings) {
+    assert.doesNotMatch(f.verdict, /add (weight|load)|go heavier|put more on/i);
+  }
+});
+
+await test('their own words come back exactly as they were said', () => {
+  // The reason to log by voice at all: a notebook has no column for "third set
+  // I rushed it", so the fact that explains the number is the one paper cannot
+  // hold. Quoted, never interpreted.
+  const sets = [...SESSION('2026-08-09', [8, 8, 6], 100, null, 'rushed the last two, form went')];
+  const out = formWatch({ sets });
+  assert.ok(out.your_words?.length);
+  assert.equal(out.your_words[0].note, 'rushed the last two, form went');
+  assert.equal(out.your_words[0].about_body, false);
+
+  // Pain is flagged as a report about a body, not a coaching cue.
+  const hurt = formWatch({ sets: SESSION('2026-08-09', [8, 8, 6], 100, null, 'sharp twinge in the shoulder') });
+  assert.equal(hurt.your_words[0].about_body, true);
+});
+
+await test('an empty log says so rather than inventing a pattern', () => {
+  const out = formWatch({ sets: [] });
+  assert.equal(out.known, false);
+  assert.match(out.say, /nothing to read/i);
+});
+
+await test('the connector is forbidden from asserting technique', () => {
+  const tool = TOOLS.find(t => t.name === 'form_check');
+  assert.ok(tool, 'form_check is missing');
+  assert.match(tool.description, /CANNOT SEE THEM LIFT/);
+  assert.equal(tool.annotations.readOnlyHint, true);
+  assert.match(SERVER_INSTRUCTIONS, /FORM MATTERS AND YOU CANNOT SEE IT/);
+  assert.match(SERVER_INSTRUCTIONS, /NEVER SAY THEIR FORM IS BREAKING DOWN/);
+  // And the note is the point of voice logging, so it is told to capture it.
+  assert.match(SERVER_INSTRUCTIONS, /WHAT THEY SAID MID-SET/);
+  assert.match(SERVER_INSTRUCTIONS, /verbatim/);
 });
 
 // ── Lines that say whether it is working ────────────────────────────────────
