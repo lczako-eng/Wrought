@@ -1365,6 +1365,59 @@ somebody to eat less than they need. Until something is logged there is no
 ring: the burn is shown as the burn, labelled *"to burn today"*, and the caveat
 says it is the whole day's estimate rather than what has been spent so far.
 
+### It opens on today, and the range finally does something
+
+Three faults in one sentence from the founder, and all three were real: *"when
+we open it up it should always be on the first day. It's not showing on the
+first day my workout, my exercise... and it's not running totals — look at the
+seven day, should be yesterday, today to this point. The same with the month."*
+
+- **The dashboard opens on 1d.** It used to open on thirty days, so the first
+  thing anybody saw at 7am was a month of averages — the answer to a question
+  nobody has yet. What they came for is today.
+- **The range now changes something above the fold.** Every window figure on
+  the page was an average per LOGGED DAY, and the buttons only touched charts
+  far below. `rangeRollup()` adds the chosen stretch up once — in, out, net,
+  to this point — through the same `roll()` the calendar's week and month
+  already use, so the running total, the calendar and the brief cannot quote
+  three different figures for the same Tuesday. Logged days only, all three
+  numbers off the same days so they visibly subtract, the denominator said out
+  loud, and **today counts as it stands** because it IS partial.
+- **Today's training is on the day view.** A run that came off the watch an
+  hour ago belonged to no panel: the matrix is arithmetic ABOUT training and
+  `last_session` reads the assistant's own session table, so the day it
+  happened on showed a burn that included it and nothing saying what it was.
+  Sessions and shifts each with their own minutes, distance, calories and heart
+  rate — and a shift still carries a `work` chip, still never counts toward the
+  weekly target, and is still never praised.
+
+**Two things a one-day default would have broken, caught before shipping.**
+
+**A window is not a memory — again.** Sets were fetched over the selected range
+alone, so at 1d "last night" had no sets attached and no previous session to
+compare against: the panel drew a session with nothing in it, which reads
+exactly like a workout that failed to save. `histFrom` floors that query at 60
+days for `lastSession` while trends stay bounded by the range. Same rule that
+already governs the weigh-in lookup, in the second place it was needed.
+
+**And a quiet morning is not a new account.** `isFirstRun` was decided from the
+loaded window — harmless at thirty days, a lie at one, because somebody with a
+month of history who has not logged anything yet today would be handed the
+brand-new-account page. On the one product whose entire promise is memory that
+is the worst thing this screen can do, so `has_history` is counted over all
+time on the server and the window heuristic survives only as the demo's
+fallback.
+
+A 1d view also has nothing for nine chart and matrix panels to say, and nine
+panels each reading *"not enough data yet"* is precisely what the first-run
+screen exists to prevent. They collapse into one line pointing at 7d and 30d.
+
+**The ledger bars had never painted.** `.fill` is a `<span>` and a bare span is
+inline, so `height: 100%` and the gradient landed on the line box rather than
+the track and every in-versus-out bar rendered as an empty grey slot. One
+`display: block`. It reads as a number the page failed to draw, which on a
+screen about somebody's eating is worse than drawing no bar at all.
+
 ### The zone the days are filed under
 
 A pizza eaten at 11:44 landed on **yesterday**, stamped 23:28, because the
@@ -1625,7 +1678,7 @@ self-reporting scale removes the most-abandoned manual entry), then Strava.
 
 ## Conventions
 
-- `npm test` runs `test/harness.mjs` — 460 offline tests, no network, no database.
+- `npm test` runs `test/harness.mjs` — 467 offline tests, no network, no database.
   Run it before every push. It covers the JSON-RPC envelope (which fails as an
   uninformative "could not connect" inside ChatGPT) and all the arithmetic
   (which fails as a confidently wrong number in somebody's verdict).

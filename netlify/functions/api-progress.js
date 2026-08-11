@@ -16,7 +16,7 @@ import { orderInsight, earnedRoom, energyBalance, exerciseKey, deviceMatrix, wee
 import { blockPosition } from './lib/library.js';
 import { allowed } from './lib/membership.js';
 import { nutritionTotals, composition, macroMatrix, yearOverYear } from './lib/nutrition.js';
-import { calendarDays, calendarRollups, calendarMissing } from './lib/calendar.js';
+import { calendarDays, calendarRollups, calendarMissing, rangeRollup } from './lib/calendar.js';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -56,6 +56,15 @@ function trailingMean(values, window) {
   });
 }
 
+// What the window is called, in the words somebody would use for it. "the last
+// 365 days" is technically right and nobody says it.
+function windowLabel(span) {
+  if (span === 7)  return 'the last 7 days';
+  if (span === 30) return 'the last 30 days';
+  if (span >= 365) return 'the last year';
+  return `the last ${span} days`;
+}
+
 export const handler = async (event) => {
   if (event.httpMethod === 'OPTIONS') return { statusCode: 204, headers: CORS, body: '' };
   if (!supabase) return { statusCode: 500, headers: CORS, body: JSON.stringify({ error: 'server_not_configured' }) };
@@ -78,14 +87,25 @@ export const handler = async (event) => {
   const to   = params.to || localDateFor(profile.timezone);
   const from = addDays(to, -(span - 1));
 
-  const [range, today, goals, win, setRows, sessions, connections, routines, foodRows, brief, workoutRows] = await Promise.all([
+  // A WINDOW IS NOT A MEMORY — the same rule that already governs the weigh-in
+  // lookup, applied to the one panel people open the app for.
+  //
+  // Sets used to be fetched over the selected range alone, so on the 1d view
+  // "last night" had no sets attached and no previous session to compare
+  // against: the panel drew a session with nothing in it, which reads exactly
+  // like a workout that failed to save. Last night's session and the lift it is
+  // set against are the record, not the window, so they get their own floor.
+  // The range still governs everything that is genuinely a trend.
+  const histFrom = addDays(to, -Math.max(span - 1, 59));
+
+  const [range, today, goals, win, histSets, sessions, connections, routines, foodRows, brief, workoutRows] = await Promise.all([
     rangeFacts(user.id, profile, from, to),
     dayFacts(user.id, profile, to),
     getGoals(user.id),
     getWindow(user.id),
     supabase.from('wrought_sets')
       .select('exercise, exercise_key, reps, weight_kg, rpe, position, set_number, muscles, session_id, local_date, note')
-      .eq('user_id', user.id).gte('local_date', from).lte('local_date', to)
+      .eq('user_id', user.id).gte('local_date', histFrom).lte('local_date', to)
       .order('logged_at', { ascending: false }).limit(3000)
       .then(r => r.data || []),
     supabase.from('wrought_sessions')
@@ -128,6 +148,21 @@ export const handler = async (event) => {
       .gte('local_date', from).lte('local_date', to).limit(500)
       .then(r => r.data || []),
   ]);
+
+  // Everything that is a TREND stays bounded by the chosen range; only the
+  // memory panels see further back.
+  const setRows = histSets.filter(s => s.local_date >= from);
+
+  // HAS THIS ACCOUNT EVER LOGGED ANYTHING — over all time, never over the
+  // window. The first-run screen used to be decided from the loaded range,
+  // which was harmless at 30 days and is a lie at one: somebody who has logged
+  // for a month but has not said anything yet this morning would be shown the
+  // brand-new-account page. On the one product whose whole promise is memory,
+  // a screen saying "nothing here yet" to somebody with a month of history is
+  // the worst thing this dashboard can do.
+  const { count: everCount } = await supabase.from('wrought_events')
+    .select('id', { count: 'exact', head: true }).eq('user_id', user.id);
+  const hasHistory = (everCount || 0) > 0 || sessions.length > 0 || routines.length > 0;
 
   // The running block, and how far through it they are. A missed week is a
   // missed week rather than a skipped one, so this counts sessions rather than
@@ -264,6 +299,9 @@ export const handler = async (event) => {
     body: JSON.stringify({
       from, to, span_days: span,
       units: profile.units,
+      // Over all time, so a quiet morning on the 1d view can never be mistaken
+      // for a brand new account.
+      has_history: hasHistory,
       // The zone the days are being FILED under. The page compares it against
       // the browser's, because a wrong one puts a late meal on the wrong day
       // and quietly corrupts every total after it.
@@ -288,7 +326,9 @@ export const handler = async (event) => {
       lifts,
       // The session itself, set by set. Everything else here is arithmetic
       // ABOUT training; this is the training.
-      last_session: lastSession(sessions, setRows, { today: to, imperial }),
+      // The floored history, not the range — on the 1d view the session and the
+      // lift it is compared against are usually both outside the window.
+      last_session: lastSession(sessions, histSets, { today: to, imperial }),
       // Where they are in the running block, if there is one. Counted from
       // sessions finished, never from the calendar.
       block: blockView,
@@ -305,6 +345,11 @@ export const handler = async (event) => {
         rollups: calendarRollups(calDays),
         ...calendarMissing(profile, calDays),
       },
+      // The chosen window as ONE running total, in and out, to this point.
+      // "Look at the seven day — should be yesterday, today to this point."
+      // Null on a one-day range: that day already has the hero above it, and a
+      // running total over a single day is the same number twice.
+      window: span > 1 ? rangeRollup(calDays, windowLabel(span)) : null,
       device_matrix: deviceMatrix(range.days),
       weekday: weekdayPattern(range.days),
       notes,
