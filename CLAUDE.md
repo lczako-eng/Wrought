@@ -960,6 +960,38 @@ below last one.
   because something has been adding up. It stays silent until both years have
   30+ logged days.
 
+### The day, given a shape
+
+The founder, looking at the Log: *"this has to be clean and beautiful, not
+ugly. You should say all the information as well, but you should be giving a
+very good visual indicator."*
+
+**Nothing was removed.** Every number in the old text run is still on screen —
+it was given somewhere to sit. The day now opens with its calorie total at
+headline size, a **macro bar** underneath it, and the device readings as chips
+instead of a run-on blue sentence.
+
+- **The macro split is by CALORIES, not grams**, and computed in `api-log`.
+  Fat is 9 kcal a gram against 4 for protein and carbs, so a gram bar draws a
+  high-fat day as a low-fat one and the picture ends up arguing with the total
+  printed directly above it. Server-side because **a drawn proportion is a
+  claim about the day** and has to come off the same numbers the brief quotes.
+- **Sugar gets a figure and no swatch.** It is a subset of carbs, never a
+  fourth slice, and a swatch would imply a share of the bar it does not have.
+- **Dates read as dates.** "Mon 2026-08-10" is a filename; the ISO form stays
+  on the title attribute because that is what somebody quotes back when
+  something is wrong.
+
+**The view switcher is one control, not five loose boxes.** A row of separately
+outlined rectangles reads as five unrelated buttons; an inset track with a
+filled pill reads as one thing with a current position, which is what it is.
+The range row (`1d / 7d / 30d`) deliberately keeps its outlined form — it is a
+filter, not a place you are, and collapsing them would make "30d" look like
+somewhere you had navigated to. Same palette throughout; fewer edges.
+
+`MONTHS_SHORT` is named apart from the calendar's `MONTHS` — the `.bar` lesson,
+applied before it cost anything.
+
 ### Two classes called `.bar`, and the header they flattened
 
 Worth keeping because it cost an evening and looked like six different bugs. A

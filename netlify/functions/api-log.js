@@ -30,6 +30,21 @@ const CORS = {
 
 const num = v => (Number.isFinite(+v) ? +v : 0);
 
+function macroSplit(t) {
+  const kcal = { protein: num(t.protein_g) * 4, carbs: num(t.carbs_g) * 4, fat: num(t.fat_g) * 9 };
+  const sum = kcal.protein + kcal.carbs + kcal.fat;
+  if (!sum) return null;
+  const pct = v => Math.round((v / sum) * 1000) / 10;
+  return {
+    protein_pct: pct(kcal.protein),
+    carbs_pct: pct(kcal.carbs),
+    fat_pct: pct(kcal.fat),
+    // Sugar is a SUBSET of carbs, never additional to them — it rides as its
+    // own share of the carb block rather than a fourth slice.
+    sugar_pct_of_carbs: num(t.carbs_g) ? Math.round((num(t.sugar_g) / num(t.carbs_g)) * 1000) / 10 : null,
+  };
+}
+
 export const handler = async (event) => {
   if (event.httpMethod === 'OPTIONS') return { statusCode: 204, headers: CORS, body: '' };
   if (!supabase) return { statusCode: 500, headers: CORS, body: JSON.stringify({ error: 'server_not_configured' }) };
@@ -204,6 +219,15 @@ export const handler = async (event) => {
       totals: {
         ...Object.fromEntries(Object.entries(d.totals)
           .map(([k, v]) => [k, typeof v === 'number' ? Math.round(v) : v])),
+        // The macro SPLIT, computed here rather than on the page. It is drawn
+        // as a proportional bar, and a bar is a claim about the day — so it
+        // comes off the same numbers the brief quotes rather than being worked
+        // out again in the browser where the two could drift apart.
+        //
+        // By calories, not grams. Protein and carbs are 4 kcal a gram and fat
+        // is 9, so a gram bar makes a high-fat day look like a low-fat one and
+        // the picture argues with the total printed beside it.
+        split: macroSplit(d.totals),
       },
       device: {
         ...d.device,
