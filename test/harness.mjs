@@ -3985,6 +3985,52 @@ await test('a Supabase setting is named with the place it lives', () => {
   assert.match(src, /Authentication → Sign In \/ Providers/);
 });
 
+// ── The index that ate every workout ────────────────────────────────────────
+
+group('Ingest deduplication — the bug that had no symptom');
+
+await test('the dedupe index is not partial, because ON CONFLICT cannot infer one', () => {
+  // THE BUG, kept as a test so it cannot come back. 001 created this index
+  // with `where source_ref is not null`. Postgres will not infer a PARTIAL
+  // unique index from a bare column list, and PostgREST cannot send the
+  // predicate — so every upsert against wrought_events failed with 42P10 and
+  // every device-sent workout was silently discarded.
+  //
+  // Metrics kept arriving the whole time, because their index is not partial.
+  // Steps landing and workouts vanishing is a bug shaped exactly like a
+  // HealthKit permission problem, which is where the hunting went.
+  const sql = readFileSync(new URL('../schema/015_wrought_ingest_dedupe_fix.sql', import.meta.url), 'utf8');
+  assert.match(sql, /drop index if exists public\.wrought_events_source_ref_idx/i);
+  const create = sql.slice(sql.lastIndexOf('create unique index'));
+  assert.match(create, /wrought_events \(user_id, source, source_ref\)/);
+  // The predicate must be gone. A NULL is already distinct from another NULL
+  // in a unique index, so hand-logged rows stay unconstrained without it.
+  assert.doesNotMatch(create.split(';')[0], /where/i);
+});
+
+await test('a failed event write is reported, never swallowed', () => {
+  // The reason this survived for weeks: the endpoint answered 200 with a
+  // cheerful events_written count while the insert underneath was erroring.
+  const src = readFileSync(new URL('../netlify/functions/ingest.js', import.meta.url), 'utf8');
+  assert.match(src, /events_error/);
+  // And there is a path that works before anybody runs the migration.
+  assert.match(src, /eventsFallback/);
+  assert.match(src, /015_wrought_ingest_dedupe_fix\.sql/);
+  // The old silent form is gone.
+  assert.doesNotMatch(src, /if \(!error\) eventsWritten = data\?\.length \|\| 0;/);
+});
+
+await test('the fallback still refuses to write the same workout twice', () => {
+  // Losing deduplication to fix a write is not a fix — a watch re-sends the
+  // same week of workouts on every sync, and four copies of Tuesday's run
+  // would corrupt every total built on top of them.
+  const src = readFileSync(new URL('../netlify/functions/ingest.js', import.meta.url), 'utf8');
+  const block = src.slice(src.indexOf('eventsError = error.message'), src.indexOf('await Promise.all(['));
+  assert.match(block, /select\('source_ref'\)/);
+  assert.match(block, /new Set\(/);
+  assert.match(block, /!seen\.has\(r\.source_ref\)/);
+});
+
 // ── Everything the watch keeps ──────────────────────────────────────────────
 
 group('The wide door — every metric a watch actually records');

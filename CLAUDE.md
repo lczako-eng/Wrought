@@ -1189,6 +1189,35 @@ additional named gyms go to `remember` (category `gym`); "I'm at the home gym"
 passes that inventory to `start_session`/`suggest_workout`. Never build a plan
 around a machine the photos did not show.
 
+### The partial index that ate every workout
+
+Worth keeping in full, because it cost weeks and looked like four other things.
+
+`001` created the ingest dedupe index as **partial** — `where source_ref is not
+null` — reasoning that hand-logged rows carry no ref and should not be
+constrained. The reasoning was sound and the consequence was not: **Postgres
+cannot infer a partial unique index from a bare column list**, and PostgREST has
+no way to send the predicate. So every `ON CONFLICT (user_id, source,
+source_ref)` came back `42P10` and every device-sent workout was thrown away.
+
+Three things made it invisible:
+
+- **Metrics kept arriving**, because `wrought_metrics_dedupe_idx` is not
+  partial. Steps, distance and calories landing while workouts vanished is a
+  symptom shaped exactly like a HealthKit permission problem — which is where
+  the hunting went, twice.
+- **The endpoint answered 200** with a cheerful `events_written: 0`, because
+  the write result was checked with `if (!error)` and the error was never
+  surfaced. **A swallowed error is worse than a crash**; a crash is visible.
+- Nothing else writes events through `/ingest`, so no other feature broke.
+
+`015` drops the predicate. Nothing is lost: a unique index already treats NULLs
+as distinct, so hand-logged rows stay unconstrained — the partial clause was
+never buying the protection it appeared to buy, only making the index unusable
+for conflict inference. `/ingest` also gained a fallback that dedupes by reading
+existing refs first, so the door is correct before anybody runs the SQL, and
+`events_error` now rides on the response.
+
 ### Everything the watch keeps — the wide door, widened
 
 The founder: *"all the matrix that is captured by this watch should be on that
@@ -1263,7 +1292,7 @@ self-reporting scale removes the most-abandoned manual entry), then Strava.
 
 ## Conventions
 
-- `npm test` runs `test/harness.mjs` — 424 offline tests, no network, no database.
+- `npm test` runs `test/harness.mjs` — 427 offline tests, no network, no database.
   Run it before every push. It covers the JSON-RPC envelope (which fails as an
   uninformative "could not connect" inside ChatGPT) and all the arithmetic
   (which fails as a confidently wrong number in somebody's verdict).
@@ -1285,7 +1314,7 @@ self-reporting scale removes the most-abandoned manual entry), then Strava.
    `003_wrought_training.sql`, `004_wrought_fasting.sql`,
    `005_wrought_activity.sql`, `006_wrought_identity.sql`, `007_wrought_push.sql`,
    `008_wrought_blocks.sql`, `009_wrought_photos.sql` and
-   `010_wrought_profile_web.sql`, `011_wrought_membership.sql`, `012_wrought_link_codes.sql`, `013_wrought_work.sql` and `014_wrought_plan.sql` in Supabase. Full checklist in `docs/SETUP.md`.
+   `010_wrought_profile_web.sql`, `011_wrought_membership.sql`, `012_wrought_link_codes.sql`, `013_wrought_work.sql`, `014_wrought_plan.sql` and `015_wrought_ingest_dedupe_fix.sql` in Supabase. Full checklist in `docs/SETUP.md`.
 3. Set env vars in Netlify: `SUPABASE_URL` (**no trailing slash** — Kong answers
    "Invalid path specified in request URL" and nothing says why),
    `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_ANON_KEY`,

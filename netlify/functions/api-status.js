@@ -44,6 +44,9 @@ const MIGRATIONS = [
   // log_activity says which migration it needs when the insert is rejected.
   { file: '013_wrought_work.sql',        probe: col('wrought_events', 'event_type'), gives: 'log_activity — a work shift counted as its own burn', assume: true },
   { file: '014_wrought_plan.sql',        probe: col('wrought_profile', 'plan_pace'), gives: 'the plan — how fast it is paced and how hard it pushes' },
+  // An index rebuild, so there is no table or column to probe for. Assumed —
+  // /ingest reports events_error and names this file when the write falls back.
+  { file: '015_wrought_ingest_dedupe_fix.sql', probe: t('wrought_events'), gives: 'workouts from a watch actually landing', assume: true },
 ];
 
 // A probe that treats EVERY error as "not run" lies twice over: a timeout reads

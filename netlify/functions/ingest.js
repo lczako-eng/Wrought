@@ -678,7 +678,7 @@ export const handler = async (event) => {
     ...flattenHealthAutoExportWorkouts(body).map(normaliseWorkout).filter(Boolean),
   ];
 
-  let eventsWritten = 0;
+  let eventsWritten = 0, eventsError = null, eventsFallback = false;
   if (incomingEvents.length) {
     const eventRows = incomingEvents.slice(0, 200).map(e => {
       const when = e.occurred_at ? new Date(e.occurred_at) : new Date();
@@ -698,7 +698,43 @@ export const handler = async (event) => {
     const { data, error } = await supabase.from('wrought_events')
       .upsert(eventRows, { onConflict: 'user_id,source,source_ref', ignoreDuplicates: true })
       .select('id');
-    if (!error) eventsWritten = data?.length || 0;
+
+    if (!error) {
+      eventsWritten = data?.length || 0;
+    } else {
+      // THE UPSERT CAN FAIL ENTIRELY, AND IT DID, FOR WEEKS.
+      //
+      // 001 created the dedupe index as a partial one. Postgres will not infer
+      // a partial unique index from a bare column list, so every ON CONFLICT
+      // against this table came back 42P10 and every device-sent workout was
+      // thrown away — while metrics, whose index is not partial, sailed
+      // through. Steps arriving and workouts never arriving is a bug shaped
+      // like a HealthKit permission problem, which is where the hunting went.
+      //
+      // 015 fixes the index. This path exists so the endpoint is correct
+      // BEFORE anybody runs it, and so the same class of failure can never
+      // again be invisible: dedupe by reading the refs that already exist,
+      // then insert plainly.
+      eventsError = error.message;
+
+      const refs = eventRows.map(r => r.source_ref).filter(Boolean);
+      let seen = new Set();
+      if (refs.length) {
+        const { data: already } = await supabase.from('wrought_events')
+          .select('source_ref').eq('user_id', userId).eq('source', source).in('source_ref', refs);
+        seen = new Set((already || []).map(r => r.source_ref));
+      }
+      const fresh = eventRows.filter(r => !r.source_ref || !seen.has(r.source_ref));
+
+      if (fresh.length) {
+        const { data: put, error: err2 } = await supabase.from('wrought_events')
+          .insert(fresh).select('id');
+        if (err2) eventsError = `${error.message} / retry: ${err2.message}`;
+        else { eventsWritten = put?.length || 0; eventsError = null; eventsFallback = true; }
+      } else {
+        eventsError = null;
+      }
+    }
   }
 
   await Promise.all([
@@ -730,6 +766,11 @@ export const handler = async (event) => {
       metrics_written: written,
       sessions_received: incomingEvents.length,
       events_written: eventsWritten,
+      // Surfaced rather than swallowed. The whole reason a broken workout
+      // write survived for weeks is that this endpoint answered 200 with a
+      // cheerful count while the insert was failing underneath it.
+      ...(eventsError ? { events_error: eventsError } : {}),
+      ...(eventsFallback ? { events_note: 'Written through the fallback path — run schema/015_wrought_ingest_dedupe_fix.sql in Supabase to restore atomic deduplication.' } : {}),
       duplicates_ignored: rows.length - written,
       // Put this straight into a Show Notification action.
       notification: brief?.verdict || null,
