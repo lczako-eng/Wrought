@@ -830,6 +830,19 @@ table.matrix td.rh.cold { color: var(--heat-3); }
 }
 .rmv b { font-family: var(--mono); font-size: 12px; color: var(--ash); font-variant-numeric: tabular-nums; }
 
+/* Folded away by default: the working matters enormously the once, and is
+   clutter every day after. */
+.basis { margin-top: 12px; text-align: left; }
+.basis > summary {
+  cursor: pointer; list-style: none; font-family: var(--mono);
+  font-size: 10px; letter-spacing: .1em; text-transform: uppercase;
+  color: var(--ash-dim); padding: 8px 0; text-align: center;
+}
+.basis > summary::-webkit-details-marker { display: none; }
+.basis > summary::after { content: ' ▾'; }
+.basis[open] > summary::after { content: ' ▴'; }
+.basis p { text-align: left; }
+
 .thennow { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 14px 0 8px; }
 .thennow img, .shot img { width: 100%; display: block; border-radius: 11px; background: var(--scale); }
 .thennow figcaption, .shot figcaption {
@@ -3719,6 +3732,7 @@ function hero(d) {
       ${burnSplit(b)}
       <p class="caveat">Nothing logged yet, so there is no in-versus-out to draw.
         That figure is the whole day's estimate, not what you have burned so far.</p>
+      ${restingBasis(b)}
     </section>`;
   }
 
@@ -3749,6 +3763,7 @@ function hero(d) {
       <span class="leg"><b>${n(b.calories_out)}</b><span>burned</span></span>
     </div>
     ${burnSplit(b)}
+    ${restingBasis(b)}
     <p class="caveat">${b.approximate ? 'Every part of this is an estimate — roughly, not exactly.' : ''}${
       b.active_source === 'device' ? '' :
       b.active_source === 'logged' ? ' The work is read off a standard effort table rather than measured — the weekly trend on the scale is what corrects it.' :
@@ -3775,6 +3790,27 @@ function hero(d) {
 // is a job they went to, and for anybody doing physical work it is the largest
 // of the three and was invisible until now. A single "calories out" figure
 // hides all of that behind one number nobody can act on.
+// The working, for anybody who wants to check the number.
+//
+// The founder: "it should be about 3,000 or more just basal because I'm 330
+// pounds, and I don't know why it keeps reverting it there." Nothing was
+// reverting — the figure is deterministic from height, weight, age and sex —
+// but there was no way to SEE that from the screen, so it looked arbitrary.
+//
+// A number a person cannot audit is a number they stop believing, and they are
+// right to: a stale height or a wrong birth year produces a confidently wrong
+// figure that looks exactly like a correct one. Folded away, because most days
+// nobody wants it.
+function restingBasis(b) {
+  const ba = b.resting_basis;
+  if (!ba) return '';
+  return `<details class="basis">
+    <summary>How that resting figure was worked out</summary>
+    <p class="sub">${esc(ba.say)}</p>
+    <p class="sub dim">${esc(ba.caveat)}</p>
+  </details>`;
+}
+
 function burnSplit(b) {
   const rest  = Number(b.resting_burn) || 0;
   const train = Number(b.training_burn) || 0;
@@ -3791,6 +3827,11 @@ function burnSplit(b) {
   // "work" is a claim. Only say it when they actually logged some.
   const otherLabel = b.logged_activity?.count ? 'work and moving'
                    : b.active_source === 'device' ? 'moving today'
+                   // Not "moving so far". An activity multiplier is the same
+                   // number at 8am and at 11pm because nothing measured
+                   // anything — calling it a projection is the difference
+                   // between a forecast and a claim about the morning.
+                   : b.other_projected ? 'moving, projected'
                    : 'moving (estimated)';
 
   const label = [`${n(rest)} at rest`, train ? `${n(train)} training` : null,

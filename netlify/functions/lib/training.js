@@ -185,6 +185,32 @@ export function restingBurn(profile, weightKg) {
     kcal: Math.round(base + offset),
     approximate: !male && !female,
     missing: [],
+    // SHOW THE WORKING.
+    //
+    // "It should be about 3,000 and I don't know why it keeps reverting" is a
+    // question nobody could answer from the screen, because the inputs were
+    // invisible. A number a person cannot audit is a number they stop
+    // believing — and they are right to, since a stale height or a wrong
+    // birth year produces a confidently wrong figure that looks identical to a
+    // correct one.
+    //
+    // Naming the equation matters as much as the inputs. Mifflin-St Jeor is
+    // the standard clinical estimate and it is NOT the only one; a different
+    // calculator using Harris-Benedict lands a couple of hundred higher on the
+    // same person, and without the name that difference looks like a bug.
+    basis: {
+      formula: 'Mifflin-St Jeor',
+      weight_kg: Math.round(w * 10) / 10,
+      height_cm: Math.round(h),
+      age,
+      sex: male ? 'male' : female ? 'female' : null,
+      say: `${Math.round(w * 10) / 10}kg, ${Math.round(h)}cm, age ${age}` +
+           (male || female ? `, ${male ? 'male' : 'female'}` : ', sex not set so the midpoint constant is used') +
+           ` — Mifflin-St Jeor gives about ${Math.round(base + offset)} kcal lying still.`,
+      // The distinction the founder ran into, stated once and kept here so the
+      // model and the screen say the same thing about it.
+      caveat: 'That is BASAL — what a body costs doing nothing at all. Most online calculators quote maintenance instead, which is basal times an activity multiplier, and comes out several hundred higher. Mifflin-St Jeor also assumes typical body composition, so it reads low for somebody carrying a lot of muscle. The weekly weigh-in trend is what corrects it; never swap the formula to get a number you like better.',
+    },
   };
 }
 
@@ -341,6 +367,15 @@ export function energyBalance({
     projected_kg_per_week: Math.round((net * 7 / 7700) * 100) / 100,
     approximate: true,
     resting_approximate: rest.approximate,
+    // The inputs, carried through so a person can audit the figure instead of
+    // taking it on faith. A number nobody can check is a number they stop
+    // believing, and they are right to.
+    resting_basis: rest.basis || null,
+    // An activity multiplier is a WHOLE DAY's projection — it is the same
+    // number at 8am and at 11pm, because nothing measured anything. Saying so
+    // is the difference between a forecast and a claim about what has already
+    // happened.
+    other_projected: activeSource === 'activity_level',
     active_source: activeSource,
     training_source: training.source,
     ...(activity.count ? { logged_activity: activity } : {}),

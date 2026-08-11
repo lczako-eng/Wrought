@@ -3636,6 +3636,44 @@ await test('a weigh-in is found outside the loaded window', () => {
   assert.match(block, /order\('occurred_at'/);
 });
 
+await test('the resting figure shows its working', () => {
+  // "It should be about 3,000 and I don't know why it keeps reverting it
+  // there." Nothing was reverting — it is deterministic from height, weight,
+  // age and sex — but there was no way to SEE that, so it looked arbitrary.
+  const r = restingBurn({ height_cm: 185, birth_year: 1986, sex: 'male' }, 149.7);
+  assert.ok(r.basis, 'the working is not carried');
+  assert.equal(r.basis.formula, 'Mifflin-St Jeor');
+  assert.equal(r.basis.weight_kg, 149.7);
+  assert.equal(r.basis.height_cm, 185);
+  assert.match(r.basis.say, /149\.7kg, 185cm, age 40, male/);
+  // The distinction that causes the argument, stated once.
+  assert.match(r.basis.caveat, /BASAL/);
+  assert.match(r.basis.caveat, /maintenance/i);
+  assert.match(r.basis.caveat, /never swap the formula/i);
+
+  const b = energyBalance({ profile: { height_cm: 185, birth_year: 1986, sex: 'male', activity_level: 'moderate' },
+                            weightKg: 149.7, caloriesIn: 0, activeCalories: 0 });
+  assert.ok(b.resting_basis, 'the balance drops the working');
+  const page = readFileSync(new URL('../public/app.html', import.meta.url), 'utf8');
+  assert.match(page, /function restingBasis/);
+});
+
+await test('an activity multiplier is a forecast, and says so', () => {
+  // The same number at 8am and at 11pm, because nothing measured anything.
+  // Reporting it as what has already been burned is a claim about a morning
+  // that did not happen.
+  const b = energyBalance({ profile: { height_cm: 185, birth_year: 1986, sex: 'male', activity_level: 'moderate' },
+                            weightKg: 149.7, caloriesIn: 0, activeCalories: 0 });
+  assert.equal(b.other_projected, true);
+  const measured = energyBalance({ profile: { height_cm: 185, birth_year: 1986, sex: 'male', activity_level: 'moderate' },
+                                   weightKg: 149.7, caloriesIn: 0, activeCalories: 600 });
+  assert.equal(measured.other_projected, false);
+  const page = readFileSync(new URL('../public/app.html', import.meta.url), 'utf8');
+  assert.match(page, /moving, projected/);
+  assert.match(SERVER_INSTRUCTIONS, /AN ACTIVITY MULTIPLIER IS A FORECAST/);
+  assert.match(SERVER_INSTRUCTIONS, /RESTING BURN IS BASAL, NOT MAINTENANCE/);
+});
+
 await test('nothing eaten yet is not a deficit', () => {
   // The resting burn is a WHOLE DAY's figure, so at 7am with no food logged the
   // subtraction reads "3,833 under" — an artifact of the day being four hours

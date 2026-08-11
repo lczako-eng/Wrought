@@ -1232,6 +1232,37 @@ explain. If the profile saves and the weigh-in does not, it says so — a flat
 failure sends somebody re-entering their height. The demo never shows it: a
 form there would collect a real weight into a screen that discards it.
 
+### Basal is not maintenance, and the number now shows its working
+
+*"It should be about 3,000 or more just basal because I'm 330 pounds, and I
+don't know why it keeps reverting it there."* Nothing was reverting - the
+figure is deterministic from height, weight, age and sex - but **there was no
+way to see that from the screen**, so it looked arbitrary.
+
+`restingBurn` now returns a `basis`: the inputs, the age it derived, and the
+equation by name. Folded away under the hero, because the working matters
+enormously once and is clutter every day after. **A number nobody can audit is
+a number they stop believing**, and they are right to - a stale height or a
+wrong birth year produces a confidently wrong figure indistinguishable from a
+correct one.
+
+**The gap that caused the argument is BASAL versus MAINTENANCE.** Most
+calculators quote maintenance - basal times an activity multiplier - which
+lands several hundred higher on the same person. WROUGHT quotes basal and adds
+the movement separately, so its `calories_out` is usually the *higher* number
+once compared like for like. Naming the equation matters too: Harris-Benedict
+lands a couple of hundred above Mifflin-St Jeor on the same body, and without
+the name that difference reads as a bug.
+
+Mifflin-St Jeor genuinely does read low for somebody carrying a lot of muscle.
+The honest correction is the **weekly weigh-in trend**, never a different
+formula chosen because its answer is nicer.
+
+**An activity multiplier is a forecast.** It is the same number at 8am and at
+11pm because nothing measured anything, so `other_projected` marks it and the
+bar says *"moving, projected"* rather than *"moving today"*. Reporting a
+projection as movement that has happened is a claim about a morning nobody had.
+
 ### Two bugs a screenshot at 7am found
 
 Both looked like amnesia and neither was.
@@ -1503,7 +1534,7 @@ self-reporting scale removes the most-abandoned manual entry), then Strava.
 
 ## Conventions
 
-- `npm test` runs `test/harness.mjs` — 452 offline tests, no network, no database.
+- `npm test` runs `test/harness.mjs` — 454 offline tests, no network, no database.
   Run it before every push. It covers the JSON-RPC envelope (which fails as an
   uninformative "could not connect" inside ChatGPT) and all the arithmetic
   (which fails as a confidently wrong number in somebody's verdict).
