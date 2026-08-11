@@ -960,6 +960,40 @@ below last one.
   because something has been adding up. It stays silent until both years have
   30+ logged days.
 
+### Lines that say whether it is working
+
+The founder: *"I want some line graphs — up and down, if you progress on
+calories per day, a 2-D line and progression, the same with workouts."*
+
+Line charts existed. What they lacked was any way to tell **progress** from
+**movement**, which is the only question anybody has of one.
+
+- **The seven-day mean rides alongside the daily line.** One day's calories is
+  salt, sleep and what somebody remembered to say; the eye follows spikes and
+  spikes are noise. This is the trends-beat-days doctrine made visible.
+- **The target is drawn on it**, dashed and under the data. Without it a chart
+  says a number moved and never whether it moved the right way. It is forced
+  inside the frame — a target above the data's own maximum would render off the
+  top of the plot and silently stop existing, exactly when somebody is furthest
+  from it.
+- **The area fills each contiguous run, never across a gap.** Filling straight
+  through an unlogged stretch paints a solid shape over days with no data in
+  them, which is a picture of a record that does not exist.
+- **Sessions a week is a rolling seven-day COUNT**, not a per-day one — a raw
+  count is 0,1,0,0,1, a barcode rather than a trend. The rolling figure IS
+  "workouts a week", which is the number the whole expectation rests on.
+- **Axis labels are deduped.** A 3-to-4 range rounded across three ticks
+  printed "4, 4, 3" and made the training number look broken.
+- All of it computed in `api-progress` — `rolling()` and `trailingMean()` — and
+  the mean **skips unlogged days rather than averaging them in as zero**, the
+  calendar's rule, which runs in the dangerous direction if it is got wrong.
+
+**Saved workouts became readable on the website too.** `routinesPanel` opens to
+the write-up and the movements; the assistant could recite all of it while the
+dashboard showed a row saying "Leg day - 4 lifts". A memory product that cannot
+show you what it remembers is asking for trust it has not earned - and that
+applies to a routine exactly as it applies to a meal three weeks ago.
+
 ### The day, given a shape
 
 The founder, looking at the Log: *"this has to be clean and beautiful, not
@@ -1324,7 +1358,7 @@ self-reporting scale removes the most-abandoned manual entry), then Strava.
 
 ## Conventions
 
-- `npm test` runs `test/harness.mjs` — 427 offline tests, no network, no database.
+- `npm test` runs `test/harness.mjs` — 433 offline tests, no network, no database.
   Run it before every push. It covers the JSON-RPC envelope (which fails as an
   uninformative "could not connect" inside ChatGPT) and all the arithmetic
   (which fails as a confidently wrong number in somebody's verdict).

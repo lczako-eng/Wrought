@@ -3985,6 +3985,79 @@ await test('a Supabase setting is named with the place it lives', () => {
   assert.match(src, /Authentication → Sign In \/ Providers/);
 });
 
+// ── Lines that say whether it is working ────────────────────────────────────
+
+group('Charts — the trend, the target, and the gaps');
+
+await test('a chart draws the mean as well as the days', () => {
+  // One day's calories is salt, sleep and memory. Somebody reading the spikes
+  // is reading noise, so the seven-day mean rides alongside — the same
+  // doctrine the brief runs on, made visible.
+  const page = readFileSync(new URL('../public/app.html', import.meta.url), 'utf8');
+  const fn = page.slice(page.indexOf('function chart('), page.indexOf('function wireCharts'));
+  assert.match(fn, /opts\.trend/);
+  assert.match(fn, /class="trend"/);
+  assert.match(fn, /7-day average/);
+});
+
+await test('the target is inside the frame, or it is not on the chart', () => {
+  // A target above the data's own maximum would be drawn off the top of the
+  // plot and silently stop existing — a boundary that vanishes exactly when
+  // somebody is furthest from it.
+  const page = readFileSync(new URL('../public/app.html', import.meta.url), 'utf8');
+  const fn = page.slice(page.indexOf('function chart('), page.indexOf('function wireCharts'));
+  assert.match(fn, /if \(target != null\) vals\.push\(target\)/);
+  assert.match(fn, /class="target"/);
+});
+
+await test('the fill never spans a day nobody logged', () => {
+  // Filling straight across a gap paints a solid shape over days with no data
+  // in them, which is a picture of a record that does not exist.
+  const page = readFileSync(new URL('../public/app.html', import.meta.url), 'utf8');
+  const fn = page.slice(page.indexOf('function chart('), page.indexOf('function wireCharts'));
+  assert.match(fn, /const runs = \[\]/);
+  assert.match(fn, /if \(p\.value == null\)/);
+});
+
+await test('axis labels are distinct, so the scale is not a lie', () => {
+  // A sessions-a-week line runs 3 to 4, and three evenly spaced ticks rounded
+  // to integers printed "4, 4, 3" — which reads as a broken chart on the one
+  // number the whole training expectation rests on.
+  const page = readFileSync(new URL('../public/app.html', import.meta.url), 'utf8');
+  const fn = page.slice(page.indexOf('function chart('), page.indexOf('function wireCharts'));
+  assert.match(fn, /const seen = new Set\(\)/);
+  assert.match(fn, /if \(seen\.has\(k\)\) return false/);
+});
+
+await test('the rolling numbers are computed on the server', () => {
+  // Same rule as every other figure: the page draws what it was handed. A mean
+  // worked out in the browser is a second opinion nobody asked for.
+  const src = readFileSync(new URL('../netlify/functions/api-progress.js', import.meta.url), 'utf8');
+  assert.match(src, /function trailingMean/);
+  assert.match(src, /function rolling/);
+  // Unlogged days are SKIPPED, never averaged in as zero — the calendar's rule,
+  // and it runs in the dangerous direction if it is got wrong.
+  const fn = src.slice(src.indexOf('function trailingMean'), src.indexOf('export const handler'));
+  assert.match(fn, /Number\(v\) > 0/);
+  assert.match(src, /sessions: rolling\(/);
+});
+
+await test('a saved workout can be opened and read on the website', () => {
+  // "A name, the procedure, a write-up at least." The assistant could recite
+  // all of it while the website showed a row saying "Leg day · 4 lifts".
+  const page = readFileSync(new URL('../public/app.html', import.meta.url), 'utf8');
+  const fn = page.slice(page.indexOf('function routinesPanel'), page.indexOf('function notesPanel'));
+  assert.match(fn, /r\.notes/);
+  assert.match(fn, /r\.movements/);
+  assert.match(fn, /Saved workouts/);
+  // A routine with no write-up says so rather than showing a blank.
+  assert.match(fn, /No write-up on this one yet/);
+
+  const api = readFileSync(new URL('../netlify/functions/api-progress.js', import.meta.url), 'utf8');
+  assert.match(api, /notes: r\.notes/);
+  assert.match(api, /movements:/);
+});
+
 // ── The index that ate every workout ────────────────────────────────────────
 
 group('Ingest deduplication — the bug that had no symptom');

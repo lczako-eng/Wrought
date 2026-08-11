@@ -527,6 +527,19 @@ svg { display: block; width: 100%; height: auto; overflow: visible; }
 .gridline { stroke: var(--edge); stroke-width: 1; }
 .axis { fill: var(--ash-dim); font-size: 10px; font-family: var(--mono); }
 
+/* The target sits UNDER the data as a dashed rule, never over it — a solid
+   line across a chart reads as a second series, and this is a boundary. */
+svg.ser .target { stroke: var(--ash-dim); stroke-width: 1; stroke-dasharray: 4 4; }
+svg.ser .tgtlab { fill: var(--ash-dim); font-size: 9px; letter-spacing: .06em; }
+/* The area is atmosphere, not information — it fades out entirely before the
+   baseline so it can never be mistaken for a filled bar with a value. */
+svg.ser .area { animation: fade 900ms var(--ease) both; }
+@keyframes fade { from { opacity: 0; } }
+/* Drawn before the daily line and at lower opacity: the mean is what to read,
+   the spikes are what actually happened, and both have to stay legible. */
+svg.ser .trend { stroke-dasharray: none; }
+.tkey { color: var(--ash-dim); }
+
 /* ── Lifts ──────────────────────────────────────────────────────────────── */
 .lifts { display: flex; flex-direction: column; }
 .lift { padding: 20px 0; border-top: 1px solid var(--edge); }
@@ -780,6 +793,34 @@ table.matrix td.rh.cold { color: var(--heat-3); }
 /* A hairline, not a warning colour. These are recorded and not interpreted,
    and painting a blood-oxygen reading red would BE the interpretation. */
 .rd.care { box-shadow: inset 2px 0 0 var(--temper); }
+
+/* Saved workouts, openable. Closed it is a name and when you last ran it;
+   open it is the procedure — which is the thing that makes it a workout. */
+.rout { border-top: 1px solid var(--edge); }
+.rout:first-child { border-top: 0; }
+.rout > summary {
+  display: flex; align-items: baseline; gap: 9px; padding: 11px 0;
+  cursor: pointer; list-style: none;
+}
+.rout > summary::-webkit-details-marker { display: none; }
+.rout > summary::before {
+  content: '▸'; color: var(--heat-3); font-size: 11px; flex: none;
+  transition: transform var(--quick) var(--ease);
+}
+.rout[open] > summary::before { transform: rotate(90deg); }
+.rout .rn { font-size: 15px; font-weight: 600; flex: 1; min-width: 0; }
+.rout .when { font-family: var(--mono); font-size: 10.5px; color: var(--ash-dim); }
+.rbody { padding: 0 0 14px 18px; }
+.rnotes {
+  margin: 0 0 10px; font-size: 14px; line-height: 1.55; color: var(--ash);
+  border-left: 2px solid var(--edge-lit); padding-left: 11px;
+}
+.rmvs { display: flex; flex-direction: column; gap: 1px; margin-bottom: 9px; }
+.rmv {
+  display: flex; justify-content: space-between; gap: 12px;
+  padding: 7px 10px; background: var(--scale); border-radius: 5px; font-size: 14px;
+}
+.rmv b { font-family: var(--mono); font-size: 12px; color: var(--ash); font-variant-numeric: tabular-nums; }
 
 .thennow { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 14px 0 8px; }
 .thennow img, .shot img { width: 100%; display: block; border-radius: 11px; background: var(--scale); }
@@ -3045,6 +3086,13 @@ function demoData() {
   });
 
   const pt = (k) => series.map(d => ({ date: d.date, value: d[k] }));
+
+  // Unlogged days are skipped, never averaged in as zero — the same rule the
+  // server follows, and the same one the calendar exists to protect.
+  const demoMean = (rows, k) => rows.map((d, i) => {
+    const win = rows.slice(Math.max(0, i - 6), i + 1).map(r => r[k]).filter(v => Number.isFinite(v) && v > 0);
+    return { date: d.date, value: win.length < 3 ? null : Math.round((win.reduce((a, b) => a + b, 0) / win.length) * 10) / 10 };
+  });
   const logged = series.filter(d => !d.missed).length;
   const trainedDays = series.filter(d => d.trained).length;
 
@@ -3220,15 +3268,43 @@ function demoData() {
       { name: 'Pull A', kind: 'strength', date: series[Math.max(0, N - 7)].date, minutes: 47, days_ago: 6 },
     ],
     routines: [
-      { name: 'Leg day', kind: 'strength', exercises: 5, times_used: 11, days_since: 0 },
-      { name: 'Push A', kind: 'strength', exercises: 6, times_used: 14, days_since: 2 },
-      { name: 'Pull A', kind: 'strength', exercises: 6, times_used: 13, days_since: 6 },
-      { name: 'Tuesday five-a-side', kind: 'sport', exercises: 1, times_used: 8, days_since: 4 },
+      { name: 'Leg day', kind: 'strength', exercises: 4, sets: 13, times_used: 11, days_since: 0, minutes: 55,
+        notes: 'Squats first while you are fresh — everything else is accessory to them. Leave a rep in the tank on the RDLs; the point is the hamstrings, not the ego. Calves last and take them close to failure, they can handle it.',
+        movements: [
+          { name: 'Back Squat', sets: 4, reps: 6 }, { name: 'Romanian Deadlift', sets: 3, reps: 8 },
+          { name: 'Leg Press', sets: 3, reps: 10 }, { name: 'Calf Raise', sets: 3, reps: 15 },
+        ] },
+      { name: 'Push A', kind: 'strength', exercises: 4, sets: 12, times_used: 14, days_since: 2, minutes: 50,
+        notes: 'Bench goes first every time — it stalled for a month when it was third. Overhead press after, then the accessories in whatever order the gym allows.',
+        movements: [
+          { name: 'Bench Press', sets: 4, reps: 6 }, { name: 'Overhead Press', sets: 3, reps: 8 },
+          { name: 'Dip', sets: 3, reps: 10 }, { name: 'Tricep Extension', sets: 2, reps: 12 },
+        ] },
+      { name: 'Pull A', kind: 'strength', exercises: 4, sets: 12, times_used: 13, days_since: 6, minutes: 50,
+        movements: [
+          { name: 'Deadlift', sets: 3, reps: 5 }, { name: 'Barbell Row', sets: 3, reps: 8 },
+          { name: 'Pull-up', sets: 3, reps: 8 }, { name: 'Bicep Curl', sets: 3, reps: 12 },
+        ] },
+      { name: 'Tuesday five-a-side', kind: 'sport', exercises: 1, sets: 1, times_used: 8, days_since: 4, minutes: 60,
+        notes: 'Not a session to program around — it just goes in so the week is honest about what the legs did.',
+        movements: [{ name: 'Five-a-side', sets: 1, reps: '60 min' }] },
     ],
     series: {
       weight: pt('weight'), calories: pt('calories'), protein: pt('protein'),
-      volume: pt('volume'), steps: pt('sleep'), sleep: pt('sleep'),
+      volume: pt('volume'), steps: pt('steps'), sleep: pt('sleep'),
+      sessions: series.map((d, i) => ({
+        date: d.date,
+        value: i < 6 ? null : series.slice(i - 6, i + 1).filter(x => x.trained).length,
+      })),
     },
+    // The same rolling shapes api-progress computes, so the demo exercises the
+    // real chart rather than a simpler one that could hide a bug.
+    trends: {
+      calories: demoMean(series, 'calories'),
+      protein: demoMean(series, 'protein'),
+      weight: demoMean(series, 'weight'),
+    },
+    targets: { calories: 2300, protein: 150 },
     latest_verdict: {
       local_date: series[Math.max(0, N - 1)].date, kind: 'evening',
       verdict: "Roughly 2,140 calories and 148g of protein — fourth day running you've hit protein, which is the longest you've held it. Squat moved again: 102.5 for 6 is up 10kg on where you started this block. But you've now gone five weeks without training legs properly outside that one session, and the volume shows it. Weight's coming down about 0.4kg a week, which is the right speed, so leave the food alone. Tomorrow is legs — and put the bench first for once, it's costing you six kilos going last.",
@@ -4111,13 +4187,22 @@ function render(d) {
   </div>`);
 
   out.push(`<div class="grid-2">
-    ${chart('Weight', s.weight.say, d.series.weight, 'var(--heat-3)', wu)}
-    ${chart('Protein', 'Grams per day. Gaps are unlogged days.', d.series.protein, 'var(--moss)', 'g')}
+    ${chart('Weight', s.weight.say, d.series.weight, 'var(--heat-3)', wu,
+            { trend: d.trends?.weight })}
+    ${chart('Protein', 'Grams per day. Gaps are unlogged days.', d.series.protein, 'var(--moss)', 'g',
+            { trend: d.trends?.protein, target: d.targets?.protein })}
   </div>`);
 
   out.push(`<div class="grid-2">
-    ${chart('Calories', 'Estimated from what you described.', d.series.calories, 'var(--temper)', 'kcal')}
+    ${chart('Calories', 'Estimated from what you described.', d.series.calories, 'var(--temper)', 'kcal',
+            { trend: d.trends?.calories, target: d.targets?.calories })}
+    ${chart('Sessions a week', 'A rolling seven-day count — the number the whole expectation rests on.',
+            d.series.sessions, 'var(--heat-4)', 'sessions')}
+  </div>`);
+
+  out.push(`<div class="grid-2">
     ${bars('Training volume', 'Sets × reps × load, per session.', d.series.volume)}
+    ${chart('Steps', 'Per day, straight off the phone.', d.series.steps, 'var(--temper)', 'steps')}
   </div>`);
 
   // Last night before any average. The founder asked for this first, twice:
@@ -4257,12 +4342,32 @@ function balancePanel(d) {
 // Charts are hand-drawn SVG: no dependency, no CDN, and total control over the
 // one thing that matters — gaps stay gaps. A day you did not log is not a zero,
 // and joining across it draws a line that never happened.
-function chart(title, sub, series, colour, unit) {
+// A line, the trend under it, and where it is supposed to sit.
+//
+// The founder: "I want some line graphs — up and down, if you progress on
+// calories per day, a 2-D line and progression, the same with workouts."
+//
+// Three things make a daily line actually readable, and the plain version had
+// none of them. The AREA under the curve gives the eye something to follow
+// across gaps. The seven-day MEAN, drawn dimmer, is the signal — a single day
+// is salt, sleep and memory, and somebody reading the spikes is reading noise.
+// And the TARGET line is the only thing that turns movement into progress:
+// without it a chart shows that a number moved, never whether it moved the
+// right way, which is the only question anybody actually has.
+//
+// Every number here was computed in api-progress. This draws them.
+function chart(title, sub, series, colour, unit, opts = {}) {
   const pts = series.filter(p => p.value != null);
   if (pts.length < 2) return `<section class="panel"><h2>${esc(title)}</h2><p class="empty">Not enough data yet.</p></section>`;
 
+  const trend = (opts.trend || []).filter(p => p.value != null);
+  const target = Number.isFinite(Number(opts.target)) ? Number(opts.target) : null;
+
   const W = 460, H = 150, P = { t: 10, r: 8, b: 20, l: 38 };
   const vals = pts.map(p => p.value);
+  // The target has to be INSIDE the frame or the line it draws sits off the
+  // top of the chart and silently stops existing.
+  if (target != null) vals.push(target);
   let min = Math.min(...vals), max = Math.max(...vals);
   const pad = (max - min) * 0.15 || Math.abs(max * 0.05) || 1;
   min -= pad; max += pad;
@@ -4271,15 +4376,52 @@ function chart(title, sub, series, colour, unit) {
   const x = i => P.l + (i / N) * (W - P.l - P.r);
   const y = v => P.t + (1 - (v - min) / (max - min)) * (H - P.t - P.b);
 
-  let path = '', pen = false;
+  const lineFor = rows => {
+    let d = '', pen = false;
+    rows.forEach((p, i) => {
+      if (p.value == null) { pen = false; return; }
+      d += `${pen ? 'L' : 'M'}${x(i).toFixed(1)},${y(p.value).toFixed(1)} `;
+      pen = true;
+    });
+    return d.trim();
+  };
+
+  const path = lineFor(series);
+  const trendPath = trend.length >= 2 ? lineFor(opts.trend) : '';
+
+  // Closed along the baseline, once PER CONTIGUOUS RUN. Filling straight across
+  // a gap would draw a solid block over days nobody logged — a picture of data
+  // that does not exist — and filling only the last run leaves a stray sliver
+  // at the right edge that reads as a rendering fault rather than a shape.
+  const runs = [];
+  let run = [];
   series.forEach((p, i) => {
-    if (p.value == null) { pen = false; return; }
-    path += `${pen ? 'L' : 'M'}${x(i).toFixed(1)},${y(p.value).toFixed(1)} `;
-    pen = true;
+    if (p.value == null) { if (run.length > 1) runs.push(run); run = []; return; }
+    run.push(i);
   });
+  if (run.length > 1) runs.push(run);
+
+  const base = (H - P.b).toFixed(1);
+  const fill = runs.map(r =>
+    r.map((i, k) => `${k ? 'L' : 'M'}${x(i).toFixed(1)},${y(series[i].value).toFixed(1)}`).join(' ') +
+    ` L${x(r[r.length - 1]).toFixed(1)},${base} L${x(r[0]).toFixed(1)},${base} Z`).join(' ');
+  const gid = `g${title.replace(/\W/g, '')}`;
 
   const last = series.reduce((a, p, i) => (p.value != null ? i : a), -1);
-  const ticks = [min, (min + max) / 2, max];
+
+  // Axis labels have to be DISTINCT or the chart is lying about its own scale.
+  // A sessions-a-week line runs 3 to 4, and rounding three evenly spaced ticks
+  // across that printed "4, 4, 3" — which reads as a broken chart and makes
+  // the one number the whole training expectation rests on look untrustworthy.
+  const wholeish = vals.every(v => Number.isInteger(v)) && (max - min) < 8;
+  const label = t => (wholeish || Math.abs(max - min) >= 8 ? Math.round(t) : Math.round(t * 10) / 10);
+  const seen = new Set();
+  const ticks = [min, (min + max) / 2, max].filter(t => {
+    const k = String(label(t));
+    if (seen.has(k)) return false;
+    seen.add(k);
+    return true;
+  });
 
   // Everything the scrubber needs to turn a finger position back into a day.
   // Carried on the element rather than closed over, because the panel is
@@ -4289,14 +4431,23 @@ function chart(title, sub, series, colour, unit) {
 
   return `<section class="panel"><h2>${esc(title)}</h2>
     <div class="chart-head">
-      <p class="sub">${esc(sub)}</p>
+      <p class="sub">${esc(sub)}${trendPath ? ' <span class="tkey">— the heavier line is the 7-day average.</span>' : ''}</p>
       <p class="readout" aria-live="polite"></p>
     </div>
     <svg class="ser" viewBox="0 0 ${W} ${H}" data-geo="${esc(geo)}" data-series="${esc(data)}"
          role="img" aria-label="${esc(title)} over time">
+      <defs><linearGradient id="${gid}" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0%" stop-color="${colour}" stop-opacity=".28"/>
+        <stop offset="100%" stop-color="${colour}" stop-opacity="0"/>
+      </linearGradient></defs>
       ${ticks.map(t => `<line class="gridline" x1="${P.l}" y1="${y(t).toFixed(1)}" x2="${W - P.r}" y2="${y(t).toFixed(1)}"/>
-        <text class="axis" x="${P.l - 6}" y="${(y(t) + 3.5).toFixed(1)}" text-anchor="end">${Math.round(t)}</text>`).join('')}
+        <text class="axis" x="${P.l - 6}" y="${(y(t) + 3.5).toFixed(1)}" text-anchor="end">${label(t)}</text>`).join('')}
+      ${fill ? `<path class="area" d="${fill}" fill="url(#${gid})"/>` : ''}
+      ${target != null ? `<line class="target" x1="${P.l}" y1="${y(target).toFixed(1)}" x2="${W - P.r}" y2="${y(target).toFixed(1)}"/>
+        <text class="axis tgtlab" x="${W - P.r}" y="${(y(target) - 5).toFixed(1)}" text-anchor="end">target ${Math.round(target)}</text>` : ''}
       <line class="scrub" x1="0" y1="${P.t}" x2="0" y2="${H - P.b}" opacity="0"/>
+      ${trendPath ? `<path class="trend" d="${trendPath}" fill="none" stroke="${colour}"
+            stroke-width="2.5" stroke-opacity=".45" stroke-linejoin="round" stroke-linecap="round"/>` : ''}
       <path class="series" pathLength="1" d="${path.trim()}" fill="none" stroke="${colour}"
             stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
       ${last >= 0 ? `<circle cx="${x(last).toFixed(1)}" cy="${y(series[last].value).toFixed(1)}" r="3.5" fill="${colour}"/>` : ''}
@@ -4823,14 +4974,41 @@ function sessionsPanel(d) {
     <div class="rows">${rows || '<p class="empty">No finished sessions yet.</p>'}</div></section>`;
 }
 
+// A saved workout you can OPEN, not just a name in a list.
+//
+// The founder asked for "a name, the procedure, a write-up at least" — and the
+// assistant could recite all of it while the website showed a row saying
+// "Leg day · 4 lifts". A memory product that cannot show you what it remembers
+// is asking for trust it has not earned, and that applies to a routine exactly
+// as it applies to a meal from three weeks ago.
 function routinesPanel(d) {
   const rows = (d.routines || []).map(r => {
     const stale = r.days_since != null && r.days_since >= 7;
-    return `<div class="row"><span>${esc(r.name)} <span class="chip ${stale ? 'stale' : ''}">${r.exercises} lifts</span></span>
-      <span class="when">${r.days_since == null ? 'never run' : r.days_since === 0 ? 'today' : `${r.days_since}d ago`}</span></div>`;
+    const when = r.days_since == null ? 'never run'
+               : r.days_since === 0 ? 'today'
+               : r.days_since === 1 ? 'yesterday' : `${r.days_since}d ago`;
+    const moves = (r.movements || []).map(m =>
+      `<div class="rmv"><span>${esc(m.name)}</span><b>${m.sets}×${esc(String(m.reps))}</b></div>`).join('');
+
+    return `<details class="rout">
+      <summary>
+        <span class="rn">${esc(r.name)}</span>
+        <span class="chip ${stale ? 'stale' : ''}">${r.sets || r.exercises} ${
+          r.sets ? (r.sets === 1 ? 'set' : 'sets') : (r.exercises === 1 ? 'lift' : 'lifts')}</span>
+        <span class="when">${esc(when)}</span>
+      </summary>
+      <div class="rbody">
+        ${r.notes ? `<p class="rnotes">${esc(r.notes)}</p>`
+                  : '<p class="sub dim">No write-up on this one yet — ask WROUGHT to add one and it shows here and at the top of every session.</p>'}
+        ${moves ? `<div class="rmvs">${moves}</div>` : ''}
+        <p class="sub dim">${r.times_used ? `Run ${r.times_used} time${r.times_used === 1 ? '' : 's'}.` : 'Never run yet.'}${
+          r.minutes ? ` About ${r.minutes} minutes.` : ''} Say the name to your AI and it starts.</p>
+      </div>
+    </details>`;
   }).join('');
-  return `<section class="panel"><h2>Routines</h2>
-    <div class="rows">${rows || '<p class="empty">Say "remember this as my leg day" after a good session.</p>'}</div></section>`;
+
+  return `<section class="panel"><h2>Saved workouts</h2>
+    <div class="routs">${rows || '<p class="empty">Say "remember this as my leg day" after a good session.</p>'}</div></section>`;
 }
 
 function notesPanel(d) {

@@ -26,6 +26,36 @@ const CORS = {
   'Cache-Control': 'no-store',
 };
 
+// Rolling windows, on the server like every other piece of arithmetic.
+//
+// Trends beat days — one bad Tuesday means nothing and four in a row is the
+// whole story. Drawing only the daily line makes that impossible to see; the
+// eye follows the spikes. So the mean rides alongside it, and it is computed
+// here so the chart and the brief can never disagree about what the week was.
+
+function rolling(values, window, mode = 'sum') {
+  return values.map((_, i) => {
+    const slice = values.slice(Math.max(0, i - window + 1), i + 1);
+    const nums = slice.filter(v => Number.isFinite(Number(v))).map(Number);
+    if (!nums.length) return null;
+    const sum = nums.reduce((a, b) => a + b, 0);
+    return mode === 'sum' ? sum : Math.round(sum / nums.length);
+  });
+}
+
+// A mean that IGNORES unlogged days rather than counting them as zero. Averaging
+// a forgotten day in as nought manufactures a deficit out of forgetfulness —
+// the same error the calendar is built to avoid, and it runs in the dangerous
+// direction. Held back until the window has enough real days to mean anything.
+function trailingMean(values, window) {
+  return values.map((_, i) => {
+    const slice = values.slice(Math.max(0, i - window + 1), i + 1);
+    const nums = slice.filter(v => Number.isFinite(Number(v)) && Number(v) > 0).map(Number);
+    if (nums.length < Math.min(3, window)) return null;
+    return Math.round((nums.reduce((a, b) => a + b, 0) / nums.length) * 10) / 10;
+  });
+}
+
 export const handler = async (event) => {
   if (event.httpMethod === 'OPTIONS') return { statusCode: 204, headers: CORS, body: '' };
   if (!supabase) return { statusCode: 500, headers: CORS, body: JSON.stringify({ error: 'server_not_configured' }) };
@@ -64,7 +94,7 @@ export const handler = async (event) => {
       .order('ended_at', { ascending: false }).limit(12)
       .then(r => r.data || []),
     supabase.from('wrought_routines')
-      .select('name, kind, exercises, times_used, last_used_on')
+      .select('name, kind, tier, exercises, notes, est_minutes, times_used, last_used_on')
       .eq('user_id', user.id).eq('active', true)
       .order('last_used_on', { ascending: false, nullsFirst: false })
       .then(r => r.data || []),
@@ -248,8 +278,17 @@ export const handler = async (event) => {
         days_ago: daysBetween(s.local_date, to),
       })),
       routines: routines.map(r => ({
-        name: r.name, kind: r.kind,
+        name: r.name, kind: r.kind, tier: r.tier,
         exercises: (r.exercises || []).length,
+        // The movements and the write-up, so a saved workout can be READ on the
+        // website rather than only recited by the assistant. A routine you
+        // cannot open is a name, and the founder asked for the procedure.
+        movements: (r.exercises || []).map(e => ({
+          name: e.name, sets: e.sets, reps: e.reps, cue: e.cue || null,
+        })),
+        sets: (r.exercises || []).reduce((a, e) => a + (Number(e.sets) || 0), 0),
+        notes: r.notes || null,
+        minutes: r.est_minutes || null,
         times_used: r.times_used,
         days_since: r.last_used_on ? daysBetween(r.last_used_on, to) : null,
       })),
@@ -260,6 +299,31 @@ export const handler = async (event) => {
         volume:   range.days.map(d => ({ date: d.date, value: d.volume_kg })),
         steps:    range.days.map(d => ({ date: d.date, value: d.steps })),
         sleep:    range.days.map(d => ({ date: d.date, value: d.sleep_minutes })),
+        // Sessions per week over time — the training progression line. A raw
+        // per-day count is 0,1,0,0,1: a barcode, not a trend. A trailing
+        // seven-day count IS "workouts a week" and it is the number the whole
+        // expectation rests on, so watching it move is watching the plan work.
+        sessions: rolling(range.days.map(d => (d.sessions > 0 ? 1 : 0)), 7, 'sum')
+          .map((v, i) => ({ date: range.days[i].date, value: i >= 6 ? v : null })),
+      },
+      // The trend under the noise, computed here rather than in the browser.
+      // One day's calories is salt and memory; the seven-day mean is the thing
+      // a decision should be made against, and drawing both is what makes a
+      // spiky line readable instead of decorative.
+      trends: {
+        calories: trailingMean(range.days.map(d => d.calories), 7)
+          .map((v, i) => ({ date: range.days[i].date, value: v })),
+        protein: trailingMean(range.days.map(d => d.protein_g), 7)
+          .map((v, i) => ({ date: range.days[i].date, value: v })),
+        weight: trailingMean(range.days.map(d => w(d.weight_kg)), 7)
+          .map((v, i) => ({ date: range.days[i].date, value: v })),
+      },
+      // Where the line is supposed to sit. A calorie chart without the target
+      // drawn on it shows movement but never says whether the movement is the
+      // right way — which is the only question somebody actually has.
+      targets: {
+        calories: goals.find(g => g.metric === 'calories' && g.cadence === 'daily')?.target_value ?? null,
+        protein:  goals.find(g => g.metric === 'protein_g' && g.cadence === 'daily')?.target_value ?? null,
       },
       latest_verdict: brief || null,
       care_flags: flags,
