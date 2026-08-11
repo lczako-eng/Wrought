@@ -1365,6 +1365,51 @@ somebody to eat less than they need. Until something is logged there is no
 ring: the burn is shown as the burn, labelled *"to burn today"*, and the caveat
 says it is the whole day's estimate rather than what has been spent so far.
 
+### The workout nobody closed — the data was there the whole time
+
+`lib/session.js`. The founder, twice: *"it's not logging my training again."*
+He was right, and it was not the ingest door.
+
+A live session lives in `wrought_sessions` with status `active`, and every set
+goes straight into `wrought_sets`. But the **workout event** — the row the
+brief, the day card, the matrix, the weekly count, the calendar square and the
+training burn all actually read — was written only by `end_session`. So
+somebody who logged a full session set by set and then walked out of the gym
+had every set stored correctly and a day that read *"Rest day (nothing
+logged)"*. Worse: the next `start_session` marked the old one **abandoned**, so
+the training was deleted from every view for good.
+
+**Nobody says "end session".** They finish the last set and leave — and the
+one sentence least likely to get said, by somebody training with headphones
+in, is the administrative one at the end. A log that counts only the sessions
+somebody remembered to close is the same failure as a food log that counts
+only the days somebody remembered to open the app.
+
+So **a session with sets in it is training**, whether or not it was closed.
+`finaliseSession()` files it exactly as `end_session` does — one shared path,
+so a workout closed by hand and one closed by the server can never produce two
+different-looking rows. `closeStaleSessions()` runs on the way into the
+dashboard and the brief, so it turns up without another workout having to be
+started first.
+
+- **The minutes are start → LAST SET, never start → now.** A session left open
+  overnight would otherwise bill fourteen hours, inventing hundreds of calories
+  of burn — and an overstated burn is the number that tells somebody they have
+  room to eat. `end_session` is the one caller that passes `now`, because
+  saying "I'm done" genuinely is the end.
+- **The event is filed when it happened**, not under today, or a late Tuesday
+  session lands on Wednesday — the same class of error as deriving `local_date`
+  from UTC.
+- **An empty session is abandoned, never turned into a workout.** A phantom
+  session counting toward the weekly target makes the one number the whole plan
+  rests on meaningless.
+- **Four hours since the last set** is the line. Sets sit minutes apart; four
+  hours is not a rest, it is somebody who left. Generous on purpose — closing a
+  workout somebody is still doing is the worse mistake, because the next set
+  would land on a finished session.
+- **`carried_over` says it once and does not scold.** It is a fact about the
+  record, not a telling-off for forgetting.
+
 ### It opens on today, and the range finally does something
 
 Three faults in one sentence from the founder, and all three were real: *"when
@@ -1678,7 +1723,7 @@ self-reporting scale removes the most-abandoned manual entry), then Strava.
 
 ## Conventions
 
-- `npm test` runs `test/harness.mjs` — 467 offline tests, no network, no database.
+- `npm test` runs `test/harness.mjs` — 471 offline tests, no network, no database.
   Run it before every push. It covers the JSON-RPC envelope (which fails as an
   uninformative "could not connect" inside ChatGPT) and all the arithmetic
   (which fails as a confidently wrong number in somebody's verdict).

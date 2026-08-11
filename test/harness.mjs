@@ -3875,6 +3875,76 @@ await test('the demo is reachable from inside the app, and has a way back', () =
   assert.match(demo, /whoami-out'\)\.hidden = true/);
 });
 
+group('A workout nobody closed is still a workout');
+
+const { stillRunning } = await import('../netlify/functions/lib/session.js');
+
+await test('walking out of the gym does not delete the session', () => {
+  // THE WORST KIND OF BUG: the data was there the whole time and every screen
+  // said rest day. The workout EVENT — the row the brief, the day card, the
+  // matrix, the weekly count and the training burn all read — was written only
+  // by end_session. Nobody says "end session"; they finish the last set and
+  // leave. Worse, starting the next workout marked the old one 'abandoned', so
+  // the training was deleted from every view for good.
+  const mcp = readFileSync(new URL('../netlify/functions/mcp.js', import.meta.url), 'utf8');
+  const start = mcp.slice(mcp.indexOf('async function startSession('), mcp.indexOf('async function buildPlan('));
+  assert.match(start, /finaliseSession\(user\.id, profile, existing\)/,
+    'starting a workout still bins the last one');
+  assert.ok(!/status: 'abandoned'/.test(start),
+    'an unclosed session is still marked abandoned outright');
+
+  // And both read paths sweep, so it turns up without another workout having
+  // to be started first.
+  assert.match(mcp, /await closeStaleSessions\(user\.id, profile\)/);
+  const api = readFileSync(new URL('../netlify/functions/api-progress.js', import.meta.url), 'utf8');
+  assert.match(api, /await closeStaleSessions\(user\.id, profile\)/);
+});
+
+await test('a resting lifter is never closed out from under themselves', () => {
+  const H = 3600 * 1000;
+  const now = 1_000_000_000_000;
+  // Three minutes between sets is a rest. So is twenty.
+  assert.equal(stillRunning({ lastSetAt: now - 3 * 60000, startedAt: now - H, now }), true);
+  assert.equal(stillRunning({ lastSetAt: now - 45 * 60000, startedAt: now - 2 * H, now }), true);
+  // Four hours is not a rest, it is somebody who left.
+  assert.equal(stillRunning({ lastSetAt: now - 5 * H, startedAt: now - 6 * H, now }), false);
+
+  // A session with no sets at all gets longer, then is cleared out — nothing
+  // is filed for it, because a phantom workout counting toward the weekly
+  // target is worse than a missing one.
+  assert.equal(stillRunning({ lastSetAt: null, startedAt: now - 2 * H, now }), true);
+  assert.equal(stillRunning({ lastSetAt: null, startedAt: now - 9 * H, now }), false);
+});
+
+await test('a session left open overnight does not bill fourteen hours', () => {
+  // The minutes are start → LAST SET, never start → now. Measuring to now
+  // invents hundreds of calories of training burn, and an overstated burn is
+  // the number that tells somebody they have room to eat.
+  const src = readFileSync(new URL('../netlify/functions/lib/session.js', import.meta.url), 'utf8');
+  assert.match(src, /const endAt = endedAt \? new Date\(endedAt\)\.getTime\(\) : lastSetAt;/);
+  assert.match(src, /Math\.max\(1, Math\.round\(\(endAt - started\) \/ 60000\)\)/);
+  // The event is filed when it happened, not under today — a late Tuesday
+  // session must not land on Wednesday.
+  assert.match(src, /occurred_at: endedIso/);
+  // An empty session is abandoned, never turned into a workout.
+  assert.match(src, /if \(!rows\.length\) \{[\s\S]{0,220}status: 'abandoned'/);
+  assert.ok(!/praise|well done|great session/i.test(src), 'the server is congratulating somebody');
+});
+
+await test('closing by hand and closing by walking out write the same row', () => {
+  // Two copies of the finalisation is how one of them drifts, and then the
+  // same workout looks different depending on whether somebody remembered a
+  // sentence. end_session goes through the shared path and only supplies the
+  // one thing it genuinely knows better: that the session ended now.
+  const mcp = readFileSync(new URL('../netlify/functions/mcp.js', import.meta.url), 'utf8');
+  const end = mcp.slice(mcp.indexOf('async function endSession('), mcp.indexOf('async function endSession(') + 1600);
+  assert.match(end, /finaliseSession\(user\.id, profile, session, \{/);
+  assert.match(end, /closedBy: 'user'/);
+  assert.match(end, /endedAt: new Date\(\)\.toISOString\(\)/);
+  // It no longer writes its own workout event.
+  assert.ok(!/event_type: 'workout'/.test(end), 'end_session still has its own copy');
+});
+
 group('The calendar — both halves of the sum, on every square');
 
 const { calendarDays, calendarRollups, calendarMissing, rangeRollup } =

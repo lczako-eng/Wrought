@@ -14,6 +14,7 @@ import {
 } from './lib/wrought.js';
 import { orderInsight, earnedRoom, energyBalance, exerciseKey, deviceMatrix, weekdayPattern, focusCall, lastSession } from './lib/training.js';
 import { blockPosition } from './lib/library.js';
+import { closeStaleSessions } from './lib/session.js';
 import { allowed } from './lib/membership.js';
 import { nutritionTotals, composition, macroMatrix, yearOverYear } from './lib/nutrition.js';
 import { calendarDays, calendarRollups, calendarMissing, rangeRollup } from './lib/calendar.js';
@@ -84,6 +85,14 @@ export const handler = async (event) => {
   const span = Math.min(Math.max(parseInt(params.days, 10) || 30, 1), 400);
 
   const profile = await getProfile(user.id);
+
+  // Before anything is read: file any session left running that plainly is not
+  // running any more. Nobody says "end session" — they finish the last set and
+  // leave — and until this existed those sets stayed in the set table while
+  // every screen on this page called the day a rest day. Idempotent, and a
+  // session genuinely in progress is untouched. See lib/session.js.
+  await closeStaleSessions(user.id, profile);
+
   const to   = params.to || localDateFor(profile.timezone);
   const from = addDays(to, -(span - 1));
 

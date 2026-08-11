@@ -30,6 +30,7 @@ import { activityBurn, EFFORTS } from './lib/activity.js';
 import { warmupFor, sessionProgress } from './lib/warmup.js';
 import { formWatch, cardioProgress } from './lib/form.js';
 import { intakeState } from './lib/intake.js';
+import { finaliseSession, closeStaleSessions } from './lib/session.js';
 import { PROVIDERS, providerSummary, recommendRoute } from './lib/providers.js';
 import { nutritionTotals, composition, macroMatrix, yearOverYear } from './lib/nutrition.js';
 import {
@@ -185,6 +186,8 @@ A NUMBER THEY REMEMBER IS A CLAIM, NOT A LOAD. When a lift has no history the lo
 Never program their claimed number as-is, never suggest testing a max, never present the discounted start as what you think they are capable of, and if they have never done the movement at all there is no claim to take — the effort prescription stands. This is the one place being generous is dangerous: rounding a stranger's memory upward is how a product hurts somebody.
 
 THE MACHINE BEING TAKEN IS NORMAL, NOT A PROBLEM TO DISCUSS. "Someone's on it" means swap_exercise, immediately — the server picks a movement that loads the same pattern with the kit they have, keeps the sets and reps, and computes the load from the REPLACEMENT'S own history. Never skip the slot because the equipment was busy, never transfer the old weight onto a different movement, and never turn it into a conversation about options unless the first pick is also taken.
+
+A SESSION NOBODY CLOSED IS STILL TRAINING. Almost nobody says "I'm done" — they finish the last set and walk out — so the server files any workout left running once it plainly is not running any more, using the last set's own time. When start_session comes back with carried_over, say that ONE line and move on: it is a fact about the record, never a telling-off for forgetting. Still call end_session when they say they have finished, because that is the truest end time there is.
 
 WHEN THE SESSION ENDS, NAME THE NEXT ONE. end_session returns next_workout and training_week. Close every workout with them, in one line: what they just did, anything that beat last time, and what is next — "Next up: Push A, week 3." This server can never speak first, so the end of one session is the only place the next one can be planted. If the block just finished, SAY SO — that is the only reward the structure had to give.
 
@@ -1576,6 +1579,12 @@ async function brief(args, user) {
   // has barely started — asking "how did I do" at 7am means yesterday.
   const date = args.date || (kind === 'morning' ? addDays(today, -1) : today);
 
+  // A workout finished by walking out of the gym is still a workout. Sessions
+  // nobody closed are filed before the day is read, or the brief tells somebody
+  // who trained yesterday that they had a rest day — with all their sets
+  // sitting in the table the whole time.
+  await closeStaleSessions(user.id, profile);
+
   const [day, range] = await Promise.all([
     dayFacts(user.id, profile, date),
     rangeFacts(user.id, profile, addDays(date, -29), date),
@@ -1961,14 +1970,27 @@ async function startSession(args, user) {
   const { profile, memory } = await context(user.id);
   const today = localDateFor(profile.timezone);
 
-  // One workout at a time. Starting another means the first was abandoned —
-  // said out loud rather than leaving two half-sessions fighting over which
-  // one the next set belongs to.
+  // One workout at a time. But STARTING ANOTHER IS NOT A REASON TO THROW THE
+  // LAST ONE AWAY, and it used to be: the previous session was marked
+  // 'abandoned' outright, which meant every set in it stayed in the set table
+  // while the workout event was never written — so the day it happened on read
+  // "Rest day (nothing logged)" and it vanished from the brief, the matrix,
+  // the weekly count and the burn, permanently.
+  //
+  // Nobody says "end session"; they finish the last set and leave. A session
+  // with sets in it is training whether or not somebody remembered to close
+  // it, so it is finalised exactly as end_session would. Only a session with
+  // no sets at all is abandoned, because a phantom workout counting toward the
+  // weekly target is worse than a missing one.
+  let carriedOver = null;
   const { data: existing } = await supabase.from('wrought_sessions')
-    .select('id, name, started_at').eq('user_id', user.id).eq('status', 'active').maybeSingle();
+    .select('id, name, kind, started_at').eq('user_id', user.id).eq('status', 'active').maybeSingle();
   if (existing) {
-    await supabase.from('wrought_sessions')
-      .update({ status: 'abandoned', ended_at: new Date().toISOString() }).eq('id', existing.id);
+    const done = await finaliseSession(user.id, profile, existing);
+    if (done?.closed) {
+      carriedOver = `Your last session (${existing.name}) was never closed — ${done.sets} sets, ` +
+                    `${done.minutes} min, filed under ${done.local_date}. Nothing was lost.`;
+    }
   }
 
   let routine = null;
@@ -2053,6 +2075,9 @@ async function startSession(args, user) {
   return {
     session_id: session.id,
     block: blockNote,
+    // The last workout, filed rather than binned. Said plainly and once —
+    // it is a fact about the record, not a telling-off for forgetting.
+    carried_over: carriedOver,
     name, tier,
     // The write-up, when the routine carries one. A saved workout is a name, an
     // order, and the reason it is in that order — losing the third makes it a
@@ -2409,37 +2434,22 @@ async function endSession(args, user) {
     .select('*').eq('user_id', user.id).eq('status', 'active').maybeSingle();
   if (!session) return { error: 'no_active_session', say: 'No workout is running.' };
 
-  const { data: sets } = await supabase.from('wrought_sets')
-    .select('exercise, exercise_key, reps, weight_kg, rpe, muscles')
-    .eq('session_id', session.id).order('logged_at', { ascending: true });
+  // The SAME finalisation the server performs on a session nobody closed, so
+  // a workout ended by hand and one ended by walking out of the gym can never
+  // produce two different-looking rows. Ending it explicitly is the one case
+  // where "now" is the truest end time available, so it is passed in.
+  const done = await finaliseSession(user.id, profile, session, {
+    note: args.note || null, closedBy: 'user', endedAt: new Date().toISOString(),
+  });
 
-  const rows = sets || [];
-  const totals = sessionTotals(rows);
-  const minutes = Math.max(1, Math.round((Date.now() - new Date(session.started_at).getTime()) / 60000));
-  const muscles = [...new Set(rows.flatMap(s => s.muscles || []))];
+  if (!done?.closed) {
+    return { ended: true, sets: 0,
+      say: 'Session closed. Nothing was logged in it, so there is nothing to file.' };
+  }
 
-  // File it as an ordinary workout event so the brief, the matrix and the
-  // trends see it exactly like anything else. A session that lives only in its
-  // own table is invisible to everything that matters.
-  const [written] = await insertEvents(user.id, profile, [{
-    event_type: 'workout',
-    summary: `${session.name} — ${totals.sets} sets, ${minutes} min`,
-    detail: {
-      kind: session.kind, minutes, muscles,
-      exercises: totals.top_sets.map(t => ({
-        name: t.exercise, sets: rows.filter(r => r.exercise === t.exercise).length,
-        reps: t.reps, weight_kg: t.weight_kg,
-      })),
-      volume_kg: totals.volume_kg,
-      session_id: session.id,
-      note: args.note || null,
-    },
-    estimated: false,
-  }], { rawInput: args.note || null });
-
-  await supabase.from('wrought_sessions').update({
-    status: 'done', ended_at: new Date().toISOString(), event_id: written?.id || null,
-  }).eq('id', session.id);
+  const rows = done.rows;
+  const totals = done.totals;
+  const minutes = done.minutes;
 
   // Anything that beat last time — the only part of a summary anybody reads.
   const beats = [];
