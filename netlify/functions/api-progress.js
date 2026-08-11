@@ -8,11 +8,14 @@
 // day nobody believes either one again.
 
 import {
-  getAuthUser, getProfile, getGoals, getWindow, windowStatus,
+  getAuthUser, getProfile, getGoals, getWindow, windowStatus, fastingSummary,
   localDateFor, addDays, humanDuration, kgToLb, daysBetween,
   rangeFacts, summariseRange, dayFacts, careFlags, scoreGoals, supabase,
 } from './lib/wrought.js';
-import { orderInsight, earnedRoom, energyBalance, exerciseKey, deviceMatrix, weekdayPattern, focusCall, lastSession } from './lib/training.js';
+import { orderInsight, earnedRoom, energyBalance, exerciseKey, deviceMatrix, weekdayPattern, focusCall, lastSession,
+         weekSoFar, readiness, targetOptions } from './lib/training.js';
+import { planRead } from './lib/plan.js';
+import { formWatch, cardioProgress } from './lib/form.js';
 import { blockPosition } from './lib/library.js';
 import { closeStaleSessions } from './lib/session.js';
 import { allowed } from './lib/membership.js';
@@ -199,7 +202,27 @@ export const handler = async (event) => {
   }
 
   const summary  = summariseRange(range, profile);
-  const flags    = careFlags(range, profile);
+
+  // A WINDOW IS NOT A MEMORY — the third and most important place.
+  //
+  // Care flags, the week's count, recovery and earned room are not trends over
+  // whatever stretch happens to be selected; they are facts about right now
+  // that need a run-up to be computable at all. Read off the SELECTED range
+  // they break in two different ways on the 1d view the dashboard now opens on:
+  //
+  //   - care flags need three logged days and a fortnight, so on one day they
+  //     CANNOT FIRE. They are the one thing that outranks everything else in
+  //     this product, and a screen where they are structurally silent is the
+  //     worst version of this bug.
+  //   - the week's session count read off one day reports one day. That is not
+  //     a missing number, it is a WRONG one, on the figure the whole plan rests
+  //     on — and a wrong number is worse than no number.
+  //
+  // So they get their own thirty days, whatever the buttons say. Only fetched
+  // again when the selected range is shorter than that.
+  const recent = span >= 30 ? range : await rangeFacts(user.id, profile, addDays(to, -29), to);
+
+  const flags    = careFlags(recent, profile);
 
   // The month laid out as squares, both halves of the sum on each one. Totals
   // count logged days only — see lib/calendar.js for why that is load-bearing
@@ -217,8 +240,8 @@ export const handler = async (event) => {
   // the one screen where that is most alarming.
   let weightKg = today.body.weight_kg;
   if (weightKg == null) {
-    const recent = range.days.filter(d => d.weight_kg != null).pop();
-    weightKg = recent?.weight_kg ?? null;
+    const lastInRange = recent.days.filter(d => d.weight_kg != null).pop();
+    weightKg = lastInRange?.weight_kg ?? null;
   }
   if (weightKg == null) {
     const { data: lastWeight } = await supabase.from('wrought_events')
@@ -243,11 +266,11 @@ export const handler = async (event) => {
 
   const calorieGoal = goals.find(g => g.metric === 'calories' && g.cadence === 'daily');
   const room = earnedRoom({
-    days: range.days.slice(-7),
+    days: recent.days.slice(-7),
     dailyTarget: calorieGoal?.target_value != null ? Number(calorieGoal.target_value)
                : balance.known ? balance.calories_out : null,
     flags,
-    honestyDays: range.days.slice(-7).filter(d => d.logged).length,
+    honestyDays: recent.days.slice(-7).filter(d => d.logged).length,
   });
 
   // ── Strength: best set ever seen per lift, and how it moved ───────────────
@@ -298,6 +321,57 @@ export const handler = async (event) => {
   }).filter(l => l.sessions >= 2)
     .sort((a, b) => b.sessions - a.sessions);
 
+  // ── The things that were only ever answerable through the assistant ───────
+  //
+  // Every one of these was already computed and had no panel: the plan, the
+  // week's expectation, the run progression, readiness, the form watch, the
+  // fast. A memory product that cannot SHOW you what it knows is asking for
+  // trust it has not earned — and the founder asked for several of them in
+  // exactly those words ("I need to see it").
+  //
+  // Nothing new is calculated here. These are the same functions the MCP tools
+  // call, with the same inputs, so a panel and a verdict can never disagree.
+  const plan = planRead({ profile, goals, weightKg });
+
+  // The expectation, on the table rather than in a notification. Sessions never
+  // roll over and a missed week is information, never a debt — see weekSoFar.
+  const trainingWeek = weekSoFar(recent.days, { today: to, target: profile.train_days || null });
+
+  // The body's veto, read against their own fortnight. It only ever SOFTENS:
+  // "ready" means train as planned and nothing more.
+  // Today against their own fortnight — which a one-day window cannot contain.
+  const ready = readiness({ days: recent.days.slice(-15), today: to });
+
+  // A run read as a progression rather than a list. Best is over a COMPARABLE
+  // distance, and a flat pace is named as the wall without being scolded.
+  const cardioRows = await supabase.from('wrought_events')
+    .select('local_date, summary, detail')
+    .eq('user_id', user.id).eq('event_type', 'workout')
+    .gte('local_date', addDays(to, -119)).lte('local_date', to)
+    .order('local_date', { ascending: true }).limit(400)
+    .then(r => r.data || []);
+  const cardio = cardioProgress(cardioRows);
+
+  // The shadow technique leaves in the record — never a claim about the lifter,
+  // because nothing here can see them lift. Only ever softens.
+  const form = formWatch({ sets: histSets });
+
+  // The record of a fast, never a plan and never a score.
+  const fastRows = await supabase.from('wrought_events')
+    .select('local_date, summary, detail')
+    .eq('user_id', user.id).eq('event_type', 'fast')
+    .order('local_date', { ascending: false }).limit(60)
+    .then(r => r.data || []);
+  const fasting = fastingSummary(fastRows);
+
+  // AND THE NUMBER THAT STOPS ONE BEING INVENTED. With no daily calorie goal
+  // the Targets panel used to say "ask your assistant" — a vacuum, and a model
+  // handed a vacuum invents. The same options get_profile carries now sit on
+  // the screen: computed, floored at 1,200, held under the care-flag rate, and
+  // none of them set by being shown.
+  const calorieGoalSet = goals.some(g => g.metric === 'calories' && g.cadence === 'daily');
+  const noTargetSet = calorieGoalSet ? null : targetOptions({ profile, weightKg });
+
   const notes = setRows.filter(s => s.note)
     .slice(0, 12)
     .map(s => ({ date: s.local_date, exercise: s.exercise, note: s.note }));
@@ -326,6 +400,21 @@ export const handler = async (event) => {
         balance,
       },
       earned_room: room,
+      // The plan, stated. The target NEVER travels without its maintenance and
+      // the weekly rate — a number alone is a rule handed down.
+      plan,
+      // What has and has not been done this week, against what was agreed.
+      training_week: trainingWeek,
+      // The body's veto. Softens only, never spurs, and never a diagnosis.
+      readiness: ready,
+      // Runs, as a progression. "I need to see where my walls are."
+      cardio,
+      // The shadow, never a claim about technique.
+      form,
+      // The record of a fast. Never graded.
+      fasting,
+      // Defensible numbers where a model used to reach for a plausible one.
+      no_target_set: noTargetSet,
       summary: {
         ...summary,
         sleep_avg_say: summary.sleep_avg_minutes ? humanDuration(summary.sleep_avg_minutes) : null,

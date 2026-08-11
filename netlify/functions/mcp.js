@@ -30,6 +30,7 @@ import { activityBurn, EFFORTS } from './lib/activity.js';
 import { warmupFor, sessionProgress } from './lib/warmup.js';
 import { formWatch, cardioProgress } from './lib/form.js';
 import { intakeState } from './lib/intake.js';
+import { planRead } from './lib/plan.js';
 import { finaliseSession, closeStaleSessions } from './lib/session.js';
 import { PROVIDERS, providerSummary, recommendRoute } from './lib/providers.js';
 import { nutritionTotals, composition, macroMatrix, yearOverYear } from './lib/nutrition.js';
@@ -1250,69 +1251,21 @@ async function planFacts(userId) {
 
 async function myPlan(_args, user) {
   const f = await planFacts(user.id);
-  const missing = [];
-  if (!f.intent) missing.push('what they are actually after — losing, gaining, or both at once');
-  if (!f.pace) missing.push('how fast they want it: gentle, steady, or aggressive');
-  if (!f.push) missing.push('how hard WROUGHT should chase them: light, normal, or relentless');
-  if (!f.profile.train_days) missing.push('sessions a week they will honestly do');
-
-  const paceSay = f.pace ? PACES[f.pace]?.say : null;
-  const pushSay = f.push ? PUSH[f.push]?.say : null;
-
-  const lines = [];
-  if (f.intent) lines.push(`Aiming at: ${f.bodyGoal?.goal || f.intent}.`);
-  if (f.pace) lines.push(`Pace: ${f.pace}. ${paceSay}`);
-  if (f.push) lines.push(`Pushing: ${f.push}. ${pushSay}`);
-  if (f.profile.train_days) lines.push(`Training ${f.profile.train_days} a week, at ${f.profile.tier || 'intermediate'} level.`);
-  // A TARGET WITHOUT ITS MAINTENANCE IS AN ARBITRARY NUMBER.
-  //
-  // The founder: "it might say you're allowed 2,400 a day, but it should also
-  // let you know that your maintenance is this while what you're trying to
-  // achieve is that." Exactly right — 2,400 on its own is a rule handed down.
-  // 2,400 against a maintenance of 3,400 is a thousand-calorie decision with a
-  // rate attached, and it is the only version somebody can actually judge.
-  const rest = restingBurn(f.profile, f.weightKg);
-  const level = ACTIVITY[f.profile.activity_level];
-  const maintenance = rest.kcal != null
-    ? rest.kcal + (level ? Math.round(rest.kcal * (level.mult - 1)) : 0)
-    : null;
-  const target = f.calGoal?.target_value != null ? Math.round(f.calGoal.target_value) : null;
-  const deficit = maintenance != null && target != null ? maintenance - target : null;
-  const rate = deficit != null ? -Math.round((deficit * 7 / 7700) * 100) / 100 : null;
-
-  if (target) {
-    lines.push(maintenance != null
-      ? `Daily: about ${target} kcal against a maintenance of about ${maintenance} — a ${Math.abs(deficit)} ${deficit >= 0 ? 'deficit' : 'surplus'}, roughly ${Math.abs(rate)}kg a week.`
-      : `Daily: about ${target} kcal.`);
-    if (f.proGoal?.target_value) lines.push(`Protein about ${Math.round(f.proGoal.target_value)}g.`);
-  }
+  // ONE reader, shared with the dashboard — see lib/plan.js. The plan somebody
+  // is told and the plan somebody can go and look at must be the same plan.
+  const p = planRead({ profile: f.profile, goals: f.goals, weightKg: f.weightKg });
 
   return {
-    set: missing.length === 0,
-    intent: f.intent,
-    pace: f.pace,
-    push: f.push,
-    train_days: f.profile.train_days || null,
-    tier: f.profile.tier || null,
-    calorie_target: target,
-    // The context that turns a number into a decision, carried on every read
-    // of the plan so the two can never be quoted apart.
-    maintenance,
-    deficit,
-    projected_kg_per_week: rate,
-    resting_burn: rest.kcal ?? null,
-    resting_basis: rest.basis || null,
-    protein_target_g: f.proGoal?.target_value != null ? Math.round(f.proGoal.target_value) : null,
-    set_on: f.profile.plan_set_on || null,
-    ...(missing.length ? { missing } : {}),
+    ...p,
+    missing: p.missing || undefined,
     options: {
       pace: Object.fromEntries(Object.entries(PACES).map(([k, v]) => [k, v.say])),
       push: Object.fromEntries(Object.entries(PUSH).map(([k, v]) => [k, v.say])),
     },
-    say: lines.length ? lines.join(' ') : 'No plan on file yet.',
+    say: p.lines.length ? p.say : 'No plan on file yet.',
     changeable: 'Any of it changes in one sentence — "make it aggressive", "ease off", "stop nagging me", "make it four days".',
-    note: missing.length
-      ? `Not set up yet. Ask for ALL of this in ONE message, never as a form and never one question at a time: ${missing.join('; ')}. Offer the pace and push options in a line each, in plain words. Then call set_plan (and set_goal with an intent) and get straight on with what they were doing.`
+    note: p.missing
+      ? `Not set up yet. Ask for ALL of this in ONE message, never as a form and never one question at a time: ${p.missing.join('; ')}. Offer the pace and push options in a line each, in plain words. Then call set_plan (and set_goal with an intent) and get straight on with what they were doing.`
       : 'Say it back short — what they are aiming at, how fast, how hard it pushes, days a week. ALWAYS quote the target BESIDE the maintenance figure and the weekly rate: "2,833 against a maintenance of 3,833, about 0.9kg a week" is a decision somebody can judge, where "2,833" on its own is a rule handed down and reads as arbitrary. Then remind them in half a clause that any of it changes by just saying so. Never defend the plan and never ask them to justify a change.',
     next_actions: ['set_plan to change any part of it', 'suggest_workout to train under it'],
   };

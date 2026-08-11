@@ -3637,19 +3637,59 @@ await test('a weigh-in is found outside the loaded window', () => {
   assert.match(block, /order\('occurred_at'/);
 });
 
+const { planRead } = await import('../netlify/functions/lib/plan.js');
+
 await test('a target is never quoted without its maintenance', () => {
   // "It might say you're allowed 2,400 a day, but it should also let you know
   // that your maintenance is this while what you're trying to achieve is
   // that." A number alone is a rule handed down; a number against maintenance
   // and a rate is a decision somebody can judge.
-  const src = readFileSync(new URL('../netlify/functions/mcp.js', import.meta.url), 'utf8');
-  const fn = src.slice(src.indexOf('async function myPlan('), src.indexOf('async function setPlan('));
-  assert.match(fn, /maintenance,/);
-  assert.match(fn, /deficit,/);
-  assert.match(fn, /projected_kg_per_week: rate/);
-  assert.match(fn, /against a maintenance of about/);
+  const profile = { height_cm: 190.5, birth_year: 1982, sex: 'male',
+                    activity_level: 'moderate', plan_pace: 'steady', plan_push: 'normal', train_days: 4 };
+  const goals = [
+    { metric: 'weight_kg', direction: 'at_most', goal: 'lose weight', target_value: 130 },
+    { metric: 'calories', cadence: 'daily', target_value: 3083 },
+    { metric: 'protein_g', cadence: 'daily', target_value: 220 },
+  ];
+  const p = planRead({ profile, goals, weightKg: 149.7 });
+
+  assert.equal(p.set, true);
+  assert.equal(p.calorie_target, 3083);
+  assert.ok(p.maintenance > p.calorie_target, 'maintenance is missing or below the target');
+  assert.equal(p.deficit, p.maintenance - p.calorie_target, 'the three do not subtract');
+  // The rate is derived from the deficit, never stated independently.
+  assert.equal(p.projected_kg_per_week, -Math.round((p.deficit * 7 / 7700) * 100) / 100);
+  // And the sentence carries all three, so a target can never be read alone.
+  assert.match(p.say, /against a maintenance of about/);
+  assert.match(p.say, /kg a week/);
+
+  // No goal set: no invented target, and nothing pretending to be one.
+  const bare = planRead({ profile: { height_cm: 190.5, birth_year: 1982, sex: 'male', activity_level: 'moderate' },
+                          goals: [], weightKg: 149.7 });
+  assert.equal(bare.calorie_target, null);
+  assert.equal(bare.deficit, null);
+  assert.equal(bare.set, false);
+  assert.ok(bare.missing.length, 'nothing named as missing');
+  // Maintenance is still knowable and still said — that is the number that
+  // stops a model reaching for a plausible one.
+  assert.ok(bare.maintenance > 0);
+
   assert.match(SERVER_INSTRUCTIONS, /THE TARGET IS ALWAYS QUOTED BESIDE ITS MAINTENANCE/);
   assert.match(SERVER_INSTRUCTIONS, /Never quote the target alone/);
+});
+
+await test('the plan is readable on the website, not only through the assistant', () => {
+  // It lived only inside the my_plan tool, so the plan was something you could
+  // be TOLD and never somewhere you could go and LOOK — on the product whose
+  // whole promise is memory.
+  const api = readFileSync(new URL('../netlify/functions/api-progress.js', import.meta.url), 'utf8');
+  assert.match(api, /planRead\(/, 'the dashboard cannot read the plan');
+  const mcp = readFileSync(new URL('../netlify/functions/mcp.js', import.meta.url), 'utf8');
+  assert.match(mcp, /planRead\(/, 'my_plan no longer shares the reader');
+  // One reader, or the plan somebody is told and the plan they can look at drift.
+  const src = page('app.html');
+  assert.match(src, /function planPanel\(/);
+  assert.match(src, /maintenance/, 'the page can draw a target with no maintenance beside it');
 });
 
 await test('twenty questions exist and are never asked at once', () => {
@@ -3873,6 +3913,100 @@ await test('the demo is reachable from inside the app, and has a way back', () =
   // Signing out of borrowed numbers is meaningless.
   const demo = src.slice(src.indexOf('if (DEMO) {'), src.indexOf('if (DEMO) {') + 600);
   assert.match(demo, /whoami-out'\)\.hidden = true/);
+});
+
+group('Everything that was answerable only through the assistant');
+
+await test('every computed read now has a panel to draw it', () => {
+  // The audit's finding, in one assertion. Each of these was built, tested and
+  // correct, and had no surface on the website — so the founder was told it
+  // existed and could never go and look at it.
+  const api = readFileSync(new URL('../netlify/functions/api-progress.js', import.meta.url), 'utf8');
+  const src = page('app.html');
+  for (const [key, panel] of [
+    ['plan',           'planPanel'],
+    ['training_week',  'weekPanelSoFar'],
+    ['readiness',      'readinessPanel'],
+    ['cardio',         'cardioPanel'],
+    ['form',           'formPanel'],
+    ['fasting',        'fastingPanel'],
+    ['no_target_set',  'targetOptionsPanel'],
+  ]) {
+    assert.match(api, new RegExp(`^\\s+${key},?$|^\\s+${key}:`, 'm'), `${key} is not on the payload`);
+    assert.match(src, new RegExp(`function ${panel}\\(`), `${panel} does not exist`);
+    assert.match(src, new RegExp(`out\\.push\\(${panel}\\(d\\)\\)`), `${panel} is never rendered`);
+  }
+  // The eating window was computed and shipped on every request and drawn by
+  // nothing at all — dead data in the payload for as long as it existed.
+  assert.match(src, /d\.eating_window/, 'the eating window still draws nowhere');
+});
+
+await test('a panel reads the shape the server actually returns', () => {
+  // THE CLASS OF BUG A DEMO HIDES. formWatch returns `evidence` as a SENTENCE
+  // from two of its three builders and the demo was handing the page an array,
+  // so .map() would have thrown on the first real finding while the demo
+  // looked perfect. And windowStatus has no `set` field at all — the eating
+  // window was gated on a property that never exists.
+  const form = readFileSync(new URL('../netlify/functions/lib/form.js', import.meta.url), 'utf8');
+  assert.match(form, /evidence: `/, 'evidence is no longer a string anywhere');
+  const src = page('app.html');
+  const panel = src.slice(src.indexOf('function formPanel('), src.indexOf('function fastingPanel('));
+  assert.match(panel, /Array\.isArray\(x\.evidence\)/, 'the panel assumes one evidence shape');
+
+  const w = readFileSync(new URL('../netlify/functions/lib/wrought.js', import.meta.url), 'utf8');
+  const ws = w.slice(w.indexOf('export function windowStatus'), w.indexOf('export function fastLength'));
+  assert.ok(!/\bset:/.test(ws), 'windowStatus grew a `set` field — the panel gate can use it now');
+  const fp = src.slice(src.indexOf('function fastingPanel('), src.indexOf('// \u2500\u2500 Calendar'));
+  assert.ok(!/w\?\.set/.test(fp), 'the eating window is gated on a field that does not exist');
+});
+
+await test('care flags and the week are never read off a one-day window', () => {
+  // The most dangerous consequence of opening on 1d. Care flags need three
+  // logged days and a fortnight, so on a one-day range they CANNOT FIRE — and
+  // they are the one thing that outranks everything else in this product. The
+  // week's count read off one day is not a missing number, it is a wrong one,
+  // on the figure the whole plan rests on.
+  const api = readFileSync(new URL('../netlify/functions/api-progress.js', import.meta.url), 'utf8');
+  assert.match(api, /const recent = span >= 30 \? range : await rangeFacts\(user\.id, profile, addDays\(to, -29\), to\)/);
+  assert.match(api, /careFlags\(recent, profile\)/, 'care flags still read the selected range');
+  assert.match(api, /weekSoFar\(recent\.days/, 'the week still reads the selected range');
+  assert.match(api, /readiness\(\{ days: recent\.days\.slice\(-15\)/, 'recovery still reads the selected range');
+  assert.match(api, /days: recent\.days\.slice\(-7\)/, 'earned room still reads the selected range');
+
+  // And the guards themselves still demand a run-up, or none of the above matters.
+  const flags = careFlags({ days: [{ date: '2026-08-11', logged: true, calories: 900, sessions: 1 }] }, {});
+  assert.equal(flags.length, 0, 'a care flag fired off a single day');
+});
+
+await test('a view that needs a session says so instead of doing nothing', () => {
+  // loadTrainer, loadPhotos, loadAccount and loadAdmin all began with a SILENT
+  // return, so in the demo three of seven tabs lit up as selected and left the
+  // previous screen on. A tab that does nothing reads as broken software.
+  const src = page('app.html');
+  assert.match(src, /async function needsSession\(/);
+  for (const fn of ['loadTrainer', 'loadPhotos', 'loadAccount', 'loadAdmin']) {
+    const body = src.slice(src.indexOf(`async function ${fn}(`), src.indexOf(`async function ${fn}(`) + 400);
+    assert.match(body, /await needsSession\(/, `${fn} still returns silently`);
+  }
+});
+
+await test('the plan panel can never draw a target on its own', () => {
+  // A number alone is a rule handed down. The maintenance and the rate are not
+  // decoration — they are what makes it a decision somebody can judge, and the
+  // reason the invented 2,600 was arguable in the first place.
+  const src = page('app.html');
+  const panel = src.slice(src.indexOf('function planPanel('), src.indexOf('// Defensible numbers'));
+  assert.match(panel, /p\.maintenance/);
+  assert.match(panel, /projected_kg_per_week/);
+  assert.match(panel, /against a maintenance of/);
+  // Changing it is never a negotiation.
+  assert.match(panel, /never a negotiation/);
+  assert.ok(!/commit|discipline|serious about/i.test(panel), 'the plan panel is lecturing');
+
+  // And the options panel exists precisely where a number used to be invented.
+  const opts = src.slice(src.indexOf('function targetOptionsPanel('), src.indexOf('// The week, against'));
+  assert.match(opts, /none of them applies until you choose one/);
+  assert.match(opts, /floors at 1,200/);
 });
 
 group('A workout nobody closed is still a workout');
