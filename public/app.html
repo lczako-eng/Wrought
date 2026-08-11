@@ -3730,8 +3730,9 @@ function hero(d) {
       <h2>In vs out · today</h2>
       <p class="net big">${n(b.calories_out)}<span class="netword">to burn today</span></p>
       ${burnSplit(b)}
-      <p class="caveat">Nothing logged yet, so there is no in-versus-out to draw.
-        That figure is the whole day's estimate, not what you have burned so far.</p>
+      <p class="caveat">${b.active_source === 'awaiting_device'
+        ? 'Your watch hasn\'t sent today, so only the resting figure is counted — nothing is projected. Open the Wrought app and today\'s movement fills in.'
+        : `Nothing logged yet, so there is no in-versus-out to draw. That figure is the whole day's estimate, not what you have burned so far.`}</p>
       ${restingBasis(b)}
     </section>`;
   }
@@ -3766,6 +3767,7 @@ function hero(d) {
     ${restingBasis(b)}
     <p class="caveat">${b.approximate ? 'Every part of this is an estimate — roughly, not exactly.' : ''}${
       b.active_source === 'device' ? '' :
+      b.active_source === 'awaiting_device' ? ' Your watch hasn\'t sent today — only the resting figure is counted, nothing is projected. Open the Wrought app.' :
       b.active_source === 'logged' ? ' The work is read off a standard effort table rather than measured — the weekly trend on the scale is what corrects it.' :
       b.active_source === 'activity_level' ? ' The moving part is a standard multiplier, not a measurement — connect a watch, or tell WROUGHT what work you did.' :
       b.active_source === 'training_only' ? ' Your session is counted but nothing is counting the rest of the day, so the real figure is higher.'
@@ -3844,7 +3846,8 @@ function burnSplit(b) {
       ${other ? `<span class="bs move" style="width:${pct(other)}"></span>` : ''}
     </div>
     <div class="bskeys">
-      <span class="bskey"><i class="rest"></i>${n(rest)}<em>at rest</em></span>
+      <span class="bskey"><i class="rest"></i>${n(rest)}<em>${
+        b.resting_source === 'device' ? 'at rest, your watch' : 'at rest'}</em></span>
       ${train ? `<span class="bskey"><i class="train"></i>${n(train)}<em>${
         b.training_source === 'device' ? 'training' : 'training (estimated)'}</em></span>` : ''}
       ${other ? `<span class="bskey"><i class="move"></i>${n(other)}<em>${otherLabel}</em></span>` : ''}

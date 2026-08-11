@@ -277,23 +277,50 @@ export function trainingBurn(workouts = [], weightKg = null) {
  */
 export function energyBalance({
   profile, weightKg, caloriesIn, activeCalories, foodEstimated,
-  workouts = [], activities = [],
+  workouts = [], activities = [], deviceResting = null, deviceExpected = false,
 }) {
   const rest = restingBurn(profile, weightKg);
 
-  if (rest.kcal == null) {
+  // WHEN THE WATCH REPORTS ITS OWN BASAL, THE WATCH'S PAIR WINS.
+  //
+  // Not because Apple's figure is better — it is another formula, not a
+  // measurement — but because of FRAME COHERENCE. Apple defines "active
+  // energy" as THEIR total minus THEIR basal. Splicing Apple's active onto our
+  // Mifflin basal produces a total that matches neither frame, and for anybody
+  // carrying a lot of mass the two basal estimates disagree by hundreds — so
+  // the founder's watch said one number, this screen said another, and both
+  // called themselves his resting burn. A product that argues with the watch
+  // on its own wrist loses, and deserves to.
+  //
+  // Mifflin stays as the fallback for everybody without a device, and stays
+  // visible in the basis so the two can be compared rather than one silently
+  // replacing the other.
+  const deviceRest = Math.round(Number(deviceResting) || 0);
+  const restKcal = deviceRest > 0 ? deviceRest : rest.kcal;
+  const restingSource = deviceRest > 0 ? 'device' : 'formula';
+
+  if (restKcal == null) {
     return {
       known: false, missing: rest.missing,
       say: `Calories out needs ${rest.missing.join(' and ')} before it can be worked out. Everything else still tracks.`,
     };
   }
 
+  const basis = deviceRest > 0
+    ? {
+        formula: 'Your watch',
+        say: `Your watch reports about ${deviceRest} kcal basal for today — Apple's own estimate, computed on the device from your details.` +
+             (rest.kcal != null ? ` Mifflin-St Jeor from your stats here gives ${rest.kcal}.` : ''),
+        caveat: 'Still an estimate — Apple derives it from height, weight and age just as any formula does. The weekly weigh-in trend is what corrects the whole figure; a single day never does.',
+      }
+    : rest.basis || null;
+
   const measured = Number(activeCalories) || 0;
   const level = ACTIVITY[profile.activity_level];
   const training = trainingBurn(workouts, weightKg);
   // Capped against THIS day's resting burn, which is why it happens here rather
   // than at the call site — the ceiling is a ratio, not a constant.
-  const activity = activityTotal(activities, rest.kcal);
+  const activity = activityTotal(activities, restKcal);
   const logged = Number(activity.kcal) || 0;
 
   let train = 0, other = 0, activeSource;
@@ -331,30 +358,40 @@ export function energyBalance({
     // below what the multiplier alone would have said, so logging a shift can
     // never make somebody's burn go DOWN.
     train = training.kcal;
-    const floor = Math.round(rest.kcal * (ACTIVITY.sedentary.mult - 1));
-    const viaLevel = level ? Math.round(rest.kcal * (level.mult - 1)) : 0;
+    const floor = Math.round(restKcal * (ACTIVITY.sedentary.mult - 1));
+    const viaLevel = level ? Math.round(restKcal * (level.mult - 1)) : 0;
     other = Math.max(logged + floor - train, viaLevel - train, 0);
     activeSource = 'logged';
+  } else if (deviceExpected) {
+    // A watch normally reports for this account and simply has not sent yet
+    // today. Projecting the multiplier here is exactly what a device owner
+    // does not want — a whole-day forecast standing in for a watch that has
+    // real numbers sitting on it. So nothing is projected: the burn shows what
+    // is actually known, and the fix is named (open the app).
+    train = training.kcal;
+    other = 0;
+    activeSource = 'awaiting_device';
   } else {
     train = training.kcal;
-    const viaLevel = level ? Math.round(rest.kcal * (level.mult - 1)) : 0;
+    const viaLevel = level ? Math.round(restKcal * (level.mult - 1)) : 0;
     other = Math.max(0, viaLevel - train);
     activeSource = level ? 'activity_level' : train > 0 ? 'training_only' : 'none';
   }
 
   const active = train + other;
-  const out = rest.kcal + active;
+  const out = restKcal + active;
   const inn = Number(caloriesIn) || 0;
   const net = inn - out;
 
-  const parts = [`${rest.kcal} at rest`];
+  const parts = [`${restKcal} at rest`];
   if (train) parts.push(`${train} training`);
   if (other) parts.push(`${other} ${activeSource === 'logged' ? 'work and moving about' : 'moving about'}`);
 
   return {
     known: true,
     calories_in: inn,
-    resting_burn: rest.kcal,
+    resting_burn: restKcal,
+    resting_source: restingSource,
     // Kept for everything already reading it — the two halves the split bar
     // draws — with the third now named beside them.
     active_burn: active,
@@ -366,11 +403,11 @@ export function energyBalance({
     // ~7,700 kcal a kilo. A projection, not a promise, and worded as one.
     projected_kg_per_week: Math.round((net * 7 / 7700) * 100) / 100,
     approximate: true,
-    resting_approximate: rest.approximate,
+    resting_approximate: deviceRest > 0 ? false : rest.approximate,
     // The inputs, carried through so a person can audit the figure instead of
     // taking it on faith. A number nobody can check is a number they stop
     // believing, and they are right to.
-    resting_basis: rest.basis || null,
+    resting_basis: basis,
     // An activity multiplier is a WHOLE DAY's projection — it is the same
     // number at 8am and at 11pm, because nothing measured anything. Saying so
     // is the difference between a forecast and a claim about what has already
@@ -394,7 +431,9 @@ export function energyBalance({
          (activity.capped ? ' The logged work was held at a ceiling; the raw figure is on the entry.' : '') +
          // Silence here would be the dangerous kind: a burn counting only the
          // resting figure looks like a bigger deficit than the day really had.
-         (activeSource === 'none'
+         (activeSource === 'awaiting_device'
+           ? ' Your watch has not sent today, so only the resting figure is counted — nothing is projected. Open the Wrought app and today\'s real movement fills in.'
+           : activeSource === 'none'
            ? ' NOTE: nothing is counting your movement — this is your resting burn only, so the real figure is higher and the deficit smaller than it looks. Log the work, set an activity level, or connect a phone to fix it.'
            : activeSource === 'training_only'
            ? ' NOTE: your session is counted but nothing is counting the rest of the day, so the real figure is higher and the deficit smaller than it looks. Log the work, set an activity level, or connect a phone.'

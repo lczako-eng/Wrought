@@ -125,6 +125,10 @@ It is not a medical reading and must never be spoken as one. Resting heart rate 
 
 RESTING BURN IS BASAL, NOT MAINTENANCE, AND THE DIFFERENCE CAUSES ARGUMENTS. energy_balance returns resting_basis with the inputs and the equation name. When somebody says the number looks too low — and they will, because most online calculators quote something several hundred higher — read the basis back rather than defending the figure: their weight, height, age, sex, and Mifflin-St Jeor. The gap is almost always that the other calculator quoted MAINTENANCE, which is basal times an activity multiplier, against WROUGHT's BASAL, which is what a body costs lying still. WROUGHT's calories_out figure already includes the movement on top, so it is usually the HIGHER number of the two once compared like for like. Say that plainly. And never swap the equation to produce a figure somebody likes better: Mifflin-St Jeor does read low for people carrying a lot of muscle, and the honest correction for that is the weekly weigh-in trend, not a different formula.
 
+THE WATCH'S OWN BASAL WINS WHEN IT REPORTS ONE. energy_balance returns resting_source. When it is 'device', the resting figure is Apple's own basal from their watch — used because Apple defines active energy as THEIR total minus THEIR basal, so pairing Apple's active with a different formula's basal produces a total that matches neither. When somebody says the basal looks wrong, read resting_basis back: it names the source and, when the watch reported, shows the formula figure beside it for comparison. Neither is a measurement; the weekly weigh-in trend is still the only honest correction.
+
+WHEN active_source IS awaiting_device, THE WATCH SIMPLY HAS NOT SENT TODAY. Nothing is projected for device owners — say the movement figure is waiting on the phone, tell them to open the Wrought app, and do not estimate what the day "probably" burned in the meantime.
+
 AN ACTIVITY MULTIPLIER IS A FORECAST, NOT A MEASUREMENT. When active_source is activity_level the moving figure is a whole-day projection — the same number at 8am as at 11pm, because nothing measured anything. other_projected marks it. Never report it as what somebody has already burned today, and never let it read as movement that has happened.
 
 A DAY IS NOT SPENT LYING DOWN. If nothing is measuring their movement, calories out is the resting burn ALONE — a day of work counts as zero, the deficit looks far bigger than it is, and the advice that follows tells somebody to eat less than they need. energy_balance flags this on the response. Fix it by asking for activity_level, and say plainly that the figure shown is resting-only until then. A watch is better and overrides it, but most people do not have one and must not be left with a wrong number in the meantime.
@@ -2669,6 +2673,14 @@ async function balanceFor(userId, profile, date, day) {
       .order('occurred_at', { ascending: false }).limit(1);
     weightKg = data?.[0]?.detail?.value_kg ?? null;
   }
+  // A device that synced in the last three days is a device that normally
+  // reports — for that account, a silent morning means "not sent yet", never
+  // "project a whole day instead".
+  const { data: conn } = await supabase.from('wrought_connections')
+    .select('last_sync_at').eq('user_id', userId).eq('mode', 'push')
+    .order('last_sync_at', { ascending: false, nullsFirst: false }).limit(1);
+  const lastSync = conn?.[0]?.last_sync_at ? new Date(conn[0].last_sync_at).getTime() : 0;
+
   return energyBalance({
     profile, weightKg,
     caloriesIn: day.food.calories,
@@ -2676,6 +2688,8 @@ async function balanceFor(userId, profile, date, day) {
     foodEstimated: day.food.estimated,
     workouts: day.training.entries,
     activities: day.activity.entries,
+    deviceResting: day.device.resting_calories,
+    deviceExpected: Date.now() - lastSync < 3 * 86400000,
   });
 }
 

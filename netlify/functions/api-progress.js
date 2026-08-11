@@ -183,6 +183,9 @@ export const handler = async (event) => {
     weightKg = lastWeight?.[0]?.detail?.value_kg ?? null;
   }
 
+  const deviceExpected = connections.some(c =>
+    c.last_sync_at && Date.now() - new Date(c.last_sync_at).getTime() < 3 * 86400000);
+
   const balance = energyBalance({
     profile, weightKg,
     caloriesIn: today.food.calories,
@@ -190,6 +193,8 @@ export const handler = async (event) => {
     foodEstimated: today.food.estimated,
     workouts: today.training.entries,
     activities: today.activity.entries,
+    deviceResting: today.device.resting_calories,
+    deviceExpected,
   });
 
   const calorieGoal = goals.find(g => g.metric === 'calories' && g.cadence === 'daily');

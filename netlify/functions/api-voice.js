@@ -111,6 +111,11 @@ export const handler = async (event) => {
       weightKg = data?.[0]?.detail?.value_kg ?? null;
     }
 
+    const { data: conn } = await supabase.from('wrought_connections')
+      .select('last_sync_at').eq('user_id', key.user_id).eq('mode', 'push')
+      .order('last_sync_at', { ascending: false, nullsFirst: false }).limit(1);
+    const lastSync = conn?.[0]?.last_sync_at ? new Date(conn[0].last_sync_at).getTime() : 0;
+
     const balance = energyBalance({
       profile, weightKg,
       caloriesIn: day.food.calories,
@@ -118,6 +123,8 @@ export const handler = async (event) => {
       foodEstimated: day.food.estimated,
       workouts: day.training.entries,
       activities: day.activity.entries,
+      deviceResting: day.device.resting_calories,
+      deviceExpected: Date.now() - lastSync < 3 * 86400000,
     });
     const flags = careFlags(range, profile);
     const week  = weekSoFar(range.days, { today, target: profile.train_days });

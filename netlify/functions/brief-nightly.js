@@ -90,6 +90,7 @@ export async function buildBriefFor(userId, now = new Date()) {
       foodEstimated: day.food.estimated,
       workouts: day.training.entries,
       activities: day.activity.entries,
+      deviceResting: day.device.resting_calories,
     });
     verdict = plainBrief({ facts, flags, balance: bal });
   }

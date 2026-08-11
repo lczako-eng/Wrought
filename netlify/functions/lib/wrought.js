@@ -440,6 +440,9 @@ export async function dayFacts(userId, profile, date) {
     device: {
       steps: metricSum('steps'),
       active_calories: metricSum('active_calories'),
+      // Apple's own basal figure, when the watch sent one. Used as the resting
+      // half of the burn so the pair stays in Apple's frame — see energyBalance.
+      resting_calories: metricSum('resting_calories'),
       distance_km: metricSum('distance_km'),
       active_minutes: metricSum('active_minutes'),
       resting_hr: metricAvg('resting_hr'),

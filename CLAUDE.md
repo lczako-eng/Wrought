@@ -1568,11 +1568,24 @@ minutes, water, sound exposure, BMI, lean mass, waist.
   97 — same shape as the glucose 18× bug, and "your blood oxygen is 1%" is what
   somebody rings a doctor about. Anything at or under 1 in that group is
   converted once, at the door.
-- **Apple's basal energy is a second estimate, not a measurement.** It used to
-  be filed as `total_calories`, which reads as a day of doing nothing. It is
-  now `resting_calories`, kept beside `restingBurn()` rather than overriding
-  it: Apple derives it from height, weight and age exactly as we do, and
-  swapping one guess for another is not an upgrade.
+- **Apple's basal, when the watch reports one, is USED — for frame coherence,
+  not because it is truer.** Apple defines active energy as *their* total minus
+  *their* basal, so pairing Apple's active with our Mifflin basal produces a
+  total that matches neither frame — the founder's watch said one resting
+  number and the screen said another, and both called themselves his basal.
+  `energyBalance` takes `deviceResting` and uses the watch's pair whole;
+  Mifflin remains the fallback for accounts with no device and stays visible
+  in `resting_basis` for comparison. Neither is a measurement, and the weekly
+  weigh-in trend is still the only honest correction. Filed as
+  `resting_calories`, never `total_calories` — a basal filed as a total reads
+  as a day of doing nothing.
+
+- **A device owner never gets a projection.** `deviceExpected` (a push
+  connection that synced within three days) turns a silent morning into
+  `awaiting_device`: the burn shows only what is known, says *"your watch
+  hasn't sent today — nothing is projected"*, and names the fix (open the
+  app). A whole-day multiplier standing in for a watch with real numbers on
+  it is exactly what the owner of that watch did not ask for.
 - **`dayFacts.device.readings` is generic**, and so is the dashboard panel. A
   metric added at the ingest door draws on screen the same day with no second
   edit. A bespoke line per reading is how a hub stops accepting new things.
@@ -1612,7 +1625,7 @@ self-reporting scale removes the most-abandoned manual entry), then Strava.
 
 ## Conventions
 
-- `npm test` runs `test/harness.mjs` — 458 offline tests, no network, no database.
+- `npm test` runs `test/harness.mjs` — 460 offline tests, no network, no database.
   Run it before every push. It covers the JSON-RPC envelope (which fails as an
   uninformative "could not connect" inside ChatGPT) and all the arithmetic
   (which fails as a confidently wrong number in somebody's verdict).

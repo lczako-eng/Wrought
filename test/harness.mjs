@@ -3758,6 +3758,61 @@ await test('the resting figure shows its working', () => {
   assert.match(page, /function restingBasis/);
 });
 
+await test('the watch\'s basal pair is used whole, never spliced', () => {
+  // Apple defines active energy as THEIR total minus THEIR basal. Pairing
+  // Apple's active with our Mifflin basal makes a total that matches neither
+  // frame — which is exactly why the founder's watch said one resting number
+  // and the screen said another, both calling themselves his basal.
+  const p = { height_cm: 190.5, birth_year: 1982, sex: 'male', activity_level: 'moderate' };
+  const b = energyBalance({ profile: p, weightKg: 149.7, caloriesIn: 1500,
+                            activeCalories: 1126, deviceResting: 2980 });
+  assert.equal(b.resting_burn, 2980);
+  assert.equal(b.resting_source, 'device');
+  // The pair sums to Apple's own total, exactly.
+  assert.equal(b.calories_out, 2980 + 1126);
+  // And the basis names the source, with the formula beside it to compare.
+  assert.match(b.resting_basis.say, /Your watch reports/);
+  assert.match(b.resting_basis.say, /Mifflin-St Jeor/);
+
+  // No watch basal → the formula, unchanged.
+  const f = energyBalance({ profile: p, weightKg: 149.7, caloriesIn: 1500, activeCalories: 1126 });
+  assert.equal(f.resting_source, 'formula');
+
+  // A watch basal even RESCUES a profile the formula cannot run on.
+  const bare = energyBalance({ profile: {}, weightKg: null, caloriesIn: 0,
+                               activeCalories: 500, deviceResting: 2900 });
+  assert.equal(bare.known, true);
+  assert.equal(bare.resting_burn, 2900);
+});
+
+await test('a device owner never gets a projection, only "open the app"', () => {
+  // "I don't want projected, I want what I use off my Health." For an account
+  // whose watch normally reports, a silent morning means NOT SENT YET — and a
+  // whole-day multiplier standing in for a watch with real numbers on it is
+  // the exact thing the owner did not ask for.
+  const p = { height_cm: 190.5, birth_year: 1982, sex: 'male', activity_level: 'moderate' };
+  const b = energyBalance({ profile: p, weightKg: 149.7, caloriesIn: 0,
+                            activeCalories: 0, deviceExpected: true });
+  assert.equal(b.active_source, 'awaiting_device');
+  assert.equal(b.other_burn, 0, 'a projection leaked in');
+  assert.match(b.say, /has not sent today/i);
+  assert.match(b.say, /nothing is projected/i);
+  assert.match(b.say, /open the Wrought app/i);
+
+  // No device on the account → the multiplier fallback stands, unchanged.
+  const noDev = energyBalance({ profile: p, weightKg: 149.7, caloriesIn: 0, activeCalories: 0 });
+  assert.equal(noDev.active_source, 'activity_level');
+
+  // Every caller passes the pair through.
+  for (const [file, fn] of [['mcp.js', 'balanceFor'], ['api-progress.js', null], ['api-voice.js', null]]) {
+    const src = readFileSync(new URL(`../netlify/functions/${file}`, import.meta.url), 'utf8');
+    assert.match(src, /deviceResting:/, `${file} drops the watch basal`);
+    assert.match(src, /deviceExpected/, `${file} cannot tell a silent watch from no watch`);
+  }
+  assert.match(SERVER_INSTRUCTIONS, /THE WATCH'S OWN BASAL WINS/);
+  assert.match(SERVER_INSTRUCTIONS, /awaiting_device/);
+});
+
 await test('an activity multiplier is a forecast, and says so', () => {
   // The same number at 8am and at 11pm, because nothing measured anything.
   // Reporting it as what has already been burned is a claim about a morning
