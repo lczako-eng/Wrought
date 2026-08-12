@@ -14,7 +14,6 @@
 // relays. Never hand a language model three numbers and hope it subtracts
 // correctly — hand it the answer and a sentence to say.
 
-import OpenAI from 'openai';
 import { createClient } from '@supabase/supabase-js';
 import { createHash, randomBytes } from 'node:crypto';
 
@@ -25,8 +24,34 @@ export const supabase = process.env.SUPABASE_URL
   ? createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY)
   : null;
 
+// THE SDK IS LOADED ONLY IF IT IS ACTUALLY USED.
+//
+// This was a top-level `import OpenAI from 'openai'`, and because every
+// function in the product imports this file, all of them bundled 7.7MB of a
+// client the dashboard never calls. Netlify cold-starts a function by loading
+// its bundle, so the website was paying for the parser on a request that could
+// not possibly reach it — and a first load after a quiet hour is exactly when
+// somebody decides the thing is slow.
+//
+// `openai` stays a truthy/falsy check everywhere it is used, so nothing at the
+// call sites changes: it is null without a key, exactly as before, and the
+// module is pulled in on first real use.
+let _openaiClient = null;
+
 export const openai = process.env.OPENAI_API_KEY
-  ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
+  ? {
+      chat: {
+        completions: {
+          create: async (...args) => {
+            if (!_openaiClient) {
+              const { default: OpenAI } = await import('openai');
+              _openaiClient = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+            }
+            return _openaiClient.chat.completions.create(...args);
+          },
+        },
+      },
+    }
   : null;
 
 // ── Time ────────────────────────────────────────────────────────────────────

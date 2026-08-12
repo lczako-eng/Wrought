@@ -79,15 +79,18 @@ export const handler = async (event) => {
   // Suspended accounts do not get the dashboard. They DO keep sign-in, the
   // profile screen and export — see lib/membership.js for why that line is
   // where it is.
-  const gate = await allowed(user.id, 'api-progress');
+  // The membership check and the profile both need only the user id, so they
+  // go together rather than one behind the other.
+  const [gate, profile] = await Promise.all([
+    allowed(user.id, 'api-progress'),
+    getProfile(user.id),
+  ]);
   if (!gate.ok) return { statusCode: 402, headers: CORS, body: JSON.stringify(gate) };
 
   const params = event.queryStringParameters || {};
   // Min 1, not 3 — the founder asked for a one-day view, and a single day with
   // its items and totals is a perfectly answerable question.
   const span = Math.min(Math.max(parseInt(params.days, 10) || 30, 1), 400);
-
-  const profile = await getProfile(user.id);
 
   // Before anything is read: file any session left running that plainly is not
   // running any more. Nobody says "end session" — they finish the last set and
@@ -110,7 +113,18 @@ export const handler = async (event) => {
   // The range still governs everything that is genuinely a trend.
   const histFrom = addDays(to, -Math.max(span - 1, 59));
 
-  const [range, today, goals, win, histSets, sessions, connections, routines, foodRows, brief, workoutRows] = await Promise.all([
+  // EVERYTHING THAT DOES NOT DEPEND ON ANOTHER ANSWER GOES IN ONE BATCH.
+  //
+  // These used to be a chain: the run-up range, the block, the all-time count,
+  // the last weigh-in, the cardio rows and the fasts were each awaited on their
+  // own line, one after the next, after this batch had already finished. Every
+  // one of them is a full round trip to Supabase from a Netlify function, and
+  // none of them needed anything the others returned — so the page sat there
+  // paying ten latencies end to end for work that could all happen at once.
+  // "It takes a while to load" was not the queries being slow. It was them
+  // queueing.
+  const [range, today, goals, win, histSets, sessions, connections, routines, foodRows, brief, workoutRows,
+         recentRaw, blockRow, everCount, lastWeightRow, cardioRows, fastRows] = await Promise.all([
     rangeFacts(user.id, profile, from, to),
     dayFacts(user.id, profile, to),
     getGoals(user.id),
@@ -159,6 +173,45 @@ export const handler = async (event) => {
       .eq('user_id', user.id).eq('event_type', 'workout')
       .gte('local_date', from).lte('local_date', to).limit(500)
       .then(r => r.data || []),
+
+    // The thirty-day run-up care flags, the week, recovery and earned room all
+    // need. Null when the selected range already covers it — see below.
+    span >= 30 ? Promise.resolve(null) : rangeFacts(user.id, profile, addDays(to, -29), to),
+
+    // The running block.
+    supabase.from('wrought_blocks')
+      .select('id, name, weeks, days_per_week, plan')
+      .eq('user_id', user.id).eq('status', 'active').maybeSingle()
+      .then(r => r.data),
+
+    // Has this account ever logged anything, over ALL time — so a quiet
+    // morning on the 1d view can never be mistaken for a brand new account.
+    supabase.from('wrought_events')
+      .select('id', { count: 'exact', head: true }).eq('user_id', user.id)
+      .then(r => r.count || 0),
+
+    // The most recent weigh-in ANYWHERE. Fetched unconditionally rather than
+    // as a fallback: one small indexed row costs less than the extra serial
+    // round trip it used to take when the window had no weigh-in on it.
+    supabase.from('wrought_events')
+      .select('detail').eq('user_id', user.id).eq('event_type', 'weight')
+      .order('occurred_at', { ascending: false }).limit(1)
+      .then(r => r.data?.[0]?.detail?.value_kg ?? null),
+
+    // Runs, rides and swims, read as a progression.
+    supabase.from('wrought_events')
+      .select('local_date, summary, detail')
+      .eq('user_id', user.id).eq('event_type', 'workout')
+      .gte('local_date', addDays(to, -119)).lte('local_date', to)
+      .order('local_date', { ascending: true }).limit(400)
+      .then(r => r.data || []),
+
+    // The record of a fast. Never graded.
+    supabase.from('wrought_events')
+      .select('local_date, summary, detail')
+      .eq('user_id', user.id).eq('event_type', 'fast')
+      .order('local_date', { ascending: false }).limit(60)
+      .then(r => r.data || []),
   ]);
 
   // Everything that is a TREND stays bounded by the chosen range; only the
@@ -172,16 +225,12 @@ export const handler = async (event) => {
   // brand-new-account page. On the one product whose whole promise is memory,
   // a screen saying "nothing here yet" to somebody with a month of history is
   // the worst thing this dashboard can do.
-  const { count: everCount } = await supabase.from('wrought_events')
-    .select('id', { count: 'exact', head: true }).eq('user_id', user.id);
-  const hasHistory = (everCount || 0) > 0 || sessions.length > 0 || routines.length > 0;
+  const hasHistory = everCount > 0 || sessions.length > 0 || routines.length > 0;
 
   // The running block, and how far through it they are. A missed week is a
   // missed week rather than a skipped one, so this counts sessions rather than
   // reading a date off the calendar.
   let blockView = null;
-  const { data: blockRow } = await supabase.from('wrought_blocks')
-    .select('id, name, weeks, days_per_week, plan').eq('user_id', user.id).eq('status', 'active').maybeSingle();
   if (blockRow) {
     const { count } = await supabase.from('wrought_sessions')
       .select('id', { count: 'exact', head: true }).eq('block_id', blockRow.id).eq('status', 'done');
@@ -220,7 +269,7 @@ export const handler = async (event) => {
   //
   // So they get their own thirty days, whatever the buttons say. Only fetched
   // again when the selected range is shorter than that.
-  const recent = span >= 30 ? range : await rangeFacts(user.id, profile, addDays(to, -29), to);
+  const recent = recentRaw || range;
 
   const flags    = careFlags(recent, profile);
 
@@ -243,12 +292,7 @@ export const handler = async (event) => {
     const lastInRange = recent.days.filter(d => d.weight_kg != null).pop();
     weightKg = lastInRange?.weight_kg ?? null;
   }
-  if (weightKg == null) {
-    const { data: lastWeight } = await supabase.from('wrought_events')
-      .select('detail').eq('user_id', user.id).eq('event_type', 'weight')
-      .order('occurred_at', { ascending: false }).limit(1);
-    weightKg = lastWeight?.[0]?.detail?.value_kg ?? null;
-  }
+  if (weightKg == null) weightKg = lastWeightRow;
 
   const deviceExpected = connections.some(c =>
     c.last_sync_at && Date.now() - new Date(c.last_sync_at).getTime() < 3 * 86400000);
@@ -344,12 +388,6 @@ export const handler = async (event) => {
 
   // A run read as a progression rather than a list. Best is over a COMPARABLE
   // distance, and a flat pace is named as the wall without being scolded.
-  const cardioRows = await supabase.from('wrought_events')
-    .select('local_date, summary, detail')
-    .eq('user_id', user.id).eq('event_type', 'workout')
-    .gte('local_date', addDays(to, -119)).lte('local_date', to)
-    .order('local_date', { ascending: true }).limit(400)
-    .then(r => r.data || []);
   const cardio = cardioProgress(cardioRows);
 
   // The shadow technique leaves in the record — never a claim about the lifter,
@@ -357,11 +395,6 @@ export const handler = async (event) => {
   const form = formWatch({ sets: histSets });
 
   // The record of a fast, never a plan and never a score.
-  const fastRows = await supabase.from('wrought_events')
-    .select('local_date, summary, detail')
-    .eq('user_id', user.id).eq('event_type', 'fast')
-    .order('local_date', { ascending: false }).limit(60)
-    .then(r => r.data || []);
   const fasting = fastingSummary(fastRows);
 
   // AND THE NUMBER THAT STOPS ONE BEING INVENTED. With no daily calorie goal
