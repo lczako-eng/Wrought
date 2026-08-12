@@ -1365,6 +1365,34 @@ somebody to eat less than they need. Until something is logged there is no
 ring: the burn is shown as the burn, labelled *"to burn today"*, and the caveat
 says it is the whole day's estimate rather than what has been spent so far.
 
+### The max — recorded, estimated, and never something to go and test
+
+`estimatedMax()` + the max on every lift. The founder: *"should be recording
+my max for each one and it should be in a live graph."*
+
+**A best SET is the honest record** — 235 for 4 is a fact that happened. But it
+cannot be compared against 175 for 8, and that is the whole problem with
+reading a training log: every set sits at a different rep range, nothing lines
+up, and progress is invisible even when it is real. Epley puts both on one
+scale, which is the only way *"am I stronger than in March"* has an answer.
+Both numbers are shown: the real set, and the estimate that makes it
+comparable.
+
+- **Labelled an estimate everywhere it appears.** An unlabelled projected max
+  is a number people go and try to lift.
+- **Nothing is ever programmed from it**, and WROUGHT never suggests going and
+  testing a real one. A max attempt is the single most dangerous thing an app
+  can talk somebody into — the estimate exists precisely so nobody needs to.
+- **Reps capped at 12.** Epley diverges badly above that; a set of twenty would
+  produce a confident and absurd figure.
+
+**And a personal record is memory, not a window** — the third place this rule
+has been needed, after the weigh-in and last night's session. Lifts are built
+from the floored history rather than the selected range, and the panel is no
+longer hidden behind the trends gate: *"what is my best bench"* must have the
+same answer whichever range button is pressed, and a record that changes when
+you press one is not a record.
+
 ### Gauging — the set that just happened decides the next one
 
 The founder, after logging a set and getting nothing back: *"it's not really
@@ -2001,7 +2029,7 @@ self-reporting scale removes the most-abandoned manual entry), then Strava.
 
 ## Conventions
 
-- `npm test` runs `test/harness.mjs` — 499 offline tests, no network, no database.
+- `npm test` runs `test/harness.mjs` — 502 offline tests, no network, no database.
   Run it before every push. It covers the JSON-RPC envelope (which fails as an
   uninformative "could not connect" inside ChatGPT) and all the arithmetic
   (which fails as a confidently wrong number in somebody's verdict).

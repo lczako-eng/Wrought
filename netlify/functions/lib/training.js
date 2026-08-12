@@ -1465,3 +1465,29 @@ export function nextSetLoad({ weightKg = null, reps = null, rpe = null,
         : `Same ${w}kg.`,
   };
 }
+
+// ── The max, estimated and said to be ───────────────────────────────────────
+// The founder: "should be recording my max for each one."
+//
+// A best SET is the honest record — 235 for 4 is a fact that happened. But it
+// cannot be compared against 175 for 8, and that is the whole problem with
+// reading a training log: every set is at a different rep range, so nothing
+// lines up and progress is invisible even when it is real. Epley converts both
+// onto the same scale, which is the only way "am I stronger than in March" has
+// an answer.
+//
+// THREE RULES, and the first two are safety:
+//
+//   1. IT IS LABELLED AN ESTIMATE EVERYWHERE IT APPEARS. An unlabelled
+//      projected max is a number people go and try to lift.
+//   2. NOTHING IS EVER PROGRAMMED FROM IT, and WROUGHT never suggests going
+//      and testing a real one. A max attempt is the single most dangerous
+//      thing an app can talk somebody into — the estimate exists precisely so
+//      that nobody needs to.
+//   3. REPS ARE CAPPED AT 12. Epley diverges badly above that; a set of twenty
+//      would produce a confident and absurd figure.
+export function estimatedMax(weightKg, reps) {
+  const w = Number(weightKg), r = parseInt(String(reps), 10);
+  if (!Number.isFinite(w) || w <= 0 || !Number.isFinite(r) || r < 1) return null;
+  return Math.round(w * (1 + Math.min(r, 12) / 30) * 10) / 10;
+}
