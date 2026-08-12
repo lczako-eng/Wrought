@@ -19,7 +19,7 @@ import { PROVIDERS, LIVE_PROVIDERS, providerSummary, recommendRoute } from '../n
 import { nutritionTotals, composition, macroMatrix, yearOverYear } from '../netlify/functions/lib/nutrition.js';
 import { MOVEMENTS, PROGRAMMES, PATTERNS, movementsFor, pickProgramme, buildProgramme } from '../netlify/functions/lib/library.js';
 import {
-  exerciseKey, loadStep, progressionCall, TIERS,
+  exerciseKey, loadStep, progressionCall, nextSetLoad, TIERS,
   restingBurn, energyBalance, planFromRoutine, sessionTotals, earnedRoom,
   orderPlan, orderInsight, deviceMatrix, weekdayPattern, ACTIVITY, focusCall,
   trainingBurn, targetOptions,
@@ -3943,6 +3943,83 @@ await test('the demo is reachable from inside the app, and has a way back', () =
   // Signing out of borrowed numbers is meaningless.
   const demo = src.slice(src.indexOf('if (DEMO) {'), src.indexOf('if (DEMO) {') + 600);
   assert.match(demo, /whoami-out'\)\.hidden = true/);
+});
+
+group('Gauging — the set that just happened decides the next one');
+
+await test('an unreported effort never adds weight', () => {
+  // Rule 1, and the safety-critical one. Without an RPE the only signal is
+  // reps, and reps alone cannot tell a comfortable eight from a grinding one.
+  // Silence means hold, never climb — the same shape as readiness.
+  const hit = nextSetLoad({ weightKg: 60, reps: 8, targetReps: 8, key: 'bench_press' });
+  assert.equal(hit.verdict, 'same');
+  assert.equal(hit.weight_kg, 60);
+  assert.equal(hit.changed, false);
+
+  // Said to be easy, and only then does it climb — by ONE step, in real plates.
+  const easy = nextSetLoad({ weightKg: 60, reps: 8, rpe: 6.5, targetReps: 8, key: 'bench_press' });
+  assert.equal(easy.verdict, 'up');
+  assert.equal(easy.weight_kg, 62.5);
+  assert.match(easy.say, /62\.5kg/);
+
+  // Hit the target but it cost a lot: they earned it. Adding on top of that is
+  // how a good session becomes an injury.
+  const costly = nextSetLoad({ weightKg: 60, reps: 8, rpe: 9, targetReps: 8, key: 'bench_press' });
+  assert.equal(costly.verdict, 'same');
+  assert.match(costly.say, /cost enough/);
+});
+
+await test('falling apart comes down, and says why', () => {
+  // Missing the target at a high RPE is not character-building, it is a weight
+  // that is wrong today.
+  const short = nextSetLoad({ weightKg: 100, reps: 4, targetReps: 8, key: 'squat' });
+  assert.equal(short.verdict, 'down');
+  assert.equal(short.weight_kg, 95);
+  assert.match(short.say, /finishing the sets matters more/);
+
+  const grind = nextSetLoad({ weightKg: 100, reps: 8, rpe: 9.5, targetReps: 8, key: 'squat' });
+  assert.equal(grind.verdict, 'down');
+  assert.match(grind.say, /at the limit/);
+
+  // One rep short is not a collapse — hold and rest longer.
+  const near = nextSetLoad({ weightKg: 100, reps: 7, targetReps: 8, key: 'squat' });
+  assert.equal(near.verdict, 'same');
+  assert.match(near.say, /go again/);
+
+  // Never below one plate step, whatever the arithmetic says.
+  const tiny = nextSetLoad({ weightKg: 2.5, reps: 1, targetReps: 8, key: 'curl' });
+  assert.ok(tiny.weight_kg >= 1.25);
+});
+
+await test('bodyweight work has nothing to move, and does not pretend otherwise', () => {
+  const bw = nextSetLoad({ weightKg: null, reps: 12, targetReps: 15, key: 'press_ups' });
+  assert.equal(bw.verdict, 'same');
+  assert.equal(bw.weight_kg, null);
+  assert.ok(!/kg/.test(bw.say), `it invented a load for bodyweight work: ${bw.say}`);
+});
+
+await test('log_set returns a computed load, never a hardcoded "same"', () => {
+  // It WAS a hardcoded verdict:'same' for every set after the first, so "tell
+  // me how it felt and I'll adjust" was a promise kept entirely by the model —
+  // which means the adjustment was invented, on the one number in this product
+  // that goes on a bar.
+  const mcp = readFileSync(new URL('../netlify/functions/mcp.js', import.meta.url), 'utf8');
+  const fn = mcp.slice(mcp.indexOf('async function logSet('), mcp.indexOf('async function swapExercise('));
+  assert.match(fn, /nextSetLoad\(\{/, 'the next set is still not computed');
+  assert.ok(!/verdict: 'same', weight_kg: args\.weight_kg/.test(fn), 'the hardcoded "same" is back');
+  assert.match(fn, /THE LOAD IN up_next IS COMPUTED/);
+});
+
+await test('a weight is never read off a photograph and programmed', () => {
+  // The invented-2,600 failure in a new place: 135lb read off a picture of a
+  // bar and turned into three working sets. It is an observation about a
+  // barbell, not a prescription for a person — and the fix is the same shape,
+  // pointing at the tool that computes one instead of forbidding harder.
+  assert.match(SERVER_INSTRUCTIONS, /A WORKING WEIGHT MAY ONLY EVER COME FROM A TOOL/);
+  assert.match(SERVER_INSTRUCTIONS, /never from a photograph/);
+  assert.match(SERVER_INSTRUCTIONS, /somebody else left there/);
+  assert.match(SERVER_INSTRUCTIONS, /calibrate_lift/);
+  assert.match(SERVER_INSTRUCTIONS, /You may not turn it into their programme/);
 });
 
 group('Stretching — dynamic before, held after');

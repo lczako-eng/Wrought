@@ -1380,3 +1380,88 @@ function humanMinutes(mins) {
   const h = Math.floor(mins / 60), m = Math.round(mins % 60);
   return h ? `${h}h ${String(m).padStart(2, '0')}m` : `${m}m`;
 }
+
+// ── Gauging, inside the session ─────────────────────────────────────────────
+// The founder, looking at a set logged and nothing coming back: "it's not
+// really gauging me."
+//
+// He was right, and the hole was embarrassing. `log_set` returned the next
+// load as a hardcoded `verdict: 'same'` for every set after the first, so
+// "tell me how many you got and how hard it felt and I'll adjust" was a
+// promise kept entirely by the language model — which means the adjustment
+// was invented. THE ONE PLACE THE PRODUCT IS SUPPOSED TO BE A TRAINING PARTNER
+// RATHER THAN A DIARY, and it was guessing.
+//
+// This is a different question from `progressionCall`, which decides what to
+// open with NEXT TIME from the whole history. This is autoregulation within
+// the hour: the set that just happened is the best information anybody will
+// ever have about whether today's weight is right, and it is available three
+// minutes before the next set needs it.
+//
+// SAFETY RULES, because this is the one function that puts a number on a bar:
+//
+//   1. AN UNREPORTED EFFORT NEVER ADDS WEIGHT. Without an RPE the only signals
+//      are reps, and reps alone cannot tell a comfortable eight from a grinding
+//      one. Silence means hold, never climb. Same shape as readiness: it only
+//      ever softens.
+//   2. ONE STEP AT A TIME, in real plate increments. Nothing here ever jumps.
+//   3. FALLING SHORT COMES DOWN. Missing the target at a high RPE is not
+//      character-building, it is a weight that is wrong today.
+//   4. IT NEVER INVENTS A STARTING WEIGHT. With nothing logged for the set
+//      that just happened there is nothing to adjust, and it says so.
+
+export function nextSetLoad({ weightKg = null, reps = null, rpe = null,
+                              targetReps = null, key = '', tier = 'intermediate' } = {}) {
+  const w = Number(weightKg);
+  const r = reps == null ? null : Number(reps);
+  const e = rpe == null ? null : Number(rpe);
+  const target = targetReps == null ? null : parseInt(String(targetReps), 10);
+
+  // Rule 4. Bodyweight work and unlogged loads have nothing to move.
+  if (!Number.isFinite(w) || w <= 0) {
+    return {
+      verdict: 'same', weight_kg: null, changed: false,
+      say: r != null && target && r < target
+        ? 'Same again — take a longer rest before this one.'
+        : 'Same again.',
+    };
+  }
+
+  const step = loadStep(key, tier);
+  const round = v => Math.round(v * 4) / 4;
+
+  // Rule 3, first: a set that fell apart is the clearest signal there is.
+  const wellShort = target != null && r != null && r <= target - 3;
+  const grinding  = e != null && e >= 9.5;
+
+  if (wellShort || grinding) {
+    const next = Math.max(step, round(w - step));
+    return {
+      verdict: 'down', weight_kg: next, changed: next !== w, step,
+      say: `Take it to ${next}kg — ${grinding ? 'that was at the limit' : 'that came in short'}, and finishing the sets matters more than the number.`,
+    };
+  }
+
+  // Rule 1: an easy set only counts as easy if they SAID so.
+  const easy = e != null && e <= 7 && target != null && r != null && r >= target;
+  if (easy) {
+    const next = round(w + step);
+    return {
+      verdict: 'up', weight_kg: next, changed: true, step,
+      say: `That was comfortable — put it to ${next}kg.`,
+    };
+  }
+
+  // Everything else holds. Including "hit the target at RPE 9": they earned it,
+  // and adding on top of a set that already cost that much is how a good
+  // session becomes an injury.
+  const shortish = target != null && r != null && r < target;
+  return {
+    verdict: 'same', weight_kg: w, changed: false, step,
+    say: shortish
+      ? `Stay at ${w}kg — one more rest, then go again.`
+      : e != null && e >= 9
+        ? `Stay at ${w}kg. That one cost enough.`
+        : `Same ${w}kg.`,
+  };
+}
