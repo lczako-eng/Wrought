@@ -1365,6 +1365,50 @@ somebody to eat less than they need. Until something is logged there is no
 ring: the burn is shown as the burn, labelled *"to burn today"*, and the caveat
 says it is the whole day's estimate rather than what has been spent so far.
 
+### The five minutes before the first set
+
+`lib/preflight.js`, carried on `suggest_workout` AND `start_session`. The
+founder: *"should I ask you before work how you feel, what you wanna
+accomplish — it should look at your intake for the day and see where you're
+at."*
+
+Three things, and only one existed.
+
+- **How they feel.** `readiness()` is the objective half and is genuinely
+  useful, and it is blind to the half that matters most on the day: a watch
+  cannot tell a bad night from a bad week at work, and it has never once known
+  somebody's back is tight. **Nobody had ever been asked.**
+- **What they want out of it.** A session picked by *what is most overdue* is
+  right on average and wrong on the day somebody came in to do one thing.
+  Asking costs a clause and changes the whole hour — a stated goal beats the
+  matrix.
+- **Where the day actually stands.** Six hundred calories by six in the evening
+  is a fact about the session about to happen, and the training half and the
+  eating half of this product had never spoken to each other at the one moment
+  they obviously should.
+
+**It never blocks the session** — the warm-up's lesson, applied again. Both
+questions in ONE line, in the same message as the plan, answered in the same
+turn or not at all.
+
+**Fuel advice only ever points at eating MORE.** Telling somebody about to
+train that they should eat less is the dangerous direction, and a workout is
+not the moment for a deficit conversation under any framing. A well-fed day is
+stated flatly — *"about 1,800 in so far"* — and never as *"1,800 of 2,500"*,
+because that invites doing maths about what is left at the one moment that
+thought is least useful.
+
+**What they have taken is stated and never advised on.** That a tablet was
+logged is a fact about the day; whether they should have, whether it interacts,
+whether to take more is a doctor's question every time. And **nothing here ever
+becomes a reason to add weight** — a good reading, a good mood and a full
+stomach all mean train as planned and nothing more.
+
+The tests for the last two assert on **what the person is shown**, not on the
+model-facing note — that legitimately contains the prohibition itself, and
+grepping it catches the rule rather than a breach of it. Second time that trap
+has been hit in this file.
+
 ### Preemptive — the setting that was stored and drove nothing
 
 `lib/prompt.js` + `nudge` on `log`, `brief` and the dashboard. The founder:
@@ -1889,7 +1933,7 @@ self-reporting scale removes the most-abandoned manual entry), then Strava.
 
 ## Conventions
 
-- `npm test` runs `test/harness.mjs` — 486 offline tests, no network, no database.
+- `npm test` runs `test/harness.mjs` — 491 offline tests, no network, no database.
   Run it before every push. It covers the JSON-RPC envelope (which fails as an
   uninformative "could not connect" inside ChatGPT) and all the arithmetic
   (which fails as a confidently wrong number in somebody's verdict).
