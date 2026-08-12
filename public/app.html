@@ -3383,6 +3383,18 @@ function demoData() {
       { date: series[Math.max(0, N - 4)].date, exercise: 'Deadlift', note: 'grip went before the legs did' },
       { date: series[Math.max(0, N - 8)].date, exercise: 'Bench Press', note: 'felt light today, bar speed was quick' },
     ],
+    workouts: [
+      { name: 'Leg day — 19 sets, 44 min', kind: 'strength', date: series[Math.max(0, N - 1)].date,
+        minutes: 44, calories: 430, avg_hr: 128, days_ago: 0, source: 'logged' },
+      { name: 'Outdoor run · 5.6 km · 34 min', kind: 'run', date: series[Math.max(0, N - 1)].date,
+        minutes: 34, distance_km: 5.6, calories: 412, avg_hr: 149, days_ago: 0, source: 'device' },
+      { name: 'Push A — 12 sets, 51 min', kind: 'strength', date: series[Math.max(0, N - 3)].date,
+        minutes: 51, calories: 498, days_ago: 2, source: 'logged' },
+      { name: 'Outdoor walk · 3.1 km · 38 min', kind: 'walk', date: series[Math.max(0, N - 4)].date,
+        minutes: 38, distance_km: 3.1, calories: 168, days_ago: 3, source: 'device' },
+      { name: 'Tuesday five-a-side', kind: 'sport', date: series[Math.max(0, N - 5)].date,
+        minutes: 70, calories: 720, avg_hr: 141, days_ago: 4, source: 'logged' },
+    ],
     sessions: [
       { name: 'Leg day', kind: 'strength', date: series[Math.max(0, N - 1)].date, minutes: 44, days_ago: 0 },
       { name: 'Push A', kind: 'strength', date: series[Math.max(0, N - 3)].date, minutes: 51, days_ago: 2 },
@@ -5598,12 +5610,35 @@ function weekPanel(wk) {
   </section>`;
 }
 
+// Every workout, individually, however it arrived.
+//
+// This was built from `d.sessions` — wrought_sessions, which only exist for
+// sessions the ASSISTANT runs set by set. A run off the watch is a workout
+// EVENT and never creates a session, so every workout from Apple Health was
+// missing from the one panel called "recent sessions" while sitting in the
+// record the whole time. Merged and deduped on the server (lib/session.js), so
+// a gym session that wrote both a session row and an event is counted once.
 function sessionsPanel(d) {
-  const rows = (d.sessions || []).map(x =>
-    `<div class="row"><span>${esc(x.name)} <span class="chip">${esc(x.kind)}</span></span>
-     <span class="when">${x.days_ago === 0 ? 'today' : `${x.days_ago}d ago`}${x.minutes ? ` · ${x.minutes}m` : ''}</span></div>`).join('');
-  return `<section class="panel"><h2>Recent sessions</h2>
-    <div class="rows">${rows || '<p class="empty">No finished sessions yet.</p>'}</div></section>`;
+  const list = d.workouts || d.sessions || [];
+  const rows = list.map(x => {
+    const when = x.days_ago === 0 ? 'today' : x.days_ago === 1 ? 'yesterday'
+               : x.days_ago != null ? `${x.days_ago}d ago` : esc(x.date || '');
+    const nums = [
+      x.minutes ? `${x.minutes} min` : null,
+      x.distance_km ? `${x.distance_km} km` : null,
+      x.calories ? `${Number(x.calories).toLocaleString()} kcal` : null,
+      x.avg_hr ? `${x.avg_hr} bpm avg` : null,
+    ].filter(Boolean).join(' · ');
+    return `<div class="wkrow">
+      <span class="nm">${esc(x.name)}</span>
+      <span class="sub dim">${when}${nums ? ` · ${esc(nums)}` : ''}</span>
+      ${x.source === 'device' ? '<span class="chip">watch</span>' : ''}
+    </div>`;
+  }).join('');
+  return `<section class="panel"><h2>Every workout</h2>
+    <div class="rows">${rows || '<p class="empty">No workouts logged yet.</p>'}</div>
+    ${rows ? '<p class="sub dim">Sessions from your assistant and workouts from your watch, in one list.</p>' : ''}
+  </section>`;
 }
 
 // A saved workout you can OPEN, not just a name in a list.

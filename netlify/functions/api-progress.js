@@ -17,7 +17,7 @@ import { orderInsight, earnedRoom, energyBalance, exerciseKey, deviceMatrix, wee
 import { planRead } from './lib/plan.js';
 import { formWatch, cardioProgress } from './lib/form.js';
 import { blockPosition } from './lib/library.js';
-import { closeStaleSessions } from './lib/session.js';
+import { closeStaleSessions, workoutList } from './lib/session.js';
 import { allowed } from './lib/membership.js';
 import { nutritionTotals, composition, macroMatrix, yearOverYear } from './lib/nutrition.js';
 import { calendarDays, calendarRollups, calendarMissing, rangeRollup } from './lib/calendar.js';
@@ -390,6 +390,15 @@ export const handler = async (event) => {
   // distance, and a flat pace is named as the wall without being scolded.
   const cardio = cardioProgress(cardioRows);
 
+  // EVERY workout, from wherever it came, as one list.
+  //
+  // "I still don't see individual workouts." Recent sessions was built from
+  // wrought_sessions alone — the sessions the assistant runs, set by set — so
+  // every run and ride off the watch was missing from it while sitting in the
+  // record the whole time. cardioRows is already 120 days of workout events, so
+  // this costs nothing extra.
+  const workouts = workoutList(sessions, cardioRows, { today: to, limit: 20 });
+
   // The shadow technique leaves in the record — never a claim about the lifter,
   // because nothing here can see them lift. Only ever softens.
   const form = formWatch({ sets: histSets });
@@ -442,6 +451,8 @@ export const handler = async (event) => {
       readiness: ready,
       // Runs, as a progression. "I need to see where my walls are."
       cardio,
+      // Every workout, however it arrived — the watch's and the assistant's.
+      workouts,
       // The shadow, never a claim about technique.
       form,
       // The record of a fast. Never graded.

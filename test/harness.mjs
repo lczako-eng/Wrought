@@ -3985,6 +3985,46 @@ await test('care flags and the week are never read off a one-day window', () => 
   assert.equal(flags.length, 0, 'a care flag fired off a single day');
 });
 
+const { workoutList } = await import('../netlify/functions/lib/session.js');
+
+await test('a workout from the watch appears in the list of workouts', () => {
+  // "I still don't see individual workouts." Recent sessions was built from
+  // wrought_sessions alone — the sessions the ASSISTANT runs, set by set. A run
+  // off the watch is a workout EVENT and never creates a session, so every
+  // workout from Apple Health was missing from the one panel named for them
+  // while sitting in the record the whole time.
+  const sessions = [
+    { id: 'sess-1', name: 'Leg day', kind: 'strength', local_date: '2026-08-12',
+      started_at: '2026-08-12T18:00:00Z', ended_at: '2026-08-12T18:44:00Z' },
+  ];
+  const events = [
+    // The event the finaliser wrote for that same session.
+    { local_date: '2026-08-12', summary: 'Leg day — 19 sets, 44 min', source: 'agent',
+      detail: { kind: 'strength', minutes: 44, session_id: 'sess-1' } },
+    // And a run the watch sent, which creates no session at all.
+    { local_date: '2026-08-12', summary: 'run · 5.6 km · 34 min', source: 'wrought_ios',
+      detail: { kind: 'run', minutes: 34, distance_km: 5.6, calories: 412, avg_hr: 149 } },
+  ];
+  const list = workoutList(sessions, events, { today: '2026-08-12' });
+
+  assert.equal(list.length, 2, 'the gym session was counted twice, or the run was dropped');
+  assert.ok(list.some(w => w.kind === 'run'), 'the watch workout is missing');
+  const run = list.find(w => w.kind === 'run');
+  assert.equal(run.distance_km, 5.6);
+  assert.equal(run.source, 'device', 'a watch workout is not marked as one');
+  assert.equal(run.days_ago, 0);
+
+  // A session with no event of its own is still included — nothing is lost.
+  const orphan = workoutList(sessions, [], { today: '2026-08-12' });
+  assert.equal(orphan.length, 1);
+  assert.equal(orphan[0].name, 'Leg day');
+
+  // And the panel reads the merged list rather than the session table.
+  const src = page('app.html');
+  const panel = src.slice(src.indexOf('function sessionsPanel('), src.indexOf('// A saved workout you can OPEN'));
+  assert.match(panel, /d\.workouts/, 'the panel still reads sessions only');
+});
+
 await test('the dashboard does not queue its queries one behind the next', () => {
   // "It takes a while to load." Not the queries being slow — them QUEUEING.
   // The run-up range, the block, the all-time count, the last weigh-in, the
