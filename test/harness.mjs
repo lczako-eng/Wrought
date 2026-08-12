@@ -3631,10 +3631,16 @@ await test('a weigh-in is found outside the loaded window', () => {
   // form reappeared. It read as the product having forgotten a height it was
   // holding perfectly well, on the panel where that is most alarming.
   const src = readFileSync(new URL('../netlify/functions/api-progress.js', import.meta.url), 'utf8');
-  const block = src.slice(src.indexOf('let weightKg = today.body.weight_kg'), src.indexOf('const balance = energyBalance('));
-  assert.match(block, /wrought_events/);
-  assert.match(block, /event_type', 'weight'/);
-  assert.match(block, /order\('occurred_at'/);
+  // Fetched unconditionally in the main batch now — one small indexed row costs
+  // less than the extra serial round trip it used to take, and the window
+  // having no weigh-in on it is the ordinary case at 1d rather than the
+  // exception. The lookup itself is unbounded by date, which is the point.
+  const q = src.slice(src.indexOf("// The most recent weigh-in ANYWHERE"), src.indexOf('// Runs, rides and swims'));
+  assert.match(q, /wrought_events/);
+  assert.match(q, /event_type', 'weight'/);
+  assert.match(q, /order\('occurred_at'/);
+  assert.ok(!/local_date/.test(q), 'the weigh-in lookup was bounded by the window again');
+  assert.match(src, /if \(weightKg == null\) weightKg = lastWeightRow;/);
 });
 
 const { planRead } = await import('../netlify/functions/lib/plan.js');
@@ -3967,7 +3973,8 @@ await test('care flags and the week are never read off a one-day window', () => 
   // week's count read off one day is not a missing number, it is a wrong one,
   // on the figure the whole plan rests on.
   const api = readFileSync(new URL('../netlify/functions/api-progress.js', import.meta.url), 'utf8');
-  assert.match(api, /const recent = span >= 30 \? range : await rangeFacts\(user\.id, profile, addDays\(to, -29\), to\)/);
+  assert.match(api, /span >= 30 \? Promise\.resolve\(null\) : rangeFacts\(user\.id, profile, addDays\(to, -29\), to\)/);
+  assert.match(api, /const recent = recentRaw \|\| range;/);
   assert.match(api, /careFlags\(recent, profile\)/, 'care flags still read the selected range');
   assert.match(api, /weekSoFar\(recent\.days/, 'the week still reads the selected range');
   assert.match(api, /readiness\(\{ days: recent\.days\.slice\(-15\)/, 'recovery still reads the selected range');
@@ -3976,6 +3983,49 @@ await test('care flags and the week are never read off a one-day window', () => 
   // And the guards themselves still demand a run-up, or none of the above matters.
   const flags = careFlags({ days: [{ date: '2026-08-11', logged: true, calories: 900, sessions: 1 }] }, {});
   assert.equal(flags.length, 0, 'a care flag fired off a single day');
+});
+
+await test('the dashboard does not queue its queries one behind the next', () => {
+  // "It takes a while to load." Not the queries being slow — them QUEUEING.
+  // The run-up range, the block, the all-time count, the last weigh-in, the
+  // cardio rows and the fasts were each awaited on their own line after the
+  // main batch had already finished, and none of them needed anything the
+  // others returned. Every one is a full round trip from a Netlify function to
+  // Supabase, so the page paid all of them end to end.
+  const api = readFileSync(new URL('../netlify/functions/api-progress.js', import.meta.url), 'utf8');
+  const handler = api.slice(api.indexOf('export const handler'));
+
+  // Count statement-level awaits — each one is a serial hop. Auth, the
+  // membership gate, the profile and the stale-session sweep genuinely have to
+  // precede the batch (the sweep WRITES rows the batch then reads). Everything
+  // else belongs in it.
+  const serial = handler.split('\n').filter(l =>
+    /^\s*(const .*=\s*)?await /.test(l) && !/Promise\.all/.test(l));
+  // Auth, then the gate and profile together, then the sweep, then the batch.
+  // The fifth is the block's session count, which genuinely depends on having
+  // found a block and only runs when one is active.
+  assert.ok(serial.length <= 4,
+    `${serial.length} serial round trips before the page can answer:\n${serial.join('\n')}`);
+
+  // And the ones that were pulled in are genuinely in the batch.
+  const start = handler.indexOf('rangeFacts(user.id, profile, from, to)');
+  const batch = handler.slice(start, handler.indexOf('\n  ]);', start));
+  for (const q of ['wrought_blocks', "event_type', 'fast'", 'rangeFacts(user.id, profile, addDays(to, -29)']) {
+    assert.ok(batch.includes(q), `${q} is not in the parallel batch`);
+  }
+});
+
+await test('a 7.7MB client is not loaded to draw a dashboard', () => {
+  // Every function in the product imports lib/wrought.js, so a top-level
+  // `import OpenAI from "openai"` bundled the whole SDK into the dashboard,
+  // the ingest door and the voice endpoint — none of which can reach it.
+  // Netlify cold-starts a function by loading its bundle, so the website paid
+  // for the parser on a request that could not possibly use it.
+  const w = readFileSync(new URL('../netlify/functions/lib/wrought.js', import.meta.url), 'utf8');
+  assert.ok(!/^import OpenAI from 'openai';/m.test(w), 'the SDK is eagerly imported again');
+  assert.match(w, /await import\('openai'\)/, 'the lazy load is gone');
+  // Still null without a key, so every `if (!openai)` guard behaves as before.
+  assert.match(w, /process\.env\.OPENAI_API_KEY\s*\n?\s*\?/);
 });
 
 await test('a view that needs a session says so instead of doing nothing', () => {

@@ -1365,6 +1365,33 @@ somebody to eat less than they need. Until something is logged there is no
 ring: the burn is shown as the burn, labelled *"to burn today"*, and the caveat
 says it is the whole day's estimate rather than what has been spent so far.
 
+### "It takes a while to load" — the queries were queueing
+
+The founder, on the dashboard. Not the queries being slow: them **queueing**.
+
+`api-progress` had grown a chain of statement-level `await`s — the thirty-day
+run-up, the block, the all-time count, the last weigh-in, the cardio rows, the
+fasts — each one a full round trip from a Netlify function to Supabase, each
+one waiting for the last, and **none of them needing anything the others
+returned**. They are now in the same `Promise.all` as everything else: sixteen
+queries at once, three serial hops left (auth, the stale-session sweep — which
+WRITES rows the batch then reads — and the block's own session count, which
+genuinely depends on having found a block).
+
+**And a 7.7MB client was being loaded to draw a dashboard.** `lib/wrought.js`
+had a top-level `import OpenAI from 'openai'`, and every function in the
+product imports that file, so the OpenAI SDK was bundled into the dashboard,
+the ingest door and the voice endpoint — none of which can reach it. Netlify
+cold-starts a function by loading its bundle, so the first load after a quiet
+hour paid for parsing a client it could not possibly use. It is now pulled in
+on first real use; `openai` stays null without a key so every `if (!openai)`
+guard behaves exactly as before.
+
+The lesson is the one that keeps recurring in a file this size: **each new
+answer arrived as its own `await` on its own line, and each was individually
+harmless.** There is a test that counts the serial hops now, because this is
+invisible in review and obvious to whoever is holding the phone.
+
 ### Built, correct, and nowhere to look at it
 
 The founder: *"a lot of things are not showing up on the website."* He was
@@ -1774,7 +1801,7 @@ self-reporting scale removes the most-abandoned manual entry), then Strava.
 
 ## Conventions
 
-- `npm test` runs `test/harness.mjs` — 477 offline tests, no network, no database.
+- `npm test` runs `test/harness.mjs` — 479 offline tests, no network, no database.
   Run it before every push. It covers the JSON-RPC envelope (which fails as an
   uninformative "could not connect" inside ChatGPT) and all the arithmetic
   (which fails as a confidently wrong number in somebody's verdict).
