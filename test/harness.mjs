@@ -4589,6 +4589,49 @@ await test('a resting lifter is never closed out from under themselves', () => {
   assert.equal(stillRunning({ lastSetAt: null, startedAt: now - 9 * H, now }), false);
 });
 
+await test('a set reported with no workout running opens one', () => {
+  // THE OTHER HALF OF THE SAME LESSON. log_set refused outright without an
+  // active session, and the cost was total: somebody who walks in and just
+  // starts reporting sets — which is what actually happens — got "No workout
+  // is running", their sets never reached wrought_sets, and everything built
+  // on that grain silently had nothing to work from. No lift record, no max,
+  // no progression next time. The sets existed only as sentences.
+  const mcp = readFileSync(new URL('../netlify/functions/mcp.js', import.meta.url), 'utf8');
+  const fn = mcp.slice(mcp.indexOf('async function logSet('), mcp.indexOf('async function swapExercise('));
+
+  assert.match(fn, /NOBODY SAYS "START A WORKOUT" EITHER/);
+  assert.match(fn, /supabase\.from\('wrought_sessions'\)\.insert/, 'log_set cannot open a session');
+  assert.match(fn, /autoStarted = true/);
+
+  // An ad-hoc session is NOT a plan and must never invent one. sets: null is
+  // an open slot — nothing says how many are coming.
+  assert.match(fn, /sets: null/);
+  assert.match(fn, /current\.sets == null \? true : setsDone < current\.sets/,
+    'an open slot can still run out of sets');
+
+  // A different lift is appended in the order it actually happened, not
+  // refused for not being on a plan.
+  assert.match(fn, /exerciseKey\(named\) !== current\.key/);
+
+  // It still needs to know WHICH lift — a bare "got 8" with no session and no
+  // exercise is genuinely unanswerable, and guessing one would be worse.
+  assert.match(fn, /no exercise was named/);
+
+  assert.match(SERVER_INSTRUCTIONS, /A SESSION NOBODY STARTED IS STILL TRAINING/);
+  assert.match(SERVER_INSTRUCTIONS, /NEVER answer a reported set with "start a workout first"/);
+});
+
+await test('"no workout is running" is never the last word after training', () => {
+  // It is a true sentence and a useless one — to somebody who has just
+  // finished training it reads as "your workout was lost".
+  const mcp = readFileSync(new URL('../netlify/functions/mcp.js', import.meta.url), 'utf8');
+  const end = mcp.slice(mcp.indexOf('async function endSession('), mcp.indexOf('async function previousBest('));
+  assert.match(end, /already_filed: true/, 'a session already filed today is still reported as an error');
+  assert.match(end, /nothing was lost/);
+  assert.match(end, /NOT a dead end/);
+  assert.match(end, /Never leave somebody who has just finished training with nothing recorded/);
+});
+
 await test('a session left open overnight does not bill fourteen hours', () => {
   // The minutes are start → LAST SET, never start → now. Measuring to now
   // invents hundreds of calories of training burn, and an overstated burn is
@@ -4610,7 +4653,7 @@ await test('closing by hand and closing by walking out write the same row', () =
   // sentence. end_session goes through the shared path and only supplies the
   // one thing it genuinely knows better: that the session ended now.
   const mcp = readFileSync(new URL('../netlify/functions/mcp.js', import.meta.url), 'utf8');
-  const end = mcp.slice(mcp.indexOf('async function endSession('), mcp.indexOf('async function endSession(') + 1600);
+  const end = mcp.slice(mcp.indexOf('async function endSession('), mcp.indexOf('async function previousBest('));
   assert.match(end, /finaliseSession\(user\.id, profile, session, \{/);
   assert.match(end, /closedBy: 'user'/);
   assert.match(end, /endedAt: new Date\(\)\.toISOString\(\)/);
