@@ -1365,6 +1365,39 @@ somebody to eat less than they need. Until something is logged there is no
 ring: the burn is shown as the burn, labelled *"to burn today"*, and the caveat
 says it is the whole day's estimate rather than what has been spent so far.
 
+### Stretching — dynamic before, held after, and the half nobody ever got
+
+*"Nothing about stretching."* Right, and it was worse than missing: the rule
+was written, the content existed, and **both halves were delivered wrong.**
+
+- **The warm-up was on `start_session` and nowhere else** — and *"I'm going to
+  the gym"* lands on `suggest_workout`, which is the more common door by a
+  distance. The one feature built specifically to be OFFERED rather than waited
+  for was, for most sessions, never offered at all. It is on both now, built
+  from the requested focus or from what the log says is overdue.
+- **The held stretches were attached to the WARM-UP object**, so the static
+  work was offered at the one moment it is wrong and never at the moment it is
+  right. `cooldownFor()` is on `end_session` now — named for what actually
+  worked, because *"stretch out"* reads as filler and gets skipped for exactly
+  that reason, the same argument that makes the warm-up pattern-specific.
+
+**Dynamic before, static after is content, not taste.** A held stretch
+immediately before a heavy set measurably costs force for the next half hour;
+afterwards it costs nothing and is where the range-of-motion work belongs. Both
+objects say so in one clause, because it is the opposite of what most people
+were taught at school.
+
+**A cool-down must never become the reason somebody stops closing a session.**
+Offered in one line, skippable in one word, never insisted on and never
+repeated — the record of the workout matters more than the stretching does. And
+it is never physiotherapy: with a limitation on file the holds are still
+offered and never presented as treating anything.
+
+**A back squat was getting a pulling warm-up.** `back` in the pull block's
+pattern matched *"Back squat"*, so a squat day came with dead hangs and
+scapular pulls. The word is worth keeping — plenty of sessions carry `back` as
+the muscle — but not as the front half of *back squat*.
+
 ### The five minutes before the first set
 
 `lib/preflight.js`, carried on `suggest_workout` AND `start_session`. The
@@ -1933,7 +1966,7 @@ self-reporting scale removes the most-abandoned manual entry), then Strava.
 
 ## Conventions
 
-- `npm test` runs `test/harness.mjs` — 491 offline tests, no network, no database.
+- `npm test` runs `test/harness.mjs` — 494 offline tests, no network, no database.
   Run it before every push. It covers the JSON-RPC envelope (which fails as an
   uninformative "could not connect" inside ChatGPT) and all the arithmetic
   (which fails as a confidently wrong number in somebody's verdict).

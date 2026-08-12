@@ -49,7 +49,7 @@ const BLOCKS = {
     ],
   },
   pull: {
-    match: /row|pull[- ]?up|chin|pulldown|lat|curl|face pull|shrug|back/i,
+    match: /row|pull[- ]?up|chin|pulldown|lat|curl|face pull|shrug|back(?!\s*squat)/i,
     moves: [
       'Dead hangs — 20 seconds, let the shoulders stretch out',
       'Scapular pulls — 8, just the shoulder blades, arms stay straight',
@@ -62,12 +62,71 @@ const BLOCKS = {
   },
 };
 
-// Static, and only afterwards. Offered at the end of a session for the same
+// Static, and only afterwards. Offered at the END of a session for the same
 // reason the warm-up is offered at the start: it is the part everybody knows
 // they should do and nobody does unprompted.
+//
+// HELD, and named for what actually worked. A generic warm-up gets skipped for
+// being obviously generic, and a generic cool-down is worse — "stretch out"
+// means nothing and reads as filler. These are matched to the patterns the
+// session actually used, which is both correct and the thing that makes
+// somebody do it.
+const HOLDS = {
+  squat: ['Quads — 30 seconds a side, heel to backside, stand tall',
+          'Hip flexors — half-kneeling, 30 seconds a side, squeeze the back glute'],
+  hinge: ['Hamstrings — 30 seconds a side, foot on a bench, back flat rather than rounded',
+          'Glutes — figure-four, 30 seconds a side'],
+  push:  ['Chest — forearm on a doorframe or rack upright, 30 seconds a side',
+          'Triceps and lats — reach behind your head, 30 seconds a side'],
+  pull:  ['Lats — hang or hold a rack and sit back, 30 seconds',
+          'Upper back — cross one arm over, 30 seconds a side'],
+  core:  ['Front of the hips and stomach — a gentle cobra, 20 seconds, no forcing'],
+};
+
+const COOLDOWN_ALWAYS = 'Walk for two minutes rather than sitting straight down.';
+
+/**
+ * What to hold at the end, chosen from what actually worked.
+ *
+ * @param patterns    warm-up block keys, when the session came from a plan
+ * @param muscles     what the session recorded, when it did not
+ * @param limitations anything on file — the holds are still offered, and never
+ *                    presented as treating it. Same line as the warm-up.
+ */
+export function cooldownFor({ patterns = [], muscles = [], limitations = [] } = {}) {
+  const text = [...patterns, ...muscles].join(' ').toLowerCase();
+
+  const keys = patterns.length
+    ? patterns.filter(k => HOLDS[k])
+    : Object.keys(BLOCKS).filter(k => BLOCKS[k].match.test(text) && HOLDS[k]);
+
+  // Nothing recognised — a sport session, oddly named machines. Still worth
+  // offering something, because saying nothing here quietly drops the feature
+  // for exactly the sessions least likely to have a cool-down.
+  const moves = keys.length
+    ? keys.flatMap(k => HOLDS[k]).slice(0, 4)
+    : ['Hold whatever worked hardest for 30 seconds a side, without forcing it'];
+
+  return {
+    minutes: moves.length <= 2 ? 3 : 5,
+    moves,
+    patterns: keys,
+    skippable: true,
+    // THE HALF THAT IS ACTUALLY BACKED BY SOMETHING. Held stretches before a
+    // heavy set cost force; held stretches afterwards cost nothing and are
+    // where the range of motion work belongs.
+    style: 'Held, now that the lifting is done — this is where static stretching belongs, and it is the reason none of it was in the warm-up.',
+    ...(limitations.length ? {
+      caution: 'They have a limitation on file. This is not treatment for it — do not present any of it as fixing or rehabilitating anything, and if a hold pulls on the area, say to leave it out rather than working into it.',
+    } : {}),
+    say: `Before you go — ${moves.length <= 2 ? 3 : 5} minutes: ${moves.join('; ')}. ${COOLDOWN_ALWAYS}`,
+    note: 'Offer it in ONE line and let them skip it in one word. Never insist, never repeat it, and never let it become the reason somebody stops closing a session — the record of the workout matters more than the stretching does.',
+  };
+}
+
 const COOLDOWN = [
   'Hold anything that worked hard for 30 seconds a side — quads, hamstrings, chest, lats',
-  'Walk for two minutes rather than sitting straight down',
+  COOLDOWN_ALWAYS,
 ];
 
 /**
