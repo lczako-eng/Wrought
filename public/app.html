@@ -750,6 +750,18 @@ table.matrix td.rh.cold { color: var(--heat-3); }
 .fields input:focus, .fields select:focus, .fields textarea:focus { outline: none; border-color: var(--heat-3); }
 @media (max-width: 520px) { .fields { grid-template-columns: 1fr; } }
 
+/* An example sentence you can tap to copy. It is a button because it does
+   something, and it looks like speech because that is what it is. */
+.says { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0; }
+.say {
+  font: inherit; font-size: 13.5px; text-align: left; cursor: pointer;
+  padding: 9px 13px; border-radius: 14px 14px 14px 4px;
+  background: var(--scale); border: 1px solid var(--edge); color: var(--bright);
+  max-width: 100%; transition: border-color .15s, background .15s;
+}
+.say:hover, .say:focus-visible { border-color: var(--heat-3); outline: none; }
+.say.copied { background: var(--heat-1); border-color: var(--heat-3); color: var(--heat-5); }
+
 /* The plan: the target, and the two numbers that make it a decision rather
    than a rule handed down. They are never allowed to appear apart. */
 .plantop { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 14px; margin-bottom: 14px; }
@@ -1224,6 +1236,7 @@ a.ghost { display: inline-block; }
         <button class="range view" data-view="calendar" aria-pressed="false">Calendar</button>
         <button class="range view" data-view="trainer" aria-pressed="false">Trainer</button>
         <button class="range view" data-view="photos" aria-pressed="false">Photos</button>
+        <button class="range view" data-view="guide" aria-pressed="false">Guide</button>
         <button class="range view" data-view="account" aria-pressed="false">Account</button>
         <button class="range view" data-view="admin" aria-pressed="false" id="admintab" hidden>Admin</button>
       </nav>
@@ -1439,6 +1452,9 @@ document.querySelectorAll('.range.view').forEach(b => b.addEventListener('click'
 }));
 
 async function refresh() {
+  // No session needed and no request made — it is the manual, and somebody
+  // who cannot get signed in is exactly who needs to read it.
+  if (view === 'guide') { $('content').innerHTML = guideView(); wireGuide(); stagger(); return; }
   if (view === 'log') return loadLog(true);
   if (view === 'trainer') return startTrainer();
   if (view === 'photos') return loadPhotos();
@@ -4018,6 +4034,130 @@ function burnSplit(b) {
     </div>
     ${b.logged_activity?.count ? `<div class="bswork">${esc(b.logged_activity.entries.map(e => e.summary).join(' · '))}</div>` : ''}
   </div>`;
+}
+
+// ── How to use it ─────────────────────────────────────────────────────────
+// The founder, before his first session with it: "can you get any prompts,
+// questions and stuff? It's my first workout with it" — and then, plainly:
+// put them in the app.
+//
+// THE MANUAL IS EXAMPLE SENTENCES, NOT A FEATURE LIST. Nobody reads "supports
+// natural-language logging with macro inference" and knows what to say. They
+// read "had a steak and a baked potato" and know immediately. The entire
+// product is that you talk normally, so the manual has to be made of the
+// talking — anything else teaches a command language that does not exist and
+// makes the thing look harder than it is.
+//
+// Tapping a line copies it, because the gap between reading an example and
+// using it should be nothing at all.
+//
+// The content is duplicated from lib/guide.js rather than fetched: this is the
+// one screen that has to work when somebody cannot get signed in, which is
+// precisely when they most need to know what to say. There is a test that the
+// two agree on what matters.
+const GUIDE_SECTIONS = [
+  { title: 'Just say it',
+    note: 'One sentence is a complete log. Never a form, never "what were the macros".',
+    lines: ['had a steak and a baked potato', 'two eggs and black coffee', '330 this morning',
+            'slept about six hours, badly', 'just did ten push-ups',
+            'worked at the petting zoo, about four hours on task'],
+    after: 'It works in any conversation, not just one about training. Mention push-ups while asking about a tax form and the push-ups get filed — quietly — and the tax conversation carries on.' },
+  { title: 'Set it up — once',
+    note: 'Five facts and a plan, asked in passing and never as a signup form.',
+    lines: ['I\'m 6\'3", 330lb, born 1982, male, on my feet most days',
+            'I want to lose weight, steady pace, four days a week, normal push',
+            'make it aggressive', 'ease off, this is too much', 'stop nagging me about training'],
+    after: 'Pace and push are separate on purpose. Pace is how fast the plan aims; push is how often training gets raised unprompted — turning down the nagging must not turn down the honesty.' },
+  { title: 'Get a workout',
+    note: 'One line back with a proposal already in it, not three questions.',
+    lines: ['I\'m going to the gym', 'let\'s do legs tonight, an hour', 'what should I train',
+            'let\'s do S-Tier', 'I\'m at the home gym today', 'give me a proper programme'],
+    after: 'It picks what is most overdue from your own log. If your resting heart rate is up or you slept badly it says so BEFORE the plan and tells you to go lighter — the body gets a veto, never a spur.' },
+  { title: 'At the rack',
+    note: 'Say what happened. Anything about how it FELT is worth more than the number.',
+    lines: ['got 8', '92.5 for 6', 'failed at 5', 'third set I rushed it',
+            'someone\'s on the bench', 'what\'s left', 'that was legs, forty minutes'],
+    after: 'You never have to say "end session". Finish the last set and walk out — a session with sets in it is filed as training whether or not anybody closed it.' },
+  { title: 'Save a workout you like',
+    note: 'A name, the movements, and the reason they are in that order.',
+    lines: ['save this as my S-Tier workout',
+            'save a routine called S-Tier: bench 4×8, incline dumbbell 3×10, dips 3× to failure, cable flyes 3×12. It\'s for chest volume — go heavy on bench, leave a rep in on the rest',
+            'add incline treadmill, 10+ incline at 2–3mph for 25 minutes, to S-Tier',
+            'what routines do I have'],
+    after: 'The write-up is what makes it a workout rather than a list, and it is shown at the top every time you start it. It survives adding exercises later.' },
+  { title: 'Show it your gym',
+    note: 'A photograph of a gym is an equipment list.',
+    lines: ['here are some pictures of my gym', 'this is the hotel gym I\'m in this week',
+            'what can I actually do with this'],
+    after: 'The AI reads the photographs — this server never sees them — and saves the equipment as it goes, so plans are built around machines that are actually there. More than one gym is normal; name them and they are kept apart.' },
+  { title: 'Ask how it is going',
+    note: 'Every number is computed on the server. None of it is a language model guessing.',
+    lines: ['gym bro', 'what\'s the damage', 'hit me', 'how am I doing this week',
+            'what\'s my plan', 'I\'m hungry', 'it\'s late and I\'m at the fridge', 'talk me out of it'],
+    after: 'The honesty is the point and the register is yours: gentle, honest or brutal. Say which. It is never about your body, only about what you did.' },
+  { title: 'Fix something',
+    note: 'Changing your mind is one sentence and never a negotiation.',
+    lines: ['that was 28 minutes, not 20', 'that steak was more like 400 grams', 'undo that',
+            'change my step goal to 12,000', 'drop the protein goal'],
+    after: 'A target you keep missing is a target set wrong. Lowering it gets no remark about commitment and no question about why.' },
+];
+
+const GUIDE_REFUSES = [
+  'Flattery. The read is honest, in the register you chose.',
+  'A guessed working weight. No history means an effort level, never an invented number.',
+  'A calorie figure it made up. Every target is computed from your own body and floored at 1,200.',
+  'Guilt. Sessions never roll over, fasts are never scored, a missed week is information.',
+  'Coaching past a care flag. Eating too little, losing too fast, or no rest in 14 days stops the coaching entirely.',
+  'Reading your photographs. Nothing ever estimates anything from a progress photo.',
+  'Medicine. It is not a medical device, it says so, and it points at a doctor.',
+];
+
+function guideView() {
+  return `
+    <section class="panel">
+      <h2>How to use it</h2>
+      <p class="sub">You do not learn commands. You talk — to ChatGPT or Claude, in any
+      conversation, with the connector on. Everything below is a sentence you can say
+      exactly as written. <strong>Tap one to copy it.</strong></p>
+    </section>
+    ${GUIDE_SECTIONS.map(sec => `<section class="panel">
+      <h2>${esc(sec.title)}</h2>
+      <p class="sub">${esc(sec.note)}</p>
+      <div class="says">${sec.lines.map(l =>
+        `<button class="say" type="button" data-say="${esc(l)}">${esc(l)}</button>`).join('')}</div>
+      <p class="sub dim">${esc(sec.after)}</p>
+    </section>`).join('')}
+    <section class="panel">
+      <h2>What it will not do</h2>
+      <p class="sub">Printed here because "give us years of your life" is only a fair ask
+      next to what it refuses to do with them.</p>
+      <div class="rows">${GUIDE_REFUSES.map(r =>
+        `<div class="wkrow"><span class="nm">${esc(r)}</span></div>`).join('')}</div>
+      <p class="caveat">Your whole record comes back on demand as JSON or CSV, always —
+      even lapsed, even revoked. There is more at <a class="linky" href="/about.html">wrought.fit/about</a>.</p>
+    </section>`;
+}
+
+// Copy on tap, and say so on the button itself. The gap between reading an
+// example and using it should be nothing at all.
+function wireGuide() {
+  document.querySelectorAll('.say[data-say]').forEach(b => b.addEventListener('click', async () => {
+    try {
+      await navigator.clipboard.writeText(b.dataset.say);
+      const was = b.textContent;
+      b.textContent = 'copied';
+      b.classList.add('copied');
+      setTimeout(() => { b.textContent = was; b.classList.remove('copied'); }, 1100);
+    } catch {
+      // Clipboard blocked (an insecure origin, or a webview that refuses).
+      // Selecting the text is the honest fallback — silence would read as a
+      // dead button.
+      const r = document.createRange();
+      r.selectNodeContents(b);
+      const sel = window.getSelection();
+      sel.removeAllRanges(); sel.addRange(r);
+    }
+  }));
 }
 
 // ── The plan, stated ───────────────────────────────────────────────────────

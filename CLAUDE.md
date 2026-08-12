@@ -1365,6 +1365,39 @@ somebody to eat less than they need. Until something is logged there is no
 ring: the burn is shown as the burn, labelled *"to burn today"*, and the caveat
 says it is the whole day's estimate rather than what has been spent so far.
 
+### The manual is in the app, and it is made of sentences
+
+`lib/guide.js` + the Guide tab. The founder, before his first session with it:
+*"can you get any prompts, questions and stuff? It's my first workout with
+it"* — and then, plainly: put them in the app.
+
+**The manual is example SENTENCES, not a feature list.** Nobody reads
+"supports natural-language logging with macro inference" and knows what to
+say; they read *"had a steak and a baked potato"* and know immediately. The
+whole product is that you talk normally, so the manual has to be made of the
+talking — anything else teaches a command language that does not exist and
+makes the thing look harder than it is. Forty-four of them, in the eight
+groups somebody actually meets: say it, set it up, get a workout, at the rack,
+save one you like, show it your gym, ask how it is going, fix something.
+
+- **Tapping a line copies it.** The gap between reading an example and using
+  it should be nothing at all. A blocked clipboard selects the text instead —
+  silence would read as a dead button.
+- **No session and no request.** It is the one screen that must work for
+  somebody who cannot get signed in, which is precisely when they most need to
+  know what to say.
+- **The refusals are printed on it**, because *"give us years of your life"* is
+  only a fair ask next to what it will not do with them.
+- `guideRead()` serves the same content to the `guide` tool, so the manual
+  cannot disagree with itself in two places.
+
+**And the gym inventory is saved as each batch of photos arrives, never at the
+end.** ChatGPT was answering *"keep sending the pictures, I'll build up an
+inventory of the whole gym"* — which holds the entire gym in a conversation
+that then ends, on the one product whose promise is that it remembers. The
+instruction now says to call `set_profile` after every batch with the full
+list so far.
+
 ### Every workout, however it arrived
 
 *"I still don't see individual workouts."* The Recent sessions panel was built

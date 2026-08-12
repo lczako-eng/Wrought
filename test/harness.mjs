@@ -3087,6 +3087,8 @@ await test('the about page says the name, the manual, and the way out', () => {
   assert.match(page('index.html'), /<a href="\/about\.html">About<\/a>/);
 });
 
+const { GUIDE, guideRead } = await import('../netlify/functions/lib/guide.js');
+
 await test('the tutorial is a tool, not the model\'s memory of a README', () => {
   const g = TOOLS.find(t => t.name === 'guide');
   assert.ok(g, 'no guide tool');
@@ -3094,11 +3096,28 @@ await test('the tutorial is a tool, not the model\'s memory of a README', () => 
   for (const phrase of ['how do I use this', 'what does wrought mean', 'what can you do', 'tutorial']) {
     assert.ok(SERVER_INSTRUCTIONS.includes(phrase), `"${phrase}" maps to nothing`);
   }
-  const src = readFileSync(new URL('../netlify/functions/mcp.js', import.meta.url), 'utf8');
-  const fn = src.slice(src.indexOf('async function guide('), src.indexOf('async function setProfile('));
-  assert.match(fn, /past tense of/);
-  assert.match(fn, /what_it_refuses/);
-  assert.match(fn, /do not recite the whole manual/i);
+  // One manual, shared with the app's Guide tab — a manual that disagrees with
+  // itself in two places is worse than one place.
+  const out = guideRead();
+  assert.match(out.meaning, /past tense of/);
+  assert.ok(out.what_it_refuses.length >= 5);
+  assert.match(out.note, /do not recite the whole manual/i);
+
+  // THE MANUAL IS EXAMPLE SENTENCES, NOT A FEATURE LIST. Nobody reads
+  // "supports natural-language logging" and knows what to type; they read
+  // "had a steak and a baked potato" and know immediately.
+  const lines = GUIDE.sections.flatMap(x => x.lines);
+  assert.ok(lines.length >= 30, `only ${lines.length} example sentences`);
+  assert.ok(!lines.some(l => /_[a-z]/.test(l)), 'a tool name leaked into the manual');
+  // The refusals are printed on it, because "give us your record" is only fair
+  // next to what it will not do with it.
+  assert.ok(out.what_it_refuses.some(r => /1,200/.test(r)), 'the calorie floor is not stated');
+  assert.ok(out.what_it_refuses.some(r => /progress photo/i.test(r)));
+
+  // And it is in the app, which is where somebody about to train will look.
+  const app = page('app.html');
+  assert.match(app, /data-view="guide"/, 'the guide is not a tab');
+  assert.match(app, /function guideView\(/);
 });
 
 await test('a photo of the gym becomes an equipment list — and never reaches us', () => {
@@ -3110,6 +3129,11 @@ await test('a photo of the gym becomes an equipment list — and never reaches u
   assert.match(SERVER_INSTRUCTIONS, /category "gym"/);
   assert.match(SERVER_INSTRUCTIONS, /More than one gym is normal/);
   assert.match(SERVER_INSTRUCTIONS, /Never build a plan around a machine their photos did not show/);
+  // SAVED AS EACH BATCH ARRIVES, never at the end. "Keep sending and I'll build
+  // up an inventory" holds the whole gym in a conversation that then ends — on
+  // the one product whose entire promise is that it remembers.
+  assert.match(SERVER_INSTRUCTIONS, /SAVED AS EACH BATCH ARRIVES/);
+  assert.match(SERVER_INSTRUCTIONS, /takes the whole gym with it/);
 });
 
 group('The burn, split into the half you can change');
