@@ -46,10 +46,19 @@ His claim: this beats Kayak and Booking because the flexibility is greater.
 
 ## The verdict, first
 
-**The wedge is real, and it is much narrower than the pitch.** It is not
-"flexible search" — flexible search exists and Google gives it away. It is
-**the landed cost of a trip measured from a specific driveway**, which nobody
-computes and nobody is structurally able to.
+**The wedge is real, and it is narrower and sharper than the pitch.** It is not
+"flexible search" — the capability exists and Google gives it away. It is two
+things that compose:
+
+1. **It proposes the option you did not ask for.** Google answers the question
+   you typed; it never volunteers Buffalo on the 14th.
+2. **It prices the trip from a specific driveway** — fare, drive, parking,
+   border, exchange — which nobody computes and nobody else is structurally able
+   to.
+
+And it is **not for travellers, it is for frequent travellers in a multi-airport
+catchment.** That is the customer, and naming them narrowly is what makes the
+rest of this defensible.
 
 **Build it as a decision engine, not a booking engine.** Sell the answer;
 refer the transaction out. That one choice removes about 80% of the risk
@@ -65,10 +74,25 @@ section says the answer is worth money.**
 Every OTA answers *"what is the cheapest flight from A to B?"* Google Flights
 answers a much better version of it — up to seven origins against seven
 destinations, and a whole-month price calendar. Kayak has nearby-airports and
-flexible-dates too. **The flexibility itself is not the gap, and claiming it is
-will get the product dismissed by anyone who has used Google Flights properly.**
+flexible-dates too.
 
-The gap is this: **every one of those tools prices the fare and stops.** They
+**But the capability existing is not the same as the option arriving**, and the
+founder was right to push back here: *"nobody's giving me options when I do
+that."* He is describing what happens at the screen. Google Flights answers
+precisely the question you typed and never proposes the one you did not. The
+month grid works per origin-destination pair; Explore degrades your constraints
+to draw a map; a multi-origin search collapses into one cheapest list that never
+states the **trade**. To get the good answer out of it you have to already
+suspect the good answer exists and interrogate the tool into confirming it.
+
+That is a failure WROUGHT has already met twice: the arithmetic was built,
+tested and shipping, and **the website simply had no surface for it.**
+Capability nobody surfaces is capability nobody has. So the honest framing is
+not *"more flexible than Kayak"* — it is **"it proposes the option you did not
+ask for."** Google structurally does not make that claim and Expedia has no
+incentive to.
+
+The second gap: **every one of those tools prices the fare and stops.** They
 will happily tell you Buffalo is $340 cheaper and never mention that Buffalo
 costs you a 2h45 drive each way, a week of airport parking, a tank of gas, a
 border crossing in both directions, and a fare denominated in a currency you do
@@ -105,6 +129,73 @@ The output is one sentence nobody else can produce:
 
 That is a decision somebody can judge — the same standard WROUGHT applies to a
 calorie target that must never appear without its maintenance beside it.
+
+---
+
+## The second half of the wedge — constraints nobody has a box for
+
+The founder: *"I could talk to the guy and say listen, I want only this airline
+— very specific, very customizable. The other ones, you gotta fill in boxes."*
+
+This was underweighted in the first draft. It is real, and it composes with
+landed cost rather than sitting beside it.
+
+**A filter set is a fixed vocabulary**, and every OTA's filter set is the
+intersection of what is cheap for them to index. The constraints people actually
+carry have no box:
+
+- *"Air Canada only, I'm chasing status."*
+- *"Nothing through Chicago in January."*
+- *"I have to be back before my daughter's recital on the 19th."*
+- *"I'd pay $80 more not to take a redeye."*
+
+**The last one is the important one**, and it is why this is more than a nicer
+input field. A filter can only express a HARD constraint — on or off. What it
+structurally cannot take is the **exchange rate between constraints**: how much
+a redeye is worth avoiding, what an hour of driving costs you, whether $60 is
+worth a 6am start.
+
+And that is **exactly the input the landed-cost calculation already needs.**
+Both halves of the wedge want the same fact out of the traveller. That is not a
+coincidence — it is the product. The conversation is the only interface that can
+collect it, because no form has ever successfully asked somebody what an hour of
+their time is worth.
+
+**The caveat, so it is not discovered later:** Expedia's ChatGPT app also takes
+natural language. The difference is that it translates the sentence **down into
+its own filter boxes** — the boxes are still there, hidden behind the
+conversation. So the advantage only exists if the backend can express
+constraints theirs cannot. That is a genuine technical distinction and it is
+defensible, but it has to be **built deliberately**. It does not come free with
+having a chat interface, and assuming it does is how this turns into a worse
+Expedia with a nicer greeting.
+
+---
+
+## What cannot be undercut, and what actually is
+
+The founder: *"we get to undercut every single one of them cause zero
+expenses."* Both halves of that are wrong, and the correction makes the pitch
+stronger rather than weaker.
+
+- **The expenses are not zero — search IS the expense.** 11,160 priced
+  itineraries per flexible question, arriving whether or not anybody books. It
+  is the single largest cost in the product and the whole reason the cached
+  surface exists.
+- **A fare cannot be undercut at all.** The seat price is set by the airline.
+  Expedia does not mark it up and hand back the difference — it earns commission
+  from the *airline* side, so there is no margin sitting there to give away.
+  Where negotiated fares do exist they go to whoever has volume, which on day one
+  is everybody except us. **A new entrant is priced ABOVE the market, not
+  below.** Any pitch built on being cheaper per seat collapses the first time
+  somebody compares one.
+- **What actually gets undercut is the wrong airport.** The $181 in the Buffalo
+  example does not come out of anybody's margin — it comes from flying out of
+  Buffalo instead of Pearson. It is a **routing saving**, and it is larger than
+  any discount an OTA could offer even if it wanted to.
+
+So the saving is never framed as a discount. It is a **better answer**, which is
+both true and the stronger claim.
 
 ---
 
@@ -243,10 +334,36 @@ Realistically **35–45% of the codebase is reusable in shape**, and closer to
 **WROUGHT's moat is accumulated personal memory.** Four years of training
 history cannot be cloned, and it gets more valuable every single day it exists.
 
-**Travel is two to four transactions a year.** There is no daily accretion, so
+**Travel is a handful of transactions a year.** There is no daily accretion, so
 there is no compounding record, so there is no moat of that kind. This must be
 faced rather than talked around: the thing that makes WROUGHT defensible is
 mostly absent here.
+
+**But the founder corrected the number, and the correction defines the
+customer.** The first draft said two to four trips a year. His own figure is
+*"6–7 times a year at least"* — and he is not the average traveller, he is the
+target one. That distinction is the most useful thing to come out of this
+assessment:
+
+> **This is not a product for travellers. It is a product for FREQUENT
+> travellers who live in a multi-airport catchment.**
+
+That segment is far smaller and far better. It is the only group for whom the
+landed-cost arithmetic is worth anything: one trip a year does not justify
+learning a tool, and somebody with one reachable airport has no decision to
+make. Six or seven trips against six reachable airports is a decision worth
+money **every time**, and it is a population that can be described, found and
+spoken to — Southern Ontario, the Detroit–Windsor corridor, Vancouver–Bellingham,
+San Diego–Tijuana, anywhere a border or a cluster puts real fare spread inside a
+three-hour drive.
+
+It also fixes the subscription maths that the affiliate model could not carry.
+Six or seven searches a year, each worth $100–300 in avoided cost, is
+comfortably a paid product. Two searches a year is not.
+
+The memory still accretes slowly — but each trip teaches it a real preference,
+and by trip four it knows things a cold competitor cannot ask for without
+sounding like a form.
 
 What memory does exist is real but thin — and it is *constraint* memory rather
 than *history* memory:
@@ -310,13 +427,21 @@ The entire concept rests on a single empirical claim: **that the landed-cost
 answer is materially different from the fare answer.** That is testable by hand
 tonight, and it costs nothing.
 
-1. Take a real trip — the founder's actual December week.
-2. Price it manually across all six airports on Google Flights, using the month
-   calendar.
-3. Add the drive, the parking, the gas, the FX and the border for each.
-4. Compare the winner against what Google Flights alone would have told him.
+**Run it BACKWARDS, on trips already taken.** This is the better version and it
+only became available once the founder said he flies six or seven times a year:
+he is not short of test cases, he has a year of them, and a trip already taken
+has a **known actual price** to check the answer against. A hypothetical
+December week can only ever be compared against another estimate.
 
-Then read the gap:
+1. List the last six trips actually taken, with what was paid and which airport
+   was used.
+2. Price each one again across all six airports on Google Flights, using the
+   month calendar around the dates that were genuinely flexible.
+3. Add the drive, the parking, the gas, the FX and the border for each.
+4. For each trip, ask the only question that matters: **was there a better
+   departure point, and by how much?**
+
+Then read the gap — the average across all six, not the best one:
 
 - **Under ~$100** — the product has no reason to exist. Google's answer is good
   enough, and the extra work is not worth paying for. **Stop here.** That is a
@@ -326,9 +451,14 @@ Then read the gap:
 - **Over $300, repeatably, across several trips** — the wedge is genuine and
   worth a repo.
 
-Run it three or four times, on different months and destinations, before
-believing any single result. One good answer is salt and sleep; the trend is
-the finding. That is the same rule WROUGHT applies to a weigh-in.
+Six trips is the sample, and the **average** is the finding. One good answer is
+salt and sleep — the same rule WROUGHT applies to a weigh-in, and the same
+reason its charts carry a seven-day mean beside the daily line.
+
+And note what a bad result actually means: if six real trips show no better
+departure point, that is not a failed experiment. It is a year of the founder's
+own travel proving he was already choosing correctly, learned in one evening
+instead of one quarter.
 
 ---
 
@@ -346,8 +476,10 @@ and selling travel drags in an operational liability WROUGHT has never had and
 that one person cannot staff.
 
 **The moat is thinner than WROUGHT's, and that is the honest cost of the
-category.** Two to four transactions a year does not compound the way a daily
-log does. What memory exists is about constraints, not history.
+category.** A handful of transactions a year does not compound the way a daily
+log does. What memory exists is about constraints, not history. What replaces
+the moat is **segment**: frequent travellers inside a multi-airport catchment,
+who are the only people for whom this arithmetic is ever worth money.
 
 **Do the evening test first.** Everything above is downstream of one number
 nobody has measured yet.
