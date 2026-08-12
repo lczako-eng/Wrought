@@ -3945,6 +3945,106 @@ await test('the demo is reachable from inside the app, and has a way back', () =
   assert.match(demo, /whoami-out'\)\.hidden = true/);
 });
 
+group('The five minutes before the first set');
+
+const { preflight } = await import('../netlify/functions/lib/preflight.js');
+
+const DAY = (over = {}) => ({
+  food: { calories: 1800, meals: 3 }, training: { entries: [] }, log: [], ...over,
+});
+
+await test('it asks how they feel and what they want, in one line', () => {
+  // Readiness is the objective half and is blind to the half that matters most
+  // on the day: a watch cannot tell a bad night from a bad week at work, and
+  // it has never once known somebody's back is tight. Nobody had been asked.
+  const p = preflight({ day: DAY() });
+  assert.match(p.ask, /How are you feeling/i);
+  assert.match(p.ask, /want out of today/i);
+  // One line, both questions — two turns of interview before a workout is an
+  // interrogation.
+  assert.equal(p.ask.split('?').filter(Boolean).length - 1, 1, 'the questions were split into two asks');
+
+  // AND IT NEVER BLOCKS THE SESSION. Same lesson the warm-up taught.
+  assert.match(p.note, /never wait for an answer/i);
+  assert.match(p.note, /rather just start|if they ignore it, carry on/i);
+  assert.match(p.ask, /rather just start/i);
+});
+
+await test('fuel advice only ever points at eating MORE', () => {
+  // Telling somebody about to train that they should eat less is the dangerous
+  // direction, and this is not the moment for a deficit conversation under any
+  // framing.
+  const empty = preflight({ day: DAY({ food: { calories: 0, meals: 0 } }) });
+  assert.equal(empty.fuel.state, 'empty');
+  assert.match(empty.fuel.say, /something small before you start/i);
+
+  const light = preflight({ day: DAY({ food: { calories: 400, meals: 1 } }), calorieTarget: 2500 });
+  assert.equal(light.fuel.state, 'light');
+  assert.match(light.fuel.say, /worth something before you start/i);
+
+  // Well fed is stated flatly and invites no arithmetic about what is left.
+  const fed = preflight({ day: DAY(), calorieTarget: 2500 });
+  assert.equal(fed.fuel.state, 'fed');
+  assert.ok(!/of 2,?500|left|remaining|under|over/i.test(fed.fuel.say),
+    `the fed line invites maths about what is left: ${fed.fuel.say}`);
+
+  // Assert on what the PERSON is shown, not on the note written for the model —
+  // that legitimately contains the prohibition itself, and grepping it catches
+  // the rule rather than a breach of it. Same trap as earlier in this file.
+  const spoken = p => [p.ask, p.say, p.fuel?.say, p.taken?.say].filter(Boolean).join(' ');
+  for (const p of [empty, light, fed]) {
+    assert.ok(!/eat less|cut back|too much|deficit|stay under|calories left/i.test(spoken(p)),
+      `a deficit conversation appeared before a workout: ${spoken(p)}`);
+  }
+});
+
+await test('what they have taken is stated and never advised on', () => {
+  // Recorded because it is a fact about the day. Whether they should have,
+  // whether it interacts, whether to take more — a doctor's question, always.
+  const p = preflight({ day: DAY({ log: [
+    { type: 'supplement', summary: 'creatine 5g' },
+    { type: 'supplement', summary: 'blood pressure tablet' },
+    { type: 'food', summary: 'eggs' },
+  ] }) });
+  assert.equal(p.taken.count, 2, 'it counted things that are not supplements');
+  assert.match(p.taken.say, /creatine/);
+  assert.match(p.note, /NOT to be commented on/);
+  assert.match(p.note, /doctor/i);
+  assert.ok(!/should take|recommend|dose|interact|instead of/i.test(p.taken.say));
+});
+
+await test('the body still only ever softens, never spurs', () => {
+  // Nothing here turns a good reading, a good mood or a full stomach into "add
+  // weight" — that is how a tool argues somebody into an injury.
+  const strained = preflight({ day: DAY(),
+    ready: { known: true, state: 'strained', say: 'Resting heart rate is up and you slept short. Train lighter today.' } });
+  assert.equal(strained.readiness_first, true);
+  assert.match(strained.say, /Train lighter/);
+  assert.match(strained.note, /body gets a veto/i);
+  assert.match(strained.note, /never train harder/i);
+
+  const ready = preflight({ day: DAY(), ready: { known: true, state: 'ready', say: 'Nothing is off.' } });
+  assert.equal(ready.readiness_first, false, 'a good reading was promoted to a headline');
+  for (const p of [strained, ready]) {
+    const spoken = [p.ask, p.say, p.fuel?.say].filter(Boolean).join(' ');
+    assert.ok(!/add weight|go heavier|push harder|good day to/i.test(spoken),
+      `a reading was turned into a reason to add load: ${spoken}`);
+  }
+});
+
+await test('the check-in rides on both doors into a workout', () => {
+  // "I'm going to the gym" lands on suggest_workout; "let's do S-Tier" lands on
+  // start_session. On one only, it exists half the time.
+  const mcp = readFileSync(new URL('../netlify/functions/mcp.js', import.meta.url), 'utf8');
+  for (const fn of ['suggestWorkout', 'startSession']) {
+    const body = mcp.slice(mcp.indexOf(`async function ${fn}(`),
+                           mcp.indexOf(`async function ${fn}(`) + 9000);
+    assert.match(body, /preflight\(\{/, `${fn} has no check-in`);
+    assert.match(body, /preflight: check/, `${fn} does not return it`);
+  }
+  assert.match(mcp, /ASK THE PREFLIGHT LINE/);
+});
+
 group('Preemptive — the one thing worth raising unasked');
 
 const { nextNudge, nudgeNote } = await import('../netlify/functions/lib/prompt.js');

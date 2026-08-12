@@ -33,6 +33,7 @@ import { intakeState } from './lib/intake.js';
 import { planRead } from './lib/plan.js';
 import { guideRead } from './lib/guide.js';
 import { nextNudge, nudgeNote } from './lib/prompt.js';
+import { preflight } from './lib/preflight.js';
 import { finaliseSession, closeStaleSessions } from './lib/session.js';
 import { PROVIDERS, providerSummary, recommendRoute } from './lib/providers.js';
 import { nutritionTotals, composition, macroMatrix, yearOverYear } from './lib/nutrition.js';
@@ -1926,9 +1927,23 @@ No preamble, no disclaimers, no warm-up boilerplate unless it matters for a name
   // the first workout stops happening.
   const plan = await myPlan({}, user);
 
+  // The same five minutes before the first set. "I'm going to the gym" usually
+  // lands here rather than on start_session, so the check-in has to ride on
+  // both or it only exists half the time.
+  const dayNow = await dayFacts(user.id, profile, today);
+  const check = preflight({
+    day: dayNow,
+    ready: readiness({ days: range.days, today }),
+    // From the plan already read above, so the check-in and the plan can never
+    // quote two different targets — and no extra query for a figure in hand.
+    calorieTarget: plan.calorie_target ?? null,
+  });
+
   return {
     state,
     session,
+    // How they feel, what they want out of it, and where the day stands.
+    preflight: check,
     plan: { set: plan.set, intent: plan.intent, pace: plan.pace, push: plan.push,
             train_days: plan.train_days, say: plan.say,
             ...(plan.missing ? { missing: plan.missing, options: plan.options } : {}) },
@@ -1936,7 +1951,7 @@ No preamble, no disclaimers, no warm-up boilerplate unless it matters for a name
     note: (plan.set
       ? `Open with the plan in ONE short line before the session — "${plan.say}" — so they know what this is for, then give them the workout. Add half a clause that any of it changes by just saying so.`
       : `THEY HAVE NO PLAN YET. Before the session, say what a plan is in two lines and ask for all of it in ONE message — never a form, never one question at a time: ${(plan.missing || []).join('; ')}. Give the pace and push choices in plain words (${Object.entries(plan.options.pace).map(([k, v]) => `${k}: ${v}`).join(' / ')}). Then call set_plan and set_goal, and give them the workout in the same turn — do NOT make them ask twice.`)
-      + ' The staleness numbers come from their real log. If they train it, call log with what they actually did — not what was prescribed.',
+      + ' ASK THE PREFLIGHT LINE in the same message — how they are feeling and whether there is anything they want out of today — and do NOT wait for an answer before giving them the session. A stated goal for the session beats what the log says is overdue. The staleness numbers come from their real log. If they train it, call log with what they actually did — not what was prescribed.',
     next_actions: ['set_plan / set_goal if the plan is not set', 'log the session afterwards', 'progress to see the matrix fill in'],
   };
 }
@@ -2007,6 +2022,19 @@ async function startSession(args, user) {
   const recent = await rangeFacts(user.id, profile, addDays(today, -14), today);
   const ready = readiness({ days: recent.days, today });
 
+  // THE FIVE MINUTES BEFORE THE FIRST SET. "Should I ask you before work how
+  // you feel, what you wanna accomplish — it should look at your intake for
+  // the day and see where you're at." Readiness is the objective half and is
+  // blind to a bad week at work; nobody had ever been asked. It rides ON the
+  // handover and never blocks it.
+  const dayNow = await dayFacts(user.id, profile, today);
+  const calGoalRow = (await getGoals(user.id)).find(g => g.metric === 'calories' && g.cadence === 'daily');
+  const check = preflight({
+    day: dayNow, ready,
+    calorieTarget: calGoalRow?.target_value != null ? Number(calGoalRow.target_value) : null,
+    sessionName: name,
+  });
+
   // Today's loads, computed per exercise from their own history.
   const first = plan[0];
   const opener = await loadCallFor(user.id, first, tier);
@@ -2069,6 +2097,9 @@ async function startSession(args, user) {
     progress: sessionProgress(plan, []),
     total_exercises: plan.length,
     warmup,
+    // How they feel, what they want out of it, and where the day actually
+    // stands. Asked in one line, in the same breath as the session.
+    preflight: check,
     up_next: { ...first, set: 1, of: first.sets, load: opener },
     readiness: ready?.known ? ready : undefined,
     coaching: TIERS[tier]?.doctrine,
@@ -2076,7 +2107,7 @@ async function startSession(args, user) {
     note: (ready?.state === 'strained' || ready?.state === 'watch'
       ? 'READINESS FIRST, in one line, before the first exercise — the body gets a veto and today is a day to say so. It only ever softens: never turn a good reading into "add weight". '
       : '') +
-      'OFFER THE WARM-UP FIRST, in one short line with the movements listed, and say in the same breath that they can skip it. Then the first exercise. Do NOT wait for an answer before giving them the session — if they say skip, just carry on. It is dynamic movement, never held stretches: holding a stretch right before a heavy set costs force for the next half hour, and static work is offered at the end instead. Never present any of it as treating an injury. ' +
+      'ASK THE PREFLIGHT LINE — how they feel and what they want out of today — in the SAME message as the session, never as a separate turn and never waiting for an answer. If they answer, honour it: a stated goal for the session beats what the log says is overdue. OFFER THE WARM-UP FIRST, in one short line with the movements listed, and say in the same breath that they can skip it. Then the first exercise. Do NOT wait for an answer before giving them the session — if they say skip, just carry on. It is dynamic movement, never held stretches: holding a stretch right before a heavy set costs force for the next half hour, and static work is offered at the end instead. Never present any of it as treating an injury. ' +
       (routine?.notes ? 'The routine has a write-up on it (routine_notes) — mention the one line of it that matters today rather than reading it out. ' : '') +
       'Call log_set after EVERY set they report, even a bare "done". The server tracks their position and returns the percentage complete — never try to hold it yourself, and never re-state the whole plan between sets.',
     next_actions: ['log_set when they finish a set', 'end_session when they are done'],
