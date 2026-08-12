@@ -199,6 +199,124 @@ both true and the stronger claim.
 
 ---
 
+## Show the comparables — the best feature idea in this thread
+
+The founder: *"the cheapest best options and then put comparables with the other
+ones throughout there."*
+
+**This is right and it should be built first among the nice-to-haves.** Every
+answer carries, beside it, what the ordinary search would have told you:
+
+| | Fare | Landed | |
+|---|---|---|---|
+| **Buffalo, 14 Dec** | $312 USD | **$734** | our answer |
+| Pearson, 12 Dec | $598 CAD | $915 | what Google shows first |
+| Hamilton, 16 Dec | $505 CAD | $828 | second best |
+
+It is the same doctrine as `form_check`: **every finding ships with its
+evidence.** A verdict without it is an opinion wearing a number. And the same
+lesson as the resting burn that had to start showing its working — *a number
+nobody can audit is a number they stop believing, and they are right to.*
+
+It does three things at once that nothing else does:
+
+- **It is proof of work.** The answer is checkable in thirty seconds against the
+  tool the person already trusts, which is the only way a new product earns
+  belief on a number that big.
+- **It shows the size of the saving without ever claiming a discount.** The
+  comparison IS the pitch, and it makes it without a marketing sentence.
+- **It survives being wrong.** When the ordinary search wins, saying so
+  out loud is what makes the other 80% credible. A tool that always finds a
+  saving is a tool nobody believes twice — the same reason `form_check` is
+  deliberately quiet and only ever softens.
+
+---
+
+## The cost argument — half right, and the half that is wrong is load-bearing
+
+The founder: *"deals are made, I'd get the discounts and all that kind of stuff
+that everybody else does — but I could do this because there's no cost to me at
+a penny. I can make a penny off everybody, so there's nobody that can compete
+with that."*
+
+**The instinct is sound and the arithmetic inverts.** Take it in three parts.
+
+### Zero HEADCOUNT is real. Zero MARGINAL cost is not.
+
+Expedia carries thousands of staff, offices and an enormous marketing spend.
+Those are **fixed** costs, and a fixed cost amortises: spread across a hundred
+million users it is fractions of a cent per query. One operator with no payroll
+genuinely does beat that at small scale, and that advantage is real.
+
+But **our costs are marginal** — metered search, growing linearly, arriving
+whether or not anybody books. So the curves cross. Low fixed cost wins early;
+at scale, the party with amortised infrastructure and direct distribution
+contracts has the *lower* per-query cost, not the higher one.
+
+**A penny per user only works if a search costs meaningfully less than a
+penny.** At $0.005 per excess search, eleven thousand of them is $55 — five and
+a half thousand pennies, for one question. This is exactly why the cached price
+surface is not a performance optimisation: **it is the precondition for the
+founder's own business model.** His instinct requires that architecture, and
+without it the pricing he is describing loses money on every single query.
+
+### The deals do not come, and they do not come with hustle
+
+Negotiated and consolidator fares are **volume-gated**. Airlines discount to
+distributors who move seats, and on day one we move zero. This is not a door
+that opens with persistence or a good pitch — it opens with volume, and volume
+is the thing we do not have.
+
+So realistically we resell retail inventory through Duffel at retail prices.
+**We are priced above the market, not below it, and that does not change for
+years.** Any plan whose first move is "get the discounts everybody else gets"
+should be struck out now rather than budgeted for.
+
+### The competitor is not Expedia
+
+*"Nobody can compete with that"* is the part to worry about, because the cost
+structure is **not proprietary**. Any competent person with a Duffel key and
+this same idea has the identical cost base six months from now.
+
+What is actually defensible is the catchment arithmetic, the constraint memory
+and the named segment — **never the cost base.** Building the pitch on being
+cheap to run is building it on the one thing that can be copied in a weekend.
+
+### And a penny off everybody is the wrong target anyway
+
+It is the mass-market frame, and this is not a mass-market product. The honest
+shape is **a real amount off a small, findable group**: five thousand frequent
+travellers in multi-airport catchments at $40 a year is $200,000, and it
+requires beating Expedia at precisely nothing. That is a business. *"A penny off
+everybody"* requires a hundred million users to be one.
+
+---
+
+## The name — FlexFare has a specific problem
+
+The founder's proposal, in his dictation: *"flex fair."* **FlexFare** is clear
+and it says what the product does, which is more than most names manage. Two
+objections, and the first is disqualifying.
+
+- **"Flex fare" is already airline vocabulary, and it means the opposite
+  thing.** Across the industry a *Flex* fare is the expensive, changeable,
+  refundable class — Lufthansa Economy Flex, Virgin Atlantic Flex Fares, and the
+  Lite / Classic / Flex fare families airlines sell at checkout. So the name
+  tells a traveller *"we sell you the pricey refundable ticket"* when the whole
+  product is about finding the cheap one. It is generic industry vocabulary,
+  which also makes it hard to protect and easy for an airline to object to.
+- **It centres the word FARE**, which is the one axis this product cannot win
+  on. The fare is set by the airline and we are above the market on it. The
+  product competes on the **total**, and the name should not point at the number
+  we lose on.
+
+The name wants to point at the *catchment*, the *drive*, or the *total* — the
+thing being measured that nobody else measures. **CATCHMENT** remains the
+working placeholder for that reason. Nothing is settled, and this is worth a
+proper session rather than a paragraph.
+
+---
+
 ## The four hard problems
 
 ### 1. The combinatorics will bankrupt you, and this is the real constraint
