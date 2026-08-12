@@ -13,7 +13,7 @@ import {
   rangeFacts, summariseRange, dayFacts, careFlags, scoreGoals, supabase,
 } from './lib/wrought.js';
 import { orderInsight, earnedRoom, energyBalance, exerciseKey, deviceMatrix, weekdayPattern, focusCall, lastSession,
-         weekSoFar, readiness, targetOptions } from './lib/training.js';
+         weekSoFar, readiness, targetOptions, estimatedMax } from './lib/training.js';
 import { planRead } from './lib/plan.js';
 import { formWatch, cardioProgress } from './lib/form.js';
 import { nextNudge } from './lib/prompt.js';
@@ -326,8 +326,14 @@ export const handler = async (event) => {
   // deleted press-ups, pull-ups, dips and every calisthenic from the one view
   // that answers "is anything going up?". They progress too — in reps. So a lift
   // is measured by load if it ever carried one, and by reps if it never did.
+  //
+  // A PERSONAL RECORD IS MEMORY, NOT A WINDOW — the same rule as the weigh-in
+  // and as last night's session, in its third place. Built from the floored
+  // history rather than the selected range, so "what is my best bench" has the
+  // same answer on the 1d view as on the 30d one. A record that changes when
+  // you press a range button is not a record.
   const byLift = new Map();
-  for (const s of setRows) {
+  for (const s of histSets) {
     const k = s.exercise_key || exerciseKey(s.exercise);
     if (!byLift.has(k)) byLift.set(k, { name: s.exercise, sessions: new Map() });
     const lift = byLift.get(k);
@@ -341,6 +347,20 @@ export const handler = async (event) => {
       || (kg == null && prev.weight_kg == null && (reps || 0) > (prev.reps || 0));
     if (better) lift.sessions.set(id, { weight_kg: kg, reps, date: s.local_date });
   }
+
+  // THE MAX, ESTIMATED AND SAID TO BE. "Should be recording my max for each
+  // one." A best SET is the honest record — 235 for 4 is a fact — but it
+  // cannot be compared against 175 for 8, which is the whole problem with
+  // reading a training log. Epley converts both to the same scale.
+  //
+  // It is labelled an estimate everywhere it appears, it is NEVER programmed
+  // from, and nothing here ever suggests going and testing a real one: a max
+  // attempt is the single most dangerous thing an app can talk somebody into,
+  // and the estimate exists precisely so nobody needs to.
+  //
+  // Reps are capped at 12 because Epley diverges badly above that — a set of
+  // 20 would produce a confident and absurd number.
+  const e1rm = estimatedMax;
 
   const lifts = [...byLift.entries()].map(([key, lift]) => {
     const points = [...lift.sessions.values()].sort((a, b) => a.date.localeCompare(b.date));
@@ -357,6 +377,25 @@ export const handler = async (event) => {
       metric: loaded ? 'weight' : 'reps',
       unit: loaded ? (imperial ? 'lb' : 'kg') : 'reps',
       best:   { weight: w(best.weight_kg), reps: best.reps, date: best.date },
+      // The heaviest single set ever seen, and the best estimated max — which
+      // is often a different session, because 100×5 beats 105×2.
+      max: (() => {
+        if (!loaded) return null;
+        const withE = points.map(p => ({ ...p, e: e1rm(p.weight_kg, p.reps) })).filter(p => p.e != null);
+        if (!withE.length) return null;
+        const top = withE.reduce((a, p) => (p.e > a.e ? p : a), withE[0]);
+        return {
+          estimated_1rm: imperial ? kgToLb(top.e) : top.e,
+          from: { weight: w(top.weight_kg), reps: top.reps, date: top.date },
+          unit: imperial ? 'lb' : 'kg',
+          // Said on every single read of it.
+          basis: 'Epley, from a real set — an estimate, never a tested max.',
+          latest_1rm: (() => {
+            const l = e1rm(last.weight_kg, last.reps);
+            return l == null ? null : (imperial ? kgToLb(l) : l);
+          })(),
+        };
+      })(),
       latest: { weight: w(last.weight_kg), reps: last.reps, date: last.date },
       change: points.length > 1 ? Math.round((at(last) - at(first)) * 10) / 10 : null,
       // Both numbers ride along on every point: the question is never just

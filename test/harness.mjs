@@ -19,7 +19,7 @@ import { PROVIDERS, LIVE_PROVIDERS, providerSummary, recommendRoute } from '../n
 import { nutritionTotals, composition, macroMatrix, yearOverYear } from '../netlify/functions/lib/nutrition.js';
 import { MOVEMENTS, PROGRAMMES, PATTERNS, movementsFor, pickProgramme, buildProgramme } from '../netlify/functions/lib/library.js';
 import {
-  exerciseKey, loadStep, progressionCall, nextSetLoad, TIERS,
+  exerciseKey, loadStep, progressionCall, nextSetLoad, estimatedMax, TIERS,
   restingBurn, energyBalance, planFromRoutine, sessionTotals, earnedRoom,
   orderPlan, orderInsight, deviceMatrix, weekdayPattern, ACTIVITY, focusCall,
   trainingBurn, targetOptions,
@@ -3943,6 +3943,66 @@ await test('the demo is reachable from inside the app, and has a way back', () =
   // Signing out of borrowed numbers is meaningless.
   const demo = src.slice(src.indexOf('if (DEMO) {'), src.indexOf('if (DEMO) {') + 600);
   assert.match(demo, /whoami-out'\)\.hidden = true/);
+});
+
+group('The max — recorded, estimated, and never something to go and test');
+
+await test('a max makes sets at different rep ranges comparable', () => {
+  // "Should be recording my max for each one." A best SET is the honest record
+  // — 235 for 4 is a fact — but it cannot be compared against 175 for 8, which
+  // is the whole problem with reading a training log: nothing lines up and
+  // progress is invisible even when it is real.
+  const heavyFew = estimatedMax(106.6, 4);    // 235lb x 4
+  const lightMany = estimatedMax(79.4, 8);    // 175lb x 8
+  assert.ok(heavyFew > lightMany, 'the heavier set did not read as the stronger one');
+  assert.equal(estimatedMax(100, 1), 103.3);  // Epley: one rep is barely a projection
+  assert.equal(estimatedMax(100, 5), 116.7);
+
+  // Reps capped at 12 — Epley diverges badly above that and a set of twenty
+  // would produce a confident and absurd number.
+  assert.equal(estimatedMax(60, 20), estimatedMax(60, 12));
+  assert.ok(estimatedMax(60, 20) < 100, 'a high-rep set projected an absurd max');
+
+  // Nothing to work from is null, never a guess.
+  for (const bad of [[null, 5], [100, null], [0, 5], [100, 0], ['x', 5]]) {
+    assert.equal(estimatedMax(bad[0], bad[1]), null, `invented a max from ${JSON.stringify(bad)}`);
+  }
+});
+
+await test('the max is labelled an estimate and never something to attempt', () => {
+  // An unlabelled projected max is a number people go and try to lift, and a
+  // max attempt is the single most dangerous thing an app can talk somebody
+  // into. The estimate exists precisely so nobody needs to.
+  const api = readFileSync(new URL('../netlify/functions/api-progress.js', import.meta.url), 'utf8');
+  assert.match(api, /basis: 'Epley, from a real set — an estimate, never a tested max\.'/);
+
+  const src = page('app.html');
+  const panel = src.slice(src.indexOf('function liftsPanel('), src.indexOf('function matrixPanel('));
+  assert.match(panel, /est\. max/i);
+  assert.match(panel, /estimated<\/strong>/);
+  assert.match(panel, /never suggest going and testing a real max/i);
+  assert.ok(!/test your max|find your 1rm|go for a max/i.test(panel));
+
+  // And the instructions have always refused it — check that still holds.
+  assert.match(SERVER_INSTRUCTIONS, /NEVER suggest testing a max/i);
+});
+
+await test('a personal record is memory, not a window', () => {
+  // Third place this rule has had to be applied, after the weigh-in and last
+  // night's session. "What is my best bench" must have the same answer on the
+  // 1d view as on the 30d one — a record that changes when you press a range
+  // button is not a record.
+  const api = readFileSync(new URL('../netlify/functions/api-progress.js', import.meta.url), 'utf8');
+  const build = api.slice(api.indexOf('const byLift = new Map()'), api.indexOf('const lifts = ['));
+  assert.match(build, /for \(const s of histSets\)/, 'lifts are still built from the selected range');
+
+  // And the panel is not hidden behind the trends gate — it is the one thing
+  // somebody opens a training log to see.
+  const src = page('app.html');
+  const render = src.slice(src.indexOf('function render(d)'), src.indexOf('function stagger('));
+  const liftsAt = render.indexOf('out.push(liftsPanel(d));');
+  const gateAt = render.indexOf('if (trends) {', render.indexOf('out.push(lastSessionPanel(d));'));
+  assert.ok(liftsAt > 0 && liftsAt < gateAt, 'the lifts panel is hidden on short ranges');
 });
 
 group('Gauging — the set that just happened decides the next one');

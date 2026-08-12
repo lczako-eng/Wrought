@@ -762,6 +762,14 @@ table.matrix td.rh.cold { color: var(--heat-3); }
 .say:hover, .say:focus-visible { border-color: var(--heat-3); outline: none; }
 .say.copied { background: var(--heat-1); border-color: var(--heat-3); color: var(--heat-5); }
 
+/* The max, given the room it deserves — it is the question a training log
+   exists to answer, and it was a footnote. */
+.maxline { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; margin: 4px 0 10px; }
+.maxbig { font-family: var(--grotesk); font-size: 26px; font-weight: 700; line-height: 1; color: var(--bright); }
+.maxbig em { font-family: var(--mono); font-size: 10px; font-style: normal; letter-spacing: .1em;
+             text-transform: uppercase; color: var(--ash-dim); margin-left: 7px; }
+.maxline .sub { flex: 1 1 100%; margin: 0; font-size: 11.5px; }
+
 /* The plan: the target, and the two numbers that make it a decision rather
    than a rule handed down. They are never allowed to appear apart. */
 .plantop { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 14px; margin-bottom: 14px; }
@@ -3238,8 +3246,18 @@ function demoData() {
 
   const lift = (name, from, to, sessions) => ({
     name, sessions,
+    metric: 'weight', unit: 'kg',
     best: { weight: Math.max(from, to), reps: 6, date: series[Math.max(0, series.length - 2)].date },
     latest: { weight: to, reps: 6, date: series[series.length - 1].date },
+    // The real shape, including the estimated max — a demo that disagrees with
+    // the server hides bugs instead of showing the product.
+    max: {
+      estimated_1rm: Math.round(Math.max(from, to) * 1.2 * 10) / 10,
+      from: { weight: Math.max(from, to), reps: 6, date: series[Math.max(0, series.length - 2)].date },
+      unit: 'kg',
+      basis: 'Epley, from a real set — an estimate, never a tested max.',
+      latest_1rm: Math.round(to * 1.2 * 10) / 10,
+    },
     change: Math.round((to - from) * 10) / 10,
     series: Array.from({ length: sessions }, (_, i) => ({
       date: series[Math.floor(i * (N - 1) / (sessions - 1))].date,
@@ -5000,9 +5018,12 @@ function render(d) {
   out.push(cardioPanel(d));
   out.push(formPanel(d));
   out.push(blockPanel(d));
+  // Lifts are a RECORD, not a trend — "what is my best bench" has the same
+  // answer whichever range button is pressed, and hiding it on the day view is
+  // hiding the one thing somebody opens a training log to see.
+  out.push(liftsPanel(d));
   if (trends) {
     out.push(focusPanel(d));
-    out.push(liftsPanel(d));
     out.push(matrixPanel(s.matrix));
   }
   out.push(nutritionPanel(d.nutrition));
@@ -5590,21 +5611,40 @@ function liftsPanel(d) {
         <b>${esc(label)}</b></span>`;
     }).join('');
 
+    // THE MAX, and it is the headline because it is what somebody asks of a
+    // training log. Two numbers, deliberately: the best real SET is the fact,
+    // and the estimated one-rep max is what makes 235×4 and 175×8 comparable
+    // at all. The estimate is labelled every single time it appears — an
+    // unlabelled projected max is a number people go and try to lift.
+    const m = l.max;
+    const climbing = m?.latest_1rm != null && m.estimated_1rm != null
+      ? Math.round((m.latest_1rm - m.estimated_1rm) * 10) / 10 : null;
+
     return `<div class="lift">
       <div class="lift-head">
         <span class="nm">${esc(l.name)}</span>
         <span class="delta ${cls}">${l.change == null ? '—' : `${sign}${l.change} ${unit}`}</span>
       </div>
+      ${m ? `<div class="maxline">
+        <span class="maxbig">${n(m.estimated_1rm)}<em>${esc(m.unit)} est. max</em></span>
+        <span class="sub dim">from ${m.from.weight}${esc(m.unit)} × ${m.from.reps} on ${esc(m.from.date)}${
+          climbing != null && climbing < 0 ? ` · sitting ${Math.abs(climbing)}${esc(m.unit)} under it right now` : ''}</span>
+      </div>` : ''}
       <div class="bars">${bars}</div>
-      <p class="lift-foot">best ${l.metric === 'reps'
+      <p class="lift-foot">best set ${l.metric === 'reps'
         ? `${l.best.reps ?? '—'} reps`
         : `${l.best.weight}${d.weight_unit} × ${l.best.reps ?? '—'}`} · ${l.sessions} sessions${
         l.metric === 'reps' ? ' · bodyweight, measured in reps' : ''}</p>
     </div>`;
   }).join('');
+  const anyMax = d.lifts.some(l => l.max);
   return `<section class="panel"><h2>Lifts</h2>
     <p class="sub">Top set each session, newest on the right. Up is up.</p>
-    <div class="lifts">${rows}</div></section>`;
+    <div class="lifts">${rows}</div>
+    ${anyMax ? `<p class="caveat">The max is <strong>estimated</strong> from a set you actually did (Epley),
+      never a tested one — that is what makes 235&times;4 and 175&times;8 comparable at all. Nothing here is
+      programmed from it, and WROUGHT will never suggest going and testing a real max.</p>` : ''}
+  </section>`;
 }
 
 function matrixPanel(m) {
