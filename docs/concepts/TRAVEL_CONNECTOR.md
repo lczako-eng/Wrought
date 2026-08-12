@@ -539,6 +539,77 @@ survive being said in one sentence next to Expedia's logo.
 
 ---
 
+## The dad — the only demand evidence in this document
+
+The founder, unprompted and almost in passing: *"My dad is so cheap at
+travelling. They literally blow hours looking for the cheapest shit."*
+
+**This is worth more than everything above it.** Every other section here is
+reasoning about whether somebody would want this. That sentence is a report of
+somebody already doing it — by hand, repeatedly, for hours, without a product,
+without being asked, and without anybody having pitched them anything.
+
+Three things follow, and they change the product rather than confirm it.
+
+### It reframes what is actually being sold
+
+The pitch has been *"you save $181."* But his dad already gets the $181. He gets
+it by spending four hours on a laptop on a Sunday. **What he does not have is
+the four hours.**
+
+So the product is not selling a saving — the saving is what makes somebody try
+it. **The product sells the hours back**, and that is the thing with no
+substitute. A saving can be matched by anybody willing to do the work; the hours
+cannot be recovered by doing more work. It is also a far easier thing to price:
+nobody knows what a hypothetical saving is worth, and everybody knows what their
+Sunday afternoon is worth.
+
+This lands on the same doctrine as WROUGHT's origin — the founder opening a new
+ChatGPT page every morning and re-explaining himself. The product was never the
+information. **It was not having to do the work again.**
+
+### It sharpens the segment from a demographic into a BEHAVIOUR
+
+The previous draft said *frequent travellers in a multi-airport catchment*. True,
+and hard to find. The dad is a much better definition:
+
+> **The customer is somebody who already does this by hand.**
+
+That is observable, and observable is findable — Flyertalk, the award-travel and
+deal forums, the people running six standing Google Flights price alerts, the
+family member everybody else in the family asks to book their flights. They have
+already qualified themselves by spending the hours, they already believe the
+saving is real, and **nobody has to be convinced of the premise.** That is the
+cheapest customer acquisition in any market: people who are already performing
+your product manually.
+
+It also means the first version does not need to be better than them. It needs
+to be **as good as them, faster.**
+
+### And it is a better test than the one below
+
+The evening test asks the founder to price six trips by hand to find out whether
+the saving is real. **His dad has already run that test hundreds of times.**
+
+So the first move is not an evening, it is a phone call:
+
+- How much do you actually save, in dollars, on a typical trip?
+- How long does it take you?
+- How often does the answer turn out to be a different airport than the obvious
+  one — and which ones?
+- What do you check that you cannot get in one place?
+- What makes you give up and just book Pearson?
+
+**That last question is the product specification**, and no amount of desk
+research produces it. If he says he saves $40 and enjoys the searching, the
+concept is in trouble and one call found out. If he says he saves hundreds and
+hates every minute, that is the business, described by somebody with no reason
+to flatter it.
+
+Do this before the evening test, not after.
+
+---
+
 ## Before any code: the one-evening test
 
 The entire concept rests on a single empirical claim: **that the landed-cost
