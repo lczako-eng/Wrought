@@ -1365,6 +1365,23 @@ somebody to eat less than they need. Until something is logged there is no
 ring: the burn is shown as the burn, labelled *"to burn today"*, and the caveat
 says it is the whole day's estimate rather than what has been spent so far.
 
+### Every workout, however it arrived
+
+*"I still don't see individual workouts."* The Recent sessions panel was built
+from `wrought_sessions` alone — the sessions the ASSISTANT runs, set by set. A
+run off the watch is a `wrought_events` row of type `workout` and never creates
+a session, so **every workout from Apple Health was missing from the one panel
+named for them**, while sitting in the record the whole time.
+
+`workoutList()` merges both and **dedupes by `session_id`**, not by name and
+date: a finalised session writes an event carrying its own id, so the session
+row and the event are one workout seen twice. Counting both would double every
+gym session — and make somebody think a workout logged once had been logged
+twice, which is worse than the omission. A session with no event of its own is
+still included, so nothing predating the finaliser is lost. Each row carries
+`source`, because *"why is this not in my log"* is answered completely
+differently for a watch and for a dictated sentence.
+
 ### "It takes a while to load" — the queries were queueing
 
 The founder, on the dashboard. Not the queries being slow: them **queueing**.
@@ -1801,7 +1818,7 @@ self-reporting scale removes the most-abandoned manual entry), then Strava.
 
 ## Conventions
 
-- `npm test` runs `test/harness.mjs` — 479 offline tests, no network, no database.
+- `npm test` runs `test/harness.mjs` — 480 offline tests, no network, no database.
   Run it before every push. It covers the JSON-RPC envelope (which fails as an
   uninformative "could not connect" inside ChatGPT) and all the arithmetic
   (which fails as a confidently wrong number in somebody's verdict).

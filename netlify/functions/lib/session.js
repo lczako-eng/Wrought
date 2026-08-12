@@ -173,3 +173,75 @@ export async function closeStaleSessions(userId, profile, { now = Date.now() } =
   }
   return closed;
 }
+
+/**
+ * Every workout, from wherever it came, as one list.
+ *
+ * "I still don't see individual workouts." The Recent sessions panel was built
+ * from `wrought_sessions` alone — the sessions the ASSISTANT runs, set by set.
+ * A run off the watch is a `wrought_events` row of type 'workout' and never
+ * creates a session, so every workout that came from Apple Health was missing
+ * from the one panel called "recent sessions" while sitting in the record the
+ * whole time. Two ways in, one list, or the list is a lie about half of them.
+ *
+ * DEDUPED BY session_id, not by name and date. A session finalised here writes
+ * a workout event carrying `detail.session_id`, so the session row and the
+ * event are the same workout seen twice — counting both would double every
+ * gym session in the list and, worse, make somebody think a workout logged
+ * once had been logged twice.
+ *
+ * @param sessions  wrought_sessions rows, status done
+ * @param events    wrought_events rows of type 'workout', with detail
+ */
+export function workoutList(sessions = [], events = [], { today = null, limit = 20 } = {}) {
+  const out = [];
+  const fromSession = new Set();
+
+  for (const e of events) {
+    const d = e.detail || {};
+    if (d.session_id) fromSession.add(String(d.session_id));
+    out.push({
+      name: e.summary || d.kind || 'Workout',
+      kind: d.kind || 'workout',
+      date: e.local_date,
+      minutes: d.minutes ?? null,
+      distance_km: d.distance_km ?? null,
+      calories: d.calories ?? null,
+      avg_hr: d.avg_hr ?? null,
+      max_hr: d.max_hr ?? null,
+      session_id: d.session_id || null,
+      // Where it came from, because "why is this not in my log" is answered
+      // completely differently for a watch and for a dictated sentence.
+      source: e.source && e.source !== 'agent' ? 'device' : 'logged',
+    });
+  }
+
+  // A session with no event of its own — only possible for one still open, or
+  // one from before the finaliser existed. Included so nothing is lost.
+  for (const s of sessions) {
+    if (fromSession.has(String(s.id))) continue;
+    out.push({
+      name: s.name || 'Session',
+      kind: s.kind || 'strength',
+      date: s.local_date,
+      minutes: s.ended_at && s.started_at
+        ? Math.max(1, Math.round((new Date(s.ended_at) - new Date(s.started_at)) / 60000)) : null,
+      distance_km: null, calories: null, avg_hr: null, max_hr: null,
+      session_id: s.id,
+      source: 'logged',
+    });
+  }
+
+  out.sort((a, b) => String(b.date).localeCompare(String(a.date)));
+
+  return out.slice(0, limit).map(w => ({
+    ...w,
+    days_ago: today && w.date ? daysApart(w.date, today) : null,
+  }));
+}
+
+function daysApart(from, to) {
+  const a = new Date(`${from}T00:00:00Z`).getTime();
+  const b = new Date(`${to}T00:00:00Z`).getTime();
+  return Math.round((b - a) / 86400000);
+}
