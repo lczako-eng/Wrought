@@ -27,7 +27,7 @@ import {
 import { allowed } from './lib/membership.js';
 import { pendingVoice } from './lib/voice.js';
 import { activityBurn, EFFORTS } from './lib/activity.js';
-import { warmupFor, sessionProgress } from './lib/warmup.js';
+import { warmupFor, cooldownFor, sessionProgress } from './lib/warmup.js';
 import { formWatch, cardioProgress } from './lib/form.js';
 import { intakeState } from './lib/intake.js';
 import { planRead } from './lib/plan.js';
@@ -207,7 +207,7 @@ A SAVED WORKOUT IS A NAME, AN ORDER, AND THE REASON IT IS IN THAT ORDER. save_ro
 
 THE CHECKLIST AND THE PERCENTAGE ARE COMPUTED, NOT COUNTED BY YOU. start_session and log_set both return a checklist with a tick per exercise and a progress block carrying percent, sets_done and sets_planned. Read those out; never work a percentage out yourself, and never try to remember where in the session somebody is — the server holds it and the Trainer screen on their phone is drawing from the same numbers. Mention the percentage when they ask or when a milestone actually lands, not after every set.
 
-WARM UP FIRST, AND LET THEM SKIP IT IN ONE WORD. start_session returns a warmup. Offer it in one short line with the movements listed, say they can skip it in the same breath, and then give them the first exercise WITHOUT waiting for an answer. Nobody warms up on their own and the thing that gets skipped is always the thing nobody mentioned — but a warm-up that blocks the session is one people resent, and then a session they stop starting. It is deliberately dynamic movement rather than held stretches: holding a stretch right before a heavy set costs force for the next half hour, and the static work is offered at the end instead. If they have a limitation on file, never present any of it as treating or rehabilitating that — it is a warm-up, not physiotherapy.
+WARM UP FIRST, AND LET THEM SKIP IT IN ONE WORD. Both start_session AND suggest_workout return a warmup, and end_session returns a cooldown — offer each one at its own moment and never the other way round. Offer it in one short line with the movements listed, say they can skip it in the same breath, and then give them the first exercise WITHOUT waiting for an answer. Nobody warms up on their own and the thing that gets skipped is always the thing nobody mentioned — but a warm-up that blocks the session is one people resent, and then a session they stop starting. It is deliberately dynamic movement rather than held stretches: holding a stretch right before a heavy set costs force for the next half hour, and the static work is offered at the end instead. If they have a limitation on file, never present any of it as treating or rehabilitating that — it is a warm-up, not physiotherapy.
 
 A WORKOUT WITH NO DURATION COUNTS FOR NOTHING. A session logged through you rather than measured by a watch still has to move calories out — and at a heavy bodyweight that is several hundred calories, not a rounding error. The server computes it from the minutes and their weight, so log returns needs_duration whenever a workout went in without one. Ask how long it took in the SAME message as the confirmation, one short question, then amend_last with the minutes. NEVER estimate the calories for a session yourself.
 
@@ -1927,6 +1927,19 @@ No preamble, no disclaimers, no warm-up boilerplate unless it matters for a name
   // the first workout stops happening.
   const plan = await myPlan({}, user);
 
+  // THE WARM-UP WAS ON start_session AND NOWHERE ELSE — and "I'm going to the
+  // gym" lands HERE, which is the more common door by a distance. So the one
+  // feature built specifically to be offered rather than waited for was, for
+  // most sessions, never offered at all.
+  const warmFrom = [
+    args.focus || null,
+    ...(state.neglected || []),
+  ].filter(Boolean).map(m => ({ name: m, muscles: [m] }));
+  const warm = warmupFor(warmFrom, {
+    minutes: args.minutes || null,
+    limitations: memory.filter(m => m.category === 'health').map(m => m.fact),
+  });
+
   // The same five minutes before the first set. "I'm going to the gym" usually
   // lands here rather than on start_session, so the check-in has to ride on
   // both or it only exists half the time.
@@ -1944,6 +1957,9 @@ No preamble, no disclaimers, no warm-up boilerplate unless it matters for a name
     session,
     // How they feel, what they want out of it, and where the day stands.
     preflight: check,
+    // Dynamic movement, skippable in one word, built from the patterns in THIS
+    // session. Static holds are offered at the end, by end_session.
+    warmup: warm,
     plan: { set: plan.set, intent: plan.intent, pace: plan.pace, push: plan.push,
             train_days: plan.train_days, say: plan.say,
             ...(plan.missing ? { missing: plan.missing, options: plan.options } : {}) },
@@ -1951,7 +1967,7 @@ No preamble, no disclaimers, no warm-up boilerplate unless it matters for a name
     note: (plan.set
       ? `Open with the plan in ONE short line before the session — "${plan.say}" — so they know what this is for, then give them the workout. Add half a clause that any of it changes by just saying so.`
       : `THEY HAVE NO PLAN YET. Before the session, say what a plan is in two lines and ask for all of it in ONE message — never a form, never one question at a time: ${(plan.missing || []).join('; ')}. Give the pace and push choices in plain words (${Object.entries(plan.options.pace).map(([k, v]) => `${k}: ${v}`).join(' / ')}). Then call set_plan and set_goal, and give them the workout in the same turn — do NOT make them ask twice.`)
-      + ' ASK THE PREFLIGHT LINE in the same message — how they are feeling and whether there is anything they want out of today — and do NOT wait for an answer before giving them the session. A stated goal for the session beats what the log says is overdue. The staleness numbers come from their real log. If they train it, call log with what they actually did — not what was prescribed.',
+      + ' OFFER THE WARM-UP in one short line with the movements named, and say they can skip it in the same breath — then carry straight on without waiting. It is dynamic movement, never held stretches: holding a stretch right before a heavy set costs force for the next half hour, and the static work is offered at the END by end_session. ASK THE PREFLIGHT LINE in the same message — how they are feeling and whether there is anything they want out of today — and do NOT wait for an answer before giving them the session. A stated goal for the session beats what the log says is overdue. The staleness numbers come from their real log. If they train it, call log with what they actually did — not what was prescribed.',
     next_actions: ['set_plan / set_goal if the plan is not set', 'log the session afterwards', 'progress to see the matrix fill in'],
   };
 }
@@ -2463,6 +2479,16 @@ async function endSession(args, user) {
   const totals = done.totals;
   const minutes = done.minutes;
 
+  // STATIC AFTER — the half of the doctrine that had never actually reached
+  // anybody. The holds were defined, attached to the WARM-UP object at
+  // start_session, and offered at the one moment they are wrong. This is the
+  // moment they are right, and it is named for what actually worked rather
+  // than a generic "stretch out", which reads as filler and gets skipped.
+  const cool = cooldownFor({
+    muscles: [...new Set(rows.flatMap(r => r.muscles || []))].concat(rows.map(r => r.exercise)),
+    limitations: (await getMemory(user.id, 'health')).map(m => m.fact),
+  });
+
   // Anything that beat last time — the only part of a summary anybody reads.
   const beats = [];
   for (const t of totals.top_sets) {
@@ -2516,13 +2542,15 @@ async function endSession(args, user) {
     beat_last_time: beats,
     day_so_far: { food: day.food.say, energy: balance.say },
     training_week: week,
+    // The held stretches, offered where they belong and nowhere else.
+    cooldown: cool,
     next_workout: nextWorkout,
     say: `${session.name} done — ${minutes} minutes, ${totals.sets} sets, ${totals.volume_kg}kg moved.` +
          (beats.length ? ` Up on last time: ${beats.join('; ')}.` : '') +
          ` ${balance.say}` +
          (week ? ` ${week.say}` : '') +
          (nextWorkout?.say ? ` ${nextWorkout.say}` : ''),
-    note: 'Lead with anything in beat_last_time — that is the only part of a session summary anyone actually cares about. Close with next_workout: naming the next session at the end of this one is the only prompt this server can ever give.',
+    note: 'Lead with anything in beat_last_time — that is the only part of a session summary anyone actually cares about. OFFER THE COOLDOWN in one short line, with the holds named, and say they can skip it in the same breath — this is where static stretching belongs and the reason none of it was in the warm-up. Never insist and never repeat it: the record of the workout matters more than the stretching does, and a cool-down that becomes a chore is how somebody stops closing sessions. Close with next_workout: naming the next session at the end of this one is the only prompt this server can ever give.',
     next_actions: ['log what they eat next', 'brief tonight for the full read'],
   };
 }

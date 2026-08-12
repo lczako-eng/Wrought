@@ -3945,6 +3945,81 @@ await test('the demo is reachable from inside the app, and has a way back', () =
   assert.match(demo, /whoami-out'\)\.hidden = true/);
 });
 
+group('Stretching — dynamic before, held after');
+
+const { cooldownFor, warmupFor: warmFor } = await import('../netlify/functions/lib/warmup.js');
+
+await test('the held stretches are offered at the END, where they belong', () => {
+  // DYNAMIC BEFORE, STATIC AFTER, and this is content rather than taste: a
+  // held stretch immediately before a heavy set measurably costs force for the
+  // next half hour. The holds were defined, attached to the WARM-UP object at
+  // start_session, and offered at the one moment they are wrong — so the
+  // static half of the doctrine had never actually reached anybody.
+  const c = cooldownFor({ muscles: ['quads', 'hamstrings'], patterns: ['squat', 'hinge'] });
+  assert.ok(c.moves.length >= 2);
+  assert.match(c.say, /30 seconds/);
+  assert.match(c.style, /Held/);
+  assert.equal(c.skippable, true);
+
+  // Named for what actually worked. "Stretch out" reads as filler and gets
+  // skipped for exactly that reason — the same argument as the warm-up.
+  assert.match(JSON.stringify(c.moves), /Quads|Hamstrings/i);
+  const push = cooldownFor({ patterns: ['push'] });
+  assert.match(JSON.stringify(push.moves), /Chest|Triceps/i);
+  assert.ok(!/Quads/i.test(JSON.stringify(push.moves)), 'it prescribed holds for muscles that did not work');
+
+  // Nothing recognised still gets something, or the feature silently vanishes
+  // for exactly the sessions least likely to have a cool-down.
+  const odd = cooldownFor({ muscles: ['five-a-side'] });
+  assert.ok(odd.moves.length >= 1);
+
+  // The warm-up stays dynamic, and says why. The rule is about HELD stretches —
+  // "holding something" is holding a rack for balance on a leg swing, which is
+  // the opposite of the thing being prohibited.
+  const w = warmFor([{ name: 'Back squat', muscles: ['quads'] }]);
+  assert.ok(!/(hold|stretch)[^.;]{0,40}\b(30|45|60) seconds/i.test(JSON.stringify(w.moves)),
+    `a held stretch got into the warm-up: ${JSON.stringify(w.moves)}`);
+  assert.match(w.style, /not held stretches/i);
+
+  // And a BACK SQUAT is not a pulling session. "back" matched the pull block,
+  // so a squat day was handed dead hangs and scapular pulls.
+  assert.deepEqual(w.patterns, ['squat'], `back squat matched ${w.patterns}`);
+  assert.deepEqual(warmFor([{ name: 'Barbell row', muscles: ['back'] }]).patterns, ['pull']);
+});
+
+await test('a cool-down never becomes the reason somebody stops closing sessions', () => {
+  // The record of the workout matters more than the stretching does.
+  const c = cooldownFor({ patterns: ['pull'] });
+  assert.match(c.note, /skip it in one word/i);
+  assert.match(c.note, /[Nn]ever insist/);
+  assert.ok(!/must|should really|do not skip/i.test(c.say), `the cool-down is insisting: ${c.say}`);
+
+  // And it is never physiotherapy — the not-a-doctor line, in the place it is
+  // most tempting to cross.
+  const hurt = cooldownFor({ patterns: ['push'], limitations: ['left shoulder impingement'] });
+  assert.match(hurt.caution, /not treatment/i);
+  assert.match(hurt.caution, /leave it out rather than working into it/i);
+});
+
+await test('both doors into a workout offer a warm-up, and the end offers the holds', () => {
+  // The warm-up was on start_session and NOWHERE ELSE — and "I'm going to the
+  // gym" lands on suggest_workout, which is the more common door by a
+  // distance. The one feature built specifically to be offered rather than
+  // waited for was, for most sessions, never offered at all.
+  const mcp = readFileSync(new URL('../netlify/functions/mcp.js', import.meta.url), 'utf8');
+  for (const fn of ['suggestWorkout', 'startSession']) {
+    const body = mcp.slice(mcp.indexOf(`async function ${fn}(`), mcp.indexOf(`async function ${fn}(`) + 9000);
+    assert.match(body, /warmup: warm|warmup,/, `${fn} offers no warm-up`);
+  }
+  const end = mcp.slice(mcp.indexOf('async function endSession('), mcp.indexOf('async function previousBest('));
+  assert.match(end, /cooldownFor\(\{/, 'end_session offers no cool-down');
+  assert.match(end, /cooldown: cool/);
+  assert.match(end, /OFFER THE COOLDOWN/);
+
+  assert.match(SERVER_INSTRUCTIONS, /Both start_session AND suggest_workout return a warmup/);
+  assert.match(SERVER_INSTRUCTIONS, /end_session returns a cooldown/);
+});
+
 group('The five minutes before the first set');
 
 const { preflight } = await import('../netlify/functions/lib/preflight.js');
