@@ -3945,6 +3945,119 @@ await test('the demo is reachable from inside the app, and has a way back', () =
   assert.match(demo, /whoami-out'\)\.hidden = true/);
 });
 
+group('Preemptive — the one thing worth raising unasked');
+
+const { nextNudge, nudgeNote } = await import('../netlify/functions/lib/prompt.js');
+
+const WEEK = (done, target, daysLeft) => ({ done, target, days_left: daysLeft, met: done >= target });
+const PLAN_SET = { set: true, missing: null };
+
+await test('a care flag silences every nudge, including the cheerful ones', () => {
+  // Relentless is a setting, not a licence. And a personal best delivered to
+  // somebody who has eaten under 1,200 for three days is encouragement pointed
+  // in exactly the wrong direction.
+  const flags = [{ flag: 'very_low_intake', detail: '...', guidance: '...' }];
+  for (const push of ['light', 'normal', 'relentless']) {
+    assert.equal(nextNudge({ push, flags, trainingWeek: WEEK(0, 4, 2), plan: PLAN_SET }), null,
+      `${push} pushed through a care flag`);
+    assert.equal(nextNudge({ push, flags, cardio: { known: true, personal_best: true,
+      reads: [{ kind: 'run', personal_best: true, latest: { km: 5, pace: '5:30/km' } }] } }), null,
+      `${push} celebrated through a care flag`);
+  }
+});
+
+await test('the push setting actually changes what gets raised', () => {
+  // It was stored, shown back on the plan, and drove NOTHING — no instruction
+  // said what light, normal or relentless change, and the level was on no
+  // response the model reads. A setting called "how hard this thing chases
+  // you" that changes nothing when you set it is decoration.
+  const mid = { trainingWeek: WEEK(2, 4, 4), plan: PLAN_SET };     // on pace
+  const behind = { trainingWeek: WEEK(1, 4, 4), plan: PLAN_SET };  // behind, still doable
+  const adrift = { trainingWeek: WEEK(0, 4, 4), plan: PLAN_SET };  // nothing done at all
+
+  // Light says nothing until they are properly adrift — but it must actually
+  // be reachable. Defining "well behind" as the TAIL of the week meant that for
+  // anybody training four days a week, light could never fire at all: by the
+  // time three days remained with nothing done, the week was already
+  // impossible and the branch above had taken it. A setting that silently
+  // means "never" is worse than not offering it.
+  assert.equal(nextNudge({ push: 'light', ...behind }), null);
+  assert.ok(nextNudge({ push: 'light', ...adrift }),
+    'light stayed silent on a week with nothing in it at all');
+
+  // Normal raises it when they are behind the pace the week implies.
+  assert.ok(nextNudge({ push: 'normal', ...behind }));
+  assert.equal(nextNudge({ push: 'normal', ...mid }), null, 'normal chased somebody on pace');
+
+  // Relentless raises it whenever anything is outstanding.
+  assert.ok(nextNudge({ push: 'relentless', ...mid }));
+
+  // Nobody is chased once the target is met.
+  for (const push of ['light', 'normal', 'relentless']) {
+    assert.equal(nextNudge({ push, trainingWeek: WEEK(4, 4, 2), plan: PLAN_SET }), null,
+      `${push} kept going after the week was met`);
+  }
+});
+
+await test('an impossible week is stated, never counted down to zero', () => {
+  // Sessions never roll over and a missed week is information, not a debt.
+  // Guilt is how a training log dies.
+  const impossible = { trainingWeek: WEEK(0, 4, 1), plan: PLAN_SET };
+  assert.equal(nextNudge({ push: 'light', ...impossible }), null);
+  assert.equal(nextNudge({ push: 'normal', ...impossible }), null,
+    'normal nagged about a week that cannot be finished');
+
+  const n = nextNudge({ push: 'relentless', ...impossible });
+  assert.match(n.say, /finish short/);
+  assert.match(n.say, /nothing carries over/);
+  assert.ok(!/should|need to|behind|only|failed|missed|sorry/i.test(n.say),
+    `guilt language in: ${n.say}`);
+});
+
+await test('no nudge is a legitimate answer, and it is the common one', () => {
+  // A coach who finds something to say every single time is one people stop
+  // listening to.
+  assert.equal(nextNudge({ push: 'normal', trainingWeek: WEEK(4, 4, 3), plan: PLAN_SET }), null);
+  assert.equal(nextNudge({}), null, 'a nudge fired with nothing to go on');
+  assert.match(nudgeNote(null), /Answer what they asked and stop/);
+});
+
+await test('a win is raised at every level, chasing is not', () => {
+  // The most valuable unprompted sentence is not "you are behind" — it is
+  // "that was your best run yet", said the day it happens. Somebody who asked
+  // to be left alone did not ask to be denied their own best run.
+  const cardio = { known: true, personal_best: true,
+    reads: [{ kind: 'run', personal_best: true, latest: { km: 5.6, pace: '5:32/km' } }] };
+  for (const push of ['light', 'normal', 'relentless']) {
+    const n = nextNudge({ push, cardio, trainingWeek: WEEK(4, 4, 2), plan: PLAN_SET });
+    assert.equal(n.kind, 'best', `${push} swallowed a personal best`);
+    assert.match(n.say, /5\.6km/);
+  }
+});
+
+await test('one thing, never a list, and it is carried where the model will see it', () => {
+  // A nudge with three items in it is a lecture, and the second is never read.
+  const n = nextNudge({ push: 'relentless', trainingWeek: WEEK(0, 4, 5), plan: PLAN_SET,
+    day: { training: { entries: [{ detail: {} }] } }, voicePending: 2 });
+  assert.equal(typeof n.say, 'string');
+  assert.ok(!Array.isArray(n.say));
+  assert.equal(n.kind, 'voice_pending', 'priority order broke');
+
+  const mcp = readFileSync(new URL('../netlify/functions/mcp.js', import.meta.url), 'utf8');
+  assert.match(mcp, /nudge: nudge \|\| undefined/, 'the nudge is not on a response');
+  assert.match(mcp, /nudge_note/);
+  assert.match(SERVER_INSTRUCTIONS, /BE PREEMPTIVE/);
+  assert.match(SERVER_INSTRUCTIONS, /never as an opener/);
+  // A capture in passing stays quiet — somebody mid-way through a tax question
+  // did not open a conversation about their training week.
+  assert.match(mcp, /args\.quiet \? null : await nudgeFor/);
+
+  // And it is on the dashboard too: preemptive is not a conversation feature.
+  const api = readFileSync(new URL('../netlify/functions/api-progress.js', import.meta.url), 'utf8');
+  assert.match(api, /^\s+nudge,$/m);
+  assert.match(page('app.html'), /d\.nudge\?\.say/);
+});
+
 group('Everything that was answerable only through the assistant');
 
 await test('every computed read now has a panel to draw it', () => {

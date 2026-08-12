@@ -16,6 +16,7 @@ import { orderInsight, earnedRoom, energyBalance, exerciseKey, deviceMatrix, wee
          weekSoFar, readiness, targetOptions } from './lib/training.js';
 import { planRead } from './lib/plan.js';
 import { formWatch, cardioProgress } from './lib/form.js';
+import { nextNudge } from './lib/prompt.js';
 import { blockPosition } from './lib/library.js';
 import { closeStaleSessions, workoutList } from './lib/session.js';
 import { allowed } from './lib/membership.js';
@@ -399,6 +400,14 @@ export const handler = async (event) => {
   // this costs nothing extra.
   const workouts = workoutList(sessions, cardioRows, { today: to, limit: 20 });
 
+  // The same one line the assistant gets, on the screen. Preemptive is not a
+  // conversation feature — somebody who opened the dashboard is exactly as
+  // entitled to be told the one thing worth knowing without asking for it.
+  const nudge = nextNudge({
+    push: profile.plan_push || null,
+    flags, trainingWeek, plan, cardio, day: today,
+  });
+
   // The shadow technique leaves in the record — never a claim about the lifter,
   // because nothing here can see them lift. Only ever softens.
   const form = formWatch({ sets: histSets });
@@ -453,6 +462,8 @@ export const handler = async (event) => {
       cardio,
       // Every workout, however it arrived — the watch's and the assistant's.
       workouts,
+      // The one thing worth raising unprompted. Null means say nothing.
+      nudge,
       // The shadow, never a claim about technique.
       form,
       // The record of a fast. Never graded.

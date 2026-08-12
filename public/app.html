@@ -3594,6 +3594,8 @@ function demoData() {
       resting_burn: 1770, missing: null,
     },
     no_target_set: null,
+    nudge: { kind: 'week_behind', priority: 7, push: 'normal',
+      say: '3 of 4 this week with 2 days left. Still comfortably doable — want a session?' },
     training_week: { week_start: series[Math.max(0, N - 1)].date, done: 3, target: 4, days_left: 2,
       met: false, say: 'Three of four done with two days left. One more and the week is met.' },
     readiness: { known: true, state: 'ready', signals: [
@@ -4895,6 +4897,15 @@ function render(d) {
   // Above everything but a care flag: a wrong zone makes every number below it
   // describe the wrong day.
   out.push(zoneWarning(d));
+
+  // THE ONE THING WORTH RAISING WITHOUT BEING ASKED — the same line the
+  // assistant gets. Preemptive is not a conversation feature: somebody who
+  // opened the dashboard is exactly as entitled to be told it. Never drawn
+  // beside a care flag, because the server has already silenced it there.
+  if (d.nudge?.say) {
+    out.push(callout(d.nudge.kind === 'best' ? 'good' : 'note',
+      d.nudge.kind === 'best' ? 'Worth saying' : 'Worth knowing', esc(d.nudge.say)));
+  }
 
   // The graphic opens the page — care flags above it and nothing else, because
   // a flag is the one thing that outranks the day's arithmetic.

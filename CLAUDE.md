@@ -1365,6 +1365,44 @@ somebody to eat less than they need. Until something is logged there is no
 ring: the burn is shown as the burn, labelled *"to burn today"*, and the caveat
 says it is the whole day's estimate rather than what has been spent so far.
 
+### Preemptive — the setting that was stored and drove nothing
+
+`lib/prompt.js` + `nudge` on `log`, `brief` and the dashboard. The founder:
+*"should be prompt in advice — the whole point of it is preemptive."*
+
+He is right, and the gap was embarrassing: **`plan_push` was stored, was shown
+back on the plan, and changed nothing.** No instruction said what light, normal
+or relentless actually do, and the level was carried on no response the model
+reads. A setting called *how hard this thing chases you* that does nothing when
+you set it is the worst kind of feature — it looks answered.
+
+**What preemptive can mean here.** The server can never speak first. So it
+means: the moment they say ANYTHING — a meal, a weight, a question about
+something else entirely — the answer already carries the one thing worth
+raising. That is a large difference from waiting to be asked *"how am I
+doing"*, which is a question people ask when they already suspect the answer.
+
+- **A care flag silences it completely**, including the cheerful ones. A
+  personal best delivered to somebody who has eaten under 1,200 for three days
+  is encouragement pointed the wrong way.
+- **One thing, never a list.** A nudge with three items in it is a lecture and
+  the second is never read.
+- **A win is a nudge, at every level.** The most valuable unprompted sentence
+  is not *"you're behind"* — it is *"best run yet"*, said the day it happens.
+  Somebody who asked to be left alone did not ask to be denied their own best
+  run, so wins are not gated by push.
+- **An impossible week is stated, never counted down to zero**, and only at
+  relentless — there is nothing actionable left and repeating it is pure guilt.
+- **A quiet capture stays quiet.** Somebody mid-way through a tax question who
+  mentioned ten push-ups did not open a conversation about their training week.
+
+**`light` fired for nobody, and that was a real bug.** "Well behind" was first
+defined as *nothing done and three days left* — but for anybody training four
+days a week, by the time three days remain with nothing done the week is
+already arithmetically impossible and the branch above has taken it. A setting
+that silently means *never* is worse than not offering it. It is a proportion
+now: under half the pace the week implies.
+
 ### The manual is in the app, and it is made of sentences
 
 `lib/guide.js` + the Guide tab. The founder, before his first session with it:
@@ -1851,7 +1889,7 @@ self-reporting scale removes the most-abandoned manual entry), then Strava.
 
 ## Conventions
 
-- `npm test` runs `test/harness.mjs` — 480 offline tests, no network, no database.
+- `npm test` runs `test/harness.mjs` — 486 offline tests, no network, no database.
   Run it before every push. It covers the JSON-RPC envelope (which fails as an
   uninformative "could not connect" inside ChatGPT) and all the arithmetic
   (which fails as a confidently wrong number in somebody's verdict).
