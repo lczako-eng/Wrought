@@ -32,6 +32,7 @@ import { formWatch, cardioProgress } from './lib/form.js';
 import { intakeState } from './lib/intake.js';
 import { planRead } from './lib/plan.js';
 import { guideRead } from './lib/guide.js';
+import { nextNudge, nudgeNote } from './lib/prompt.js';
 import { finaliseSession, closeStaleSessions } from './lib/session.js';
 import { PROVIDERS, providerSummary, recommendRoute } from './lib/providers.js';
 import { nutritionTotals, composition, macroMatrix, yearOverYear } from './lib/nutrition.js';
@@ -212,6 +213,8 @@ A WORKOUT WITH NO DURATION COUNTS FOR NOTHING. A session logged through you rath
 NOBODY TRAINS BEFORE THEY KNOW WHAT THEY ARE TRAINING FOR. suggest_workout and start_session carry a plan block. When it says set: false, that person has never been told what plan they are on — so before the session, say in two lines what a plan is and ask for ALL of the missing parts in ONE message: what they are after, how fast (gentle / steady / aggressive), how hard WROUGHT should chase them (light / normal / relentless), and how many sessions a week they will honestly do. Then call set_plan and set_goal AND give them the workout in the same turn. Never make somebody ask twice for the session they came for, and never turn this into a form — a setup interview standing between somebody and their first workout is how the first workout stops happening. When set: true, open with the plan in one short line so the session has a reason attached, and get on with it.
 
 THE PLAN CHANGES WHENEVER THEY SAY SO, AND IT IS NEVER A NEGOTIATION. "Make it aggressive", "ease off", "stop nagging me", "make it three days" — call set_plan immediately, confirm in one line, move on. NO remark about commitment, no asking why, no warning that they are backing off. A plan somebody keeps missing is a plan set wrong, and easing it to what they will really do is the correct move, not a retreat. The one thing to say plainly on the way up: an aggressive pace is hungrier and costs more muscle, so protein and lifting matter more, not less. Every pace still floors intake at 1,200 and stays under the loss rate the care flags warn about — WROUGHT will not pace somebody into its own safety warning however hard they push, and if a request hits that ceiling the response says so in the held field. Relay it; do not argue it.
+
+BE PREEMPTIVE — THE PRODUCT IS NOT A LOOKUP. This server can never speak first, so "prompt me" has to mean: the moment they say ANYTHING, the answer already carries the one thing worth raising. log and brief return a "nudge" — a single computed line, already filtered by their push setting and silenced entirely by a care flag. When one is there, say it ONCE, in one short line, AFTER answering what they actually asked, never as an opener and never instead of the answer. When there is no nudge on the response, say nothing extra: a coach who finds something to say every single time is one people stop listening to. Never invent a nudge of your own and never repeat one twice in a conversation.
 
 PUSH IS NOT BLUNTNESS. Bluntness is how a verdict is WORDED. Push is how OFTEN training gets brought up when they did not ask. Somebody can want the truth delivered flat and still not want chasing every evening, so never change one when they asked for the other. And a care flag silences pushing entirely, whatever the plan says — relentless is a setting, not a licence.
 
@@ -965,7 +968,16 @@ async function log(args, user) {
   const kinds = [...new Set(written.map(e => e.event_type))];
   const day = await dayFacts(user.id, profile, localDateFor(profile.timezone));
 
+  // Preemptive, on the surface that fires most often. A quiet capture stays
+  // quiet — somebody mid-way through a tax question who mentioned ten push-ups
+  // did not open a conversation about their training week.
+  const nudge = args.quiet ? null : await nudgeFor(user.id, profile, { day });
+
   return {
+    // The one thing worth raising unprompted, already filtered by their push
+    // setting and silenced entirely by a care flag. Null means say nothing.
+    nudge: nudge || undefined,
+    nudge_note: args.quiet ? undefined : nudgeNote(nudge, profile.plan_push),
     recorded: written.map(e => ({ id: e.id, type: e.event_type, summary: e.summary, estimated: e.estimated })),
     count: written.length,
     parsed,
@@ -1614,8 +1626,23 @@ async function brief(args, user) {
     .order('occurred_at', { ascending: true }).limit(50);
   const waiting = pendingVoice(spoken || []);
 
+  // The one thing worth raising unprompted, computed from what is already in
+  // scope rather than re-fetching. Filtered by their push setting, silenced
+  // completely by a care flag.
+  const nudge = nextNudge({
+    push: profile.plan_push || null,
+    flags,
+    trainingWeek: facts.training_week,
+    plan: planRead({ profile, goals, weightKg: range.days.filter(d => d.weight_kg != null).pop()?.weight_kg ?? null }),
+    cardio: facts.cardio,
+    day,
+    voicePending: waiting.length,
+  });
+
   return {
     date, kind, facts, verdict,
+    nudge: nudge || undefined,
+    nudge_note: nudgeNote(nudge, profile.plan_push),
     ...(flags.length ? { care_flags: flags } : {}),
     ...(setup ? { setup_needed: setup } : {}),
     ...(waiting.length ? {
@@ -2836,6 +2863,33 @@ async function getProfileTool(_args, user) {
 // README it never read. "It should tell you how to use Wrought and what it
 // means" — from inside the conversation, because that is where the user is.
 // One manual, shared with the app's Guide tab — see lib/guide.js.
+// THE ONE THING WORTH RAISING WITHOUT BEING ASKED.
+//
+// "Should be prompt in advice — the whole point of it is preemptive." An MCP
+// server can never speak first, so preemptive means: the moment they say
+// ANYTHING, the answer already carries it. Computed in lib/prompt.js, filtered
+// by their push setting, and silenced completely by a care flag.
+async function nudgeFor(userId, profile, { day = null, goals = null } = {}) {
+  const today = localDateFor(profile.timezone);
+  const [range, theGoals] = await Promise.all([
+    rangeFacts(userId, profile, addDays(today, -29), today),
+    goals ? Promise.resolve(goals) : getGoals(userId),
+  ]);
+
+  const flags = careFlags(range, profile);
+  const weightKg = range.days.filter(d => d.weight_kg != null).pop()?.weight_kg ?? null;
+
+  const nudge = nextNudge({
+    push: profile.plan_push || null,
+    flags,
+    trainingWeek: weekSoFar(range.days, { today, target: profile.train_days || null }),
+    plan: planRead({ profile, goals: theGoals, weightKg }),
+    day,
+  });
+
+  return nudge ? { ...nudge, push: profile.plan_push || 'normal' } : null;
+}
+
 async function guide() {
   return guideRead();
 }
