@@ -774,16 +774,8 @@ table.matrix td.rh.cold { color: var(--heat-3); }
    to be in the orange, and both are right: a switch reads as reversible where
    a button reads as final, which is exactly the difference between retiring a
    routine and deleting one. */
-.rmv { position: relative; }
 .rmvn { display: flex; flex-direction: column; gap: 2px; }
 .rmvn em { font-family: var(--mono); font-size: 10.5px; font-style: normal; color: var(--ash-dim); }
-.rx {
-  font: inherit; font-size: 17px; line-height: 1; cursor: pointer; flex: none;
-  width: 28px; height: 28px; margin-left: 8px; border-radius: 8px;
-  background: transparent; border: 1px solid var(--edge); color: var(--ash-dim);
-}
-.rx:hover, .rx:focus-visible { border-color: var(--heat-3); color: var(--heat-4); outline: none; }
-
 .radd { display: flex; gap: 8px; margin: 12px 0 6px; flex-wrap: wrap; }
 .radd input {
   font: inherit; font-size: 13.5px; padding: 9px 11px; border-radius: 10px; min-width: 0;
@@ -937,10 +929,31 @@ table.matrix td.rh.cold { color: var(--heat-3); }
   border-left: 2px solid var(--edge-lit); padding-left: 11px;
 }
 .rmvs { display: flex; flex-direction: column; gap: 1px; margin-bottom: 9px; }
-.rmv {
-  display: flex; justify-content: space-between; gap: 12px;
-  padding: 7px 10px; background: var(--scale); border-radius: 5px; font-size: 14px;
+/* The row is a window; the content slides inside it. The remove action sits
+   BEHIND the content, so nothing destructive is tappable until the row has
+   been deliberately moved — which is the whole safety argument for the
+   gesture over a visible button. */
+.rmv { position: relative; overflow: hidden; border-radius: 5px; background: var(--scale); font-size: 14px; }
+.rmv-body {
+  display: flex; justify-content: space-between; align-items: center; gap: 12px;
+  padding: 7px 10px; background: var(--scale); border-radius: 5px;
+  position: relative; z-index: 1;
+  /* pan-y: vertical scrolling stays the browser's; only the horizontal drag
+     is ours. Without this the list becomes unscrollable on a phone. */
+  touch-action: pan-y;
+  transition: transform .18s var(--ease);
+  will-change: transform;
 }
+.rmv.swipe .rmv-body { cursor: grab; }
+.rmv-del {
+  position: absolute; top: 0; right: 0; bottom: 0; width: 84px; z-index: 0;
+  font: inherit; font-size: 12.5px; font-weight: 700; letter-spacing: .04em;
+  border: 0; cursor: pointer; border-radius: 0 5px 5px 0;
+  background: linear-gradient(90deg, var(--heat-2), var(--heat-3)); color: #1A0A02;
+}
+/* Keyboard path: tabbing to the parked button slides the row open, so the
+   gesture never becomes the only way in. */
+.rmv:focus-within .rmv-body { transform: translateX(-84px); }
 .rmv b { font-family: var(--mono); font-size: 12px; color: var(--ash); font-variant-numeric: tabular-nums; }
 
 /* Folded away by default: the working matters enormously the once, and is
@@ -2981,17 +2994,68 @@ async function routineAction(payload) {
 function parseHowMuch(raw) {
   const t = String(raw || '').trim();
   if (!t) return {};
-  const mins = t.match(/(\d+)\s*(?:min|minute|m)\b/i);
-  if (mins) return { minutes: +mins[1] };
-  const sr = t.match(/(\d+)\s*[x×]\s*(\d+)/i);
-  if (sr) return { sets: +sr[1], reps: +sr[2] };
-  const n = t.match(/^(\d+)$/);
-  if (n) return { sets: +n[1] };
-  // Anything else is how it is set up, kept verbatim — "level 10+, 2.5-3 mph".
-  return { detail: t };
+  const out = {};
+  let rest = t;
+
+  const sr = rest.match(/(\d+)\s*[x×]\s*(\d+)/i);
+  const mins = rest.match(/(\d+)\s*(?:min(?:ute)?s?|m)\b/i);
+  if (sr) { out.sets = +sr[1]; out.reps = +sr[2]; rest = rest.replace(sr[0], ' '); }
+  else if (mins) { out.minutes = +mins[1]; rest = rest.replace(mins[0], ' '); }
+  else if (/^\d+$/.test(rest)) { out.sets = +rest; rest = ''; }
+
+  // Whatever is left is how it is set up — "level 10+, 2.5-3 mph" — and it is
+  // kept verbatim rather than thrown away, because for cardio that trailing
+  // text IS the instruction.
+  rest = rest.replace(/^[\s,;·—-]+|[\s,;·—-]+$/g, '').trim();
+  if (rest) out.detail = rest;
+  return out;
+}
+
+// The slide. Pointer events so a mouse drag works the same as a thumb; the
+// row opens past halfway or springs back, exactly like the list rows the
+// gesture is borrowed from. A re-render after any action closes everything,
+// which is the state the screen should be in anyway.
+function wireSwipe() {
+  const OPEN = -84;
+  document.querySelectorAll('.rmv.swipe').forEach(row => {
+    const body = row.querySelector('.rmv-body');
+    let x0 = null, y0 = null, dx = 0, dragging = false;
+
+    row.addEventListener('pointerdown', (e) => {
+      if (e.target.closest('.rmv-del')) return;      // a tap on Remove is a tap
+      x0 = e.clientX; y0 = e.clientY; dx = 0; dragging = false;
+      row.setPointerCapture(e.pointerId);
+    });
+    row.addEventListener('pointermove', (e) => {
+      if (x0 == null) return;
+      const mx = e.clientX - x0, my = e.clientY - y0;
+      // Only claim the gesture once it is clearly horizontal — otherwise this
+      // list would eat the page's own scrolling.
+      if (!dragging && Math.abs(mx) > 8 && Math.abs(mx) > Math.abs(my) * 1.2) dragging = true;
+      if (!dragging) return;
+      const base = row.dataset.open ? OPEN : 0;
+      dx = Math.max(OPEN - 16, Math.min(0, base + mx));
+      body.style.transition = 'none';
+      body.style.transform = `translateX(${dx}px)`;
+    });
+    const settle = () => {
+      if (x0 == null) return;
+      body.style.transition = '';
+      if (dragging && dx < OPEN / 2) { body.style.transform = `translateX(${OPEN}px)`; row.dataset.open = '1'; }
+      else { body.style.transform = ''; delete row.dataset.open; }
+      x0 = null; dragging = false; dx = 0;
+    };
+    row.addEventListener('pointerup', settle);
+    row.addEventListener('pointercancel', settle);
+  });
 }
 
 function wireRoutines() {
+  wireSwipe();
+
+  document.querySelectorAll('.rmv-del').forEach(b => b.addEventListener('click', () =>
+    routineAction({ action: 'remove', id: b.dataset.rid, index: +b.dataset.rindex })));
+
   document.querySelectorAll('.ra-go').forEach(b => b.addEventListener('click', () => {
     const id = b.dataset.rid;
     const nameEl = document.querySelector(`.ra-name[data-rid="${id}"]`);
@@ -3000,9 +3064,6 @@ function wireRoutines() {
     if (!name) { nameEl?.focus(); return; }
     routineAction({ action: 'add', id, exercise: { name, ...parseHowMuch(howEl?.value) } });
   }));
-
-  document.querySelectorAll('.rx').forEach(b => b.addEventListener('click', () =>
-    routineAction({ action: 'remove', id: b.dataset.rid, index: +b.dataset.rindex })));
 
   document.querySelectorAll('.rtog').forEach(b => b.addEventListener('change', () =>
     routineAction({ action: 'toggle', id: b.dataset.rid })));
@@ -6043,11 +6104,20 @@ function routinesPanel(d, { editable = false } = {}) {
       m.minutes ? `${m.minutes} min` : null,
     ].filter(Boolean).join(' · ');
 
-    const moves = movesOf.map((m, i) => `<div class="rmv">
-      <span class="rmvn">${esc(m.name)}${m.detail ? `<em>${esc(m.detail)}</em>` : ''}</span>
-      <b>${howMuch(m) || '—'}</b>
-      ${editable ? `<button class="rx" type="button" title="Take it out"
-        data-rid="${esc(r.id)}" data-rindex="${i}" aria-label="Remove ${esc(m.name)}">&times;</button>` : ''}
+    // SLIDE TO REMOVE — the iPhone gesture, because that is the one the founder
+    // asked for by name and the one every phone user's thumb already knows.
+    // The row's content translates left and the action is revealed BEHIND it,
+    // so nothing destructive is tappable until the row has been deliberately
+    // moved. Keyboard users get the same action through :focus-within — the
+    // button is real, just parked behind the slide.
+    const moves = movesOf.map((m, i) => `<div class="rmv${editable ? ' swipe' : ''}"${
+      editable ? ` data-rid="${esc(r.id)}" data-rindex="${i}"` : ''}>
+      ${editable ? `<button class="rmv-del" type="button" tabindex="0"
+        data-rid="${esc(r.id)}" data-rindex="${i}" aria-label="Remove ${esc(m.name)}">Remove</button>` : ''}
+      <div class="rmv-body">
+        <span class="rmvn">${esc(m.name)}${m.detail ? `<em>${esc(m.detail)}</em>` : ''}</span>
+        <b>${howMuch(m) || '—'}</b>
+      </div>
     </div>`).join('');
 
     return `<details class="rout"${r.active === false ? ' data-retired="1"' : ''}>
@@ -6061,6 +6131,7 @@ function routinesPanel(d, { editable = false } = {}) {
         ${r.notes ? `<p class="rnotes">${esc(r.notes)}</p>`
                   : '<p class="sub dim">No write-up on this one yet — ask WROUGHT to add one and it shows here and at the top of every session.</p>'}
         ${moves ? `<div class="rmvs">${moves}</div>` : ''}
+        ${editable && movesOf.length ? '<p class="sub dim swhint">Slide a movement to the left to take it out.</p>' : ''}
         ${editable ? `<div class="radd">
           <input class="ra-name" placeholder="Add a movement" data-rid="${esc(r.id)}" maxlength="120">
           <input class="ra-sets" placeholder="3×8 or 25 min" data-rid="${esc(r.id)}" maxlength="20">

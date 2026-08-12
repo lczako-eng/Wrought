@@ -1709,7 +1709,17 @@ between retiring a routine and deleting one.
 - **Still no loads, on either door.** A weight typed into a plan is a guess
   with a text box around it.
 - *"3×8 or 25 min"* is **one** box. Two number fields for a treadmill walk is a
-  form, and anything unparseable is kept verbatim rather than thrown away.
+  form, and anything unparseable is kept verbatim rather than thrown away. The
+  number and the setup are read TOGETHER — *"25 min level 10+, 2.5–3 mph"*
+  keeps both, because for cardio the trailing text IS the instruction.
+- **Removing a movement is a slide, not a button.** The founder saw the ×
+  and said make it a slide, and he is right for a safety reason as well as a
+  taste one: the row's content translates left and the action is revealed
+  BEHIND it, so nothing destructive is tappable until the row has been
+  deliberately moved. `pointer` events so a mouse drag works like a thumb;
+  `touch-action: pan-y` so the list never eats the page's scrolling; a
+  clearly-horizontal drag claims the gesture; `:focus-within` slides the row
+  open for keyboard users so the gesture is never the only way in.
 
 ### The workout nobody STARTED — the other half of the same lesson
 
@@ -2095,7 +2105,7 @@ self-reporting scale removes the most-abandoned manual entry), then Strava.
 
 ## Conventions
 
-- `npm test` runs `test/harness.mjs` — 508 offline tests, no network, no database.
+- `npm test` runs `test/harness.mjs` — 509 offline tests, no network, no database.
   Run it before every push. It covers the JSON-RPC envelope (which fails as an
   uninformative "could not connect" inside ChatGPT) and all the arithmetic
   (which fails as a confidently wrong number in somebody's verdict).
