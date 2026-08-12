@@ -51,6 +51,13 @@
   status = 200
 
 # The rack screen. Mid-set nobody composes a sentence — they want one glance.
+# Saved workouts, editable from the website as well as by talking. Both doors
+# write the same rows.
+[[redirects]]
+  from = "/api/routines"
+  to = "/.netlify/functions/api-routines"
+  status = 200
+
 [[redirects]]
   from = "/api/session"
   to = "/.netlify/functions/api-session"

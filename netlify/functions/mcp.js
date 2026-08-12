@@ -462,7 +462,7 @@ const TOOLS = [
   {
     name: 'save_routine',
     title: 'Remember a workout by name',
-    description: 'Saves a named session they can call up forever — "remember this as my leg day", "save that as my S-tier chest workout". Also use after building a good session so they never rebuild it from scratch. Covers non-gym days too: kind "sport" holds five-a-side, hockey, climbing. Saving an existing name updates it rather than creating a duplicate, so adding one movement or changing the reps never means rebuilding the whole thing. Write the notes field: a saved workout without the reason it is in that order is just a list, and the list is the part people already have.',
+    description: 'Saves a named session they can call up forever — "remember this as my leg day", "save that as my S-tier chest workout". Also use after building a good session so they never rebuild it from scratch. Covers non-gym days too: kind "sport" holds five-a-side, hockey, climbing. Saving an existing name MERGES into it rather than creating a duplicate or replacing it: matching movements update in place, new ones append, and nothing already there is ever dropped as a side effect. Taking something out needs `remove`; starting over needs `replace: true`. Timed work carries `minutes` and `detail` instead of sets and reps — a treadmill walk is not 3 sets of 8. Write the notes field: a saved workout without the reason it is in that order is just a list, and the list is the part people already have.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -473,13 +473,19 @@ const TOOLS = [
         exercises: { type: 'array', description: 'Ordered list.',
                      items: { type: 'object', properties: {
                        name:    { type: 'string' },
-                       sets:    { type: 'integer' },
+                       sets:    { type: 'integer', description: 'Omit entirely for anything timed — a treadmill walk is not 3 sets of 8.' },
                        reps:    { type: 'integer' },
+                       minutes: { type: 'integer', description: 'For timed work: a treadmill walk, a row, a bike. Use INSTEAD of sets and reps.' },
+                       detail:  { type: 'string', description: 'How it is actually set up, in their words — "level 10+, 2.5-3 mph", "resistance 8", "sled at 60kg". Kept verbatim, because this is the whole instruction for cardio and no sets/reps field can hold it.' },
                        load_kg: { type: 'number', description: 'Omit for a beginner or a new lift — RPE is prescribed instead of a number nobody has earned yet.' },
                        rest_s:  { type: 'integer' },
                        muscles: { type: 'array', items: { type: 'string' } },
                        cue:     { type: 'string', description: 'One plain line on what it should feel like. Matters most for beginners.' },
                      } } },
+        remove:  { type: 'array', items: { type: 'string' },
+                   description: 'Movements to take OUT of an existing routine, by name. The only thing that shrinks a routine.' },
+        replace: { type: 'boolean',
+                   description: 'Rebuild the routine from `exercises` alone, discarding what is there. Default false: a save MERGES, so adding one movement can never wipe the rest. Only pass true when they have explicitly asked to start the routine over.' },
         notes: { type: 'string',
           description: 'The write-up — how to run this session, in a short paragraph or a few lines. What it is for, the order and why, what to push and what to leave something in the tank on, anything to watch. This is what makes a saved workout a workout rather than a list of names, and it is shown at the top when the session starts. Write it in their register, not a textbook\'s.' },
         equipment:   { type: 'array', items: { type: 'string' } },
@@ -2652,15 +2658,37 @@ async function saveRoutine(args, user) {
   const name = String(args.name || '').trim();
   if (!name) return { error: 'A name is required.' };
 
-  const shape = e => ({
-    name: String(e.name || '').trim(),
-    sets: Number(e.sets) || 3,
-    reps: e.reps ?? 8,
-    load_kg: e.load_kg ?? null,
-    rest_s: Number(e.rest_s) || 120,
-    muscles: Array.isArray(e.muscles) ? e.muscles : [],
-    cue: e.cue || null,
-  });
+  // NOT EVERYTHING IS SETS AND REPS. An incline treadmill walk saved as "3×8"
+  // is nonsense on the screen and useless when the session starts — the thing
+  // that actually defines it is minutes, speed and incline. So a movement can
+  // carry `minutes` and a free-text `detail` ("level 10+, 2.5–3 mph"), and when
+  // it does, sets and reps stay NULL rather than being filled with a default
+  // that describes nothing.
+  const shape = (e) => {
+    const minutes = Number(e.minutes) > 0 ? Math.round(Number(e.minutes)) : null;
+    const timed = minutes != null || /treadmill|bike|row(er)?|elliptical|walk|run|stair|cardio|swim/i.test(String(e.name || ''));
+    return {
+      name: String(e.name || '').trim(),
+      sets: e.sets != null ? Number(e.sets) || null : (timed ? null : 3),
+      reps: e.reps != null ? e.reps : (timed ? null : 8),
+      minutes,
+      // How it is actually set up. Kept verbatim, because "level 10+, 2.5–3 mph"
+      // is the whole instruction and there is no field that decomposes it well.
+      detail: e.detail ? String(e.detail).slice(0, 200) : null,
+      load_kg: e.load_kg ?? null,
+      rest_s: Number(e.rest_s) || 120,
+      muscles: Array.isArray(e.muscles) ? e.muscles : [],
+      cue: e.cue || null,
+    };
+  };
+
+  // How a movement reads back, whichever kind it is.
+  const describe = e => [
+    e.name,
+    e.sets && e.reps ? `${e.sets}×${e.reps}` : null,
+    e.minutes ? `${e.minutes} min` : null,
+    e.detail || null,
+  ].filter(Boolean).join(' · ');
 
   let exercises = (Array.isArray(args.exercises) ? args.exercises : []).map(shape).filter(e => e.name);
 
@@ -2707,11 +2735,51 @@ async function saveRoutine(args, user) {
     }
   }
 
-  // A plan grows over weeks. Making somebody rebuild the whole thing to add one
-  // movement is exactly how a routine stops being used.
-  if (Array.isArray(args.add) && args.add.length) {
-    const base = exercises.length ? exercises : (existing?.exercises || []);
-    exercises = [...base, ...args.add.map(shape).filter(e => e.name)];
+  // A SAVE MAY ONLY EVER ADD OR UPDATE. NEVER SILENTLY DELETE.
+  //
+  // `exercises` used to REPLACE the whole list, so "add the treadmill to S
+  // Tier" — passed as exercises rather than add — quietly wiped every other
+  // movement in it. The founder watched his routine lose the bench press and
+  // the shoulder press that way: "didn't save all the info, some of it saved".
+  // A routine is built up over weeks, one good session at a time, and a tool
+  // that can erase it as a side effect of adding to it is not safe to call.
+  //
+  // So merging is the default: same name updates in place, new names append,
+  // and nothing already there is dropped. Removing needs `remove`, and
+  // replacing the lot needs `replace: true` — both of them said out loud.
+  const merge = (base, incoming) => {
+    const out = base.map(e => ({ ...e }));
+    for (const inc of incoming) {
+      const at = out.findIndex(e => e.name.toLowerCase() === inc.name.toLowerCase());
+      if (at >= 0) out[at] = { ...out[at], ...inc };
+      else out.push(inc);
+    }
+    return out;
+  };
+
+  const incoming = [
+    ...exercises,
+    ...((Array.isArray(args.add) ? args.add : []).map(shape).filter(e => e.name)),
+  ];
+
+  if (existing && !args.from_last_session) {
+    exercises = args.replace === true
+      ? (incoming.length ? incoming : existing.exercises || [])
+      : merge(existing.exercises || [], incoming);
+  } else if (incoming.length) {
+    exercises = incoming;
+  }
+
+  // Taking something out is explicit, and it is the only path that shrinks a
+  // routine.
+  const removed = [];
+  if (Array.isArray(args.remove) && args.remove.length) {
+    const drop = new Set(args.remove.map(x => String(x).toLowerCase().trim()));
+    exercises = exercises.filter(e => {
+      const go = drop.has(e.name.toLowerCase());
+      if (go) removed.push(e.name);
+      return !go;
+    });
   }
 
   const row = {
@@ -2735,7 +2803,10 @@ async function saveRoutine(args, user) {
     exercise_names: exercises.map(e => e.name),
     has_notes: !!row.notes,
     total_sets: exercises.reduce((a, e) => a + (Number(e.sets) || 0), 0),
-    say: `${existing ? 'Updated' : 'Saved'} "${name}" — ${exercises.map(e => `${e.name} ${e.sets}×${e.reps}`).join(', ')}. Say the name any time and it starts.`,
+    ...(removed.length ? { removed } : {}),
+    say: `${existing ? 'Updated' : 'Saved'} "${name}" — ${exercises.map(describe).join(', ')}.` +
+         (removed.length ? ` Took out ${removed.join(', ')}.` : '') +
+         ' Say the name any time and it starts.',
     note: 'Read the exercise list back once so a mis-captured lift gets caught now. They can add to this later with save_routine and the add field — never make them rebuild it.' +
       (row.notes ? '' : ' NO WRITE-UP ON IT YET. Offer one in half a line — how to run it, what to push, what to leave in the tank — and write it with save_routine notes if they want it. It is what turns a saved list of names into a workout, and it is shown at the top every time the session starts.'),
     next_actions: [`start_session with routine "${name}"`, 'save_routine with add[] to grow it later'],

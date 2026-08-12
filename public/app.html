@@ -770,6 +770,53 @@ table.matrix td.rh.cold { color: var(--heat-3); }
              text-transform: uppercase; color: var(--ash-dim); margin-left: 7px; }
 .maxline .sub { flex: 1 1 100%; margin: 0; font-size: 11.5px; }
 
+/* Editing a saved workout. The founder asked for the iPhone slider and for it
+   to be in the orange, and both are right: a switch reads as reversible where
+   a button reads as final, which is exactly the difference between retiring a
+   routine and deleting one. */
+.rmv { position: relative; }
+.rmvn { display: flex; flex-direction: column; gap: 2px; }
+.rmvn em { font-family: var(--mono); font-size: 10.5px; font-style: normal; color: var(--ash-dim); }
+.rx {
+  font: inherit; font-size: 17px; line-height: 1; cursor: pointer; flex: none;
+  width: 28px; height: 28px; margin-left: 8px; border-radius: 8px;
+  background: transparent; border: 1px solid var(--edge); color: var(--ash-dim);
+}
+.rx:hover, .rx:focus-visible { border-color: var(--heat-3); color: var(--heat-4); outline: none; }
+
+.radd { display: flex; gap: 8px; margin: 12px 0 6px; flex-wrap: wrap; }
+.radd input {
+  font: inherit; font-size: 13.5px; padding: 9px 11px; border-radius: 10px; min-width: 0;
+  background: var(--scale); border: 1px solid var(--edge); color: var(--bright);
+}
+.radd .ra-name, .radd #rnew-name { flex: 1 1 150px; }
+.radd .ra-sets { flex: 0 1 120px; }
+.radd input:focus { outline: none; border-color: var(--heat-3); }
+.radd button {
+  font: inherit; font-size: 13px; font-weight: 650; cursor: pointer; flex: none;
+  padding: 9px 16px; border-radius: 10px; border: 0;
+  background: var(--heat-3); color: #1A0A02;
+}
+.radd button:hover { background: var(--heat-4); }
+.rnew { margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--edge); }
+
+.rfoot { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 10px 0 4px; }
+/* The switch. Orange when on, because that is the colour everything live is. */
+.sw { display: inline-flex; align-items: center; gap: 9px; cursor: pointer; font-size: 13px; }
+.sw input { position: absolute; opacity: 0; width: 0; height: 0; }
+.sw i {
+  width: 42px; height: 25px; border-radius: 999px; flex: none; position: relative;
+  background: var(--scale-2); border: 1px solid var(--edge); transition: background .18s, border-color .18s;
+}
+.sw i::after {
+  content: ''; position: absolute; top: 2px; left: 2px; width: 19px; height: 19px;
+  border-radius: 50%; background: var(--ash-dim); transition: transform .18s, background .18s;
+}
+.sw input:checked + i { background: var(--heat-3); border-color: var(--heat-4); }
+.sw input:checked + i::after { transform: translateX(17px); background: #1A0A02; }
+.sw input:focus-visible + i { border-color: var(--bright); }
+.rout[data-retired="1"] > summary .rn { color: var(--ash-dim); }
+
 /* The plan: the target, and the two numbers that make it a decision rather
    than a rule handed down. They are never allowed to appear apart. */
 .plantop { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 14px; margin-bottom: 14px; }
@@ -2815,6 +2862,7 @@ async function loadTrainer() {
   const session = await needsSession('Trainer', 'The live session at the rack');
   if (!session) { stopTrainer(); return; }
   const data = { session };
+  if (!trainerRoutinesFull.length) await loadRoutines();
   const res = await fetch('/.netlify/functions/api-session', {
     headers: { Authorization: `Bearer ${data.session.access_token}` },
   });
@@ -2835,7 +2883,8 @@ function renderTrainer(d) {
     $('content').innerHTML = `<section class="panel hero">
       <h2>Trainer</h2>
       <p class="caveat">${esc(d.say)}</p></section>
-      ${routinesPanel({ routines: d.routines?.length ? d.routines : trainerRoutines })}`;
+      ${routinesPanel({ routines: trainerRoutinesFull.length ? trainerRoutinesFull : (d.routines?.length ? d.routines : trainerRoutines) }, { editable: true })}`;
+    wireRoutines();
     stagger();
     return;
   }
@@ -2892,6 +2941,87 @@ function renderTrainer(d) {
 // The percentage is computed server-side by sessionProgress, the same function
 // the assistant's log_set answer uses. Working it out here would mean the
 // screen and the voice could quote two different numbers in the same minute.
+// The editable list, fetched once when Trainer opens. Kept apart from the
+// read-only copy the Record tab borrows from api-progress: this one carries
+// ids, the active flag and the full movement detail, which the dashboard has
+// no use for.
+let trainerRoutinesFull = [];
+
+async function loadRoutines() {
+  const { data } = sb ? await sb.auth.getSession() : { data: {} };
+  if (!data?.session) return;
+  const res = await fetch('/.netlify/functions/api-routines', {
+    headers: { Authorization: `Bearer ${data.session.access_token}` },
+  });
+  if (!res.ok) return;
+  const body = await res.json();
+  trainerRoutinesFull = body.routines || [];
+}
+
+// EVERY WRITE IS A NAMED ACTION and every one re-renders from what the server
+// sends back. Patching the DOM from a guess about what the write did is how a
+// screen and a record drift apart — the same rule as every number on this page.
+async function routineAction(payload) {
+  const { data } = sb ? await sb.auth.getSession() : { data: {} };
+  if (!data?.session) return null;
+  const res = await fetch('/.netlify/functions/api-routines', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${data.session.access_token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) { alert(body.say || body.error || 'That did not save.'); return null; }
+  trainerRoutinesFull = body.routines || trainerRoutinesFull;
+  if (view === 'trainer') loadTrainer();
+  return body;
+}
+
+// "3×8" or "25 min" — one box, because two number fields for a treadmill walk
+// is a form, and this has to be faster than saying it out loud.
+function parseHowMuch(raw) {
+  const t = String(raw || '').trim();
+  if (!t) return {};
+  const mins = t.match(/(\d+)\s*(?:min|minute|m)\b/i);
+  if (mins) return { minutes: +mins[1] };
+  const sr = t.match(/(\d+)\s*[x×]\s*(\d+)/i);
+  if (sr) return { sets: +sr[1], reps: +sr[2] };
+  const n = t.match(/^(\d+)$/);
+  if (n) return { sets: +n[1] };
+  // Anything else is how it is set up, kept verbatim — "level 10+, 2.5-3 mph".
+  return { detail: t };
+}
+
+function wireRoutines() {
+  document.querySelectorAll('.ra-go').forEach(b => b.addEventListener('click', () => {
+    const id = b.dataset.rid;
+    const nameEl = document.querySelector(`.ra-name[data-rid="${id}"]`);
+    const howEl  = document.querySelector(`.ra-sets[data-rid="${id}"]`);
+    const name = (nameEl?.value || '').trim();
+    if (!name) { nameEl?.focus(); return; }
+    routineAction({ action: 'add', id, exercise: { name, ...parseHowMuch(howEl?.value) } });
+  }));
+
+  document.querySelectorAll('.rx').forEach(b => b.addEventListener('click', () =>
+    routineAction({ action: 'remove', id: b.dataset.rid, index: +b.dataset.rindex })));
+
+  document.querySelectorAll('.rtog').forEach(b => b.addEventListener('change', () =>
+    routineAction({ action: 'toggle', id: b.dataset.rid })));
+
+  // The only destructive control on the page, and the only one that asks.
+  // Retiring is one tap because it is reversible; deleting is not.
+  document.querySelectorAll('.rdel').forEach(b => b.addEventListener('click', () => {
+    if (!confirm(`Delete "${b.dataset.rname}" for good? Retiring keeps it and its history instead.`)) return;
+    routineAction({ action: 'delete', id: b.dataset.rid });
+  }));
+
+  $('rnew-go')?.addEventListener('click', () => {
+    const el = $('rnew-name');
+    const name = (el?.value || '').trim();
+    if (!name) { el?.focus(); return; }
+    routineAction({ action: 'create', name });
+  });
+}
+
 function checklistPanel(p) {
   if (!p || !p.exercises?.length) return '';
   return `<section class="panel">
@@ -5884,19 +6014,46 @@ function devicePanel2(d) {
   </section>`;
 }
 
-function routinesPanel(d) {
+// Saved workouts, and — on the Trainer tab — editable.
+//
+// The founder: "in each workout it should have a slider like you can delete
+// it or a button to add... I can create it both on there and on AI."
+//
+// Both doors on purpose. Talking is the fast way to build one and is how most
+// get made; but a routine is a LIST, and a list is the one thing a screen is
+// genuinely better at than a conversation — taking one movement out of the
+// middle by voice means naming it exactly and hoping, where here it is a tap.
+//
+// Editing is only offered on Trainer. On the Record tab this panel sits among
+// twenty others and is there to be READ; putting destructive controls in a
+// scroll-past is how somebody deletes a workout with their thumb.
+function routinesPanel(d, { editable = false } = {}) {
   const rows = (d.routines || []).map(r => {
     const stale = r.days_since != null && r.days_since >= 7;
     const when = r.days_since == null ? 'never run'
                : r.days_since === 0 ? 'today'
                : r.days_since === 1 ? 'yesterday' : `${r.days_since}d ago`;
-    const moves = (r.movements || []).map(m =>
-      `<div class="rmv"><span>${esc(m.name)}</span><b>${m.sets}×${esc(String(m.reps))}</b></div>`).join('');
+    // NOT EVERYTHING IS SETS AND REPS. An incline treadmill walk rendered as
+    // "3×8" is nonsense on the screen and useless when the session starts —
+    // what defines it is minutes, speed and incline. Timed movements carry
+    // their own words instead.
+    const movesOf = (r.movements || r.exercises || []);
+    const howMuch = m => [
+      m.sets && m.reps ? `${m.sets}×${esc(String(m.reps))}` : null,
+      m.minutes ? `${m.minutes} min` : null,
+    ].filter(Boolean).join(' · ');
 
-    return `<details class="rout">
+    const moves = movesOf.map((m, i) => `<div class="rmv">
+      <span class="rmvn">${esc(m.name)}${m.detail ? `<em>${esc(m.detail)}</em>` : ''}</span>
+      <b>${howMuch(m) || '—'}</b>
+      ${editable ? `<button class="rx" type="button" title="Take it out"
+        data-rid="${esc(r.id)}" data-rindex="${i}" aria-label="Remove ${esc(m.name)}">&times;</button>` : ''}
+    </div>`).join('');
+
+    return `<details class="rout"${r.active === false ? ' data-retired="1"' : ''}>
       <summary>
         <span class="rn">${esc(r.name)}</span>
-        <span class="chip ${stale ? 'stale' : ''}">${r.sets || r.exercises} ${
+        <span class="chip ${stale ? 'stale' : ''}">${r.sets || r.exercises || movesOf.length} ${
           r.sets ? (r.sets === 1 ? 'set' : 'sets') : (r.exercises === 1 ? 'lift' : 'lifts')}</span>
         <span class="when">${esc(when)}</span>
       </summary>
@@ -5904,14 +6061,33 @@ function routinesPanel(d) {
         ${r.notes ? `<p class="rnotes">${esc(r.notes)}</p>`
                   : '<p class="sub dim">No write-up on this one yet — ask WROUGHT to add one and it shows here and at the top of every session.</p>'}
         ${moves ? `<div class="rmvs">${moves}</div>` : ''}
+        ${editable ? `<div class="radd">
+          <input class="ra-name" placeholder="Add a movement" data-rid="${esc(r.id)}" maxlength="120">
+          <input class="ra-sets" placeholder="3×8 or 25 min" data-rid="${esc(r.id)}" maxlength="20">
+          <button class="ra-go" type="button" data-rid="${esc(r.id)}">Add</button>
+        </div>
+        <div class="rfoot">
+          <label class="sw">
+            <input type="checkbox" class="rtog" data-rid="${esc(r.id)}"${r.active === false ? '' : ' checked'}>
+            <i></i><span>${r.active === false ? 'Retired' : 'In use'}</span>
+          </label>
+          <button class="linky rdel" type="button" data-rid="${esc(r.id)}" data-rname="${esc(r.name)}">Delete</button>
+        </div>` : ''}
         <p class="sub dim">${r.times_used ? `Run ${r.times_used} time${r.times_used === 1 ? '' : 's'}.` : 'Never run yet.'}${
-          r.minutes ? ` About ${r.minutes} minutes.` : ''} Say the name to your AI and it starts.</p>
+          r.minutes || r.est_minutes ? ` About ${r.minutes || r.est_minutes} minutes.` : ''} Say the name to your AI and it starts.</p>
       </div>
     </details>`;
   }).join('');
 
   return `<section class="panel"><h2>Saved workouts</h2>
-    <div class="routs">${rows || '<p class="empty">Say "remember this as my leg day" after a good session.</p>'}</div></section>`;
+    <div class="routs">${rows || '<p class="empty">Say "remember this as my leg day" after a good session.</p>'}</div>
+    ${editable ? `<div class="radd rnew">
+      <input id="rnew-name" placeholder="New workout name" maxlength="120">
+      <button id="rnew-go" type="button">Create</button>
+    </div>
+    <p class="sub dim">Build one here or just say it to your AI — both write the same workout.
+    Retiring keeps it and everything it has been used for; only Delete removes it.</p>` : ''}
+  </section>`;
 }
 
 function notesPanel(d) {
