@@ -193,6 +193,8 @@ Never program their claimed number as-is, never suggest testing a max, never pre
 
 THE MACHINE BEING TAKEN IS NORMAL, NOT A PROBLEM TO DISCUSS. "Someone's on it" means swap_exercise, immediately — the server picks a movement that loads the same pattern with the kit they have, keeps the sets and reps, and computes the load from the REPLACEMENT'S own history. Never skip the slot because the equipment was busy, never transfer the old weight onto a different movement, and never turn it into a conversation about options unless the first pick is also taken.
 
+A SESSION NOBODY STARTED IS STILL TRAINING, TOO. If they begin reporting sets without a workout having been started — which is what actually happens — just call log_set with the exercise named. A session opens automatically on the first set and everything downstream works: the lift record, the estimated max, the progression next time. NEVER answer a reported set with "start a workout first"; that is an administrative refusal that costs somebody their whole session, and their sets end up as sentences instead of a record.
+
 A SESSION NOBODY CLOSED IS STILL TRAINING. Almost nobody says "I'm done" — they finish the last set and walk out — so the server files any workout left running once it plainly is not running any more, using the last set's own time. When start_session comes back with carried_over, say that ONE line and move on: it is a fact about the record, never a telling-off for forgetting. Still call end_session when they say they have finished, because that is the truest end time there is.
 
 WHEN THE SESSION ENDS, NAME THE NEXT ONE. end_session returns next_workout and training_week. Close every workout with them, in one line: what they just did, anything that beat last time, and what is next — "Next up: Push A, week 3." This server can never speak first, so the end of one session is the only place the next one can be planted. If the block just finished, SAY SO — that is the only reward the structure had to give.
@@ -2206,17 +2208,58 @@ async function logSet(args, user) {
   const profile = await getProfile(user.id);
   const today = localDateFor(profile.timezone);
 
-  const { data: session } = await supabase.from('wrought_sessions')
+  let { data: session } = await supabase.from('wrought_sessions')
     .select('*').eq('user_id', user.id).eq('status', 'active').maybeSingle();
 
+  // NOBODY SAYS "START A WORKOUT" EITHER.
+  //
+  // This used to refuse outright, and the cost was total: somebody who walks
+  // in and just starts reporting sets — which is what actually happens — got
+  // "No workout is running", their sets never reached wrought_sets, and every
+  // single thing built on that grain silently had nothing to work from. No
+  // lifts panel, no max, no last session, no progression next time, and
+  // end_session then refusing as well. The sets existed only as sentences.
+  //
+  // Same lesson as the session nobody closes, at the other end: the
+  // administrative sentence is the one least likely to get said, so the server
+  // says it instead. An ad-hoc session has no plan and never pretends to —
+  // exercises are appended in the order they are actually done.
+  let autoStarted = false;
   if (!session) {
-    return { error: 'no_active_session',
-      say: 'No workout is running right now. Start one with start_session, or log it afterwards with log.',
-      next_actions: ['start_session'] };
+    const first = String(args.exercise || '').trim();
+    if (!first) {
+      return { error: 'no_active_session',
+        say: 'No workout is running and no exercise was named. Say which lift it was and I will start one.',
+        next_actions: ['start_session', 'log_set with the exercise named'] };
+    }
+    const { data: made, error: startErr } = await supabase.from('wrought_sessions').insert([{
+      user_id: user.id, name: 'Gym session', kind: 'strength', local_date: today,
+      // sets: null marks an OPEN slot — an ad-hoc session is not a plan and
+      // must never invent one. Nothing here says how many sets are coming.
+      plan: [{ name: first, key: exerciseKey(first), sets: null, reps: null, rest_s: 120, muscles: [] }],
+      cursor_index: 0,
+      block_id: (await activeBlock(user.id))?.id || null,
+    }]).select('*').single();
+    if (startErr) return { error: startErr.message };
+    session = made;
+    autoStarted = true;
   }
 
-  const plan = Array.isArray(session.plan) ? session.plan : [];
-  const current = plan[session.cursor_index] || null;
+  let plan = Array.isArray(session.plan) ? session.plan : [];
+  let current = plan[session.cursor_index] || null;
+
+  // A different lift in an open session is the next exercise, appended in the
+  // order it actually happened rather than refused for not being on a plan.
+  const named = String(args.exercise || '').trim();
+  const openPlan = plan.some(e => e.sets == null);
+  if (named && openPlan && current && exerciseKey(named) !== current.key) {
+    plan = [...plan, { name: named, key: exerciseKey(named), sets: null, reps: null, rest_s: 120, muscles: [] }];
+    await supabase.from('wrought_sessions')
+      .update({ plan, cursor_index: plan.length - 1 }).eq('id', session.id);
+    session = { ...session, plan, cursor_index: plan.length - 1 };
+    current = plan[session.cursor_index];
+  }
+
   if (!current) {
     return { done: true, say: 'That was the last exercise on the plan.', next_actions: ['end_session'] };
   }
@@ -2230,7 +2273,7 @@ async function logSet(args, user) {
   let setsDone = doneCount || 0;
 
   if (args.skip) {
-    setsDone = current.sets;                    // force the move on
+    setsDone = current.sets ?? setsDone;        // force the move on
   } else {
     const name = args.exercise || current.name;
     const key  = args.exercise ? exerciseKey(args.exercise) : current.key;
@@ -2254,7 +2297,9 @@ async function logSet(args, user) {
     setsDone += 1;
   }
 
-  const moreSetsHere = setsDone < current.sets;
+  // An OPEN slot never finishes on its own — an ad-hoc session ends when the
+  // person stops, not when a number nobody set is reached.
+  const moreSetsHere = current.sets == null ? true : setsDone < current.sets;
   let cursor = session.cursor_index;
   if (!moreSetsHere) cursor += 1;
   if (cursor !== session.cursor_index) {
@@ -2302,6 +2347,9 @@ async function logSet(args, user) {
 
   return {
     recorded: !args.skip,
+    // Said ONCE, as a fact, never as a correction. They did not do anything
+    // wrong by not announcing a workout first.
+    ...(autoStarted ? { auto_started: true } : {}),
     rest_seconds: nextExercise.rest_s,
     up_next: {
       exercise: nextExercise.name,
@@ -2319,7 +2367,7 @@ async function logSet(args, user) {
     // screen can never quote two different percentages at the same moment.
     progress: sessionProgress(plan, sofar || []),
     say: `${moreSetsHere ? 'Logged' : `${current.name} done`}. Rest ${nextExercise.rest_s}s, then ${nextExercise.name} set ${setNo} of ${nextExercise.sets}, ${nextExercise.reps} reps. ${load.say}`,
-    note: 'One or two lines only — they are standing in a gym holding a phone, not reading a report. THE LOAD IN up_next IS COMPUTED FROM THE SET THEY JUST DID — say it as given and never work out an adjustment yourself. Ask for the RPE or just "how did that feel" when they have not said: without it the weight can only ever hold, because reps alone cannot tell a comfortable eight from a grinding one. The so_far numbers are there for the rest gap: offer them if they ask or if the moment fits, never after every single set. The percentage in progress is computed — say it, never work one out yourself, and only when they ask or a milestone lands.',
+    note: (autoStarted ? 'A workout was opened automatically because they just started reporting sets — mention it in half a clause at most ("got you, workout started") and never as a correction. ' : '') + 'One or two lines only — they are standing in a gym holding a phone, not reading a report. THE LOAD IN up_next IS COMPUTED FROM THE SET THEY JUST DID — say it as given and never work out an adjustment yourself. Ask for the RPE or just "how did that feel" when they have not said: without it the weight can only ever hold, because reps alone cannot tell a comfortable eight from a grinding one. The so_far numbers are there for the rest gap: offer them if they ask or if the moment fits, never after every single set. The percentage in progress is computed — say it, never work one out yourself, and only when they ask or a milestone lands.',
     next_actions: ['log_set for the next set', 'end_session if they stop early'],
   };
 }
@@ -2474,7 +2522,29 @@ async function endSession(args, user) {
 
   const { data: session } = await supabase.from('wrought_sessions')
     .select('*').eq('user_id', user.id).eq('status', 'active').maybeSingle();
-  if (!session) return { error: 'no_active_session', say: 'No workout is running.' };
+
+  // "No workout is running" is a true sentence and a useless one — it reads as
+  // "your workout was lost" to somebody who has just finished training. If a
+  // session was already filed today (they closed it, or the server did when
+  // they walked out), say THAT instead.
+  if (!session) {
+    const { data: already } = await supabase.from('wrought_sessions')
+      .select('name, local_date, ended_at').eq('user_id', user.id)
+      .eq('status', 'done').eq('local_date', today)
+      .order('ended_at', { ascending: false }).limit(1);
+    if (already?.length) {
+      return {
+        already_filed: true, session: already[0].name,
+        say: `${already[0].name} is already filed for today — nothing was lost.`,
+        note: 'Say it in one clause and move on. It is not an error and must not be delivered as one.',
+        next_actions: ['brief for the read on the day'],
+      };
+    }
+    return { error: 'no_active_session',
+      say: 'No workout is running. If you just trained, tell me the sets and I will file them.',
+      note: 'NOT a dead end. If they say they just trained, call log_set with each exercise — a session opens automatically on the first set. Never leave somebody who has just finished training with nothing recorded.',
+      next_actions: ['log_set with what they did'] };
+  }
 
   // The SAME finalisation the server performs on a session nobody closed, so
   // a workout ended by hand and one ended by walking out of the gym can never

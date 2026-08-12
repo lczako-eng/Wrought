@@ -1671,6 +1671,32 @@ figure the whole plan rests on. They get their own thirty days whatever the
 buttons say. Third time this rule has had to be applied: **a window is not a
 memory.**
 
+### The workout nobody STARTED — the other half of the same lesson
+
+`log_set` refused outright without an active session: *"No workout is
+running."* The founder hit it at the end of a full session — bench, rows,
+shoulder press, every set reported as he went — and **none of it had reached
+`wrought_sets`**. No lift record, no estimated max, no `last_session`, no
+progression next time. The sets existed only as sentences in a conversation.
+
+**Nobody says "start a workout" either.** They walk in and start reporting
+sets. The administrative sentence is the one least likely to get said — at
+BOTH ends — so the server says it instead: a session opens automatically on
+the first set, and `auto_started` rides back so the model mentions it in half
+a clause and never as a correction.
+
+- **An ad-hoc session is not a plan and never pretends to be one.** `sets: null`
+  marks an open slot; nothing invents how many sets are coming, and an open
+  slot never finishes on its own. A different lift is appended in the order it
+  actually happened rather than refused for not being on a plan.
+- **It still needs to know WHICH lift.** A bare "got 8" with no session and no
+  exercise is genuinely unanswerable, and guessing one would be worse than
+  asking.
+- **`end_session` no longer dead-ends.** "No workout is running" is a true
+  sentence and a useless one — to somebody who has just finished training it
+  reads as *your workout was lost*. If one was already filed today it says so;
+  otherwise it offers to take the sets.
+
 ### The workout nobody closed — the data was there the whole time
 
 `lib/session.js`. The founder, twice: *"it's not logging my training again."*
@@ -2029,7 +2055,7 @@ self-reporting scale removes the most-abandoned manual entry), then Strava.
 
 ## Conventions
 
-- `npm test` runs `test/harness.mjs` — 502 offline tests, no network, no database.
+- `npm test` runs `test/harness.mjs` — 504 offline tests, no network, no database.
   Run it before every push. It covers the JSON-RPC envelope (which fails as an
   uninformative "could not connect" inside ChatGPT) and all the arithmetic
   (which fails as a confidently wrong number in somebody's verdict).
