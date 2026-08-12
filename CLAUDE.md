@@ -1671,6 +1671,46 @@ figure the whole plan rests on. They get their own thirty days whatever the
 buttons say. Third time this rule has had to be applied: **a window is not a
 memory.**
 
+### A saved workout, edited from either door
+
+*"Didn't save all the info — some of it saved."* Two faults, and the first one
+was losing his work.
+
+**A save could silently delete.** `exercises` REPLACED the whole list, so *"add
+the treadmill to S Tier"* — passed as `exercises` rather than `add` — quietly
+wiped the bench press and the shoulder press. A routine is built up over weeks,
+one good session at a time, and a tool that erases it as a side effect of
+adding to it is not safe to call. **Merging is the default now**: a matching
+name updates in place, new names append, nothing already there is dropped.
+Taking one out needs `remove`; starting over needs `replace: true`.
+
+**And a treadmill walk is not three sets of eight.** It was saved as `3×8`,
+which is nonsense on the screen and useless when the session starts — what
+defines it is minutes, speed and incline. Timed movements carry `minutes` and a
+verbatim `detail` (*"level 10+, 2.5–3 mph"*), and sets and reps stay **null**
+rather than being filled with a default that describes nothing.
+
+**Both doors.** `api-routines.js` + the Trainer tab: add a movement, take one
+out, create a workout, retire it, delete it. The founder asked for the iPhone
+slider in the orange and he is right about the shape — **a switch reads as
+reversible where a button reads as final**, which is exactly the difference
+between retiring a routine and deleting one.
+
+- **Talking is the fast way to build one; a screen is better at a LIST.**
+  Taking one movement out of the middle by voice means naming it exactly and
+  hoping. Here it is a tap. Neither door is the real one — they write the same
+  rows through the same shape.
+- **Retiring is not deleting.** `active: false` keeps the routine and its
+  history, exactly like a retired goal. Only delete removes it, and only delete
+  asks first.
+- **Editing is on Trainer only.** On the Record tab this panel sits among
+  twenty others and is there to be read; destructive controls in a scroll-past
+  is how somebody deletes a workout with their thumb.
+- **Still no loads, on either door.** A weight typed into a plan is a guess
+  with a text box around it.
+- *"3×8 or 25 min"* is **one** box. Two number fields for a treadmill walk is a
+  form, and anything unparseable is kept verbatim rather than thrown away.
+
 ### The workout nobody STARTED — the other half of the same lesson
 
 `log_set` refused outright without an active session: *"No workout is
@@ -2055,7 +2095,7 @@ self-reporting scale removes the most-abandoned manual entry), then Strava.
 
 ## Conventions
 
-- `npm test` runs `test/harness.mjs` — 504 offline tests, no network, no database.
+- `npm test` runs `test/harness.mjs` — 508 offline tests, no network, no database.
   Run it before every push. It covers the JSON-RPC envelope (which fails as an
   uninformative "could not connect" inside ChatGPT) and all the arithmetic
   (which fails as a confidently wrong number in somebody's verdict).

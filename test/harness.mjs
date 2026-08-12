@@ -3945,6 +3945,92 @@ await test('the demo is reachable from inside the app, and has a way back', () =
   assert.match(demo, /whoami-out'\)\.hidden = true/);
 });
 
+group('A saved workout, edited from either door');
+
+await test('a save can never silently delete what is already there', () => {
+  // "Didn't save all the info — some of it saved." `exercises` REPLACED the
+  // whole list, so "add the treadmill to S Tier" quietly wiped the bench press
+  // and the shoulder press. A routine is built up over weeks, one good session
+  // at a time, and a tool that erases it as a side effect of adding to it is
+  // not safe to call.
+  const mcp = readFileSync(new URL('../netlify/functions/mcp.js', import.meta.url), 'utf8');
+  const fn = mcp.slice(mcp.indexOf('async function saveRoutine('), mcp.indexOf('async function listRoutines('));
+  assert.match(fn, /A SAVE MAY ONLY EVER ADD OR UPDATE\. NEVER SILENTLY DELETE\./);
+  assert.match(fn, /const merge = \(base, incoming\)/);
+  assert.match(fn, /args\.replace === true/, 'replacing is not behind an explicit flag');
+  assert.match(fn, /Array\.isArray\(args\.remove\)/, 'there is no explicit way to take one out');
+
+  // And the tool says so, or the model never passes the right field.
+  const tool = TOOLS.find(t => t.name === 'save_routine');
+  assert.match(tool.description, /MERGES/);
+  assert.match(tool.description, /ever dropped as a side effect/);
+  assert.ok(tool.inputSchema.properties.remove, 'no remove field');
+  assert.ok(tool.inputSchema.properties.replace, 'no replace field');
+});
+
+await test('a treadmill walk is not three sets of eight', () => {
+  // It was saved as "3×8", which is nonsense on the screen and useless when
+  // the session starts — what defines it is minutes, speed and incline.
+  const mcp = readFileSync(new URL('../netlify/functions/mcp.js', import.meta.url), 'utf8');
+  const fn = mcp.slice(mcp.indexOf('async function saveRoutine('), mcp.indexOf('async function listRoutines('));
+  assert.match(fn, /NOT EVERYTHING IS SETS AND REPS/);
+  assert.match(fn, /treadmill\|bike\|row/);
+  assert.match(fn, /sets and reps stay NULL/);
+
+  const tool = TOOLS.find(t => t.name === 'save_routine');
+  const item = tool.inputSchema.properties.exercises.items.properties;
+  assert.ok(item.minutes, 'no minutes field');
+  assert.ok(item.detail, 'nowhere to keep "level 10+, 2.5-3 mph"');
+  assert.match(item.detail.description, /verbatim/);
+
+  // The page draws it as minutes rather than inventing a rep scheme.
+  const src = page('app.html');
+  const panel = src.slice(src.indexOf('function routinesPanel(d, {'), src.indexOf('function notesPanel('));
+  assert.match(panel, /m\.minutes \? `\$\{m\.minutes\} min`/);
+  assert.match(panel, /NOT EVERYTHING IS SETS AND REPS/);
+});
+
+await test('a routine can be built and edited on the website too', () => {
+  // "In each workout it should have a slider like you can delete it or a
+  // button to add... I can create it both on there and on AI." Talking is the
+  // fast way to build one; a LIST is the thing a screen is genuinely better
+  // at, because taking one movement out of the middle by voice means naming
+  // it exactly and hoping.
+  const api = readFileSync(new URL('../netlify/functions/api-routines.js', import.meta.url), 'utf8');
+  for (const a of ['create', 'add', 'remove', 'update', 'toggle', 'delete']) {
+    assert.ok(api.includes(`action === '${a}'`), `no ${a} action`);
+  }
+  // RETIRING IS NOT DELETING — what somebody used to run is part of the
+  // record, exactly like a retired goal.
+  assert.match(api, /RETIRING IS NOT DELETING/);
+  assert.match(api, /active: !row\.active/);
+  // And a routine still carries no working weight, on either door.
+  assert.match(api, /NO LOADS/);
+  assert.ok(!/load_kg:/.test(api.slice(api.indexOf('function shape'), api.indexOf('export const handler'))),
+    'a load got into a routine built on the website');
+
+  const src = page('app.html');
+  assert.match(src, /function wireRoutines\(/);
+  assert.match(src, /action: 'toggle'/);
+  // Deleting asks; retiring does not, because one is reversible and one is not.
+  assert.match(src, /confirm\(`Delete "\$\{b\.dataset\.rname\}" for good\?/);
+  // Editing is offered on Trainer only — destructive controls in a
+  // scroll-past is how somebody deletes a workout with their thumb.
+  assert.match(src, /function routinesPanel\(d, \{ editable = false \} = \{\}\)/);
+  assert.match(src, /routinesPanel\(\{ routines: trainerRoutinesFull\.length[\s\S]{0,160}editable: true/);
+});
+
+await test('"3x8 or 25 min" is one box, and it reads both', () => {
+  // Two number fields for a treadmill walk is a form, and this has to be
+  // faster than saying it out loud.
+  const src = page('app.html');
+  const fn = src.slice(src.indexOf('function parseHowMuch('), src.indexOf('function wireRoutines('));
+  assert.match(fn, /min\|minute\|m/);
+  assert.match(fn, /\[x×\]/);
+  // Anything it cannot parse is kept verbatim rather than thrown away.
+  assert.match(fn, /return \{ detail: t \};/);
+});
+
 group('The max — recorded, estimated, and never something to go and test');
 
 await test('a max makes sets at different rep ranges comparable', () => {
