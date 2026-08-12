@@ -4025,10 +4025,33 @@ await test('"3x8 or 25 min" is one box, and it reads both', () => {
   // faster than saying it out loud.
   const src = page('app.html');
   const fn = src.slice(src.indexOf('function parseHowMuch('), src.indexOf('function wireRoutines('));
-  assert.match(fn, /min\|minute\|m/);
+  assert.match(fn, /min\(\?:ute\)\?s\?/);
   assert.match(fn, /\[x×\]/);
-  // Anything it cannot parse is kept verbatim rather than thrown away.
-  assert.match(fn, /return \{ detail: t \};/);
+  // And the number and the setup are read TOGETHER — "25 min level 10+,
+  // 2.5-3 mph" keeps both, because for cardio the trailing text IS the
+  // instruction and dropping it saves half the movement.
+  assert.match(fn, /if \(rest\) out\.detail = rest;/);
+});
+
+await test('removing a movement is a slide, not a button', () => {
+  // "Make it a slide." The iPhone gesture: the row's content translates left
+  // and the action is revealed BEHIND it, so nothing destructive is tappable
+  // until the row has been deliberately moved.
+  const src = page('app.html');
+  const panel = src.slice(src.indexOf('function routinesPanel(d, {'), src.indexOf('function notesPanel('));
+  assert.match(panel, /rmv-del/, 'no revealed action behind the row');
+  assert.ok(!/class="rx"/.test(panel), 'the old x button is back');
+  assert.match(panel, /Slide a movement to the left/);
+
+  const wire = src.slice(src.indexOf('function wireSwipe('), src.indexOf('function wireRoutines('));
+  assert.match(wire, /setPointerCapture/);
+  assert.match(wire, /translateX/);
+  // Vertical scrolling stays the browser's, or the list eats the page.
+  assert.match(src, /touch-action: pan-y/);
+  // Only a clearly horizontal drag claims the gesture.
+  assert.match(wire, /Math\.abs\(mx\) > Math\.abs\(my\)/);
+  // And keyboard users get the same action without the gesture.
+  assert.match(src, /\.rmv:focus-within \.rmv-body \{ transform: translateX/);
 });
 
 group('The max — recorded, estimated, and never something to go and test');
