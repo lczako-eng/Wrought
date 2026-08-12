@@ -40,7 +40,7 @@ import { nutritionTotals, composition, macroMatrix, yearOverYear } from './lib/n
 import {
   exerciseKey, lastPerformance, progressionCall, TIERS,
   restingBurn, energyBalance, planFromRoutine, sessionTotals, earnedRoom,
-  orderPlan, orderInsight, deviceMatrix, weekdayPattern, weekSoFar, goalCall, baselineFromClaim, readiness,
+  orderPlan, orderInsight, deviceMatrix, weekdayPattern, weekSoFar, goalCall, baselineFromClaim, readiness, nextSetLoad,
   ACTIVITY,
   targetOptions,
   PACES, PUSH,
@@ -172,6 +172,8 @@ HOW PEOPLE ACTUALLY ASK. Nobody says "call the brief tool". They say one of a hu
   link_account — "I have two accounts", "link my accounts", "link my emails", "hook up my two emails", "connect my accounts", "merge them", "merge my accounts", "join them up", "join these up", "my dashboard is empty", "the website shows a different email", "the site says a different account", "it is not the same account", "two emails", "same person, two logins", "give me a link code", "link"
   guide — "help", "how do I use this", "how does wrought work", "what can you do", "what is wrought", "what does wrought mean", "tutorial", "teach me", "walk me through it"
   get_profile — "what account am I on", "which account is this", "who am I", "what email is this", "what do you know about me", "what's my height", "what have you got on me", "am I set up", "is this connected", "plugged in", "are you working", "what account are you writing to"
+
+A WORKING WEIGHT MAY ONLY EVER COME FROM A TOOL — never from you, and never from a photograph. What is loaded on a bar in a picture is what somebody else left there, or what they happened to put on once; it is an observation about a barbell and not a prescription for a person. Reading "135lb" off an image and programming three sets of it is the same failure as inventing a calorie target: a number that looks reasonable, attached to nothing about them. If a lift has no history, progressionCall REFUSES to name a weight and gives an effort level instead — relay that refusal, it is the safest thing in this product. If they know roughly what they do, call calibrate_lift: the server discounts the claim, frames the first set as a calibration, and what they actually lift becomes the baseline. You may say what is in the photograph. You may not turn it into their programme.
 
 A PHOTOGRAPH OF A GYM IS AN EQUIPMENT LIST, AND IT IS SAVED AS EACH BATCH ARRIVES — NEVER AT THE END. When they send pictures of a gym, YOU read what is standing in them — racks, machines, dumbbells, benches, cables — because this server never sees images. Call set_profile after EVERY batch of photos with the full list so far, adding the new equipment to what is already saved; do not say "keep sending and I'll build up an inventory" and hold it in the conversation, because the conversation ends and takes the whole gym with it, and the one thing this product promises is that it remembers. Read the photos, list the equipment plainly, confirm in one line, and save it: set_profile equipment for their main gym, and remember (category "gym") for each named additional place — "Home gym: dumbbells to 50lb, bench, bands". More than one gym is normal. When they say where they are — "at the home gym", "hotel gym today" — pass that inventory as equipment to start_session or suggest_workout, and recall it from memory if you need it. Never build a plan around a machine their photos did not show.
 
@@ -2270,9 +2272,21 @@ async function logSet(args, user) {
   }
 
   const nextExercise = moreSetsHere ? current : plan[cursor];
+  // GAUGING, INSIDE THE SESSION. This was a hardcoded "same" for every set
+  // after the first, so "tell me how it felt and I'll adjust" was a promise
+  // kept entirely by the model — which means the adjustment was invented, on
+  // the one number in this product that goes on a bar. The set that just
+  // happened is the best information anybody will ever have about whether
+  // today's weight is right, and it arrives three minutes before it is needed.
   const load = moreSetsHere
-    ? { verdict: 'same', weight_kg: args.weight_kg ?? null,
-        say: args.weight_kg != null ? `Same ${args.weight_kg}kg.` : 'Same weight.' }
+    ? nextSetLoad({
+        weightKg: args.weight_kg ?? null,
+        reps: args.reps ?? null,
+        rpe: args.rpe ?? null,
+        targetReps: current.reps,
+        key: current.key,
+        tier: session.plan[0]?.tier || 'intermediate',
+      })
     : await loadCallFor(user.id, nextExercise, session.plan[0]?.tier || 'intermediate');
 
   const setNo = moreSetsHere ? setsDone + 1 : 1;
@@ -2305,7 +2319,7 @@ async function logSet(args, user) {
     // screen can never quote two different percentages at the same moment.
     progress: sessionProgress(plan, sofar || []),
     say: `${moreSetsHere ? 'Logged' : `${current.name} done`}. Rest ${nextExercise.rest_s}s, then ${nextExercise.name} set ${setNo} of ${nextExercise.sets}, ${nextExercise.reps} reps. ${load.say}`,
-    note: 'One or two lines only — they are standing in a gym holding a phone, not reading a report. The so_far numbers are there for the rest gap: offer them if they ask or if the moment fits, never after every single set. The percentage in progress is computed — say it, never work one out yourself, and only when they ask or a milestone lands.',
+    note: 'One or two lines only — they are standing in a gym holding a phone, not reading a report. THE LOAD IN up_next IS COMPUTED FROM THE SET THEY JUST DID — say it as given and never work out an adjustment yourself. Ask for the RPE or just "how did that feel" when they have not said: without it the weight can only ever hold, because reps alone cannot tell a comfortable eight from a grinding one. The so_far numbers are there for the rest gap: offer them if they ask or if the moment fits, never after every single set. The percentage in progress is computed — say it, never work one out yourself, and only when they ask or a milestone lands.',
     next_actions: ['log_set for the next set', 'end_session if they stop early'],
   };
 }

@@ -1365,6 +1365,41 @@ somebody to eat less than they need. Until something is logged there is no
 ring: the burn is shown as the burn, labelled *"to burn today"*, and the caveat
 says it is the whole day's estimate rather than what has been spent so far.
 
+### Gauging — the set that just happened decides the next one
+
+The founder, after logging a set and getting nothing back: *"it's not really
+gauging me."* Two failures behind that, and both are the invented-number
+failure wearing new clothes.
+
+**The load came off a photograph.** He showed the connector a bench with a 45
+on it; it answered *"135lb total"* and prescribed three working sets of 8–10 at
+that weight. Nothing computed it. **What is loaded on a bar in a picture is
+what somebody else left there** — it is an observation about a barbell, not a
+prescription for a person, and programming it is exactly the 2,600 incident in
+a place where being wrong hurts faster. The instruction now says a working
+weight may only ever come from a tool, names the photograph case explicitly,
+and — the part that actually works — points at `calibrate_lift` and at
+`progressionCall`'s refusal rather than forbidding harder.
+
+**And `log_set` was not adjusting anything.** The next set's load inside the
+same exercise was a hardcoded `verdict: 'same'`, so *"tell me how many you got
+and how hard it felt and I'll adjust"* was a promise kept entirely by the
+language model. The one place this product is a training partner rather than a
+diary, and it was guessing. `nextSetLoad()` computes it now — different
+question from `progressionCall`, which decides what to open with next time
+from the whole history; this is autoregulation within the hour.
+
+- **An unreported effort never adds weight.** Without an RPE the only signal is
+  reps, and reps alone cannot tell a comfortable eight from a grinding one.
+  Silence holds. Same shape as readiness: it only ever softens.
+- **One step at a time**, in real plate increments, never a jump.
+- **Falling short comes down.** Missing the target at a high RPE is not
+  character-building, it is a weight that is wrong today — and the line says
+  finishing the sets matters more than the number.
+- **Hitting the target at RPE 9 holds.** They earned it; adding on top of a set
+  that already cost that much is how a good session becomes an injury.
+- **Bodyweight work has nothing to move** and never has a load invented for it.
+
 ### Stretching — dynamic before, held after, and the half nobody ever got
 
 *"Nothing about stretching."* Right, and it was worse than missing: the rule
@@ -1966,7 +2001,7 @@ self-reporting scale removes the most-abandoned manual entry), then Strava.
 
 ## Conventions
 
-- `npm test` runs `test/harness.mjs` — 494 offline tests, no network, no database.
+- `npm test` runs `test/harness.mjs` — 499 offline tests, no network, no database.
   Run it before every push. It covers the JSON-RPC envelope (which fails as an
   uninformative "could not connect" inside ChatGPT) and all the arithmetic
   (which fails as a confidently wrong number in somebody's verdict).
