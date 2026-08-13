@@ -9,7 +9,7 @@
 // fails as a confidently wrong number in somebody's nightly verdict.
 
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
@@ -4066,6 +4066,56 @@ await test('the conversation is not the record', () => {
   assert.match(SERVER_INSTRUCTIONS, /"what did I do today"/);
   assert.match(SERVER_INSTRUCTIONS, /THE CONVERSATION IS NOT THE RECORD/);
   assert.match(SERVER_INSTRUCTIONS, /hides exactly the entries that failed to land/);
+});
+
+await test('every foreign key matches the type of the column it points at', () => {
+  // 016 shipped with `event_id bigint references wrought_events(id)` and
+  // Postgres refused the whole migration: wrought_events.id is a uuid. The
+  // wrong type was copied from wrought_sets' OWN id, which is a bigserial —
+  // and wrought_sessions.event_id, three files away, was already uuid.
+  //
+  // A migration that will not run is the cheapest possible bug to catch and
+  // the most annoying one to hit, because it surfaces as a wall of Postgres
+  // error text in a SQL console with nobody around to read the schema.
+  const files = readdirSync(new URL('../schema/', import.meta.url))
+    .filter(f => /^\d{3}_.*\.sql$/.test(f)).sort();
+
+  const NORM = { bigserial: 'bigint', serial: 'integer' };
+  const norm = t => NORM[String(t).toLowerCase()] || String(t).toLowerCase();
+
+  // What each table's id actually is.
+  const idType = { 'auth.users': 'uuid' };
+  for (const f of files) {
+    const src = readFileSync(new URL(`../schema/${f}`, import.meta.url), 'utf8');
+    for (const m of src.matchAll(/create table if not exists (public\.\w+)\s*\(([\s\S]*?)\n\);/g)) {
+      const col = m[2].match(/^\s*id\s+(\w+)/m);
+      if (col) idType[m[1]] = norm(col[1]);
+    }
+  }
+  assert.equal(idType['public.wrought_events'], 'uuid');
+  assert.equal(idType['public.wrought_sets'], 'bigint');
+
+  // Both declaration forms: inside a create table, and via alter table add.
+  const refs = [];
+  for (const f of files) {
+    const src = readFileSync(new URL(`../schema/${f}`, import.meta.url), 'utf8');
+    for (const m of src.matchAll(
+      /(?:add column(?: if not exists)?\s+)?(\w+)\s+(uuid|bigint|integer|text|bigserial|serial)\b[^\n]*?references\s+(public\.\w+|auth\.users)\s*\(\s*(\w+)\s*\)/gi)) {
+      const [, col, type, target, targetCol] = m;
+      if (targetCol.toLowerCase() !== 'id') continue;
+      refs.push({ file: f, col, type: norm(type), target, want: idType[target] });
+    }
+  }
+
+  assert.ok(refs.length >= 20, `only found ${refs.length} foreign keys — the parser stopped seeing them`);
+  const wrong = refs.filter(r => r.want && r.type !== r.want);
+  assert.deepEqual(wrong, [],
+    wrong.map(r => `${r.file}: ${r.col} is ${r.type} but ${r.target}.id is ${r.want}`).join('; '));
+
+  // And the one this test was written for, named explicitly.
+  const ev = refs.find(r => r.col === 'event_id' && r.file.startsWith('016'));
+  assert.ok(ev, '016 no longer declares event_id');
+  assert.equal(ev.type, 'uuid');
 });
 
 group('The bridge, as an adversarial review left it');
