@@ -79,7 +79,12 @@ export const handler = async (event) => {
       return {
         ...r,
         exercises: shown,
-        sets: shown.reduce((a, e) => a + (Number(e.sets) || 0), 0),
+        // Only what is actually IN the session. A movement taken out still
+        // shows on the list — that is the whole point of taking it out rather
+        // than deleting it — but counting its sets would make the badge
+        // promise work nobody is going to do.
+        sets: shown.filter(e => !e.off).reduce((a, e) => a + (Number(e.sets) || 0), 0),
+        off_count: shown.filter(e => e.off).length,
       };
     });
   };
@@ -138,6 +143,28 @@ export const handler = async (event) => {
       .update({ exercises: next, updated_at: new Date().toISOString() }).eq('id', row.id);
     if (error) return bad(400, error.message);
     return ok({ routines: await list() });
+  }
+
+  // IN OR OUT OF THE WORKOUT — the reversible half of removing.
+  //
+  // "Give me the ability to swipe the ones I want on the workout or not, so add
+  // and remove as need be." Sliding a movement away used to DELETE it, which
+  // makes the gesture something to be careful with — and a gesture people are
+  // careful with is one they stop using. This keeps the row, its detail, its
+  // cue and its place in the order, and simply takes it out of the session.
+  // Sliding the other way puts it back.
+  //
+  // Retire-then-delete, one level down from the routine switch, and for the
+  // same reason: what somebody used to run is part of the record.
+  if (action === 'bench') {
+    const at = Number(body.index);
+    const list0 = Array.isArray(row.exercises) ? row.exercises : [];
+    if (!Number.isInteger(at) || at < 0 || at >= list0.length) return bad(400, 'bad_index');
+    const next = list0.map((e, i) => (i === at ? { ...e, off: !e.off } : e));
+    const { error } = await supabase.from('wrought_routines')
+      .update({ exercises: next, updated_at: new Date().toISOString() }).eq('id', row.id);
+    if (error) return bad(400, error.message);
+    return ok({ routines: await list(), off: !!next[at].off, moved: next[at].name || 'that movement' });
   }
 
   if (action === 'remove') {

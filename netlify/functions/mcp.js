@@ -47,6 +47,7 @@ import {
   PACES, PUSH,
 } from './lib/training.js';
 import { PROGRAMMES, GOALS, MOVEMENTS, movementsFor, pickProgramme, buildProgramme, buildBlock, blockPosition, BLOCK_LENGTHS } from './lib/library.js';
+import { FOCUSES, FOCUS_NAMES, focusFrom, designSession, designQuestions, designNote } from './lib/design.js';
 
 // Newest first. The icons on serverInfo are only honoured by clients speaking
 // the newer revisions, so blindly answering 2025-06-18 quietly costs the tile.
@@ -163,6 +164,7 @@ HOW PEOPLE ACTUALLY ASK. Nobody says "call the brief tool". They say one of a hu
   set_plan — "make it aggressive", "I want this off faster", "go harder on me", "chase me", "ease off", "nothing drastic", "stop nagging me", "leave me alone a bit", "make it four days a week", "I can only do three", "change my plan"
   log_activity — "I was at work all day", "worked at the petting zoo", "did a double shift", "on site since six", "been on my feet since seven", "spent the afternoon digging", "moved house today", "was doing the garden", "shovelled the drive", "long shift", "physical day", "grafting all day"
   save_routine — "save that", "remember this as my chest day", "call it my S-tier workout", "keep that one", "that was good, keep it", "add calf raises to my leg day", "make it four sets", "write it up for me"
+  design_workout — "build me a workout", "make me a leg day", "I want a new workout called X", "design me something", "put a push session together", "make me a proper chest day", "let's build a workout", "help me make one"
   list_routines — "what workouts do I have", "my saved workouts", "what's in my leg day", "show me my routines", "what have I got saved"
   swap_exercise — "machine's taken"
   calibrate_lift — "I usually bench 185", "I can do 80 for 8", "my max is 315", "I think I can press about", "I used to squat", "someone's on it", "bench is busy", "rack's full", "it's occupied", "can't get on it", "there's a queue", "that machine's broken", "can we do something else"
@@ -213,6 +215,8 @@ THE WATCH SENDS MORE THAN STEPS NOW, AND MOST OF IT IS NOT YOURS TO INTERPRET. g
 FORM MATTERS AND YOU CANNOT SEE IT. When somebody says a lift felt awful, that they rushed it, that their form went, or asks why they are stalling — call form_check. It reads their set history for the shadow technique leaves behind: the last set collapsing repeatedly, effort climbing at a load that has not changed, RPE 9 with the reps still short. NEVER SAY THEIR FORM IS BREAKING DOWN OR THAT THEY ARE LIFTING SOMETHING WRONG. Nothing in this system watched them do it, and a confident claim about technique nobody observed is the same offence as reading a body-fat percentage off a photograph — it would poison every honest number this product has. Report what the LOG shows, quote the evidence with it, and change the LOAD. "Your last set has dropped from 8 to 4 three sessions running, take 10% off" is a real form intervention and defensible. "Your form is going" is not.
 
 WHAT THEY SAID MID-SET IS THE POINT OF LOGGING BY VOICE. A notebook has a column for weight and a column for reps and nowhere at all for "third set I rushed it" or "shoulder felt off" — so the one fact that explains the number six weeks later is the one paper cannot hold. Pass anything they say about how a set FELT into log_set as the note, verbatim, even when it is vague and even when it is mid-conversation. Never tidy it into an assessment. form_check hands those words back exactly as they were said, and they are quoted, never interpreted — WROUGHT does not get to decide what "it felt weird" meant, and if the words are about pain rather than execution it is a doctor's question, not a coaching one.
+
+A NAMED WORKOUT IS A BRIEF, AND A BRIEF GETS TAKEN. "Make me a workout called S Tier" is not the same request as "what should I train today" — suggest_workout answers the second from what is most overdue, and somebody naming a workout has something specific in mind. Use design_workout: it comes back with the few things it still needs, or with the session built. It NEVER asks anything already on file, so do not add questions of your own and never mention that a list exists. Ask what it returns in ONE message, all together — they asked for something to be built, so questions are expected here in a way they are not before a warm-up. TWO ANSWERS ARE ENOUGH: what it is for and how long they have. If they answer those and ignore the rest, BUILD IT — a session that arrives is worth more than one still being specified. Then offer save_routine with a real write-up under the name THEY chose. Everything about the shape is a proposal: swapping something out is one call, never a negotiation, and never a remark about commitment.
 
 A SAVED WORKOUT IS A NAME, AN ORDER, AND THE REASON IT IS IN THAT ORDER. save_routine takes a notes field — the write-up. Write one whenever a routine is saved: what the session is for, why the order, what to push and what to leave a rep in the tank on. Without it a routine is a list of names, which is the part somebody already has in their phone. It is shown at the top every time the session starts, so it is worth a real paragraph. Saving the same name UPDATES it, so "add calf raises to my leg day" or "make it four sets" is one call with add[] and never a rebuild — and the write-up survives that.
 
@@ -848,6 +852,25 @@ const TOOLS = [
       },
     },
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+  },
+  {
+    name: 'design_workout',
+    title: 'Build a named workout with them',
+    description: 'Builds a workout to their specification and gives it the name they chose — "make me a workout called S Tier", "build me a leg day", "I want a proper push session", "design something for Tuesdays". This is a BRIEF being taken, not a suggestion: suggest_workout answers "what should I train today" from what is most overdue, and somebody naming a workout has something specific in mind. Call it with whatever they already said; it comes back with the few things it still needs (never anything already on file) or with the built session. TWO ANSWERS ARE ENOUGH TO BUILD — what it is for and how long they have — so build as soon as you have those rather than finishing the list. NO WEIGHTS are returned and none may be invented: loads come from their own history when the session runs, or as an effort. Follow with save_routine to keep it under their name.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        name:    { type: 'string', description: 'What THEY called it — "S Tier", "Leg day", "Tuesday session". Their words, not a tidied version.' },
+        focus:   { type: 'string', description: 'What the session is for, in their words: legs, push, pull, upper, full body, chest, back, shoulders, core, conditioning. Pass whatever they said and the server maps it — "arms day", "chest and tris", "cardio" all land somewhere sensible.' },
+        minutes: { type: 'integer', description: 'How long they actually have. A hard ceiling on how much is programmed, never ambition — designing seventy minutes for somebody who said forty is how a plan gets abandoned.' },
+        avoid:   { type: 'array', items: { type: 'string' },
+                   description: 'Areas to work around, in their words — "left shoulder", "lower back". Movements loading them are DROPPED, never made lighter: how much a sore joint can take today is a claim nothing here is entitled to make. Anything already recorded as a limitation is applied automatically and must not be asked for again.' },
+        equipment: { type: 'array', items: { type: 'string' },
+                     description: 'Only if this session is somewhere other than their usual gym. Their profile equipment is used otherwise.' },
+      },
+      required: ['name'],
+    },
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   },
   {
     name: 'link_account',
@@ -3709,6 +3732,90 @@ async function endBlock(args, user) {
   };
 }
 
+// Building a workout WITH somebody, to a name they chose.
+//
+// "We could add new workouts — like, I call it whatever, and they can fulfil it
+// with me. So like a questionnaire trying to get me, you know, what kind of
+// workout do you want, so they can build a workout pro level."
+//
+// Everything needed to build one already existed. What did not exist was the
+// conversation that decides WHAT to build — and the difference matters, because
+// `suggest_workout` answers a question nobody asked when somebody says "make me
+// a leg day and call it Leg Day". That is a brief, and a brief gets taken.
+async function designWorkout(args, user) {
+  const { profile, memory, goals } = await context(user.id);
+
+  // Designing a session is prescribing, so the gate applies exactly as it does
+  // to suggest_workout and programmes. Recording is never gated; this is not
+  // recording.
+  const gate = await trainingGate(user, profile, goals, memory);
+  if (gate) return { ...gate, next_actions: ['set_profile / set_goal / set_plan / remember with the answers', 'design_workout again once the questionnaire is finished'] };
+
+  const name = String(args.name || '').trim().slice(0, 120);
+  if (!name) return { error: 'Ask what they want it called first — the name is theirs, not a tidied version of it.' };
+
+  const tier = profile.training_age === 'beginner' ? 'beginner'
+             : profile.training_age === 'advanced' ? 'advanced' : 'intermediate';
+  const limitations = memory.filter(m => m.category === 'health').map(m => m.fact);
+  const gyms = memory.filter(m => m.category === 'gym').map(m => m.fact);
+  const focus = focusFrom(args.focus);
+  const minutes = Number(args.minutes) > 0 ? Math.round(Number(args.minutes)) : null;
+
+  const ask = designQuestions({ focus, minutes, profile, limitations, gyms });
+
+  // The two that genuinely block. Everything else has a defensible default
+  // already on file, and a session that arrives beats one still being specified.
+  if (!focus || !minutes) {
+    return {
+      name,
+      known: {
+        tier,
+        equipment: profile.equipment || null,
+        limitations: limitations.length ? limitations : null,
+        // Said out loud so the model can see there is nothing to ask about here
+        // — the commonest way an interview turns into a form is re-asking.
+        already_on_file: 'Do not ask about any of these again.',
+      },
+      ...(args.focus && !focus ? { focus_unrecognised: args.focus,
+        options: FOCUS_NAMES } : {}),
+      ask,
+      say: `Right — "${name}". ${ask.map(q => q.ask).join(' ')}`,
+      note: designNote(ask, null),
+      next_actions: ['design_workout again with their answers'],
+    };
+  }
+
+  const avoid = [...(Array.isArray(args.avoid) ? args.avoid : []), ...limitations];
+  const equipment = args.equipment?.length ? args.equipment : profile.equipment;
+  const exercises = designSession({ focus, minutes, tier, equipment, avoid });
+
+  if (!exercises) {
+    return {
+      name, focus, minutes,
+      say: `Nothing in the library fits ${FOCUSES[focus].say} with the kit on file.`,
+      note: 'Do NOT invent movements to fill the gap. Ask what they actually have available and call again.',
+      next_actions: ['design_workout again with equipment'],
+    };
+  }
+
+  const dropped = avoid.length ? avoid : null;
+  return {
+    name, focus, minutes, tier,
+    focus_say: FOCUSES[focus].say,
+    exercises,
+    // Stated so it cannot quietly become a thing the model fills in.
+    loads: 'NONE, deliberately. Loads come from progressionCall against their own history when the session runs, or as an effort.',
+    ...(dropped ? { worked_around: dropped,
+      caution: 'Movements loading these were DROPPED, not made lighter, and this is not treatment for anything. If they want to know whether it is safe to train on, that is a doctor\'s question.' } : {}),
+    ...(ask.length ? { still_could_ask: ask } : {}),
+    say: `"${name}" — ${FOCUSES[focus].say}, ${minutes} minutes, ${exercises.length} movements: ` +
+      exercises.map(e => e.minutes ? `${e.name} ${e.minutes} min` : `${e.name} ${e.sets}×${e.reps}`).join(', ') +
+      (dropped ? ` Built around ${dropped.join(', ')}.` : ''),
+    note: designNote(ask, true),
+    next_actions: [`save_routine with name "${name}" and these exercises`, 'start_session once it is saved'],
+  };
+}
+
 async function programmes(args, user) {
   const profile = await getProfile(user.id);
   const tier = profile.training_age === 'beginner' ? 'beginner'
@@ -3994,6 +4101,7 @@ const IMPL = {
   set_eating_window: setEatingWindow,
   log_fast: logFast,
   programmes,
+  design_workout: designWorkout,
   link_account: linkAccount,
   start_block: startBlock,
   block_status: blockStatus,

@@ -1002,15 +1002,35 @@ table.matrix td.rh.cold { color: var(--heat-3); }
   will-change: transform;
 }
 .rmv.swipe .rmv-body { cursor: grab; }
-.rmv-del {
-  position: absolute; top: 0; right: 0; bottom: 0; width: 84px; z-index: 0;
+.rmv-act {
+  position: absolute; top: 0; bottom: 0; width: 84px; z-index: 0;
   font: inherit; font-size: 12.5px; font-weight: 700; letter-spacing: .04em;
-  border: 0; cursor: pointer; border-radius: 0 5px 5px 0;
-  background: linear-gradient(90deg, var(--heat-2), var(--heat-3)); color: #1A0A02;
+  border: 0; cursor: pointer;
 }
-/* Keyboard path: tabbing to the parked button slides the row open, so the
-   gesture never becomes the only way in. */
-.rmv:focus-within .rmv-body { transform: translateX(-84px); }
+/* Revealed by pulling the row LEFT: take it out of the workout. Warm rather
+   than red — this is reversible and must not read as destruction. */
+.rmv-act.right { right: 0; border-radius: 0 5px 5px 0;
+  background: linear-gradient(90deg, var(--heat-2), var(--heat-3)); color: #1A0A02; }
+/* Only reachable on a row that is already out. Two deliberate steps for the
+   one action that cannot be undone — the same shape as the routine switch and
+   the Delete link beside it. */
+.rmv-act.right.danger { background: linear-gradient(90deg, #7A2E1B, #A33B21); color: #FFE9DF; }
+/* Revealed by pulling the row RIGHT: put it back in. Moss, because it is the
+   only affirmative action in this list. */
+.rmv-act.left { left: 0; border-radius: 5px 0 0 5px;
+  background: linear-gradient(90deg, #3E6B41, var(--moss)); color: #0C1A0D; }
+.rmv:not(.benched) .rmv-act.left { display: none; }
+
+/* Keyboard path: tabbing to a parked button slides the row open in that
+   button's direction, so the gesture is never the only way in. */
+.rmv:has(.rmv-act.right:focus) .rmv-body { transform: translateX(-84px); }
+.rmv:has(.rmv-act.left:focus)  .rmv-body { transform: translateX(84px); }
+
+/* Taken out, not deleted. It keeps its place in the order — that IS the
+   information — and stops looking like part of the session. */
+.rmv.benched .rmv-body { background: #1B1714; }
+.rmv.benched .rmvn { opacity: .5; text-decoration: line-through; text-decoration-thickness: 1px; }
+.rmv.benched .rmvn em { text-decoration: none; }
 .rmv b { font-family: var(--mono); font-size: 12px; color: var(--ash); font-variant-numeric: tabular-nums;
          flex: none; white-space: nowrap; }
 /* A gap in a plan is information, not an alarm — the same restraint the
@@ -3157,13 +3177,22 @@ function parseHowMuch(raw) {
 // gesture is borrowed from. A re-render after any action closes everything,
 // which is the state the screen should be in anyway.
 function wireSwipe() {
-  const OPEN = -84;
+  const W = 84;
   document.querySelectorAll('.rmv.swipe').forEach(row => {
     const body = row.querySelector('.rmv-body');
+    // WHICH WAYS THIS ROW CAN GO. A row that is IN the workout has nothing to
+    // its right — "put back" something already in is meaningless, and a
+    // gesture that reveals an inert button teaches people the gesture does
+    // nothing. So the directions available depend on the row's state, and the
+    // clamp below is what enforces it.
+    const off = row.dataset.off === '1';
+    const canLeft = true;        // take out, or delete once already out
+    const canRight = off;        // put back — only for something taken out
+
     let x0 = null, y0 = null, dx = 0, dragging = false;
 
     row.addEventListener('pointerdown', (e) => {
-      if (e.target.closest('.rmv-del')) return;      // a tap on Remove is a tap
+      if (e.target.closest('.rmv-act')) return;      // a tap on the action is a tap
       x0 = e.clientX; y0 = e.clientY; dx = 0; dragging = false;
       row.setPointerCapture(e.pointerId);
     });
@@ -3174,16 +3203,23 @@ function wireSwipe() {
       // list would eat the page's own scrolling.
       if (!dragging && Math.abs(mx) > 8 && Math.abs(mx) > Math.abs(my) * 1.2) dragging = true;
       if (!dragging) return;
-      const base = row.dataset.open ? OPEN : 0;
-      dx = Math.max(OPEN - 16, Math.min(0, base + mx));
+      const base = row.dataset.open === 'left' ? -W : row.dataset.open === 'right' ? W : 0;
+      // A little overshoot in each allowed direction so the row feels sprung
+      // rather than stuck; none at all in a direction with nothing behind it.
+      dx = Math.max(canLeft ? -W - 16 : 0, Math.min(canRight ? W + 16 : 0, base + mx));
       body.style.transition = 'none';
       body.style.transform = `translateX(${dx}px)`;
     });
     const settle = () => {
       if (x0 == null) return;
       body.style.transition = '';
-      if (dragging && dx < OPEN / 2) { body.style.transform = `translateX(${OPEN}px)`; row.dataset.open = '1'; }
-      else { body.style.transform = ''; delete row.dataset.open; }
+      if (dragging && canLeft && dx < -W / 2) {
+        body.style.transform = `translateX(${-W}px)`; row.dataset.open = 'left';
+      } else if (dragging && canRight && dx > W / 2) {
+        body.style.transform = `translateX(${W}px)`; row.dataset.open = 'right';
+      } else {
+        body.style.transform = ''; delete row.dataset.open;
+      }
       x0 = null; dragging = false; dx = 0;
     };
     row.addEventListener('pointerup', settle);
@@ -3194,8 +3230,14 @@ function wireSwipe() {
 function wireRoutines() {
   wireSwipe();
 
-  document.querySelectorAll('.rmv-del').forEach(b => b.addEventListener('click', () =>
-    routineAction({ action: 'remove', id: b.dataset.rid, index: +b.dataset.rindex })));
+  // Taking one out is one tap because it is reversible. Deleting one asks,
+  // and is only reachable on a row already taken out — the same two deliberate
+  // steps the routine switch and its Delete link already use.
+  document.querySelectorAll('.rmv-act').forEach(b => b.addEventListener('click', () => {
+    const act = b.dataset.act;
+    if (act === 'remove' && !confirm(`Delete "${b.dataset.name}" from this workout for good? Leaving it out keeps it.`)) return;
+    routineAction({ action: act, id: b.dataset.rid, index: +b.dataset.rindex });
+  }));
 
   document.querySelectorAll('.ra-go').forEach(b => b.addEventListener('click', () => {
     const id = b.dataset.rid;
@@ -6371,7 +6413,8 @@ function routinesPanel(d, { editable = false } = {}) {
     // food with no macros — a thing that looks saved and counts for nothing
     // when the session starts is worth naming, once, quietly.
     const unset = m => !howMuch(m) && !m.detail;
-    const anyUnset = movesOf.some(unset);
+    const anyUnset = movesOf.some(m => !m.off && unset(m));
+    const anyOff = movesOf.some(m => m.off);
 
     // SLIDE TO REMOVE — the iPhone gesture, because that is the one the founder
     // asked for by name and the one every phone user's thumb already knows.
@@ -6379,13 +6422,29 @@ function routinesPanel(d, { editable = false } = {}) {
     // so nothing destructive is tappable until the row has been deliberately
     // moved. Keyboard users get the same action through :focus-within — the
     // button is real, just parked behind the slide.
-    const moves = movesOf.map((m, i) => `<div class="rmv${editable ? ' swipe' : ''}"${
-      editable ? ` data-rid="${esc(r.id)}" data-rindex="${i}"` : ''}>
-      ${editable ? `<button class="rmv-del" type="button" tabindex="0"
-        data-rid="${esc(r.id)}" data-rindex="${i}" aria-label="Remove ${esc(m.name)}">Remove</button>` : ''}
+    // TWO DIRECTIONS, AND ONLY ONE OF THEM IS DESTRUCTIVE.
+    //
+    // Sliding left used to DELETE the movement, which makes the gesture
+    // something to be careful with — and a gesture people are careful with is
+    // one they stop using. So the left slide TAKES IT OUT of the workout and
+    // keeps the row; the right slide puts it back. Deleting for good is only
+    // reachable on a row that is already out, which is the same retire-then-
+    // delete shape as the routine switch and the Delete link beside it.
+    const moves = movesOf.map((m, i) => `<div class="rmv${editable ? ' swipe' : ''}${
+      m.off ? ' benched' : ''}"${editable ? ` data-rid="${esc(r.id)}" data-rindex="${i}"${
+      m.off ? ' data-off="1"' : ''}` : ''}>
+      ${editable ? `<button class="rmv-act left" type="button" tabindex="${m.off ? '0' : '-1'}"
+        data-act="bench" data-rid="${esc(r.id)}" data-rindex="${i}"
+        aria-label="Put ${esc(m.name)} back in this workout"${m.off ? '' : ' aria-hidden="true"'}>Put back</button>
+      <button class="rmv-act right${m.off ? ' danger' : ''}" type="button" tabindex="0"
+        data-act="${m.off ? 'remove' : 'bench'}" data-rid="${esc(r.id)}" data-rindex="${i}"
+        data-name="${esc(m.name)}"
+        aria-label="${m.off ? `Delete ${esc(m.name)} for good` : `Take ${esc(m.name)} out of this workout`}">${
+        m.off ? 'Delete' : 'Take out'}</button>` : ''}
       <div class="rmv-body">
         <span class="rmvn">${esc(m.name)}${m.detail ? `<em>${esc(m.detail)}</em>` : ''}</span>
-        <b${unset(m) ? ' class="unset"' : ''}>${howMuch(m) || (unset(m) ? 'not set' : '—')}</b>
+        <b${m.off ? ' class="unset"' : unset(m) ? ' class="unset"' : ''}>${
+          m.off ? 'out' : howMuch(m) || (unset(m) ? 'not set' : '—')}</b>
       </div>
     </div>`).join('');
 
@@ -6402,7 +6461,8 @@ function routinesPanel(d, { editable = false } = {}) {
         ${editable && anyUnset ? `<p class="sub swhint unsethint">Nothing saved for how to run the ones marked
           <b class="unset">not set</b>. Type the same name below with how much — <em>25 min level 10+, 2.5-3 mph</em>
           or <em>3×8</em> — and it fills that one in rather than adding a second.</p>` : ''}
-        ${editable && movesOf.length ? '<p class="sub dim swhint">Slide a movement to the left to take it out.</p>' : ''}
+        ${editable && movesOf.length ? `<p class="sub dim swhint">Slide a movement left to take it out of this
+          workout, right to put it back. Nothing is deleted${anyOff ? ' — the ones marked <b>out</b> are still here' : ''}.</p>` : ''}
         ${editable ? `<div class="radd">
           <input class="ra-name" placeholder="Add a movement" data-rid="${esc(r.id)}" maxlength="120">
           <!-- maxlength was 20, sized for "3×8 or 25 min" — and this is the box
