@@ -1573,6 +1573,34 @@ is drawn precisely:
 - Asked in GROUPS of three or four at the gate (they asked for a workout; the
   fastest way through is to finish), one-at-a-time in-passing everywhere else.
 
+### One bun reported as a whole day
+
+*"Add another ciabatta bun — how many am I at today? How many calories?"*
+came back with **330 kcal, 11g protein, 59g carbs, 6g fat.** That is one
+ciabatta bun, delivered as a day's total, on the product whose entire job is
+adding the day up.
+
+**The cause was structural, not a model slip**, and that is the important
+part. `log` returned the day only as a PROSE sentence, and `amend_last` — the
+tool the model calls immediately afterwards to fill in macros it estimated —
+returned **no day total at all**. So at the exact moment the question was
+asked, the only numbers in front of the model were the ones it had just
+written for that single item. It did not misread the day; it was never shown
+one.
+
+`dayTotal()` now rides on `log`, `amend_last` and `structure_entries` alike,
+labelled `EVERYTHING logged today, not the item just added`, and `amend_last`
+re-reads the day AFTER its own write so the total is never stale by exactly
+the edit that caused it. The instruction says the rest: a running total is the
+whole day, never the thing just logged, never added up by the model, never
+answered from the conversation — and **a total that looks low because
+something did not get logged is a fact worth surfacing rather than a number
+to quietly inflate.**
+
+Same shape as the invented 2,600 and the 135lb off a photograph: the model
+reached for the nearest number because the right one was not in front of it.
+The fix is never more forbidding — it is removing the vacuum.
+
 ### The audit the founder demanded — five complaints, five causes
 
 *"The trainer completely doesn't work... it keeps closing... none of the
