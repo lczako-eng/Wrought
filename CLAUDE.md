@@ -1597,6 +1597,26 @@ answered from the conversation — and **a total that looks low because
 something did not get logged is a fact worth surfacing rather than a number
 to quietly inflate.**
 
+**And then the other half, which the founder asked for immediately after:**
+*"when I ask to add something he has to give the individual calories as well,
+not just a total."* It is the same argument he already made about the day card
+— *"one steak's up to the right and the pizza's to the left"* — arriving now
+about the conversation, and it is right for the same reason. **A total with
+nothing beside it is unauditable.** You cannot see which item is the 750 and
+which is the 300, so a mis-heard entry disappears into the sum and stays
+there. The per-item figure is also the only one the person can check: nobody
+can dispute a day's 2,180, and anybody can say *"that steak was not 900"*.
+
+So `day_total` carries `items` — every food and drink row of the day with its
+own calories and macros — `log`'s `recorded` carries each thing's figures,
+`amend_last` returns the `entry` it just wrote, and `structure_entries` the
+same. **All of them read back off the STORED row rather than echoed from the
+arguments**, which is what makes reading them out a confirmation that the
+record holds them rather than a repetition of what the model meant to write.
+The item, then the day, in that order, because that is the order the person is
+thinking in — and every figure still labelled an estimate, since breaking a
+sum into its parts must not make the parts look measured.
+
 Same shape as the invented 2,600 and the 135lb off a photograph: the model
 reached for the nearest number because the right one was not in front of it.
 The fix is never more forbidding — it is removing the vacuum.

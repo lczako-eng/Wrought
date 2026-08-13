@@ -4157,6 +4157,57 @@ await test('a running total is the whole day, never the item just logged', () =>
   assert.match(SERVER_INSTRUCTIONS, /a fact worth surfacing, not a number to quietly inflate/);
 });
 
+await test('every item carries its own calories, and the total sits underneath', () => {
+  // The founder, having got the total fixed: "when I ask to add something he
+  // has to give the individual calories as well, not just a total." The same
+  // argument he already made about the day card — "one steak's up to the right
+  // and the pizza's to the left, should be altogether and then a total" — now
+  // made about the conversation. A sum with nothing beside it is unauditable:
+  // you cannot see which item is the 750, so a mis-heard entry hides inside it
+  // forever and the one person who could correct it never gets the chance.
+  const mcp = readFileSync(new URL('../netlify/functions/mcp.js', import.meta.url), 'utf8');
+
+  // The total is made of something, and says what.
+  const total = mcp.slice(mcp.indexOf('function dayTotal(day)'), mcp.indexOf('function itemSay('));
+  assert.match(total, /items:/, 'the day total does not carry its items');
+  assert.match(total, /filter\(e => e\.type === 'food' \|\| e\.type === 'drink'\)/);
+  for (const f of ['calories', 'protein_g', 'carbs_g', 'fat_g']) {
+    assert.match(total, new RegExp(`${f}: e\\.${f}`), `items drop ${f}`);
+  }
+
+  // The thing just logged comes back with its own figures — and they are read
+  // off the STORED row, not echoed from the arguments. A model reciting its own
+  // input back proves nothing landed, which is the failure this whole area of
+  // the file exists to prevent.
+  const logFn = mcp.slice(mcp.indexOf('async function log('), mcp.indexOf('async function parseLog('));
+  assert.match(logFn, /recorded: written\.map/);
+  assert.match(logFn, /\.\.\.itemNumbers\(e\.detail \|\| \{\}\)/,
+    'recorded entries do not carry their own numbers off the stored row');
+  assert.ok(!/itemNumbers\(args\./.test(logFn), 'item numbers are echoed from the arguments');
+
+  // amend_last is the door that most often WRITES the macros, so it is the one
+  // that most needs to read them back.
+  const amend = mcp.slice(mcp.indexOf('async function amendLast('),
+                          mcp.indexOf('// Reading back what the phone could only hear'));
+  assert.match(amend, /const entry = \(dayNow\.log \|\| \[\]\)\.find/,
+    'amend_last does not read the amended entry back from the stored day');
+  assert.match(amend, /entry: entry/);
+  const entryAt = amend.indexOf('const entry =');
+  assert.ok(entryAt > amend.indexOf('.update({'), 'the entry is read before the amend lands');
+
+  // structure_entries, same shape.
+  const struct = mcp.slice(mcp.indexOf('async function structureEntries('),
+                           mcp.indexOf('async function undoLast('));
+  assert.match(struct, /entries: withNumbers/, 'structured entries drop their own numbers');
+
+  // And the rule that makes the model actually say both.
+  assert.match(SERVER_INSTRUCTIONS, /EVERY ITEM GETS ITS OWN NUMBER, AND THE TOTAL GOES UNDERNEATH/);
+  assert.match(SERVER_INSTRUCTIONS, /Never the total on its own/);
+  // Still labelled an estimate — a per-item figure is inferred exactly as the
+  // sum is, and breaking it out must not make it look measured.
+  assert.match(SERVER_INSTRUCTIONS, /Every one of these is an estimate and is said to be one/);
+});
+
 group('The questionnaire is a gate — the founder\'s explicit instruction');
 
 const { intakeGate } = await import('../netlify/functions/lib/intake.js');

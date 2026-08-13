@@ -178,6 +178,8 @@ HOW PEOPLE ACTUALLY ASK. Nobody says "call the brief tool". They say one of a hu
 
 A RUNNING TOTAL IS THE WHOLE DAY, NEVER THE THING JUST LOGGED. "How many am I at today", "what's my total", "how many calories so far" are answered from day_total — which log, amend_last and structure_entries all return and which is labelled EVERYTHING logged today. Never add up the items yourself, never quote back the macros you just estimated for one meal as if they were the day, and never answer this from memory of the conversation. If day_total looks smaller than they expect, say the number and say how many meals it counts — a total that is low because something did not get logged is a fact worth surfacing, not a number to quietly inflate.
 
+EVERY ITEM GETS ITS OWN NUMBER, AND THE TOTAL GOES UNDERNEATH. When they add something, say what THAT thing came to and then what the day is at — "the ciabatta bun is about 330, which puts you at 1,840 for the day." Never the total on its own. The item's figure is the only one they can check: they were there when they ate it, so they can tell you a steak was not 900 — and a mis-heard or badly estimated entry that only ever appears inside a sum is one nobody can ever find. When they ask what is in the day, list the items with their own calories and put the sum under them, in that order; day_total.items carries every one of them, straight off the stored rows. Read the figures back from the tool response rather than from what you passed in — that is what makes it a confirmation that the record holds them rather than a repetition of what you meant to write. Every one of these is an estimate and is said to be one.
+
 A WORKING WEIGHT MAY ONLY EVER COME FROM A TOOL — never from you, and never from a photograph. What is loaded on a bar in a picture is what somebody else left there, or what they happened to put on once; it is an observation about a barbell and not a prescription for a person. Reading "135lb" off an image and programming three sets of it is the same failure as inventing a calorie target: a number that looks reasonable, attached to nothing about them. If a lift has no history, progressionCall REFUSES to name a weight and gives an effort level instead — relay that refusal, it is the safest thing in this product. If they know roughly what they do, call calibrate_lift: the server discounts the claim, frames the first set as a calibration, and what they actually lift becomes the baseline. You may say what is in the photograph. You may not turn it into their programme.
 
 A PHOTOGRAPH OF A GYM IS AN EQUIPMENT LIST, AND IT IS SAVED AS EACH BATCH ARRIVES — NEVER AT THE END. When they send pictures of a gym, YOU read what is standing in them — racks, machines, dumbbells, benches, cables — because this server never sees images. Call set_profile after EVERY batch of photos with the full list so far, adding the new equipment to what is already saved; do not say "keep sending and I'll build up an inventory" and hold it in the conversation, because the conversation ends and takes the whole gym with it, and the one thing this product promises is that it remembers. Read the photos, list the equipment plainly, confirm in one line, and save it: set_profile equipment for their main gym, and remember (category "gym") for each named additional place — "Home gym: dumbbells to 50lb, bench, bands". More than one gym is normal. When they say where they are — "at the home gym", "hotel gym today" — pass that inventory as equipment to start_session or suggest_workout, and recall it from memory if you need it. Never build a plan around a machine their photos did not show.
@@ -973,6 +975,19 @@ async function context(userId) {
 // A number the model has to reconstruct is a number it will eventually get
 // wrong. So every door that changes the day returns the same explicit block,
 // named for exactly what it is.
+// EVERY ITEM ITS OWN NUMBER, AND THE TOTAL UNDERNEATH — the same doctrine the
+// dashboard's day card already follows, because the founder made the same
+// argument twice, once about the screen and once about the conversation:
+// "when I ask to add something he has to give the individual calories as well,
+// not just a total."
+//
+// A total with nothing beside it is UNAUDITABLE. You cannot see which item is
+// the 750 and which is the 300, so a mis-heard entry — "burrito" filed as
+// "burrata" — disappears into the sum and stays there. Reading the items back
+// with their own figures is how a wrong one gets caught in the same minute it
+// is made rather than never. It is also the only way an estimate can be
+// argued with: nobody can dispute a day's 2,180, and anybody can say "that
+// steak was not 900".
 function dayTotal(day) {
   return {
     // Named so it cannot be mistaken for the thing just logged.
@@ -984,7 +999,40 @@ function dayTotal(day) {
     meals: day.food.meals,
     estimated: day.food.estimated,
     meals_without_macros: day.food.meals_uncounted,
+    // What the total is made of. Straight off the stored rows, so an item's
+    // figure here is what the record actually holds rather than what anybody
+    // meant to write.
+    items: (day.log || [])
+      .filter(e => e.type === 'food' || e.type === 'drink')
+      .map(e => ({
+        at: e.at, summary: e.summary, calories: e.calories,
+        protein_g: e.protein_g, carbs_g: e.carbs_g, fat_g: e.fat_g,
+        estimated: e.estimated,
+      })),
     say: day.food.say,
+  };
+}
+
+// The numbers on ONE entry, read back from what was stored rather than echoed
+// from what was passed in. That difference is the whole point: a model
+// reciting its own arguments back proves nothing landed, and this product has
+// already been bitten once by numbers that existed only in the conversation.
+// One entry as a phrase, with its own calories on it. A name on its own tells
+// somebody nothing they did not already know — they were there when they ate
+// it. The number is the thing they cannot supply themselves, and it is the
+// thing they can correct.
+function itemSay(e) {
+  const c = itemNumbers(e.detail || {}).calories;
+  return c == null ? e.summary : `${e.summary} (${c.toLocaleString()} kcal)`;
+}
+
+function itemNumbers(detail = {}) {
+  const n = v => (v == null || v === '' || !Number.isFinite(Number(v)) ? null : Math.round(Number(v)));
+  return {
+    calories:  n(detail.calories),
+    protein_g: n(detail.protein_g),
+    carbs_g:   n(detail.carbs_g),
+    fat_g:     n(detail.fat_g),
   };
 }
 
@@ -1035,7 +1083,14 @@ async function log(args, user) {
     // setting and silenced entirely by a care flag. Null means say nothing.
     nudge: nudge || undefined,
     nudge_note: args.quiet ? undefined : nudgeNote(nudge, profile.plan_push),
-    recorded: written.map(e => ({ id: e.id, type: e.event_type, summary: e.summary, estimated: e.estimated })),
+    // Each thing written, WITH ITS OWN NUMBERS. Read back off the stored row,
+    // never echoed from the arguments — the figures here are what the record
+    // holds, which is what makes reading them out a confirmation rather than
+    // a repetition.
+    recorded: written.map(e => ({
+      id: e.id, type: e.event_type, summary: e.summary, estimated: e.estimated,
+      ...itemNumbers(e.detail || {}),
+    })),
     count: written.length,
     parsed,
     structured_by: structuredBy,
@@ -1047,9 +1102,12 @@ async function log(args, user) {
     // The whole day, in numbers. "How many am I at today" is answered from
     // HERE and never from the item that was just written.
     day_total: dayTotal(day),
+    // The item, then the day — in that order, because that is the order the
+    // person is thinking in. Composed here rather than left to the model, the
+    // same rule as every other number in this server.
     say: args.quiet
-      ? `Logged: ${written.map(e => e.summary).join('; ')}.`
-      : `Logged ${written.length} thing${written.length === 1 ? '' : 's'}: ${written.map(e => e.summary).join('; ')}.` +
+      ? `Logged: ${written.map(e => itemSay(e)).join('; ')}.`
+      : `Logged ${written.length} thing${written.length === 1 ? '' : 's'}: ${written.map(e => itemSay(e)).join('; ')}.` +
         (day.food.meals ? ` Today so far: ${day.food.say}.` : ''),
     // A named food stored with no macros is barely stored at all, and the model
     // is the only thing that can fix it — it read the words. Asking here, in the
@@ -1064,7 +1122,7 @@ async function log(args, user) {
     note: untimed.length && !hungry.length
       ? `Recorded, but ${untimed.map(u => `"${u.summary}"`).join(' and ')} went in with no duration, so ${untimed.length === 1 ? 'it counts' : 'they count'} for NOTHING in calories out. Ask how long it took — one short question, in the same message as the confirmation — then amend_last with the minutes. The server works the calories out from the minutes and their bodyweight; never estimate the calories yourself.`
       : hungry.length
-      ? `Recorded, but ${hungry.map(h => `"${h.summary}"`).join(' and ')} went in with no calories or macros, so ${hungry.length === 1 ? 'it counts' : 'they count'} for nothing in every total. You named the food, so you can estimate ${hungry.length === 1 ? 'it' : 'them'}: call amend_last NOW with your best figures and estimated: true. Do it without asking permission${args.quiet ? ', silently, and say nothing about it' : ' and mention the figures in one short line'}. Only leave macros null when the food itself was never named — "had lunch" stays empty, "two pepperettes" does not.`
+      ? `Recorded, but ${hungry.map(h => `"${h.summary}"`).join(' and ')} went in with no calories or macros, so ${hungry.length === 1 ? 'it counts' : 'they count'} for nothing in every total. You named the food, so you can estimate ${hungry.length === 1 ? 'it' : 'them'}: call amend_last NOW with your best figures and estimated: true. Do it without asking permission${args.quiet ? ', silently, and say nothing about it' : ' and then give BOTH numbers in one short line — what that item came to on its own, and what the day is at now. amend_last returns entry and day_total for exactly this. Never the day total alone: an item with no figure beside it cannot be corrected by the one person who knows it is wrong'}. Only leave macros null when the food itself was never named — "had lunch" stays empty, "two pepperettes" does not.`
       : args.quiet
         ? 'Caught in passing. Acknowledge in a short clause at most and return immediately to what they were actually talking about. No totals, no follow-up questions, no coaching.'
         : parsed
@@ -1210,16 +1268,31 @@ async function amendLast(args, user) {
   // today" gets answered with that one item — which is exactly what happened.
   const dayNow = await dayFacts(user.id, profile, prev.local_date);
 
+  // THE ENTRY'S OWN NUMBERS, read back off the day that was just re-read.
+  // This is the amend that most often carries macros — the model estimated
+  // them a moment ago and is writing them in — so reading them back from the
+  // stored row is the only confirmation that what it meant to write is what
+  // the record now holds.
+  const entry = (dayNow.log || []).find(e => String(e.id) === String(prev.id)) || null;
+
   return {
     amended: true,
     was: prev.summary,
     now: first.summary,
     type: first.event_type,
+    // The one item, with its own figures. Said alongside the day total, never
+    // instead of it and never mistaken for it.
+    entry: entry
+      ? { summary: entry.summary, calories: entry.calories, protein_g: entry.protein_g,
+          carbs_g: entry.carbs_g, fat_g: entry.fat_g, estimated: entry.estimated }
+      : undefined,
     ...(bridged.error ? { sets_error: bridged.error } : {}),
     ...(bridged.skipped ? { sets_skipped: bridged.skipped, sets_note: bridged.say } : {}),
     day_total: dayTotal(dayNow),
-    say: `Updated: "${prev.summary}" is now "${first.summary}". Today so far: ${dayNow.food.say}`,
-    note: 'One entry, not two. Acknowledge briefly and move on. If they asked what they are at today, the answer is day_total — the WHOLE day — never the item you just amended.',
+    say: `Updated: "${prev.summary}" is now "${first.summary}"` +
+      (entry?.calories != null ? ` — ${entry.calories.toLocaleString()} kcal for that one` : '') +
+      `. Today so far: ${dayNow.food.say}`,
+    note: 'One entry, not two. Acknowledge briefly and move on. Give the ITEM\'s own calories and the DAY total in the same breath — "that bun is about 330, which puts you at 1,840 for the day" — never the item alone and never the total alone. If they asked what they are at today, the headline is day_total (the WHOLE day, with its items listed under it); the entry you just amended is one line of it.',
     next_actions: ['brief later for the day\'s read'],
   };
 }
@@ -1563,15 +1636,27 @@ async function structureEntries(args, user) {
   const profileNow = await getProfile(user.id);
   const dayNow = await dayFacts(user.id, profileNow, localDateFor(profileNow.timezone));
 
+  // Each entry with the numbers the record now holds for it, not the ones that
+  // were passed in. Same rule as log and amend_last: the item's own figure
+  // travels beside the day's, so a wrong estimate is correctable at the item
+  // rather than only visible as a total that feels off.
+  const withNumbers = updated.map(u => {
+    const e = (dayNow.log || []).find(x => String(x.id) === String(u.id));
+    return e
+      ? { ...u, calories: e.calories, protein_g: e.protein_g, carbs_g: e.carbs_g, fat_g: e.fat_g }
+      : u;
+  });
+
   return {
     updated: updated.length,
-    entries: updated,
+    entries: withNumbers,
     ...(skipped.length ? { skipped } : {}),
     ...(bridged.error ? { sets_error: bridged.error } : {}),
     ...(bridged.skipped ? { sets_skipped: bridged.skipped, sets_note: bridged.say } : {}),
     day_total: dayTotal(dayNow),
     say: updated.length
-      ? `Filled in ${updated.length} thing${updated.length === 1 ? '' : 's'} you told the phone: ${updated.map(u => u.now).join('; ')}.`
+      ? `Filled in ${updated.length} thing${updated.length === 1 ? '' : 's'} you told the phone: ` +
+        `${withNumbers.map(u => (u.calories != null ? `${u.now} (${u.calories.toLocaleString()} kcal)` : u.now)).join('; ')}.`
       : 'Nothing was filled in.',
     note: 'Housekeeping, not an event. One short clause at most — they already know what they said, and reciting it back at length makes dictating feel like it costs something. Then carry on with whatever they actually asked.',
     next_actions: ['brief for the day\'s read now that it counts'],
