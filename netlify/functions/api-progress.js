@@ -8,13 +8,14 @@
 // day nobody believes either one again.
 
 import {
-  getAuthUser, getProfile, getGoals, getWindow, windowStatus, fastingSummary,
+  getAuthUser, getProfile, getGoals, getWindow, windowStatus, fastingSummary, getMemory,
   localDateFor, addDays, humanDuration, kgToLb, daysBetween,
   rangeFacts, summariseRange, dayFacts, careFlags, scoreGoals, supabase,
 } from './lib/wrought.js';
 import { orderInsight, earnedRoom, energyBalance, exerciseKey, deviceMatrix, weekdayPattern, focusCall, lastSession,
-         weekSoFar, readiness, targetOptions, estimatedMax, readMovement } from './lib/training.js';
+         weekSoFar, readiness, targetOptions, estimatedMax, readMovement, backfillDerivedSets } from './lib/training.js';
 import { planRead } from './lib/plan.js';
+import { intakeState } from './lib/intake.js';
 import { formWatch, cardioProgress } from './lib/form.js';
 import { nextNudge } from './lib/prompt.js';
 import { blockPosition } from './lib/library.js';
@@ -94,11 +95,15 @@ export const handler = async (event) => {
   const span = Math.min(Math.max(parseInt(params.days, 10) || 30, 1), 400);
 
   // Before anything is read: file any session left running that plainly is not
-  // running any more. Nobody says "end session" — they finish the last set and
-  // leave — and until this existed those sets stayed in the set table while
-  // every screen on this page called the day a rest day. Idempotent, and a
-  // session genuinely in progress is untouched. See lib/session.js.
-  await closeStaleSessions(user.id, profile);
+  // running any more, and derive sets for any workout event the bridge has
+  // never touched — the training logged while the connector was still refusing
+  // sessions is sitting on those events, and "none of the exercises landed" is
+  // what that looks like from the outside. Both are one cheap read when there
+  // is nothing to do. Independent of each other, so they run together.
+  await Promise.all([
+    closeStaleSessions(user.id, profile),
+    backfillDerivedSets(user.id),
+  ]);
 
   const to   = params.to || localDateFor(profile.timezone);
   const from = addDays(to, -(span - 1));
@@ -417,6 +422,13 @@ export const handler = async (event) => {
   // call, with the same inputs, so a panel and a verdict can never disagree.
   const plan = planRead({ profile, goals, weightKg });
 
+  // The questionnaire, visible. The founder kept asking where the setup was
+  // and the honest answer was "inside a tool response" — a gate nobody can
+  // SEE is indistinguishable from a product that never asks. This is the same
+  // intakeState the training tools now stop on.
+  const memory = await getMemory(user.id);
+  const setup = intakeState({ profile, goals, memory, weightKg, intent: plan.intent });
+
   // The expectation, on the table rather than in a notification. Sessions never
   // roll over and a missed week is information, never a debt — see weekSoFar.
   const trainingWeek = weekSoFar(recent.days, { today: to, target: profile.train_days || null });
@@ -493,6 +505,13 @@ export const handler = async (event) => {
       // The plan, stated. The target NEVER travels without its maintenance and
       // the weekly rate — a number alone is a rule handed down.
       plan,
+      // The questionnaire: what is answered, what is not, and that training
+      // waits on it. The same state the tools gate on, so the screen and the
+      // refusal can never disagree.
+      setup: {
+        answered: setup.known, of: setup.total, complete: setup.complete,
+        remaining: setup.still_unknown,
+      },
       // What has and has not been done this week, against what was agreed.
       training_week: trainingWeek,
       // The body's veto. Softens only, never spurs, and never a diagnosis.

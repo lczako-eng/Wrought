@@ -303,7 +303,12 @@ main { padding-block: 26px 0; display: flex; flex-direction: column; gap: 22px; 
   background: var(--scale); padding: 5px 4px 4px; cursor: pointer; overflow: hidden;
   display: flex; flex-direction: column; align-items: center; justify-content: flex-start;
   font: inherit; color: inherit; text-align: center;
+  /* A square that responds to the finger is most of what "smooth" means. */
+  transition: transform .12s var(--ease), border-color .12s;
+  -webkit-tap-highlight-color: transparent;
 }
+.calcell:active { transform: scale(.94); }
+.calcell:hover:not(:disabled) { border-color: var(--heat-2); }
 .calcell:disabled { cursor: default; }
 .calcell.pad { border-color: transparent; background: transparent; }
 .calcell .dnum { font-size: 11px; color: var(--ash); font-variant-numeric: tabular-nums; }
@@ -808,6 +813,49 @@ table.matrix td.rh.cold { color: var(--heat-3); }
 .sw input:checked + i::after { transform: translateX(17px); background: #1A0A02; }
 .sw input:focus-visible + i { border-color: var(--bright); }
 .rout[data-retired="1"] > summary .rn { color: var(--ash-dim); }
+
+/* One logged day, drawn as what it is. */
+.onept { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; padding: 10px 0 4px; }
+.onept b { font-family: var(--grotesk); font-size: 34px; font-weight: 700; color: var(--bright); }
+.onept span { font-family: var(--mono); font-size: 11px; color: var(--ash-dim); text-transform: uppercase; }
+.onept em { flex: 1 1 100%; font-style: normal; font-size: 12.5px; color: var(--ash-dim); }
+
+/* In vs out, day by day: two bars per day, eaten beside burned. */
+.iochart { display: flex; align-items: flex-end; gap: 3px; height: 130px; margin-top: 10px; }
+.ioday { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; align-items: center; gap: 4px; height: 100%; }
+.iobars { flex: 1; width: 100%; display: flex; align-items: flex-end; justify-content: center; gap: 1px; }
+.iobars i { width: 42%; max-width: 9px; border-radius: 2px 2px 0 0; display: block; }
+.iobars .ioin  { background: linear-gradient(180deg, var(--heat-4), var(--heat-2)); }
+.iobars .ioout { background: linear-gradient(180deg, var(--temper), var(--temper-dk)); }
+.iobars .none  { height: 2px; opacity: .25; }
+.ioday span { font-family: var(--mono); font-size: 9px; color: var(--ash-dim); }
+.ioday:nth-child(even) span { visibility: hidden; }
+.iokey { display: inline-block; width: 9px; height: 9px; border-radius: 2px; vertical-align: -1px; }
+.iokey.in  { background: var(--heat-3); }
+.iokey.out { background: var(--temper); }
+
+/* The loading skeleton, and the pill that says a warm render is being
+   refreshed. The page showing its shape immediately is most of what "fast"
+   feels like; the pill is what keeps the warm render honest. */
+.skel { min-height: 96px; }
+.skl {
+  height: 13px; border-radius: 6px; margin: 12px 0;
+  background: linear-gradient(100deg, var(--scale) 40%, var(--scale-2) 50%, var(--scale) 60%);
+  background-size: 200% 100%; animation: shimmer 1.4s linear infinite;
+}
+.skl.w40 { width: 40%; } .skl.w70 { width: 70%; } .skl.w90 { width: 90%; }
+@keyframes shimmer { to { background-position: -200% 0; } }
+.updating {
+  position: absolute; top: 8px; right: 14px; z-index: 60;
+  font-family: var(--mono); font-size: 10.5px; letter-spacing: .1em; text-transform: uppercase;
+  color: var(--ash-dim); background: var(--scale); border: 1px solid var(--edge);
+  border-radius: 999px; padding: 5px 11px; display: flex; align-items: center; gap: 3px;
+}
+.updating i { width: 3px; height: 3px; border-radius: 50%; background: var(--heat-3);
+  animation: blip 1s infinite; }
+.updating i:nth-child(2) { animation-delay: .2s; } .updating i:nth-child(3) { animation-delay: .4s; }
+@keyframes blip { 0%, 100% { opacity: .25; } 50% { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .skl, .updating i { animation: none; } }
 
 /* The plan: the target, and the two numbers that make it a decision rather
    than a rule handed down. They are never allowed to appear apart. */
@@ -1317,7 +1365,7 @@ a.ghost { display: inline-block; }
       </div>
     </div>
   </header>
-  <main class="wrap" id="content"></main>
+  <main class="wrap" id="content" style="position:relative"></main>
   <!-- Always visible, on every view. Somebody juggling two accounts should not
        have to find a tab to get out. -->
   <div class="wrap whoami" id="whoami" hidden>
@@ -1336,6 +1384,8 @@ a.ghost { display: inline-block; }
 
 <!-- The two public Supabase values, from the deploy environment.
      Must load before the module below, which reads them off window. -->
+<link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+<link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm">
 <script src="/config.js"></script>
 <script type="module">
 import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm';
@@ -2861,11 +2911,23 @@ function stopTrainer() {
 async function startTrainer() {
   stopTrainer();
   await loadTrainer();
-  // A rest countdown that only moves when you reload is not a countdown. Cheap
-  // enough at one small request a few times a minute, and it stops entirely the
-  // moment you leave the tab.
-  trainerTimer = setInterval(() => { if (view === 'trainer') loadTrainer(); else stopTrainer(); }, 5000);
+  // A rest countdown that only moves when you reload is not a countdown — but
+  // THE POLL ONLY RUNS WHILE A SESSION IS LIVE. The idle screen was being
+  // re-rendered every five seconds too, which wiped open panels and half-typed
+  // text in the Add box: open a saved workout and two seconds later it snapped
+  // shut. A screen nobody can hold still is a screen that reads as broken.
+  trainerTimer = setInterval(() => {
+    if (view !== 'trainer') { stopTrainer(); return; }
+    if (trainerActive) loadTrainer();
+  }, 5000);
 }
+
+// Whether the last Trainer payload had a live session — the only state the
+// poll is for.
+let trainerActive = false;
+// And the last payload drawn, so an unchanged answer never repaints the
+// screen out from under somebody mid-tap.
+let trainerLastJson = '';
 
 // Saved workouts, cached from the last progress load so the Trainer tab can
 // show them without a second round trip on every 5-second poll.
@@ -2884,7 +2946,39 @@ async function loadTrainer() {
     $('content').innerHTML = `<p class="empty">Could not load the session.<br><small>${res.status} ${esc(detail).slice(0, 300)}</small></p>`;
     return;
   }
-  renderTrainer(await res.json());
+  const body = await res.json();
+  trainerActive = !!body.active;
+
+  // AN UNCHANGED ANSWER NEVER REPAINTS THE SCREEN. Re-rendering identical
+  // data wipes open panels, text mid-typing and scroll position — the screen
+  // "closing itself" every few seconds, which is how a founder described it.
+  const jsonNow = JSON.stringify(body);
+  if (jsonNow === trainerLastJson && $('content').innerHTML.length) return;
+  trainerLastJson = jsonNow;
+
+  // What was open and what was typed survives the repaint.
+  const openIds = [...document.querySelectorAll('.rout[open]')]
+    .map(el => el.querySelector('.rtog')?.dataset.rid).filter(Boolean);
+  const typed = {};
+  document.querySelectorAll('.ra-name, .ra-sets').forEach(el => {
+    if (el.value) typed[`${el.className}:${el.dataset.rid || 'new'}`] = el.value;
+  });
+  const newName = $('rnew-name')?.value || '';
+
+  renderTrainer(body);
+
+  for (const id of openIds) {
+    document.querySelectorAll('.rout').forEach(el => {
+      if (el.querySelector(`.rtog[data-rid="${id}"]`)) el.open = true;
+    });
+  }
+  for (const [k, v] of Object.entries(typed)) {
+    const [cls, rid] = k.split(':');
+    const el = rid === 'new' ? null
+      : document.querySelector(`.${cls.split(' ').join('.')}[data-rid="${rid}"]`);
+    if (el) el.value = v;
+  }
+  if (newName && $('rnew-name')) $('rnew-name').value = newName;
 }
 
 function renderTrainer(d) {
@@ -3803,6 +3897,7 @@ function demoData() {
       resting_burn: 1770, missing: null,
     },
     no_target_set: null,
+    setup: { answered: 25, of: 25, complete: true, remaining: [] },
     nudge: { kind: 'week_behind', priority: 7, push: 'normal',
       say: '3 of 4 this week with 2 days left. Still comfortably doable — want a session?' },
     training_week: { week_start: series[Math.max(0, N - 1)].date, done: 3, target: 4, days_left: 2,
@@ -3878,8 +3973,32 @@ function demoData() {
 // round trip per tap is slow on a phone and replays every entry animation.
 let lastPayload = null;
 
+function skeleton() {
+  return Array.from({ length: 4 }, (_, i) =>
+    `<section class="panel skel" style="animation-delay:${i * 90}ms">
+      <div class="skl w40"></div><div class="skl w90"></div><div class="skl w70"></div>
+    </section>`).join('');
+}
+
 async function load(token) {
-  $('content').innerHTML = '<p class="empty">Loading…</p>';
+  // THE LAST VISIT PAINTS INSTANTLY. The slow part of every load is the
+  // functions cold-starting, and the screen used to hold one line of grey
+  // text for the whole wait. The previous payload is drawn immediately with
+  // a visible "updating" pill, then REPLACED the moment fresh data lands —
+  // never silently kept: if the fetch fails, the stale screen is replaced by
+  // the error, because a cached brief presented as current is a wrong brief.
+  let warm = false;
+  try {
+    const kept = localStorage.getItem(`wrought_last_${days}`);
+    if (kept && view === 'record') {
+      const d = JSON.parse(kept);
+      if (d && d.today) { render(d); warm = true;
+        $('content').insertAdjacentHTML('afterbegin',
+          '<div class="updating" id="updating">updating<i></i><i></i><i></i></div>');
+      }
+    }
+  } catch { /* a corrupt cache is just a cold load */ }
+  if (!warm) $('content').innerHTML = skeleton();
   const res = await fetch(`/.netlify/functions/api-progress?days=${days}`, { headers: { Authorization: `Bearer ${token}` } });
   // The generic message was a dead end during setup: a misconfigured key, an
   // expired session and a broken query all read identically. The status and the
@@ -3891,6 +4010,9 @@ async function load(token) {
   }
   lastPayload = await res.json();
   render(lastPayload);
+  // Kept for the NEXT open. Only the record view, only per range, and only
+  // after a successful fresh load — an error never refreshes the cache.
+  try { localStorage.setItem(`wrought_last_${days}`, JSON.stringify(lastPayload)); } catch { /* full or blocked: cold loads still work */ }
 }
 
 // The day as one graphic. A ring reads as a proportion before it reads as a
@@ -4369,6 +4491,28 @@ function wireGuide() {
       sel.removeAllRanges(); sel.addRange(r);
     }
   }));
+}
+
+// ── The questionnaire, on screen ───────────────────────────────────────────
+// The founder: "there should be a questionnaire, like 20 or 30 questions...
+// a stop place — we can't further any workouts until it's finished." The gate
+// lives in the tools; THIS is where somebody can see it: what is answered,
+// what is left, and the exact words to say to close each one. A gate nobody
+// can see is indistinguishable from a product that never asks.
+function setupPanel(d) {
+  const su = d.setup;
+  if (!su || su.complete) return '';
+  const pct = Math.round((su.answered / su.of) * 100);
+  return `<section class="panel">
+    <h2>Getting to know you · ${su.answered} of ${su.of}</h2>
+    <div class="progbar"><i style="width:${pct}%"></i></div>
+    <p class="sub">Workouts unlock when this is finished — WROUGHT will not build a plan for a
+    stranger. Answer in one conversation: say <em>"set me up properly"</em> to your assistant and it
+    walks the list, a few at a time. Loose answers are fine, and "none" counts.</p>
+    <div class="says">${(su.remaining || []).slice(0, 8).map(q =>
+      `<button class="say" type="button" data-say="${esc(q)}">${esc(q)}</button>`).join('')}</div>
+    ${(su.remaining || []).length > 8 ? `<p class="sub dim">…and ${su.remaining.length - 8} more once those are in.</p>` : ''}
+  </section>`;
 }
 
 // ── The plan, stated ───────────────────────────────────────────────────────
@@ -5130,6 +5274,10 @@ function render(d) {
   out.push(targetOptionsPanel(d));
   out.push(readingsPanel(d));
 
+  // The questionnaire before the plan: until it is finished the plan cannot
+  // be built, and the screen should say so where the plan would be.
+  out.push(setupPanel(d));
+
   // The plan, then the week it is being run in. Above the day's detail
   // because they are the answer to "what am I actually doing" — the question
   // every number below is only meaningful against.
@@ -5198,6 +5346,9 @@ function render(d) {
       ${bars('Training volume', 'Sets × reps × load, per session.', d.series.volume)}
       ${chart('Steps', 'Per day, straight off the phone.', d.series.steps, 'var(--temper)', 'steps')}
     </div>`);
+
+    // The subtraction itself, drawn — see inOutChart.
+    out.push(inOutChart(d));
   }
 
   // Last night before any average. The founder asked for this first, twice:
@@ -5239,6 +5390,7 @@ function render(d) {
   wireZone();
   wireFacts(d.profile_known || {});
   wireGoTabs();
+  wireGuide();          // the setup panel's questions copy on tap, same as the manual
   stagger();
 }
 
@@ -5364,7 +5516,17 @@ function balancePanel(d) {
 // Every number here was computed in api-progress. This draws them.
 function chart(title, sub, series, colour, unit, opts = {}) {
   const pts = series.filter(p => p.value != null);
-  if (pts.length < 2) return `<section class="panel"><h2>${esc(title)}</h2><p class="empty">Not enough data yet.</p></section>`;
+  if (!pts.length) return `<section class="panel"><h2>${esc(title)}</h2><p class="empty">Not enough data yet.</p></section>`;
+  // ONE point draws as one point. "Not enough data yet" over a day somebody
+  // DID log reads as the log not working — a dot with its value is honest and
+  // is the difference between "it's coming" and "it's broken".
+  if (pts.length === 1) {
+    return `<section class="panel"><h2>${esc(title)}</h2>
+      ${sub ? `<p class="sub">${esc(sub)}</p>` : ''}
+      <div class="onept"><b>${Number(pts[0].value).toLocaleString()}</b><span>${esc(unit)}</span>
+        <em>${esc(pts[0].date)} — one day so far. The line starts at two.</em></div>
+    </section>`;
+  }
 
   const trend = (opts.trend || []).filter(p => p.value != null);
   const target = Number.isFinite(Number(opts.target)) ? Number(opts.target) : null;
@@ -5516,6 +5678,40 @@ function wireCharts(root = $('content')) {
   }
 }
 
+// In versus out, day by day — the graph of the subtraction itself.
+//
+// The founder: "it's not really graphing your total calories." The Calories
+// chart plots what went IN; the running-total panel adds the window up; but
+// nothing DREW the two sides of the day against each other over time, and
+// that is the picture the whole product is about. Built from the same
+// calendar squares the month view uses, so this chart, the calendar and the
+// brief cannot disagree about a Tuesday. No arithmetic here — the squares
+// arrive computed.
+function inOutChart(d) {
+  const cells = (d.calendar?.days || []).slice(-31).filter(c => c.in != null || c.out != null);
+  if (cells.length < 2) return '';
+  const max = Math.max(...cells.map(c => Math.max(c.in || 0, c.out || 0)), 1);
+  const cols = cells.map(c => {
+    const hIn  = c.in  != null ? Math.max(3, Math.round((c.in  / max) * 100)) : 0;
+    const hOut = c.out != null ? Math.max(3, Math.round((c.out / max) * 100)) : 0;
+    const word = c.net == null ? '' : c.net < 0 ? `${n(Math.abs(c.net))} under` : `${n(c.net)} over`;
+    return `<div class="ioday" title="${esc(c.date)}${c.in != null ? ` · in ${n(c.in)}` : ''}${
+      c.out != null ? ` · out ${n(c.out)}` : ''}${word ? ` · ${esc(word)}` : ''}">
+      <div class="iobars">
+        ${c.in  != null ? `<i class="ioin"  style="height:${hIn}%"></i>` : '<i class="ioin none"></i>'}
+        ${c.out != null ? `<i class="ioout" style="height:${hOut}%"></i>` : '<i class="ioout none"></i>'}
+      </div>
+      <span>${Number(c.date.slice(8))}</span>
+    </div>`;
+  }).join('');
+  return `<section class="panel">
+    <h2>In vs out · day by day</h2>
+    <p class="sub"><i class="iokey in"></i> eaten &nbsp; <i class="iokey out"></i> burned —
+      the pair is the picture. A day with one bar missing was not fully counted.</p>
+    <div class="iochart">${cols}</div>
+  </section>`;
+}
+
 function bars(title, sub, series) {
   const vals = series.filter(p => p.value != null).map(p => p.value);
   if (!vals.length) return `<section class="panel"><h2>${esc(title)}</h2><p class="empty">No training logged in this stretch.</p></section>`;
@@ -5614,6 +5810,10 @@ function renderPhotos(d) {
       <p class="sub">${esc(d.say)}</p>
       <p class="sub dim">Same spot, same light, same time of day — the comparison is only worth
       anything if the conditions are. The scale moves with salt and sleep; this does not.</p>
+      <p class="sub dim">Photos you show your AI — the gym, a plate of food — <strong>cannot land
+      here</strong>, and that is a promise rather than a gap: this server never receives images.
+      The AI reads them where you sent them and passes on only words. Progress photos go in on
+      this screen, straight to your own private storage, and nothing ever analyses them.</p>
       <div class="btnrow">
         <label class="ghost" for="photofile">Add a photo</label>
         <select id="photopose" class="hourpick">

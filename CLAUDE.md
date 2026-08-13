@@ -1543,6 +1543,65 @@ already arithmetically impossible and the branch above has taken it. A setting
 that silently means *never* is worse than not offering it. It is a proportion
 now: under half the pace the week implies.
 
+### The questionnaire is a gate — the founder overrode the softer doctrine
+
+`intakeGate()` in `lib/intake.js` + `trainingGate()` in `mcp.js` + the
+*Getting to know you* panel. The founder, twice, the second time as an
+instruction: *"we should put that as a stop place — we can't further any
+workouts until the questionnaire is finished. It could be loose too, like
+weight loss AND muscle building. Like 20 or 30 questions."* The in-passing
+doctrine survives for ordinary conversation, but the gate is his call and it
+is drawn precisely:
+
+- **WROUGHT never refuses to RECORD.** `log`, `log_set` and the briefs stay
+  open forever — capture is the soul of the product and gating it would kill
+  the memory. There is a test asserting neither capture door touches the gate.
+- **WROUGHT refuses to PRESCRIBE until it knows who for.** `suggest_workout`,
+  `start_session`, `programmes` (the building half — the single-pattern lookup
+  is the mid-session swap case and stays open) and `start_block` return
+  `setup_required` until all 25 intake items are answered.
+- **"None" is a real answer.** No injuries, no sports, no medication close
+  their questions once recorded — that is what lets the questionnaire finish.
+- **Loose answers are fine**: *"lose weight and build muscle"* is recomp. The
+  gate note says both, or the model interrogates people into precision they
+  never offered.
+- **The gate is visible.** The dashboard shows *Getting to know you · N of
+  25*, the remaining questions as copy-chips, and says workouts unlock when it
+  is done — a gate nobody can see is indistinguishable from a product that
+  never asks. Same `intakeState` on both surfaces, so the screen and the
+  refusal cannot disagree.
+- Asked in GROUPS of three or four at the gate (they asked for a workout; the
+  fastest way through is to finish), one-at-a-time in-passing everywhere else.
+
+### The audit the founder demanded — five complaints, five causes
+
+*"The trainer completely doesn't work... it keeps closing... none of the
+exercises landed... loading is slow... it's not really graphing your total
+calories."* All five were real.
+
+- **"It closes after two seconds"** — the Trainer tab re-rendered every 5
+  seconds, poll or no session, wiping open panels and half-typed text. The
+  poll now runs only while a session is live, an unchanged payload never
+  repaints, and open panels + typed text survive when it does.
+- **"None of the exercises landed"** — his workouts predate the bridge, and
+  the bridge only fires on write. `backfillDerivedSets()` sweeps recent
+  workout events with exercises and no derived rows, on the way into the
+  dashboard, beside `closeStaleSessions`.
+- **Slow loading** — three fronts: preconnect/modulepreload for the CDN, a
+  shimmer skeleton instead of one grey line, and **the last visit paints
+  instantly** from localStorage with a visible *updating* pill, replaced the
+  moment fresh data lands. Never silently stale: a failed fetch replaces the
+  warm render with the error. (The service worker still never caches `/api` —
+  this is the page's own cache, visibly refreshed.)
+- **"Not graphing total calories"** — a single logged day drew "Not enough
+  data yet", which reads as the log not working; one point now draws as a dot
+  with its value. And `inOutChart()` draws eaten-beside-burned per day from
+  the same calendar squares the month view uses, so the chart, the calendar
+  and the brief cannot disagree.
+- **Photos from the AI cannot land here, and the screen now says so** — this
+  server never receives images; the AI reads them where they were sent and
+  passes on words. A promise, not a gap.
+
 ### The manual is in the app, and it is made of sentences
 
 `lib/guide.js` + the Guide tab. The founder, before his first session with it:

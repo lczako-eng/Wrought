@@ -4118,6 +4118,83 @@ await test('every foreign key matches the type of the column it points at', () =
   assert.equal(ev.type, 'uuid');
 });
 
+group('The questionnaire is a gate — the founder\'s explicit instruction');
+
+const { intakeGate } = await import('../netlify/functions/lib/intake.js');
+
+await test('an unfinished questionnaire stops every door that BUILDS training', () => {
+  // "We should put that as a stop place — we can't further any workouts until
+  // the questionnaire is finished." Asked twice; the second time is decisive,
+  // and it overrides the softer in-passing-only doctrine for these four tools.
+  const half = intakeState({
+    profile: { height_cm: 190, birth_year: 1982, sex: 'male', activity_level: 'moderate', timezone: 'America/Toronto' },
+    goals: [], memory: [], weightKg: 149.7,
+  });
+  assert.equal(half.complete, false);
+  const gate = intakeGate(half);
+  assert.ok(gate, 'no gate for an unfinished questionnaire');
+  assert.equal(gate.setup_required, true);
+  assert.ok(gate.remaining.length > 0);
+  assert.match(gate.note, /do NOT build, suggest or start a workout/);
+  // Loose answers are allowed and "none" closes a question — both said, or the
+  // model interrogates people into precision they never offered.
+  assert.match(gate.note, /"lose weight AND build muscle" is recomp/);
+  assert.match(gate.note, /"None" is a real answer/);
+
+  const mcp = readFileSync(new URL('../netlify/functions/mcp.js', import.meta.url), 'utf8');
+  for (const fn of ['suggestWorkout', 'startSession', 'startBlock']) {
+    const body = mcp.slice(mcp.indexOf(`async function ${fn}(`), mcp.indexOf(`async function ${fn}(`) + 1200);
+    assert.match(body, /trainingGate\(user, profile/, `${fn} is not gated`);
+  }
+  // programmes gates the BUILDING half only — the single-pattern lookup is the
+  // mid-session swap case and mid-session is past the gate.
+  const prog = mcp.slice(mcp.indexOf('async function programmes(args, user)'));
+  const patternAt = prog.indexOf('if (args.pattern)');
+  const gateAt = prog.indexOf('trainingGate(user, profile)');
+  assert.ok(gateAt > patternAt, 'the mid-session pattern lookup is gated too');
+  assert.match(SERVER_INSTRUCTIONS, /THE QUESTIONNAIRE IS A GATE/);
+});
+
+await test('a finished questionnaire opens the gate, and capture is never behind it', () => {
+  const done = intakeState({
+    profile: { height_cm: 190, birth_year: 1982, sex: 'male', activity_level: 'moderate',
+               plan_pace: 'steady', plan_push: 'normal', train_days: 4, training_age: 'intermediate',
+               equipment: ['full gym'], dietary: ['none'], bluntness: 'brutal', brief_hour: 21,
+               timezone: 'America/Toronto' },
+    goals: [{ metric: 'weight_kg', direction: 'at_most' }],
+    memory: [
+      { category: 'training', fact: 'runs most mornings' },
+      { category: 'lifts', fact: 'benches around 235' },
+      { category: 'health', fact: 'no injuries' },
+      { category: 'food', fact: 'cooks most nights, drinks rarely, evenings are the weak spot' },
+    ],
+    weightKg: 149.7, intent: 'lose',
+  });
+  assert.equal(done.complete, true, `still unknown: ${done.still_unknown.join('; ')}`);
+  assert.equal(intakeGate(done), null, 'a finished questionnaire still gates');
+
+  // CAPTURE IS NEVER GATED. log and log_set record what already happened, and
+  // refusing to remember somebody's training is the opposite of the product.
+  const mcp = readFileSync(new URL('../netlify/functions/mcp.js', import.meta.url), 'utf8');
+  for (const fn of ['async function log(', 'async function logSet(']) {
+    const body = mcp.slice(mcp.indexOf(fn), mcp.indexOf(fn) + 2500);
+    assert.ok(!/trainingGate|intakeGate|setup_required/.test(body),
+      `${fn} is gated — capture must never be`);
+  }
+  assert.match(SERVER_INSTRUCTIONS, /CAPTURE IS NEVER GATED/);
+});
+
+await test('the questionnaire is visible on the dashboard, not only inside a refusal', () => {
+  // A gate nobody can see is indistinguishable from a product that never asks.
+  const api = readFileSync(new URL('../netlify/functions/api-progress.js', import.meta.url), 'utf8');
+  assert.match(api, /setup: \{/);
+  assert.match(api, /intakeState\(\{ profile, goals, memory, weightKg/);
+  const src = page('app.html');
+  assert.match(src, /function setupPanel\(/);
+  assert.match(src, /out\.push\(setupPanel\(d\)\);/);
+  assert.match(src, /Workouts unlock when this is finished/);
+});
+
 group('The bridge, as an adversarial review left it');
 
 await test('a derived set is stamped with the WORKOUT\'s time, never the sync\'s', () => {
@@ -5008,7 +5085,10 @@ await test('walking out of the gym does not delete the session', () => {
   // to be started first.
   assert.match(mcp, /await closeStaleSessions\(user\.id, profile\)/);
   const api = readFileSync(new URL('../netlify/functions/api-progress.js', import.meta.url), 'utf8');
-  assert.match(api, /await closeStaleSessions\(user\.id, profile\)/);
+  assert.match(api, /closeStaleSessions\(user\.id, profile\)/);
+  // And the pre-bridge backfill rides beside it — the training logged while
+  // the connector was refusing sessions sits on events the bridge never saw.
+  assert.match(api, /backfillDerivedSets\(user\.id\)/);
 });
 
 await test('a resting lifter is never closed out from under themselves', () => {
