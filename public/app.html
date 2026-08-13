@@ -779,15 +779,24 @@ table.matrix td.rh.cold { color: var(--heat-3); }
    to be in the orange, and both are right: a switch reads as reversible where
    a button reads as final, which is exactly the difference between retiring a
    routine and deleting one. */
-.rmvn { display: flex; flex-direction: column; gap: 2px; }
-.rmvn em { font-family: var(--mono); font-size: 10.5px; font-style: normal; color: var(--ash-dim); }
+/* min-width: 0 is load-bearing, not tidying. A flex item defaults to
+   min-width: auto, so this column refused to shrink below its longest line and
+   pushed the row wider than the card — and .rmv is overflow: hidden (the swipe
+   needs it, the Remove button sits behind), so the excess was CLIPPED in
+   silence. Clipped and never-saved look identical to whoever is reading it. */
+.rmvn { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.rmvn em { font-family: var(--mono); font-size: 10.5px; font-style: normal; color: var(--ash-dim);
+           overflow-wrap: anywhere; }
 .radd { display: flex; gap: 8px; margin: 12px 0 6px; flex-wrap: wrap; }
 .radd input {
   font: inherit; font-size: 13.5px; padding: 9px 11px; border-radius: 10px; min-width: 0;
   background: var(--scale); border: 1px solid var(--edge); color: var(--bright);
 }
 .radd .ra-name, .radd #rnew-name { flex: 1 1 150px; }
-.radd .ra-sets { flex: 0 1 120px; }
+/* Room to actually see the setup being typed. A 120px box for "25 min level
+   10+, 2.5-3 mph" scrolls the start of the line out of view while somebody is
+   still writing it, which is its own way of losing the words. */
+.radd .ra-sets { flex: 1 1 170px; }
 .radd input:focus { outline: none; border-color: var(--heat-3); }
 .radd button {
   font: inherit; font-size: 13px; font-weight: 650; cursor: pointer; flex: none;
@@ -1002,7 +1011,15 @@ table.matrix td.rh.cold { color: var(--heat-3); }
 /* Keyboard path: tabbing to the parked button slides the row open, so the
    gesture never becomes the only way in. */
 .rmv:focus-within .rmv-body { transform: translateX(-84px); }
-.rmv b { font-family: var(--mono); font-size: 12px; color: var(--ash); font-variant-numeric: tabular-nums; }
+.rmv b { font-family: var(--mono); font-size: 12px; color: var(--ash); font-variant-numeric: tabular-nums;
+         flex: none; white-space: nowrap; }
+/* A gap in a plan is information, not an alarm — the same restraint the
+   clinical readings get. Nothing red, nothing shouting: it is dimmer than the
+   real numbers beside it, which is exactly what it is. */
+.rmv b.unset { color: #6E635C; font-style: italic; }
+.unsethint { color: var(--ash); }
+.unsethint b.unset { font-family: var(--mono); font-size: 12px; color: #6E635C; font-style: italic; }
+.unsethint em { color: var(--ash); font-style: normal; font-family: var(--mono); font-size: 12px; }
 
 /* Folded away by default: the working matters enormously the once, and is
    clutter every day after. */
@@ -6348,6 +6365,14 @@ function routinesPanel(d, { editable = false } = {}) {
       m.minutes ? `${m.minutes} min` : null,
     ].filter(Boolean).join(' · ');
 
+    // A MOVEMENT WITH NOTHING ON IT SAYS SO. An em dash is honest and useless:
+    // it cannot be told apart from a row that failed to draw, and it gives
+    // somebody no idea that anything is theirs to fix. Same doctrine as a named
+    // food with no macros — a thing that looks saved and counts for nothing
+    // when the session starts is worth naming, once, quietly.
+    const unset = m => !howMuch(m) && !m.detail;
+    const anyUnset = movesOf.some(unset);
+
     // SLIDE TO REMOVE — the iPhone gesture, because that is the one the founder
     // asked for by name and the one every phone user's thumb already knows.
     // The row's content translates left and the action is revealed BEHIND it,
@@ -6360,7 +6385,7 @@ function routinesPanel(d, { editable = false } = {}) {
         data-rid="${esc(r.id)}" data-rindex="${i}" aria-label="Remove ${esc(m.name)}">Remove</button>` : ''}
       <div class="rmv-body">
         <span class="rmvn">${esc(m.name)}${m.detail ? `<em>${esc(m.detail)}</em>` : ''}</span>
-        <b>${howMuch(m) || '—'}</b>
+        <b${unset(m) ? ' class="unset"' : ''}>${howMuch(m) || (unset(m) ? 'not set' : '—')}</b>
       </div>
     </div>`).join('');
 
@@ -6374,10 +6399,21 @@ function routinesPanel(d, { editable = false } = {}) {
         ${r.notes ? `<p class="rnotes">${esc(r.notes)}</p>`
                   : '<p class="sub dim">No write-up on this one yet — ask WROUGHT to add one and it shows here and at the top of every session.</p>'}
         ${moves ? `<div class="rmvs">${moves}</div>` : ''}
+        ${editable && anyUnset ? `<p class="sub swhint unsethint">Nothing saved for how to run the ones marked
+          <b class="unset">not set</b>. Type the same name below with how much — <em>25 min level 10+, 2.5-3 mph</em>
+          or <em>3×8</em> — and it fills that one in rather than adding a second.</p>` : ''}
         ${editable && movesOf.length ? '<p class="sub dim swhint">Slide a movement to the left to take it out.</p>' : ''}
         ${editable ? `<div class="radd">
           <input class="ra-name" placeholder="Add a movement" data-rid="${esc(r.id)}" maxlength="120">
-          <input class="ra-sets" placeholder="3×8 or 25 min" data-rid="${esc(r.id)}" maxlength="20">
+          <!-- maxlength was 20, sized for "3×8 or 25 min" — and this is the box
+               the VERBATIM setup goes in, the one thing the doctrine says must
+               be kept word for word because for cardio it IS the instruction.
+               "25 min level 10+, 2.5-3 mph" is 27 characters, so the field ate
+               it at "level 10+, 2." before anything was even sent. Nothing
+               errors when an input truncates; it just saves a shorter truth.
+               200 to match what the server stores. -->
+          <input class="ra-sets" placeholder="3×8, or 25 min level 10+, 2.5-3 mph"
+                 data-rid="${esc(r.id)}" maxlength="200">
           <button class="ra-go" type="button" data-rid="${esc(r.id)}">Add</button>
         </div>
         <div class="rfoot">
