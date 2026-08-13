@@ -48,6 +48,7 @@ import {
 } from './lib/training.js';
 import { PROGRAMMES, GOALS, MOVEMENTS, movementsFor, pickProgramme, buildProgramme, buildBlock, blockPosition, BLOCK_LENGTHS } from './lib/library.js';
 import { FOCUSES, FOCUS_NAMES, focusFrom, designSession, designQuestions, designNote } from './lib/design.js';
+import { dayReceipt } from './lib/receipt.js';
 
 // Newest first. The icons on serverInfo are only honoured by clients speaking
 // the newer revisions, so blindly answering 2025-06-18 quietly costs the tile.
@@ -179,6 +180,8 @@ HOW PEOPLE ACTUALLY ASK. Nobody says "call the brief tool". They say one of a hu
   get_profile — "what account am I on", "which account is this", "who am I", "what email is this", "what do you know about me", "what's my height", "what have you got on me", "am I set up", "is this connected", "plugged in", "are you working", "what account are you writing to"
 
 A RUNNING TOTAL IS THE WHOLE DAY, NEVER THE THING JUST LOGGED. "How many am I at today", "what's my total", "how many calories so far" are answered from day_total — which log, amend_last and structure_entries all return and which is labelled EVERYTHING logged today. Never add up the items yourself, never quote back the macros you just estimated for one meal as if they were the day, and never answer this from memory of the conversation. If day_total looks smaller than they expect, say the number and say how many meals it counts — a total that is low because something did not get logged is a fact worth surfacing, not a number to quietly inflate.
+
+BOTH SIDES OF THE SUBTRACTION GET ITEMISED, NOT JUST THE EATING. "What did I do today", "how many calories", "what were those hours worth", "how am I doing on the day" are answered from the receipt block — which log_activity, energy_balance and get_day all return. Read it out LINE BY LINE: every item in with its own calories, then resting, training and work each with their own figure and what each is made of, then the two totals, then the net. Do not collapse it into a sentence, do not quote only the totals, and never add anything up yourself — the lines are there so each one can be argued with separately, which is the only way an estimate is worth anything. LOGGING WORK ALWAYS COMES BACK WITH WHAT IT WAS WORTH: "logged four hours as activity" with no number is the feature failing, because the number is the entire reason to log it. And set_aside is not optional — a figure that looks smaller than somebody's own arithmetic reads as the log having been ignored, so say what was not counted and why.
 
 EVERY ITEM GETS ITS OWN NUMBER, AND THE TOTAL GOES UNDERNEATH. When they add something, say what THAT thing came to and then what the day is at — "the ciabatta bun is about 330, which puts you at 1,840 for the day." Never the total on its own. The item's figure is the only one they can check: they were there when they ate it, so they can tell you a steak was not 900 — and a mis-heard or badly estimated entry that only ever appears inside a sum is one nobody can ever find. When they ask what is in the day, list the items with their own calories and put the sum under them, in that order; day_total.items carries every one of them, straight off the stored rows. Read the figures back from the tool response rather than from what you passed in — that is what makes it a confirmation that the record holds them rather than a repetition of what you meant to write. Every one of these is an estimate and is said to be one.
 
@@ -1612,8 +1615,12 @@ async function logActivity(args, user) {
       calories_out: balance.calories_out,
       say: balance.say,
     } : null,
+    // WHAT THOSE HOURS WERE WORTH, AGAINST WHAT IS ALREADY ON THE DAY.
+    // Logging a shift and being told only that it was "logged as activity" is
+    // the whole feature failing quietly: the number is the reason to log it.
+    receipt: dayReceipt({ day, balance, date, today: localDateFor(profile.timezone) }),
     say: `${burn.say}${balance.known ? ` Day so far: about ${balance.calories_out} out.` : ''}`,
-    note: 'Say the figure as an estimate, because it is one — read off a standard effort table, not measured. It does NOT count as a workout and must not be mentioned as one; their weekly training target is untouched. No praise for having gone to work.',
+    note: 'SAY WHAT IT WAS WORTH — the kcal figure, out loud, in the same message. Being told a shift was "logged as activity" with no number is the feature failing: the number is the entire reason to log it. Then read the receipt so they can see it against the day. Say the figure as an estimate, because it is one — read off a standard effort table, not measured. It does NOT count as a workout and must not be mentioned as one; their weekly training target is untouched. No praise for having gone to work.',
     next_actions: ['energy_balance for the full subtraction', 'brief for the day\'s read'],
   };
 }
@@ -1896,10 +1903,16 @@ async function getDay(args, user) {
   // "How many calories do I have today" lands here, and the follow-up is
   // always "how many am I allowed". Answering the second from nothing is how a
   // model ends up inventing a target.
-  const targets = await targetsFor(user.id, profile, day);
+  const [targets, balance] = await Promise.all([
+    targetsFor(user.id, profile, day),
+    balanceFor(user.id, profile, date, day),
+  ]);
   return {
     ...day,
     ...(targets ? { no_target_set: targets } : {}),
+    // "What did I do today" is answered line by line, both sides, with the
+    // subtraction underneath — never as two summary sentences.
+    receipt: dayReceipt({ day, balance, date, today: localDateFor(profile.timezone) }),
     say: day.logged
       ? `${date}: ${day.food.say} · ${day.training.say}`
       : `Nothing logged on ${date}.`,
@@ -3144,6 +3157,10 @@ async function energyBalanceTool(args, user) {
     date, ...balance,
     ...(targets ? { no_target_set: targets } : {}),
     logged: { food: day.food.say, training: day.training.say, steps: day.device.steps },
+    // EVERY LINE WITH ITS OWN NUMBER, both sides, and the subtraction under
+    // them. A total with nothing beside it cannot be checked, and until now
+    // only the eating half had ever been itemised.
+    receipt: dayReceipt({ day, balance, date, today: localDateFor(profile.timezone) }),
     say: balance.say,
     note: targets
       ? 'No daily calorie target is set. If they ask what they are allowed, quote no_target_set exactly and let them pick a pace — never invent a figure or a range. ' + (balance.known
