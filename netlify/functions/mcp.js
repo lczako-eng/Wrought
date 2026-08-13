@@ -41,7 +41,7 @@ import {
   exerciseKey, lastPerformance, progressionCall, TIERS,
   restingBurn, energyBalance, planFromRoutine, sessionTotals, earnedRoom,
   orderPlan, orderInsight, deviceMatrix, weekdayPattern, weekSoFar, goalCall, baselineFromClaim, readiness, nextSetLoad,
-  normaliseMovement, syncSetsFromWorkouts,
+  normaliseMovement, readMovement, syncSetsFromWorkouts,
   ACTIVITY,
   targetOptions,
   PACES, PUSH,
@@ -980,7 +980,11 @@ async function log(args, user) {
   // record, the estimated max and the progression call are computed from. So
   // "log my workout: bench 235 for 4" now counts everywhere a live session
   // would, not just on the day card.
-  await syncSetsFromWorkouts(user.id, written);
+  //
+  // The result is NOT discarded. A swallowed error is worse than a crash —
+  // the 015 postmortem — and here it would mean training that looks logged
+  // and counts for nothing in the lift record.
+  const bridged = await syncSetsFromWorkouts(user.id, written);
 
   const hungry = needsMacros(written, events);
   const untimed = needsDuration(written, events);
@@ -1018,6 +1022,9 @@ async function log(args, user) {
     // Same shape as needs_macros, for the same reason: a session with no
     // minutes on it contributes zero to calories out and looks logged.
     needs_duration: untimed.length ? untimed : undefined,
+    ...(bridged.error ? { sets_error: bridged.error } : {}),
+    ...(bridged.skipped ? { sets_skipped: bridged.skipped, sets_note: bridged.say } : {}),
+    ...(bridged.deduped ? { sets_deduped: true } : {}),
     note: untimed.length && !hungry.length
       ? `Recorded, but ${untimed.map(u => `"${u.summary}"`).join(' and ')} went in with no duration, so ${untimed.length === 1 ? 'it counts' : 'they count'} for NOTHING in calories out. Ask how long it took — one short question, in the same message as the confirmation — then amend_last with the minutes. The server works the calories out from the minutes and their bodyweight; never estimate the calories yourself.`
       : hungry.length
@@ -1103,7 +1110,7 @@ async function amendLast(args, user) {
   const today = localDateFor(profile.timezone);
 
   let q = supabase.from('wrought_events')
-    .select('id, event_type, summary, detail, estimated, raw_input, local_date')
+    .select('id, event_type, summary, detail, estimated, raw_input, local_date, occurred_at')
     .eq('user_id', user.id).eq('local_date', today)
     .order('created_at', { ascending: false }).limit(1);
   if (args.type) q = q.eq('event_type', args.type);
@@ -1152,18 +1159,23 @@ async function amendLast(args, user) {
   // An amended workout re-derives its sets — "that was 235, not 225" has to
   // reach the lift record too, not just the day card. Idempotent under 016:
   // the event's derived sets are replaced, never doubled.
-  if (first.event_type === 'workout') {
-    await syncSetsFromWorkouts(user.id, [{
-      id: prev.id, event_type: 'workout', local_date: prev.local_date,
-      detail: { ...(prev.detail || {}), ...(first.detail || {}) },
-    }]);
-  }
+  // An amended workout re-derives its sets — "that was 235, not 225" has to
+  // reach the lift record too, not just the day card. A type changed AWAY from
+  // workout is passed as well, so its derived sets are cleared rather than
+  // left behind as phantom training.
+  const bridged = await syncSetsFromWorkouts(user.id, [{
+    id: prev.id, event_type: first.event_type, local_date: prev.local_date,
+    occurred_at: prev.occurred_at,
+    detail: { ...(prev.detail || {}), ...(first.detail || {}) },
+  }]);
 
   return {
     amended: true,
     was: prev.summary,
     now: first.summary,
     type: first.event_type,
+    ...(bridged.error ? { sets_error: bridged.error } : {}),
+    ...(bridged.skipped ? { sets_skipped: bridged.skipped, sets_note: bridged.say } : {}),
     say: `Updated: "${prev.summary}" is now "${first.summary}".`,
     note: 'One entry, not two. Acknowledge briefly and move on.',
     next_actions: ['brief later for the day\'s read'],
@@ -1462,7 +1474,7 @@ async function structureEntries(args, user) {
 
   const ids = [...new Set(list.map(e => String(e.id)))];
   const { data: owned } = await supabase.from('wrought_events')
-    .select('id, event_type, summary, detail, local_date, source')
+    .select('id, event_type, summary, detail, local_date, occurred_at, source')
     .eq('user_id', user.id).in('id', ids);
 
   const byId = new Map((owned || []).map(r => [String(r.id), r]));
@@ -1490,22 +1502,26 @@ async function structureEntries(args, user) {
   // A dictated workout, once structured, feeds the set record exactly as a
   // typed one does. Idempotent under 016: re-structuring replaces the derived
   // sets rather than doubling them.
-  const structuredWorkouts = [];
-  for (const u of updated) {
-    if (u.type !== 'workout') continue;
+  // EVERY updated entry, not just the ones that are workouts now. An entry
+  // re-classified AWAY from a workout has to have its derived sets cleared,
+  // or a mis-structured note leaves phantom training in the lift record.
+  const structured = updated.map(u => {
     const prev = byId.get(String(u.id)) || {};
     const incoming = list.find(x => String(x.id) === String(u.id));
-    structuredWorkouts.push({
-      id: u.id, event_type: 'workout', local_date: prev.local_date,
+    return {
+      id: u.id, event_type: u.type, local_date: prev.local_date,
+      occurred_at: prev.occurred_at,
       detail: { ...(prev.detail || {}), ...(incoming?.detail && typeof incoming.detail === 'object' ? incoming.detail : {}) },
-    });
-  }
-  if (structuredWorkouts.length) await syncSetsFromWorkouts(user.id, structuredWorkouts);
+    };
+  });
+  const bridged = structured.length ? await syncSetsFromWorkouts(user.id, structured) : {};
 
   return {
     updated: updated.length,
     entries: updated,
     ...(skipped.length ? { skipped } : {}),
+    ...(bridged.error ? { sets_error: bridged.error } : {}),
+    ...(bridged.skipped ? { sets_skipped: bridged.skipped, sets_note: bridged.say } : {}),
     say: updated.length
       ? `Filled in ${updated.length} thing${updated.length === 1 ? '' : 's'} you told the phone: ${updated.map(u => u.now).join('; ')}.`
       : 'Nothing was filled in.',
@@ -2702,7 +2718,7 @@ async function saveRoutine(args, user) {
   // the inline copy of this had /row|run/ without word boundaries, which
   // classified every barbell ROW and every cRUNch as timed cardio and nulled
   // their sets on save. Two copies of a regex is two chances at that.
-  const shape = normaliseMovement;
+  const shape = e => normaliseMovement(e);
 
   // How a movement reads back, whichever kind it is.
   const describe = e => [
@@ -2769,27 +2785,33 @@ async function saveRoutine(args, user) {
   // So merging is the default: same name updates in place, new names append,
   // and nothing already there is dropped. Removing needs `remove`, and
   // replacing the lot needs `replace: true` — both of them said out loud.
+  // A matching name updates IN PLACE and only in the fields actually supplied.
+  // Spreading a fully-defaulted movement over a stored one blanks its minutes,
+  // detail, cue and load for the sake of changing its reps — "a save never
+  // silently deletes" applies to FIELDS exactly as it applies to movements.
   const merge = (base, incoming) => {
     const out = base.map(e => ({ ...e }));
     for (const inc of incoming) {
-      const at = out.findIndex(e => e.name.toLowerCase() === inc.name.toLowerCase());
-      if (at >= 0) out[at] = { ...out[at], ...inc };
-      else out.push(inc);
+      const nm = String(inc.raw?.name || inc.shaped.name || '').toLowerCase();
+      const at = out.findIndex(e => String(e.name || '').toLowerCase() === nm);
+      if (at >= 0) out[at] = { ...out[at], ...normaliseMovement(inc.raw, { partial: true }) };
+      else out.push(inc.shaped);
     }
     return out;
   };
 
-  const incoming = [
-    ...exercises,
-    ...((Array.isArray(args.add) ? args.add : []).map(shape).filter(e => e.name)),
-  ];
+  const rawIncoming = [
+    ...(Array.isArray(args.exercises) ? args.exercises : []),
+    ...(Array.isArray(args.add) ? args.add : []),
+  ].filter(e => String(e?.name || '').trim());
+  const incoming = rawIncoming.map(raw => ({ raw, shaped: shape(raw) }));
 
   if (existing && !args.from_last_session) {
     exercises = args.replace === true
-      ? (incoming.length ? incoming : existing.exercises || [])
+      ? (incoming.length ? incoming.map(i => i.shaped) : existing.exercises || [])
       : merge(existing.exercises || [], incoming);
   } else if (incoming.length) {
-    exercises = incoming;
+    exercises = incoming.map(i => i.shaped);
   }
 
   // Taking something out is explicit, and it is the only path that shrinks a

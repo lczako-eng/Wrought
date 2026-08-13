@@ -25,7 +25,7 @@
 //   effort. A weight typed into a plan is a guess with a text box around it.
 
 import { getAuthUser, supabase } from './lib/wrought.js';
-import { normaliseMovement } from './lib/training.js';
+import { normaliseMovement, readMovement } from './lib/training.js';
 import { allowed } from './lib/membership.js';
 
 const CORS = {
@@ -39,16 +39,17 @@ const CORS = {
 const ok  = body => ({ statusCode: 200, headers: CORS, body: JSON.stringify(body) });
 const bad = (code, error, say) => ({ statusCode: code, headers: CORS, body: JSON.stringify({ error, say }) });
 
-// ONE normaliser, shared with the save_routine tool — so a routine built on
-// the website and one built by talking are indistinguishable afterwards, and
-// a fixed classification bug is fixed at both doors at once.
+// READ and WRITE are deliberately different functions, and conflating them was
+// a real bug: `readMovement` retires the old 3×8 default on TIMED movements so
+// the screen does not show a rep scheme nobody chose — but running that on the
+// way IN rewrites the stored data of anybody who genuinely programmed a
+// treadmill as intervals, as a side effect of adding an unrelated movement.
+// The judgement belongs on the way out only.
 //
 // Loads pass THROUGH but cannot enter here: the Add box offers no load field,
-// which is the doctrine (a weight typed into a plan is a guess with a text
-// box around it) — but a load already stored by the tool must survive an
-// unrelated edit, because "a save never silently deletes" applies to fields
-// exactly as it applies to movements.
-const shape = normaliseMovement;
+// which is the doctrine (a weight typed into a plan is a guess with a text box
+// around it) — but a load already stored by the tool survives, because "a save
+// never silently deletes" applies to FIELDS exactly as it applies to movements.
 
 export const handler = async (event) => {
   if (event.httpMethod === 'OPTIONS') return { statusCode: 204, headers: CORS, body: '' };
@@ -68,7 +69,7 @@ export const handler = async (event) => {
       .order('last_used_on', { ascending: false, nullsFirst: false });
     return (data || []).map(r => ({
       ...r,
-      exercises: (r.exercises || []).map(shape),
+      exercises: (r.exercises || []).map(readMovement),
       sets: (r.exercises || []).reduce((a, e) => a + (Number(e.sets) || 0), 0),
     }));
   };
@@ -96,7 +97,7 @@ export const handler = async (event) => {
       user_id: user.id, name: name.slice(0, 120),
       kind: body.kind || 'strength',
       tier: body.tier || 'intermediate',
-      exercises: (Array.isArray(body.exercises) ? body.exercises : []).map(shape).filter(e => e.name),
+      exercises: (Array.isArray(body.exercises) ? body.exercises : []).map(e => normaliseMovement(e)).filter(e => e.name),
       notes: body.notes ? String(body.notes).slice(0, 4000) : null,
       est_minutes: Number(body.est_minutes) || null,
       active: true,
@@ -109,13 +110,20 @@ export const handler = async (event) => {
   if (!row) return bad(404, 'not_found', 'That workout is not on file.');
 
   if (action === 'add') {
-    const e = shape(body.exercise || {});
-    if (!e.name) return bad(400, 'name_required', 'Name the movement.');
-    // Same rule as the tool: a matching name updates in place rather than
-    // creating a second row for the same lift.
-    const list0 = (row.exercises || []).map(shape);
-    const at = list0.findIndex(x => x.name.toLowerCase() === e.name.toLowerCase());
-    const next = at >= 0 ? list0.map((x, i) => (i === at ? { ...x, ...e } : x)) : [...list0, e];
+    const name = String(body.exercise?.name || '').trim();
+    if (!name) return bad(400, 'name_required', 'Name the movement.');
+
+    // STORED MOVEMENTS ARE NEVER RE-SHAPED. They are written back exactly as
+    // they were read, so adding calf raises cannot rewrite the treadmill.
+    const list0 = Array.isArray(row.exercises) ? row.exercises : [];
+    const at = list0.findIndex(x => String(x.name || '').toLowerCase() === name.toLowerCase());
+
+    // A matching name updates IN PLACE and only in the fields supplied — a
+    // fully-defaulted object spread over a stored movement blanks its minutes,
+    // detail, cue and load for the sake of changing its reps.
+    const next = at >= 0
+      ? list0.map((x, i) => (i === at ? { ...x, ...normaliseMovement(body.exercise, { partial: true }) } : x))
+      : [...list0, normaliseMovement(body.exercise)];
     const { error } = await supabase.from('wrought_routines')
       .update({ exercises: next, updated_at: new Date().toISOString() }).eq('id', row.id);
     if (error) return bad(400, error.message);
@@ -124,13 +132,14 @@ export const handler = async (event) => {
 
   if (action === 'remove') {
     const at = Number(body.index);
-    const list0 = (row.exercises || []).map(shape);
+    // Raw, again: taking one movement out must not rewrite the others.
+    const list0 = Array.isArray(row.exercises) ? row.exercises : [];
     if (!Number.isInteger(at) || at < 0 || at >= list0.length) return bad(400, 'bad_index');
     const next = list0.filter((_, i) => i !== at);
     const { error } = await supabase.from('wrought_routines')
       .update({ exercises: next, updated_at: new Date().toISOString() }).eq('id', row.id);
     if (error) return bad(400, error.message);
-    return ok({ routines: await list(), removed: list0[at].name });
+    return ok({ routines: await list(), removed: list0[at].name || 'that movement' });
   }
 
   if (action === 'update') {
