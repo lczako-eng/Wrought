@@ -20,6 +20,7 @@ import { nutritionTotals, composition, macroMatrix, yearOverYear } from '../netl
 import { MOVEMENTS, PROGRAMMES, PATTERNS, movementsFor, pickProgramme, buildProgramme } from '../netlify/functions/lib/library.js';
 import {
   exerciseKey, loadStep, progressionCall, nextSetLoad, estimatedMax, TIERS,
+  normaliseMovement, readMovement, setRowsFromWorkout, TIMED_MOVEMENT, _resetEventIdProbe,
   restingBurn, energyBalance, planFromRoutine, sessionTotals, earnedRoom,
   orderPlan, orderInsight, deviceMatrix, weekdayPattern, ACTIVITY, focusCall,
   trainingBurn, targetOptions,
@@ -3945,6 +3946,278 @@ await test('the demo is reachable from inside the app, and has a way back', () =
   assert.match(demo, /whoami-out'\)\.hidden = true/);
 });
 
+group('The bridge — a logged workout reaches the set record');
+
+await test('an after-the-fact workout becomes real sets', () => {
+  // "Log my workout: bench 235 for 4" arrived as ONE event whose exercises
+  // never reached wrought_sets — the grain the lift record, the estimated max
+  // and the progression call are computed from. The person logging by telling
+  // their AI afterwards, which is the most ordinary way to log, had training
+  // that counted for nothing in the one place it matters.
+  const rows = setRowsFromWorkout('u1', {
+    id: 42, event_type: 'workout', local_date: '2026-08-12',
+    detail: { kind: 'strength', muscles: ['chest', 'back'], exercises: [
+      { name: 'Bench press', sets: 3, reps: 8, weight_kg: 106.6 },
+      { name: 'Hammer Strength Row', sets: 2, reps: 8, weight_kg: 99.8 },
+      { name: 'Push-ups', sets: 1, reps: 10 },
+    ] },
+  });
+
+  assert.equal(rows.length, 6, 'sets were not expanded per the claim');
+  // A claim of "3 sets of 8 at 106.6" is faithfully three rows of exactly
+  // that — nothing invented, nothing smeared into a PR.
+  const bench = rows.filter(r => r.exercise === 'Bench press');
+  assert.equal(bench.length, 3);
+  assert.ok(bench.every(r => r.reps === 8 && r.weight_kg === 106.6));
+  assert.deepEqual(bench.map(r => r.set_number), [1, 2, 3]);
+  assert.ok(bench.every(r => r.position === 1));
+  assert.ok(bench.every(r => r.event_id === 42), 'rows are not tied to their event');
+  assert.ok(bench.every(r => r.session_id === null));
+  assert.ok(bench.every(r => r.local_date === '2026-08-12'), 'sets drifted off the workout day');
+  // Bodyweight stays null — never a guessed load.
+  assert.ok(rows.filter(r => r.exercise === 'Push-ups').every(r => r.weight_kg === null));
+});
+
+await test('a session-backed event never derives sets — that would double every workout', () => {
+  // The finaliser writes a workout event FROM real sets; deriving more from it
+  // would count every gym session twice.
+  const rows = setRowsFromWorkout('u1', {
+    id: 43, event_type: 'workout', local_date: '2026-08-12',
+    detail: { session_id: 'sess-1', exercises: [{ name: 'Bench press', sets: 3, reps: 8, weight_kg: 100 }] },
+  });
+  assert.equal(rows.length, 0);
+
+  // No exercises, no sets — "doing my workout" stays a vague day, never rows.
+  assert.equal(setRowsFromWorkout('u1', { id: 44, local_date: '2026-08-12', detail: { exercises: [] } }).length, 0);
+
+  // And a mangled parse is capped, not obeyed.
+  const silly = setRowsFromWorkout('u1', {
+    id: 45, local_date: '2026-08-12',
+    detail: { exercises: [{ name: 'Curl', sets: 900, reps: 8 }] },
+  });
+  assert.equal(silly.length, 10);
+});
+
+await test('every door a workout enters through feeds the bridge', () => {
+  // log (typed or in passing), structure_entries (dictated, structured later),
+  // amend_last (corrected afterwards). Any one missing and that path's
+  // training silently counts for nothing.
+  const mcp = readFileSync(new URL('../netlify/functions/mcp.js', import.meta.url), 'utf8');
+  const logFn = mcp.slice(mcp.indexOf('const written = await insertEvents(user.id, profile, events'), mcp.indexOf('const hungry ='));
+  assert.match(logFn, /syncSetsFromWorkouts\(user\.id, written\)/, 'log does not feed the set record');
+  const structFn = mcp.slice(mcp.indexOf('async function structureEntries('), mcp.indexOf('async function undoLast(') > 0 ? mcp.indexOf('async function undoLast(') : mcp.indexOf('async function structureEntries(') + 4000);
+  assert.match(structFn, /syncSetsFromWorkouts/, 'a dictated workout never reaches the set record');
+  const amendFn = mcp.slice(mcp.indexOf('async function amendLast('), mcp.indexOf('async function amendLast(') + 5000);
+  assert.match(amendFn, /syncSetsFromWorkouts/, 'an amended workout does not re-derive its sets');
+  // And insertEvents hands back the detail the bridge needs.
+  const w = readFileSync(new URL('../netlify/functions/lib/wrought.js', import.meta.url), 'utf8');
+  assert.match(w, /select\('id, event_type, summary, local_date, estimated, detail, occurred_at'\)/);
+});
+
+await test('a barbell row is not cardio, and neither is a crunch', () => {
+  // The inline copies of the timed-movement regex had /row|run/ without word
+  // boundaries: "row" is the front of every barbell row and "run" is the
+  // middle of "crunch", so strength movements were classified as timed and
+  // had their sets silently nulled on save. Data loss by regex.
+  for (const strength of ['Hammer Strength Row', 'Barbell row', 'Seated cable row', 'Crunches', 'Front squat',
+                          "Farmer's walk", 'Farmers walk', 'Walking lunges', 'Suitcase walk']) {
+    assert.ok(!TIMED_MOVEMENT.test(strength), `${strength} was classified as cardio`);
+    const m = normaliseMovement({ name: strength });
+    assert.equal(m.sets, 3, `${strength} lost its default sets`);
+  }
+  for (const timed of ['Incline treadmill walk', 'Rowing machine', 'Rower', 'Assault bike', 'Running', 'Stairmaster', 'Swim']) {
+    assert.ok(TIMED_MOVEMENT.test(timed), `${timed} was not classified as timed`);
+  }
+});
+
+await test('the old 3×8 artifact on a timed movement reads back as unknown', () => {
+  // Before minutes existed every movement was defaulted to 3×8, so a treadmill
+  // stored as EXACTLY that pair with no minutes is the old default wearing a
+  // movement it never described. It reads back as unknown rather than as a rep
+  // scheme nobody chose — and ONLY the exact pair, because rewriting real data
+  // to fit a theory is worse than the artifact.
+  const artifact = readMovement({ name: 'Incline treadmill walk', sets: 3, reps: 8 });
+  assert.equal(artifact.sets, null);
+  assert.equal(artifact.reps, null);
+  assert.equal(artifact.from_default, true);
+
+  const deliberate = readMovement({ name: 'Incline treadmill walk', sets: 4, reps: 10 });
+  assert.equal(deliberate.sets, 4, 'real data was rewritten to fit the theory');
+
+  // With minutes on it the pair is not the artifact.
+  assert.equal(readMovement({ name: 'Rower', sets: 3, reps: 8, minutes: 20 }).sets, 3);
+
+  // AND IT IS A READ-TIME JUDGEMENT ONLY. Running it on the way IN would
+  // rewrite the stored data of anybody who genuinely programmed a treadmill as
+  // intervals, as a side effect of an unrelated edit.
+  assert.equal(normaliseMovement({ name: 'Incline treadmill walk', sets: 3, reps: 8 }).sets, 3,
+    'the artifact rule leaked into the write path');
+
+  // And the dashboard read path uses the read shape.
+  const api = readFileSync(new URL('../netlify/functions/api-progress.js', import.meta.url), 'utf8');
+  assert.match(api, /readMovement\(e\)/, 'the Record tab reads movements raw');
+  assert.match(api, /minutes: m\.minutes, detail: m\.detail/, 'minutes and detail are dropped on the read');
+});
+
+await test('the conversation is not the record', () => {
+  // "What did I do today" was answered from the chat's own memory of the
+  // workout — confidently, completely, and without ever noticing that none of
+  // it had landed. The phrasebook maps the question to the tool, and says why.
+  assert.match(SERVER_INSTRUCTIONS, /"what did I do today"/);
+  assert.match(SERVER_INSTRUCTIONS, /THE CONVERSATION IS NOT THE RECORD/);
+  assert.match(SERVER_INSTRUCTIONS, /hides exactly the entries that failed to land/);
+});
+
+group('The bridge, as an adversarial review left it');
+
+await test('a derived set is stamped with the WORKOUT\'s time, never the sync\'s', () => {
+  // lastPerformance orders by logged_at and reads the newest row's date as
+  // "last session". Stamping a Monday workout — structured on Thursday, which
+  // is the ordinary case for dictated entries — with Thursday's clock makes it
+  // outrank a real Wednesday session, and progressionCall then prescribes from
+  // the older, lighter day.
+  const rows = setRowsFromWorkout('u1', {
+    id: 7, event_type: 'workout', local_date: '2026-08-10',
+    occurred_at: '2026-08-10T18:30:00.000Z',
+    detail: { exercises: [{ name: 'Bench press', sets: 2, reps: 8, weight_kg: 90 }] },
+  });
+  assert.ok(rows.every(r => r.logged_at === '2026-08-10T18:30:00.000Z'),
+    'derived sets carry the sync time instead of the workout time');
+
+  // No timestamp: midday on its own date still orders correctly against other
+  // days, which is all that matters.
+  const noTime = setRowsFromWorkout('u1', {
+    id: 8, event_type: 'workout', local_date: '2026-08-10',
+    detail: { exercises: [{ name: 'Row', sets: 1, reps: 8 }] },
+  });
+  assert.equal(noTime[0].logged_at, '2026-08-10T12:00:00.000Z');
+});
+
+await test('a day already covered by a live session is not derived over', () => {
+  // Training set by set and then re-telling the same workout would otherwise
+  // write a second copy beside the real one, and every read that keys sessions
+  // by session-id-or-date would see two sessions on one day.
+  const ev = {
+    id: 9, event_type: 'workout', local_date: '2026-08-12',
+    detail: { exercises: [
+      { name: 'Bench press', sets: 3, reps: 8, weight_kg: 100 },
+      { name: 'Lateral raise', sets: 3, reps: 12, weight_kg: 10 },
+    ] },
+  };
+  const all = setRowsFromWorkout('u1', ev);
+  assert.equal(all.length, 6);
+
+  const partial = setRowsFromWorkout('u1', ev, { skipExercises: [exerciseKey('Bench press')] });
+  assert.ok(partial.every(r => r.exercise !== 'Bench press'), 'the live bench was derived over');
+  assert.equal(partial.length, 3, 'the untouched movement was dropped too');
+});
+
+await test('the bridge refuses to run without the migration that makes it safe', async () => {
+  // Without event_id there is no way to identify an event's own derived rows,
+  // so a re-sync could only ever ADD a second copy — an amend of "that was
+  // 105, not 100" would leave both, and the corrected-away number would keep
+  // feeding every strength read forever. A feature waiting on a migration is
+  // a small cost; a lift record quietly holding retracted numbers is not
+  // recoverable by the person it happens to.
+  const t = readFileSync(new URL('../netlify/functions/lib/training.js', import.meta.url), 'utf8');
+  const fn = t.slice(t.indexOf('export async function syncSetsFromWorkouts'));
+  assert.match(fn, /skipped: 'needs_migration'/);
+  assert.match(fn, /if \(!\(await setsCanBeTracked\(\)\)\)/);
+  assert.ok(!/event_id/.test(fn.slice(fn.indexOf('needs_migration'), fn.indexOf('const ids ='))),
+    'a fallback insert without event_id is back');
+
+  // INSERT FIRST, THEN DELETE. Delete-then-insert is two round trips with no
+  // transaction: a timeout after the delete erases a workout's whole set
+  // record. Reversed, the worst case is a visible duplicate.
+  const ins = fn.indexOf(".insert(all)");
+  const del = fn.indexOf(".delete()");
+  assert.ok(ins > 0 && del > ins, 'the delete still runs before the insert');
+  // And the delete is scoped by user as well as event id.
+  assert.match(fn, /\.eq\('user_id', userId\)\.in\('event_id', ids\)/);
+});
+
+await test('every caller surfaces what the bridge did, and never swallows it', () => {
+  // A swallowed error is worse than a crash — the 015 postmortem. Here it
+  // would mean training that looks logged and counts for nothing.
+  const mcp = readFileSync(new URL('../netlify/functions/mcp.js', import.meta.url), 'utf8');
+  for (const [fn, next] of [
+    ['async function log(', 'async function parseLog('],
+    ['async function amendLast(', 'async function structureEntries('],
+    ['async function structureEntries(', 'async function undoLast('],
+  ]) {
+    const at = mcp.indexOf(fn);
+    const end = mcp.indexOf(next) > at ? mcp.indexOf(next) : at + 6000;
+    const body = mcp.slice(at, end);
+    if (!/syncSetsFromWorkouts/.test(body)) continue;
+    assert.ok(!/^\s*await syncSetsFromWorkouts/m.test(body), `${fn} discards the bridge result`);
+    assert.match(body, /sets_error/, `${fn} never surfaces a bridge error`);
+  }
+});
+
+await test('a re-classified entry has its derived sets cleared, not orphaned', () => {
+  // A mis-structured note that used to be a workout must not leave phantom
+  // training in the lift record. So non-workout events are still PASSED to the
+  // sync — they derive nothing and delete what they used to.
+  const t = readFileSync(new URL('../netlify/functions/lib/training.js', import.meta.url), 'utf8');
+  const fn = t.slice(t.indexOf('export async function syncSetsFromWorkouts'));
+  assert.match(fn, /if \(ev\.event_type !== 'workout'\) continue;\s*\/\/ a cleared type: delete only/);
+  // The early return is on "no events", never on "no rows to write" — an
+  // amend that empties the exercises must still clear what it derived.
+  assert.match(fn, /const touched = events\.filter\(e => e\?\.id != null\);/);
+  assert.ok(!/if \(!all\.length\) return/.test(fn), 'an emptied workout keeps its old sets');
+
+  const mcp = readFileSync(new URL('../netlify/functions/mcp.js', import.meta.url), 'utf8');
+  const struct = mcp.slice(mcp.indexOf('async function structureEntries('), mcp.indexOf('async function undoLast('));
+  assert.ok(!/if \(u\.type !== 'workout'\) continue/.test(struct),
+    'structure_entries still skips re-classified entries');
+});
+
+await test('editing one movement never rewrites the others', () => {
+  // Both add and remove used to re-shape and persist the WHOLE list, so a
+  // treadmill deliberately programmed 3×8 was rewritten to null as a side
+  // effect of adding calf raises. One tap destroying data in movements the
+  // user never touched.
+  const api = readFileSync(new URL('../netlify/functions/api-routines.js', import.meta.url), 'utf8');
+  const add = api.slice(api.indexOf("if (action === 'add')"), api.indexOf("if (action === 'remove')"));
+  const rem = api.slice(api.indexOf("if (action === 'remove')"), api.indexOf("if (action === 'update')"));
+  for (const [name, body] of [['add', add], ['remove', rem]]) {
+    assert.match(body, /Array\.isArray\(row\.exercises\) \? row\.exercises : \[\]/,
+      `${name} re-shapes the stored list`);
+    assert.ok(!/\.map\(shape\)/.test(body), `${name} still re-shapes stored movements`);
+  }
+  // The read path is where the judgement belongs.
+  assert.match(api, /\.map\(readMovement\)/);
+});
+
+await test('a partial update changes only what was said', () => {
+  // A fully-defaulted object spread over a stored movement blanks its minutes,
+  // detail, cue and load for the sake of changing its reps.
+  const stored = { name: 'Rower', sets: null, reps: null, minutes: 20,
+                   detail: 'level 5', cue: 'long strokes', load_kg: null,
+                   rest_s: 90, muscles: ['back'] };
+  const patch = normaliseMovement({ name: 'Rower', sets: 3, reps: 8 }, { partial: true });
+  const merged = { ...stored, ...patch };
+
+  assert.equal(merged.sets, 3);
+  assert.equal(merged.reps, 8);
+  assert.equal(merged.cue, 'long strokes', 'the cue was blanked');
+  assert.equal(merged.rest_s, 90, 'the rest was blanked');
+  assert.deepEqual(merged.muscles, ['back'], 'the muscles were blanked');
+
+  // Switching a timed movement to sets DOES clear the minutes, or it would
+  // claim both and the screen would contradict itself.
+  assert.equal(merged.minutes, null);
+
+  // And the reverse: giving minutes clears sets and reps.
+  const toTime = normaliseMovement({ name: 'Bench press', minutes: 15 }, { partial: true });
+  assert.equal(toTime.minutes, 15);
+  assert.equal(toTime.sets, null);
+  assert.equal(toTime.reps, null);
+
+  // Nothing supplied changes nothing at all.
+  assert.deepEqual(normaliseMovement({ name: 'Rower' }, { partial: true }), { name: 'Rower' });
+});
+
 group('A saved workout, edited from either door');
 
 await test('a save can never silently delete what is already there', () => {
@@ -3974,8 +4247,14 @@ await test('a treadmill walk is not three sets of eight', () => {
   const mcp = readFileSync(new URL('../netlify/functions/mcp.js', import.meta.url), 'utf8');
   const fn = mcp.slice(mcp.indexOf('async function saveRoutine('), mcp.indexOf('async function listRoutines('));
   assert.match(fn, /NOT EVERYTHING IS SETS AND REPS/);
-  assert.match(fn, /treadmill\|bike\|row/);
-  assert.match(fn, /sets and reps stay NULL/);
+  // ONE normaliser now, shared with the website door — behaviour is asserted
+  // on the function itself below, not on a copied regex.
+  assert.match(fn, /const shape = e => normaliseMovement\(e\);/);
+  const walk = normaliseMovement({ name: 'Incline treadmill walk', minutes: 25, detail: 'level 10+, 2.5-3 mph' });
+  assert.equal(walk.sets, null);
+  assert.equal(walk.reps, null);
+  assert.equal(walk.minutes, 25);
+  assert.equal(walk.detail, 'level 10+, 2.5-3 mph');
 
   const tool = TOOLS.find(t => t.name === 'save_routine');
   const item = tool.inputSchema.properties.exercises.items.properties;

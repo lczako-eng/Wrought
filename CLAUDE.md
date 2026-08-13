@@ -1671,6 +1671,80 @@ figure the whole plan rests on. They get their own thirty days whatever the
 buttons say. Third time this rule has had to be applied: **a window is not a
 memory.**
 
+### The bridge — a workout logged afterwards reaches the set record
+
+`setRowsFromWorkout()` / `syncSetsFromWorkouts()` in `lib/training.js` +
+`016_wrought_set_source.sql`. The founder asked *"what did I do today"* and
+ChatGPT recited the whole session from its own chat memory — bench, rows,
+treadmill — while **none of it stood in the record that matters.** A workout
+logged after the fact arrives as ONE event whose `detail.exercises` carries
+the lifts, and those exercises never reached `wrought_sets`: the grain the
+lift record, the estimated max, `orderInsight` and `progressionCall` are all
+computed from. The person logging by telling their AI afterwards — the most
+ordinary way to log — had training that counted for nothing in the one place
+it matters.
+
+- **The event's claim is expanded faithfully, never embellished.** "3 sets of
+  8 at 100" becomes exactly three rows of 8×100; a missing weight stays null.
+- **A session-backed event derives nothing** — the finaliser wrote it FROM
+  real sets, and deriving more would double every gym session.
+- **`event_id` (016) makes it idempotent**, and **the bridge refuses to run
+  until that migration exists.** Without the column there is no way to identify
+  an event's own derived rows, so a re-sync could only ever ADD a second copy —
+  an amend of *"that was 105, not 100"* would leave both, and the number the
+  amend explicitly corrected away would keep feeding the lift record, the max
+  and every progression call forever. The 015 lesson says a door must be
+  correct before the SQL runs; here correct means **not corrupting**, and a
+  feature that waits is a far smaller cost than a strength record quietly
+  holding retracted numbers nobody can find.
+- **Insert first, then delete the old.** Delete-then-insert is two round trips
+  with no transaction between them: a timeout after the delete erases a
+  workout's whole set record. Reversed, the worst case is a visible duplicate
+  the next sync cleans up. And **no caller discards the result** — a swallowed
+  error here is training that looks logged and counts for nothing.
+- **`logged_at` is the workout's own time, never the sync's.** `lastPerformance`
+  orders by it, so a Monday session structured on Thursday would otherwise
+  outrank a real Wednesday one and `progressionCall` would prescribe from the
+  older, lighter day. Structuring days-old dictation is this feature's ordinary
+  case, not an edge one.
+- **A day already covered by a live session is left alone.** Training set by
+  set and then re-telling the same workout would write a second copy beside the
+  real one, and every read keyed by session-id-or-date would see two sessions.
+- **A re-classified entry is cleared, not orphaned.** Non-workout events are
+  still passed to the sync: they derive nothing and delete what they used to,
+  so a mis-structured note leaves no phantom training behind.
+- **Every door feeds it**: `log` (typed or in passing), `structure_entries`
+  (dictated), `amend_last` (corrected later).
+- **The conversation is not the record.** The phrasebook maps *"what did I do
+  today"* to the tool and says why: reciting the chat back hides exactly the
+  entries that failed to land.
+
+### One movement normaliser, and the regex that was eating crunches
+
+`normaliseMovement()` + `TIMED_MOVEMENT` in `lib/training.js`, used by
+`save_routine`, `api-routines` and `api-progress` alike. The inline copies of
+the timed-movement pattern had `/row|run/` without word boundaries: **"row" is
+the front of every barbell row and "run" is the middle of "crunch"**, so
+strength movements were classified as cardio and had their sets silently
+nulled on save. Word boundaries plus lookarounds — a **Farmer's walk** and
+**walking lunges** are loaded strength movements that merely contain "walk".
+
+The old save defaulted every movement to 3×8, so a timed movement stored as
+EXACTLY that pair with no minutes is the artifact of a default that never
+described it — it reads back as unknown. **Only the exact pair**: somebody who
+genuinely stored 4×10 on a timed movement keeps it, because rewriting real
+data to fit a theory is worse than the artifact.
+
+**READ and WRITE are separate functions, and conflating them was a real bug.**
+`readMovement` retires that artifact on the way OUT. Running the same
+judgement on the way IN rewrote the stored data of anybody who had genuinely
+programmed a treadmill as intervals — as a side effect of adding an unrelated
+movement. Both routine doors now write stored movements back exactly as they
+were read, and **a partial update changes only the fields actually supplied**:
+a fully-defaulted object spread over a stored movement blanks its minutes,
+detail, cue and load for the sake of changing its reps. *A save never silently
+deletes* applies to FIELDS exactly as it applies to movements.
+
 ### A saved workout, edited from either door
 
 *"Didn't save all the info — some of it saved."* Two faults, and the first one
@@ -2105,7 +2179,7 @@ self-reporting scale removes the most-abandoned manual entry), then Strava.
 
 ## Conventions
 
-- `npm test` runs `test/harness.mjs` — 509 offline tests, no network, no database.
+- `npm test` runs `test/harness.mjs` — 522 offline tests, no network, no database.
   Run it before every push. It covers the JSON-RPC envelope (which fails as an
   uninformative "could not connect" inside ChatGPT) and all the arithmetic
   (which fails as a confidently wrong number in somebody's verdict).
@@ -2127,7 +2201,7 @@ self-reporting scale removes the most-abandoned manual entry), then Strava.
    `003_wrought_training.sql`, `004_wrought_fasting.sql`,
    `005_wrought_activity.sql`, `006_wrought_identity.sql`, `007_wrought_push.sql`,
    `008_wrought_blocks.sql`, `009_wrought_photos.sql` and
-   `010_wrought_profile_web.sql`, `011_wrought_membership.sql`, `012_wrought_link_codes.sql`, `013_wrought_work.sql`, `014_wrought_plan.sql` and `015_wrought_ingest_dedupe_fix.sql` in Supabase. Full checklist in `docs/SETUP.md`.
+   `010_wrought_profile_web.sql`, `011_wrought_membership.sql`, `012_wrought_link_codes.sql`, `013_wrought_work.sql`, `014_wrought_plan.sql` `015_wrought_ingest_dedupe_fix.sql` and `016_wrought_set_source.sql` in Supabase. Full checklist in `docs/SETUP.md`.
 3. Set env vars in Netlify: `SUPABASE_URL` (**no trailing slash** — Kong answers
    "Invalid path specified in request URL" and nothing says why),
    `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_ANON_KEY`,

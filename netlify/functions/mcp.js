@@ -41,6 +41,7 @@ import {
   exerciseKey, lastPerformance, progressionCall, TIERS,
   restingBurn, energyBalance, planFromRoutine, sessionTotals, earnedRoom,
   orderPlan, orderInsight, deviceMatrix, weekdayPattern, weekSoFar, goalCall, baselineFromClaim, readiness, nextSetLoad,
+  normaliseMovement, readMovement, syncSetsFromWorkouts,
   ACTIVITY,
   targetOptions,
   PACES, PUSH,
@@ -149,7 +150,7 @@ The tell is the subject, not the spelling. "What's my route to the gym" is direc
 HOW PEOPLE ACTUALLY ASK. Nobody says "call the brief tool". They say one of a hundred things, half of them sideways, most of them while doing something else. Treat all of these as the named tool, without asking which they meant:
 "what should I be running", "give me a plan", "what am I doing for the next two months", "I need a programme to follow" mean start_block; "what am I doing today", "what week am I on", "how far through am I" mean block_status.
 
-  brief — "how am I doing", "how'd I do", "how was today", "what's the damage", "read me back", "give me the verdict", "the honest version", "morning", "night", "bedtime", "hit me", "am I on track", "how's the week", "recap", "the score", "how bad was it", "gym bro", "hey gym bro", "jim bro", "hey jim bro", "broski", "broheim", "coach", "hey coach", "trainer", "give it to me straight", "don't sugarcoat it", "roast me", "be honest with me"
+  brief — "how am I doing", "how'd I do", "how was today", "what's the damage", "read me back", "give me the verdict", "the honest version", "morning", "night", "bedtime", "hit me", "am I on track", "how's the week", "recap", "the score", "how bad was it", "gym bro", "hey gym bro", "jim bro", "hey jim bro", "broski", "broheim", "coach", "hey coach", "trainer", "give it to me straight", "don't sugarcoat it", "roast me", "be honest with me", "what did I do today", "did I train today", "what did I log today", "what did I eat today". THE CONVERSATION IS NOT THE RECORD: even when the whole workout was discussed in this very chat, answer these from the tool — what the server holds is what actually counts, and reciting the chat back hides exactly the entries that failed to land.
   whats_next — "what should I eat", "what now", "can I have a snack", "I'm hungry", "is there room", "should I train", "what do I need", "how much protein left", "am I allowed", "talk me out of it", "it's late and I'm at the fridge"
   progress — "am I actually progressing", "show me the trend", "how's the month", "is it working", "what's moving", "charts", "the numbers", "am I wasting my time"
   suggest_workout / programmes — "what should I train", "give me a workout", "what's today", "programme me", "build me something", "I've got 40 minutes", "what am I neglecting", "proper programme", "what should I be running"
@@ -973,6 +974,18 @@ async function log(args, user) {
   const structuredBy = supplied ? 'client' : parsed ? 'server' : 'none';
 
   const written = await insertEvents(user.id, profile, events, { rawInput: text });
+
+  // THE BRIDGE. A workout logged after the fact carries its exercises on the
+  // event, and until now they never reached wrought_sets — the grain the lift
+  // record, the estimated max and the progression call are computed from. So
+  // "log my workout: bench 235 for 4" now counts everywhere a live session
+  // would, not just on the day card.
+  //
+  // The result is NOT discarded. A swallowed error is worse than a crash —
+  // the 015 postmortem — and here it would mean training that looks logged
+  // and counts for nothing in the lift record.
+  const bridged = await syncSetsFromWorkouts(user.id, written);
+
   const hungry = needsMacros(written, events);
   const untimed = needsDuration(written, events);
 
@@ -1009,6 +1022,9 @@ async function log(args, user) {
     // Same shape as needs_macros, for the same reason: a session with no
     // minutes on it contributes zero to calories out and looks logged.
     needs_duration: untimed.length ? untimed : undefined,
+    ...(bridged.error ? { sets_error: bridged.error } : {}),
+    ...(bridged.skipped ? { sets_skipped: bridged.skipped, sets_note: bridged.say } : {}),
+    ...(bridged.deduped ? { sets_deduped: true } : {}),
     note: untimed.length && !hungry.length
       ? `Recorded, but ${untimed.map(u => `"${u.summary}"`).join(' and ')} went in with no duration, so ${untimed.length === 1 ? 'it counts' : 'they count'} for NOTHING in calories out. Ask how long it took — one short question, in the same message as the confirmation — then amend_last with the minutes. The server works the calories out from the minutes and their bodyweight; never estimate the calories yourself.`
       : hungry.length
@@ -1094,7 +1110,7 @@ async function amendLast(args, user) {
   const today = localDateFor(profile.timezone);
 
   let q = supabase.from('wrought_events')
-    .select('id, event_type, summary, detail, estimated, raw_input, local_date')
+    .select('id, event_type, summary, detail, estimated, raw_input, local_date, occurred_at')
     .eq('user_id', user.id).eq('local_date', today)
     .order('created_at', { ascending: false }).limit(1);
   if (args.type) q = q.eq('event_type', args.type);
@@ -1140,11 +1156,26 @@ async function amendLast(args, user) {
   }).eq('id', prev.id);
   if (error) return { error: error.message };
 
+  // An amended workout re-derives its sets — "that was 235, not 225" has to
+  // reach the lift record too, not just the day card. Idempotent under 016:
+  // the event's derived sets are replaced, never doubled.
+  // An amended workout re-derives its sets — "that was 235, not 225" has to
+  // reach the lift record too, not just the day card. A type changed AWAY from
+  // workout is passed as well, so its derived sets are cleared rather than
+  // left behind as phantom training.
+  const bridged = await syncSetsFromWorkouts(user.id, [{
+    id: prev.id, event_type: first.event_type, local_date: prev.local_date,
+    occurred_at: prev.occurred_at,
+    detail: { ...(prev.detail || {}), ...(first.detail || {}) },
+  }]);
+
   return {
     amended: true,
     was: prev.summary,
     now: first.summary,
     type: first.event_type,
+    ...(bridged.error ? { sets_error: bridged.error } : {}),
+    ...(bridged.skipped ? { sets_skipped: bridged.skipped, sets_note: bridged.say } : {}),
     say: `Updated: "${prev.summary}" is now "${first.summary}".`,
     note: 'One entry, not two. Acknowledge briefly and move on.',
     next_actions: ['brief later for the day\'s read'],
@@ -1443,7 +1474,7 @@ async function structureEntries(args, user) {
 
   const ids = [...new Set(list.map(e => String(e.id)))];
   const { data: owned } = await supabase.from('wrought_events')
-    .select('id, event_type, summary, detail, local_date, source')
+    .select('id, event_type, summary, detail, local_date, occurred_at, source')
     .eq('user_id', user.id).in('id', ids);
 
   const byId = new Map((owned || []).map(r => [String(r.id), r]));
@@ -1468,10 +1499,29 @@ async function structureEntries(args, user) {
     else updated.push({ id: prev.id, was: prev.summary, now: String(e.summary || prev.summary), type });
   }
 
+  // A dictated workout, once structured, feeds the set record exactly as a
+  // typed one does. Idempotent under 016: re-structuring replaces the derived
+  // sets rather than doubling them.
+  // EVERY updated entry, not just the ones that are workouts now. An entry
+  // re-classified AWAY from a workout has to have its derived sets cleared,
+  // or a mis-structured note leaves phantom training in the lift record.
+  const structured = updated.map(u => {
+    const prev = byId.get(String(u.id)) || {};
+    const incoming = list.find(x => String(x.id) === String(u.id));
+    return {
+      id: u.id, event_type: u.type, local_date: prev.local_date,
+      occurred_at: prev.occurred_at,
+      detail: { ...(prev.detail || {}), ...(incoming?.detail && typeof incoming.detail === 'object' ? incoming.detail : {}) },
+    };
+  });
+  const bridged = structured.length ? await syncSetsFromWorkouts(user.id, structured) : {};
+
   return {
     updated: updated.length,
     entries: updated,
     ...(skipped.length ? { skipped } : {}),
+    ...(bridged.error ? { sets_error: bridged.error } : {}),
+    ...(bridged.skipped ? { sets_skipped: bridged.skipped, sets_note: bridged.say } : {}),
     say: updated.length
       ? `Filled in ${updated.length} thing${updated.length === 1 ? '' : 's'} you told the phone: ${updated.map(u => u.now).join('; ')}.`
       : 'Nothing was filled in.',
@@ -2664,23 +2714,11 @@ async function saveRoutine(args, user) {
   // carry `minutes` and a free-text `detail` ("level 10+, 2.5–3 mph"), and when
   // it does, sets and reps stay NULL rather than being filled with a default
   // that describes nothing.
-  const shape = (e) => {
-    const minutes = Number(e.minutes) > 0 ? Math.round(Number(e.minutes)) : null;
-    const timed = minutes != null || /treadmill|bike|row(er)?|elliptical|walk|run|stair|cardio|swim/i.test(String(e.name || ''));
-    return {
-      name: String(e.name || '').trim(),
-      sets: e.sets != null ? Number(e.sets) || null : (timed ? null : 3),
-      reps: e.reps != null ? e.reps : (timed ? null : 8),
-      minutes,
-      // How it is actually set up. Kept verbatim, because "level 10+, 2.5–3 mph"
-      // is the whole instruction and there is no field that decomposes it well.
-      detail: e.detail ? String(e.detail).slice(0, 200) : null,
-      load_kg: e.load_kg ?? null,
-      rest_s: Number(e.rest_s) || 120,
-      muscles: Array.isArray(e.muscles) ? e.muscles : [],
-      cue: e.cue || null,
-    };
-  };
+  // ONE normaliser, shared with the website's editing door (lib/training.js) —
+  // the inline copy of this had /row|run/ without word boundaries, which
+  // classified every barbell ROW and every cRUNch as timed cardio and nulled
+  // their sets on save. Two copies of a regex is two chances at that.
+  const shape = e => normaliseMovement(e);
 
   // How a movement reads back, whichever kind it is.
   const describe = e => [
@@ -2747,27 +2785,33 @@ async function saveRoutine(args, user) {
   // So merging is the default: same name updates in place, new names append,
   // and nothing already there is dropped. Removing needs `remove`, and
   // replacing the lot needs `replace: true` — both of them said out loud.
+  // A matching name updates IN PLACE and only in the fields actually supplied.
+  // Spreading a fully-defaulted movement over a stored one blanks its minutes,
+  // detail, cue and load for the sake of changing its reps — "a save never
+  // silently deletes" applies to FIELDS exactly as it applies to movements.
   const merge = (base, incoming) => {
     const out = base.map(e => ({ ...e }));
     for (const inc of incoming) {
-      const at = out.findIndex(e => e.name.toLowerCase() === inc.name.toLowerCase());
-      if (at >= 0) out[at] = { ...out[at], ...inc };
-      else out.push(inc);
+      const nm = String(inc.raw?.name || inc.shaped.name || '').toLowerCase();
+      const at = out.findIndex(e => String(e.name || '').toLowerCase() === nm);
+      if (at >= 0) out[at] = { ...out[at], ...normaliseMovement(inc.raw, { partial: true }) };
+      else out.push(inc.shaped);
     }
     return out;
   };
 
-  const incoming = [
-    ...exercises,
-    ...((Array.isArray(args.add) ? args.add : []).map(shape).filter(e => e.name)),
-  ];
+  const rawIncoming = [
+    ...(Array.isArray(args.exercises) ? args.exercises : []),
+    ...(Array.isArray(args.add) ? args.add : []),
+  ].filter(e => String(e?.name || '').trim());
+  const incoming = rawIncoming.map(raw => ({ raw, shaped: shape(raw) }));
 
   if (existing && !args.from_last_session) {
     exercises = args.replace === true
-      ? (incoming.length ? incoming : existing.exercises || [])
+      ? (incoming.length ? incoming.map(i => i.shaped) : existing.exercises || [])
       : merge(existing.exercises || [], incoming);
   } else if (incoming.length) {
-    exercises = incoming;
+    exercises = incoming.map(i => i.shaped);
   }
 
   // Taking something out is explicit, and it is the only path that shrinks a

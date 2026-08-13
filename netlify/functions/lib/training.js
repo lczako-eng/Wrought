@@ -1491,3 +1491,276 @@ export function estimatedMax(weightKg, reps) {
   if (!Number.isFinite(w) || w <= 0 || !Number.isFinite(r) || r < 1) return null;
   return Math.round(w * (1 + Math.min(r, 12) / 30) * 10) / 10;
 }
+
+// ── Timed movements, and the artifact the old default left behind ───────────
+// WORD BOUNDARIES, because the first version of this pattern lived inline in
+// two files as /treadmill|bike|row(er)?|...|run|.../ and matched far more than
+// it meant to: "row" is the front of "Hammer Strength Row" and every barbell
+// row — strength movements, not cardio — and "run" is the middle of "crunch".
+// A crunch classified as timed work gets its sets nulled, which is data loss
+// by regex.
+//
+// And the boundaries are not quite enough on their own: a FARMER'S WALK and
+// WALKING LUNGES are loaded strength movements that happen to contain the
+// word "walk". The lookarounds carve those out — a carry is sets and reps,
+// whatever the word inside it says.
+export const TIMED_MOVEMENT =
+  /\b(treadmill|bike|biking|cycling|spin|rower|rowing|erg|elliptical|(?<!farmer'?s\s)(?<!loaded\s)(?<!suitcase\s)walk(ing)?(?!\s*lunge)|run(ning)?(?!\s*lunge)|jog(ging)?|stairs?|stairmaster|cardio|swim(ming)?)\b/i;
+
+/**
+ * One movement, shaped for STORAGE. Shared by every door that writes a routine
+ * so a fixed classification bug is fixed at all of them at once.
+ *
+ * PARTIAL IS THE MODE THAT MATTERS. Merging an update into a stored movement
+ * used to spread a fully-defaulted object over it, so "change the rower to 3
+ * sets of 8" overwrote the stored minutes, detail, cue, muscles and load with
+ * the defaults for fields nobody mentioned. A save never silently deletes, and
+ * that applies to FIELDS exactly as it applies to movements — so in partial
+ * mode only the keys actually supplied come back.
+ */
+export function normaliseMovement(e = {}, { partial = false } = {}) {
+  const has = k => e[k] !== undefined && e[k] !== '';
+  const minutes = Number(e.minutes) > 0 ? Math.round(Number(e.minutes)) : null;
+  const timed = minutes != null || TIMED_MOVEMENT.test(String(e.name || ''));
+
+  if (partial) {
+    const out = {};
+    if (e.name != null)   out.name = String(e.name).trim().slice(0, 120);
+    if (has('sets'))      out.sets = Number(e.sets) || null;
+    if (has('reps'))      out.reps = e.reps;
+    if (has('minutes'))   out.minutes = minutes;
+    if (has('detail'))    out.detail = e.detail ? String(e.detail).slice(0, 200) : null;
+    if (has('load_kg'))   out.load_kg = e.load_kg;
+    if (has('rest_s'))    out.rest_s = Number(e.rest_s) || 120;
+    if (Array.isArray(e.muscles)) out.muscles = e.muscles;
+    if (has('cue'))       out.cue = e.cue ? String(e.cue).slice(0, 300) : null;
+
+    // Supplying minutes for something previously counted in sets — or sets for
+    // something previously timed — has to clear the other, or the movement
+    // ends up claiming both and the screen shows a contradiction.
+    if (has('minutes') && !has('sets')) { out.sets = null; out.reps = null; }
+    if (has('sets') && !has('minutes')) out.minutes = null;
+    return out;
+  }
+
+  return {
+    name: String(e.name || '').trim().slice(0, 120),
+    sets: has('sets') ? Number(e.sets) || null : (timed ? null : 3),
+    reps: has('reps') ? e.reps : (timed ? null : 8),
+    minutes,
+    // How it is actually set up. Kept verbatim, because "level 10+, 2.5–3 mph"
+    // is the whole instruction and no sets/reps field decomposes it well.
+    detail: e.detail ? String(e.detail).slice(0, 200) : null,
+    load_kg: e.load_kg ?? null,
+    rest_s: Number(e.rest_s) || 120,
+    muscles: Array.isArray(e.muscles) ? e.muscles : [],
+    cue: e.cue ? String(e.cue).slice(0, 300) : null,
+  };
+}
+
+/**
+ * One movement, shaped for DISPLAY.
+ *
+ * READ ONLY, and that separation is the whole point. Before minutes existed
+ * every movement was defaulted to sets 3, reps 8, so a timed movement stored
+ * as precisely that pair with no minutes is the old default wearing a movement
+ * it never described. Showing it as "3×8" is showing somebody a rep scheme
+ * nobody chose — but WRITING that judgement back would rewrite the stored data
+ * of anybody who genuinely programmed a treadmill as intervals, as a side
+ * effect of an unrelated edit. So the retirement happens on the way out and
+ * never on the way in.
+ */
+export function readMovement(e = {}) {
+  const m = normaliseMovement(e);
+  const timed = m.minutes != null || TIMED_MOVEMENT.test(m.name);
+  if (timed && m.minutes == null && m.sets === 3 && Number(m.reps) === 8) {
+    return { ...m, sets: null, reps: null, from_default: true };
+  }
+  return m;
+}
+
+// ── The bridge from a logged workout to the set record ──────────────────────
+// A workout logged AFTER THE FACT — "log my workout: bench 235 for 4, rows
+// 220 for 8" — arrives as one event whose detail carries the exercises, and
+// until this existed those exercises never reached wrought_sets: the grain
+// the lift record, the estimated max, last session and progressionCall are
+// all computed from. So the person logging by telling their AI afterwards —
+// the most ordinary way to log — had training that counted for nothing in
+// the one place it matters.
+
+/**
+ * The set rows a workout event implies. Pure, so the harness can hold it.
+ *
+ * "bench, 3 sets of 8 at 100" is a claim about three sets, and expanding it
+ * into three rows of 8×100 is a faithful expansion of exactly what was said —
+ * nothing is invented, the top set is not smeared into a PR, and a missing
+ * weight stays null rather than becoming a guess.
+ *
+ * LOGGED_AT IS THE WORKOUT'S OWN TIME, never now(). lastPerformance orders by
+ * logged_at and reads the newest row's date as "last session", so stamping a
+ * Monday workout structured on Thursday with Thursday's clock makes it
+ * outrank a real Wednesday session — and progressionCall then prescribes from
+ * the older, lighter day. Structuring days-old dictation is the ordinary case
+ * for this feature, not an edge one.
+ */
+export function setRowsFromWorkout(userId, event = {}, { skipExercises = [] } = {}) {
+  const d = event.detail || {};
+  // A session-backed event already has REAL sets — the finaliser wrote the
+  // event from them. Deriving more would double every gym session.
+  if (d.session_id) return [];
+  const exercises = Array.isArray(d.exercises) ? d.exercises : [];
+  if (!exercises.length) return [];
+
+  const skip = new Set(skipExercises);
+  const at = event.occurred_at ? new Date(event.occurred_at) : null;
+  const loggedAt = at && !Number.isNaN(at.getTime())
+    ? at.toISOString()
+    // No timestamp on the event: midday on its own date, which orders after
+    // nothing that happened on a later day and before nothing on an earlier
+    // one. Any fixed hour would do; noon is the one least likely to slip
+    // across a day boundary in any zone.
+    : (event.local_date ? `${event.local_date}T12:00:00.000Z` : null);
+
+  const rows = [];
+  // Caps are a backstop against a mangled parse, not a policy: twenty
+  // exercises of ten sets is already beyond any real session.
+  for (const [i, x] of exercises.slice(0, 20).entries()) {
+    const name = String(x.name || '').trim();
+    if (!name) continue;
+    const key = exerciseKey(name);
+    // Already covered by real sets from a live session that day — see
+    // syncSetsFromWorkouts. Re-telling a workout you logged set by set must
+    // not double it.
+    if (skip.has(key)) continue;
+    const n = Math.min(Math.max(parseInt(x.sets, 10) || 1, 1), 10);
+    const reps = x.reps != null ? Math.round(Number(x.reps)) || null : null;
+    const kg = x.weight_kg != null ? Number(x.weight_kg) || null : null;
+    for (let s = 1; s <= n; s++) {
+      rows.push({
+        user_id: userId,
+        session_id: null,
+        event_id: event.id ?? null,
+        exercise: name.slice(0, 120),
+        exercise_key: key,
+        set_number: s,
+        position: i + 1,
+        reps,
+        weight_kg: kg,
+        rpe: null,
+        muscles: Array.isArray(d.muscles) ? d.muscles : [],
+        note: null,
+        local_date: event.local_date,
+        ...(loggedAt ? { logged_at: loggedAt } : {}),
+      });
+    }
+  }
+  return rows;
+}
+
+// Whether wrought_sets has event_id (migration 016). Probed once per warm
+// container, because the answer cannot change under a running process.
+let _hasEventId = null;
+
+export async function setsCanBeTracked() {
+  if (_hasEventId !== null) return _hasEventId;
+  const { error } = await supabase.from('wrought_sets').select('event_id').limit(1);
+  _hasEventId = !error;
+  return _hasEventId;
+}
+
+// Test seam: the harness has no database, and a stale probe would leak
+// between cases.
+export function _resetEventIdProbe(v = null) { _hasEventId = v; }
+
+/**
+ * Write the derived sets for workout events.
+ *
+ * THREE THINGS MAKE THIS SAFE, and each of them is a bug that was found by
+ * review rather than by running it:
+ *
+ * 1. IT REFUSES TO RUN WITHOUT 016. Without event_id there is no way to
+ *    identify an event's own derived rows, so a re-sync could only ever ADD a
+ *    second copy — an amend of "that was 105, not 100" would leave both, and
+ *    the corrected-away number would keep feeding every strength read forever.
+ *    A feature that waits for a migration is a small cost; a lift record
+ *    quietly holding retracted numbers is not recoverable by the person it
+ *    happens to. The caller surfaces the skip rather than swallowing it.
+ * 2. INSERT FIRST, THEN DELETE THE OLD. Delete-then-insert is two round trips
+ *    with no transaction between them: a timeout after the delete erases a
+ *    workout's entire set record and returns an error every caller ignored.
+ *    Reversed, the worst case is a duplicate — visible, and cleaned up by the
+ *    next successful sync — rather than a silent total loss.
+ * 3. A DAY ALREADY COVERED BY A LIVE SESSION IS LEFT ALONE. Training set by
+ *    set and then re-telling the same workout ("log today's workout: bench
+ *    3×8") would otherwise write a second copy beside the real one, and every
+ *    read that keys sessions by session_id-or-date would see two sessions.
+ *
+ * @param events  the workout events to (re)derive. Non-workout events are
+ *                still accepted and CLEAR their derived sets — a mis-typed
+ *                entry re-classified away from a workout must not leave
+ *                phantom training behind.
+ */
+export async function syncSetsFromWorkouts(userId, events = []) {
+  const touched = events.filter(e => e?.id != null);
+  if (!touched.length) return { written: 0 };
+
+  if (!(await setsCanBeTracked())) {
+    return { written: 0, skipped: 'needs_migration',
+             say: 'Sets from a logged workout need schema/016_wrought_set_source.sql before they can be filed safely.' };
+  }
+
+  const ids = touched.map(e => e.id);
+  const dates = [...new Set(touched.map(e => e.local_date).filter(Boolean))];
+
+  // What already has REAL sets on those days, from a live session.
+  let covered = new Set();
+  if (dates.length) {
+    const { data: live } = await supabase.from('wrought_sets')
+      .select('exercise_key, local_date, session_id')
+      .eq('user_id', userId).in('local_date', dates).not('session_id', 'is', null);
+    covered = new Set((live || []).map(r => `${r.local_date}::${r.exercise_key}`));
+  }
+
+  const all = [];
+  for (const ev of touched) {
+    if (ev.event_type !== 'workout') continue;      // a cleared type: delete only
+    const skipExercises = [...covered]
+      .filter(k => k.startsWith(`${ev.local_date}::`))
+      .map(k => k.split('::')[1]);
+    all.push(...setRowsFromWorkout(userId, ev, { skipExercises }));
+  }
+
+  // 2: insert first. A failure here leaves the previous rows exactly as they
+  // were, which is the recoverable direction.
+  let fresh = [];
+  if (all.length) {
+    const { data, error } = await supabase.from('wrought_sets').insert(all).select('id');
+    if (error) return { written: 0, error: error.message };
+    fresh = (data || []).map(r => r.id);
+  }
+
+  // Then retire the previous derivation of these same events. Scoped by user
+  // as well as event id, so a crafted id can never reach another account.
+  let q = supabase.from('wrought_sets').delete()
+    .eq('user_id', userId).in('event_id', ids);
+  if (fresh.length) q = q.not('id', 'in', `(${fresh.join(',')})`);
+  const { error: delErr } = await q;
+  if (delErr) return { written: all.length, error: `stale sets not cleared: ${delErr.message}` };
+
+  return { written: all.length, ...(all.length < countClaimed(touched) ? { deduped: true } : {}) };
+}
+
+// How many rows the events CLAIMED, before anything was skipped for being
+// already covered — so the caller can tell "nothing to write" from "all of it
+// was already there".
+function countClaimed(events) {
+  let n = 0;
+  for (const ev of events) {
+    if (ev.event_type !== 'workout') continue;
+    for (const x of (ev.detail?.exercises || []).slice(0, 20)) {
+      if (!String(x.name || '').trim()) continue;
+      n += Math.min(Math.max(parseInt(x.sets, 10) || 1, 1), 10);
+    }
+  }
+  return n;
+}
