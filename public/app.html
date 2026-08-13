@@ -2952,7 +2952,18 @@ async function loadTrainer() {
   // AN UNCHANGED ANSWER NEVER REPAINTS THE SCREEN. Re-rendering identical
   // data wipes open panels, text mid-typing and scroll position — the screen
   // "closing itself" every few seconds, which is how a founder described it.
-  const jsonNow = JSON.stringify(body);
+  //
+  // THE SIGNATURE MUST COVER EVERYTHING DRAWN, NOT JUST THE SESSION. It used
+  // to be the api-session body alone, and this screen draws the saved workouts
+  // too. So adding a movement went: save it, server returns the new list,
+  // re-render — and the guard saw an identical SESSION payload and returned
+  // early. The row was written and never appeared. From the outside that is
+  // indistinguishable from a save that failed, which is exactly what it was
+  // reported as: "it didn't add the other stuff."
+  //
+  // A guard against repainting is only safe while it can see the whole of what
+  // is painted.
+  const jsonNow = JSON.stringify(body) + '|' + JSON.stringify(trainerRoutinesFull);
   if (jsonNow === trainerLastJson && $('content').innerHTML.length) return;
   trainerLastJson = jsonNow;
 
@@ -6288,6 +6299,20 @@ function devicePanel2(d) {
 // Editing is only offered on Trainer. On the Record tab this panel sits among
 // twenty others and is there to be READ; putting destructive controls in a
 // scroll-past is how somebody deletes a workout with their thumb.
+// TWO SHAPES ARRIVE HERE AND ONLY ONE WAS HANDLED. api-progress sends
+// `exercises` as a COUNT for the read-only Record panel; api-routines sends it
+// as the ARRAY, because the Trainer tab draws the movements. The old fallback
+// `r.sets || r.exercises || movesOf.length` printed the array straight into the
+// markup the moment `sets` was 0 — which a routine of nothing but timed work
+// legitimately is. Count the sets if there are any, otherwise count the
+// movements, and never trust one field to be one type.
+function chipCount(r, movesOf) {
+  const sets = Number(r.sets) || movesOf.reduce((a, m) => a + (Number(m.sets) || 0), 0);
+  if (sets > 0) return `${sets} ${sets === 1 ? 'set' : 'sets'}`;
+  const lifts = typeof r.exercises === 'number' ? r.exercises : movesOf.length;
+  return `${lifts} ${lifts === 1 ? 'lift' : 'lifts'}`;
+}
+
 function routinesPanel(d, { editable = false } = {}) {
   const rows = (d.routines || []).map(r => {
     const stale = r.days_since != null && r.days_since >= 7;
@@ -6323,8 +6348,7 @@ function routinesPanel(d, { editable = false } = {}) {
     return `<details class="rout"${r.active === false ? ' data-retired="1"' : ''}>
       <summary>
         <span class="rn">${esc(r.name)}</span>
-        <span class="chip ${stale ? 'stale' : ''}">${r.sets || r.exercises || movesOf.length} ${
-          r.sets ? (r.sets === 1 ? 'set' : 'sets') : (r.exercises === 1 ? 'lift' : 'lifts')}</span>
+        <span class="chip ${stale ? 'stale' : ''}">${chipCount(r, movesOf)}</span>
         <span class="when">${esc(when)}</span>
       </summary>
       <div class="rbody">

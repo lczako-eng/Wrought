@@ -4550,6 +4550,76 @@ await test('removing a movement is a slide, not a button', () => {
   assert.match(src, /\.rmv:focus-within \.rmv-body \{ transform: translateX/);
 });
 
+await test('a routine write repaints the screen it just changed', () => {
+  // "It didn't add the other stuff." It DID — the row was written and the
+  // screen never showed it. The guard that stops the poll repainting the
+  // Trainer tab every five seconds was keyed on the api-session body alone,
+  // and this screen draws the saved workouts too. So adding a movement went:
+  // save it, server returns the new list, re-render — identical SESSION
+  // payload, early return, nothing on screen. From the outside that is
+  // indistinguishable from a save that failed.
+  //
+  // A guard against repainting is only safe while it can see the whole of
+  // what is painted.
+  const src = page('app.html');
+  const fn = src.slice(src.indexOf('async function loadTrainer('), src.indexOf('function renderTrainer('));
+  assert.match(fn, /const jsonNow = JSON\.stringify\(body\)[\s\S]{0,80}trainerRoutinesFull/,
+    'the repaint guard cannot see the routines it is drawing');
+
+  // And the write still goes back through a re-render rather than patching
+  // the DOM from a guess about what the server did.
+  const act = src.slice(src.indexOf('async function routineAction('), src.indexOf('function parseHowMuch('));
+  assert.match(act, /trainerRoutinesFull = body\.routines/);
+  assert.match(act, /if \(view === 'trainer'\) loadTrainer\(\)/);
+});
+
+await test('the badge counts what the rows actually show', () => {
+  // A treadmill walk stored with the old 3×8 default renders as "—" because
+  // readMovement retires the artifact — and the count was still reading the
+  // RAW rows, so a workout showing one 3×8 movement claimed six sets. A number
+  // that contradicts the rows under it is worse than no number: it makes
+  // somebody doubt the rows.
+  const api = readFileSync(new URL('../netlify/functions/api-routines.js', import.meta.url), 'utf8');
+  assert.match(api, /const shown = \(r\.exercises \|\| \[\]\)\.map\(readMovement\)/);
+  assert.match(api, /sets: shown\.reduce/, 'the set count is not computed from the shown movements');
+  assert.ok(!/sets: \(r\.exercises \|\| \[\]\)\.reduce/.test(api), 'the count still reads the raw rows');
+
+  // TWO SHAPES ARRIVE AT THE SAME PANEL. api-progress sends `exercises` as a
+  // count; api-routines sends the array. The old fallback printed the array
+  // into the markup the moment `sets` was 0 — which a routine of nothing but
+  // timed work legitimately is.
+  const src = page('app.html');
+  const panel = src.slice(src.indexOf('function chipCount('), src.indexOf('function notesPanel('));
+  assert.match(panel, /typeof r\.exercises === 'number' \? r\.exercises : movesOf\.length/,
+    'the panel still assumes one shape for exercises');
+  assert.ok(!/\$\{r\.sets \|\| r\.exercises \|\| movesOf\.length\}/.test(panel),
+    'the array can still be printed straight into the chip');
+});
+
+await test('add[] carries the whole movement, not a lossy subset', () => {
+  // "It changed to the treadmill on there, but it didn't have the other
+  // information." The setup text — "level 10+, 2.5-3 mph" — was dropped at the
+  // DOOR. `add[]` declared name, sets, reps and muscles and nothing else, so
+  // there was nowhere to put `minutes` and nowhere to put `detail`. The model
+  // had the words; the tool had no field for them.
+  //
+  // The implementation always merged the full shape. It was only the schema
+  // that was narrow, which is the worst version of this bug: nothing errors
+  // and nothing logs, and the save looks like it half-worked.
+  const save = TOOLS.find(t => t.name === 'save_routine');
+  const add = save.inputSchema.properties.add.items;
+  const ex  = save.inputSchema.properties.exercises.items;
+  assert.equal(add, ex, 'add[] and exercises[] are no longer the same declared shape');
+  for (const f of ['name', 'sets', 'reps', 'minutes', 'detail', 'load_kg', 'rest_s', 'muscles', 'cue']) {
+    assert.ok(add.properties[f], `add[] cannot carry ${f}`);
+  }
+  // The one field that made this visible, and why it is verbatim.
+  assert.match(add.properties.detail.description, /never drop it because there was no obvious field/i);
+  // Every movement they named goes in ONE call — one per turn is how a save
+  // ends up holding half of what was asked for.
+  assert.match(save.inputSchema.properties.add.description, /EVERY movement they named in this one call/);
+});
+
 group('The max — recorded, estimated, and never something to go and test');
 
 await test('a max makes sets at different rep ranges comparable', () => {

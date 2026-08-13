@@ -302,6 +302,35 @@ Weights are stored in kg and lengths in cm; every response is already converted 
 
 // ── Tools ───────────────────────────────────────────────────────────────────
 
+// ONE MOVEMENT SHAPE, USED EVERYWHERE A MOVEMENT IS ACCEPTED.
+//
+// `add[]` used to declare a SUBSET — name, sets, reps, muscles — and that
+// subset was silently lossy in the exact place it hurt most. "Add the incline
+// treadmill walk at level 10+, 2.5-3 mph to my S Tier workout" is naturally an
+// add[] call, and add[] had nowhere to put `minutes` and nowhere to put
+// `detail`. The model had the words; the tool had no field for them. So the
+// movement landed as a bare name, the setup that IS the instruction for cardio
+// was dropped at the door, and it looked from the outside like a save that
+// half-worked.
+//
+// The implementation always merged the full shape — it was only the schema
+// that was narrow, which is the worst version of this bug because nothing
+// errors and nothing logs. Declared once now, so the two doors cannot drift.
+const MOVEMENT_ITEM = {
+  type: 'object',
+  properties: {
+    name:    { type: 'string' },
+    sets:    { type: 'integer', description: 'Omit entirely for anything timed — a treadmill walk is not 3 sets of 8.' },
+    reps:    { type: 'integer' },
+    minutes: { type: 'integer', description: 'For timed work: a treadmill walk, a row, a bike. Use INSTEAD of sets and reps.' },
+    detail:  { type: 'string', description: 'How it is actually set up, in their words — "level 10+, 2.5-3 mph", "resistance 8", "sled at 60kg". Kept verbatim, because this is the whole instruction for cardio and no sets/reps field can hold it. If they said it, it goes here — never drop it because there was no obvious field.' },
+    load_kg: { type: 'number', description: 'Omit for a beginner or a new lift — RPE is prescribed instead of a number nobody has earned yet.' },
+    rest_s:  { type: 'integer' },
+    muscles: { type: 'array', items: { type: 'string' } },
+    cue:     { type: 'string', description: 'One plain line on what it should feel like. Matters most for beginners.' },
+  },
+};
+
 const TOOLS = [
   {
     name: 'log',
@@ -477,18 +506,7 @@ const TOOLS = [
         kind:      { type: 'string', enum: ['strength','cardio','sport','mobility','hybrid'] },
         tier:      { type: 'string', enum: ['beginner','intermediate','advanced'],
                      description: 'Difficulty. Defaults to their profile. Beginner sessions are shorter and every movement gets explained.' },
-        exercises: { type: 'array', description: 'Ordered list.',
-                     items: { type: 'object', properties: {
-                       name:    { type: 'string' },
-                       sets:    { type: 'integer', description: 'Omit entirely for anything timed — a treadmill walk is not 3 sets of 8.' },
-                       reps:    { type: 'integer' },
-                       minutes: { type: 'integer', description: 'For timed work: a treadmill walk, a row, a bike. Use INSTEAD of sets and reps.' },
-                       detail:  { type: 'string', description: 'How it is actually set up, in their words — "level 10+, 2.5-3 mph", "resistance 8", "sled at 60kg". Kept verbatim, because this is the whole instruction for cardio and no sets/reps field can hold it.' },
-                       load_kg: { type: 'number', description: 'Omit for a beginner or a new lift — RPE is prescribed instead of a number nobody has earned yet.' },
-                       rest_s:  { type: 'integer' },
-                       muscles: { type: 'array', items: { type: 'string' } },
-                       cue:     { type: 'string', description: 'One plain line on what it should feel like. Matters most for beginners.' },
-                     } } },
+        exercises: { type: 'array', description: 'Ordered list.', items: MOVEMENT_ITEM },
         remove:  { type: 'array', items: { type: 'string' },
                    description: 'Movements to take OUT of an existing routine, by name. The only thing that shrinks a routine.' },
         replace: { type: 'boolean',
@@ -500,11 +518,8 @@ const TOOLS = [
         from_last_session: { type: 'boolean',
           description: 'Capture what they ACTUALLY did in their last finished session, in the order they did it, instead of passing exercises. This is how routines really get built — nobody authors a programme upfront, they have a good session and want it again. Use for "save that", "remember what I just did", "that was good, keep it".' },
         add: { type: 'array',
-          description: 'Append exercises to an existing routine instead of replacing it. Use for "add calf raises to my leg day" — a plan grows over weeks, and rebuilding it from scratch to add one movement is how people stop using it.',
-          items: { type: 'object', properties: {
-            name: { type: 'string' }, sets: { type: 'integer' }, reps: { type: 'integer' },
-            muscles: { type: 'array', items: { type: 'string' } },
-          } } },
+          description: 'Append exercises to an existing routine instead of replacing it. Use for "add calf raises to my leg day" — a plan grows over weeks, and rebuilding it from scratch to add one movement is how people stop using it. Takes the SAME full shape as exercises: pass minutes and detail for anything timed, and put EVERY movement they named in this one call rather than one per turn.',
+          items: MOVEMENT_ITEM },
       },
       required: ['name'],
     },

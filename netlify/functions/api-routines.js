@@ -67,11 +67,21 @@ export const handler = async (event) => {
       .eq('user_id', user.id)
       .order('active', { ascending: false })
       .order('last_used_on', { ascending: false, nullsFirst: false });
-    return (data || []).map(r => ({
-      ...r,
-      exercises: (r.exercises || []).map(readMovement),
-      sets: (r.exercises || []).reduce((a, e) => a + (Number(e.sets) || 0), 0),
-    }));
+    // THE COUNT IS OF WHAT IS SHOWN. Counting the RAW rows while displaying
+    // the read shape made the badge and the list disagree about the same
+    // routine: an incline treadmill walk stored with the old 3×8 default
+    // renders as "—" (readMovement retires the artifact) and was still being
+    // counted as three sets, so a workout showing one 3×8 movement claimed six
+    // sets. A number on a screen that contradicts the rows underneath it is
+    // worse than no number — it makes somebody doubt the rows.
+    return (data || []).map(r => {
+      const shown = (r.exercises || []).map(readMovement);
+      return {
+        ...r,
+        exercises: shown,
+        sets: shown.reduce((a, e) => a + (Number(e.sets) || 0), 0),
+      };
+    });
   };
 
   if (event.httpMethod === 'GET') return ok({ routines: await list() });
