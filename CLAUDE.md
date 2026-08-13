@@ -1902,6 +1902,48 @@ between retiring a routine and deleting one.
   clearly-horizontal drag claims the gesture; `:focus-within` slides the row
   open for keyboard users so the gesture is never the only way in.
 
+### The day as a receipt — both sides, every line
+
+`lib/receipt.js` + `receipt` on `log_activity`, `energy_balance` and `get_day`.
+The founder, after four hours at the petting zoo came back as *"logged 4 hours
+of work today as activity 💪"* and nothing else: *"it should tell me
+everything — I should see what those four hours of calories are worth against
+what's on there, and it should be kind of a receipt of everything, each
+calories for each. Be more specific."*
+
+**The number was in the response and the model summarised past it.** But the
+better fix is the one he asked for, and it is the same argument he has now made
+three times — about the day card (*"one steak's up to the right and the pizza's
+to the left"*), about the conversation (*"the individual calories as well, not
+just a total"*), and now about **the other side of the subtraction.** Only the
+eating half had ever been itemised. The burn was three summed figures and a
+sentence, on the product whose whole pitch is doing the subtraction honestly.
+
+- **The lines add up to the total, exactly**, and there is a test asserting it
+  across every way the burn can be assembled. A receipt whose rows do not sum
+  to its own total is a screen arguing with itself, and the reader is right to
+  stop believing both numbers. So the three OUT lines are the **counted**
+  figures straight off `energyBalance`, never recomputed, and what each is MADE
+  OF hangs underneath as inputs rather than as more lines — because the inputs
+  genuinely do not always sum to the counted figure.
+- **What was set aside is said.** The burn takes the larger of a logged shift
+  and a watch's day rather than their sum; that is correct and invisible, and
+  somebody who logged four hours and sees a smaller figure than their own
+  arithmetic concludes the log was ignored. A cap, an uncounted session and a
+  meal with no macros are all named the same way. **Silence there is how a
+  correct number loses an argument it should win.**
+- **`trainingBurn` itemises from the same pass that totals**, like
+  `activityTotal` already did. Recomputing per-session figures elsewhere is how
+  a receipt and a total quote two different numbers for one workout.
+- **A day still running is not a finished subtraction** — the dashboard hero's
+  rule, needed again. The resting burn is a WHOLE DAY's figure, so at 7pm
+  against 330 eaten the net reads *"4,603 down"*, which is a fact about the day
+  being incomplete. It is still shown, because hiding a number somebody asked
+  for is its own dishonesty, and it is labelled every time.
+- **Logging work always comes back with what it was worth.** *"Logged as
+  activity"* with no number is the feature failing quietly: the number is the
+  entire reason to log it.
+
 ### In or out of the workout — the reversible half of removing
 
 `off` on a movement + `action: 'bench'` + the two-way slide. The founder:

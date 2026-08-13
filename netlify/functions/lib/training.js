@@ -236,22 +236,42 @@ const TRAINING_MET = { strength: 5.0, cardio: 7.0, mobility: 2.8 };
 
 export function trainingBurn(workouts = [], weightKg = null) {
   let measured = 0, estimated = 0, anyMeasured = false, anyEstimated = false;
+  // EVERY SESSION ITEMISED, from the same pass that computes the total, so a
+  // receipt and a total can never disagree about the same workout. Same
+  // reasoning as activityTotal.entries, which already did this.
+  const entries = [];
 
   for (const w of workouts) {
     const kcal = Number(w.detail?.calories);
-    if (Number.isFinite(kcal) && kcal > 0) { measured += kcal; anyMeasured = true; continue; }
+    if (Number.isFinite(kcal) && kcal > 0) {
+      measured += kcal; anyMeasured = true;
+      entries.push({ summary: w.summary, minutes: Number(w.detail?.minutes) || null,
+                     kcal: Math.round(kcal), source: 'device' });
+      continue;
+    }
 
     const mins = Number(w.detail?.minutes);
-    if (!Number.isFinite(mins) || mins <= 0 || !weightKg) continue;
+    if (!Number.isFinite(mins) || mins <= 0 || !weightKg) {
+      // Named rather than dropped. A session contributing zero while looking
+      // perfectly logged is the failure needsDuration exists to catch, and a
+      // receipt that silently omits it hides exactly that.
+      entries.push({ summary: w.summary, minutes: Number.isFinite(mins) ? mins : null, kcal: 0,
+                     source: 'uncounted',
+                     why: !weightKg ? 'no recent weigh-in' : 'no duration on it' });
+      continue;
+    }
     const met = TRAINING_MET[w.detail?.kind] ?? TRAINING_MET.strength;
-    estimated += Math.round((met - 1) * Number(weightKg) * (mins / 60) * 1.05);
+    const est = Math.round((met - 1) * Number(weightKg) * (mins / 60) * 1.05);
+    estimated += est;
     anyEstimated = true;
+    entries.push({ summary: w.summary, minutes: mins, kcal: est, source: 'estimate' });
   }
 
   return {
     kcal: Math.round(measured + estimated),
     measured: Math.round(measured),
     estimated: Math.round(estimated),
+    entries,
     source: anyMeasured && anyEstimated ? 'mixed' : anyMeasured ? 'device' : anyEstimated ? 'estimate' : 'none',
   };
 }
@@ -415,6 +435,10 @@ export function energyBalance({
     other_projected: activeSource === 'activity_level',
     active_source: activeSource,
     training_source: training.source,
+    // The inputs to each half, carried so a receipt can show its working
+    // without recomputing anything — recomputation is how a screen and a
+    // total end up quoting two different figures for the same session.
+    training_detail: training,
     ...(activity.count ? { logged_activity: activity } : {}),
     say: `Roughly ${inn} in, about ${out} out (${parts.join(' · ')}) — ` +
          (net < -150 ? `around ${Math.abs(net)} down on the day.`

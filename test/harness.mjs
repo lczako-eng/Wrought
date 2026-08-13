@@ -4758,6 +4758,189 @@ await test('the page says which build it is, so stale and broken are tellable ap
   assert.match(fn, /if \(!b\) return ''/);
 });
 
+group('The day as a receipt — every line with its own number');
+
+const { dayReceipt } = await import('../netlify/functions/lib/receipt.js');
+
+// His actual day: four hours at the petting zoo, three ciabatta buns.
+const PETTING_DAY = (over = {}) => ({
+  date: '2026-08-13',
+  logged: true,
+  food: { calories: 330, protein_g: 11, carbs_g: 59, fat_g: 6, meals: 3,
+          estimated: true, meals_uncounted: 0, say: '330 kcal' },
+  training: { sessions: 0, minutes: 0, entries: [] },
+  activity: { count: 1 },
+  log: [
+    { id: '1', type: 'food', at: '09:10', summary: 'Ciabatta bun', calories: 110, protein_g: 4, carbs_g: 20, fat_g: 2, estimated: true },
+    { id: '2', type: 'food', at: '12:30', summary: 'Ciabatta bun', calories: 110, protein_g: 4, carbs_g: 20, fat_g: 2, estimated: true },
+    { id: '3', type: 'food', at: '15:00', summary: 'Ciabatta bun with cheddar', calories: 110, protein_g: 3, carbs_g: 19, fat_g: 2, estimated: true },
+    { id: '4', type: 'activity', at: '17:00', summary: 'Petting zoo, 4h', calories: null },
+  ],
+  ...over,
+});
+
+const PETTING_BALANCE = (over = {}) => ({
+  known: true, calories_in: 330,
+  resting_burn: 3833, resting_source: 'formula',
+  training_burn: 0, other_burn: 1100,
+  calories_out: 4933, net: -4603, direction: 'deficit',
+  projected_kg_per_week: -4.18,
+  active_source: 'logged', other_projected: false,
+  training_detail: { kcal: 0, entries: [], source: 'none' },
+  logged_activity: { count: 1, kcal: 1050, raw_kcal: 1050, capped: false,
+                     entries: [{ summary: 'Petting zoo, 4h', hours: 4, kcal: 1050 }] },
+  ...over,
+});
+
+await test('the lines add up to the total, exactly', () => {
+  // A receipt whose rows do not sum to its own total is worse than no receipt:
+  // it is a screen arguing with itself, and the person reading it is right to
+  // stop believing both numbers.
+  const r = dayReceipt({ day: PETTING_DAY(), balance: PETTING_BALANCE() });
+  assert.equal(r.out.lines_sum, r.out.total, 'the burn lines do not sum to calories out');
+  assert.equal(r.in.lines.reduce((s, l) => s + (l.calories || 0), 0), r.in.total,
+    'the food lines do not sum to calories in');
+  assert.equal(r.net, r.in.total - r.out.total);
+
+  // And it holds across every way the burn can be assembled — that reconcil-
+  // iation is the part most likely to drift.
+  for (const src of ['logged', 'logged_over_device', 'device', 'activity_level', 'awaiting_device', 'training_only', 'none']) {
+    const b = PETTING_BALANCE({ active_source: src });
+    const x = dayReceipt({ day: PETTING_DAY(), balance: b });
+    assert.equal(x.out.lines_sum, x.out.total, `lines stop summing for ${src}`);
+    // Every source has a sentence saying where the figure came from.
+    assert.ok(x.out.lines[2].note, `no provenance on the movement line for ${src}`);
+  }
+});
+
+await test('four hours of work comes back with what it was worth', () => {
+  // "It should tell me everything — I should see what those four hours of
+  // calories are worth against what's on there." Logging a shift and being
+  // told only that it was "logged as activity" is the whole feature failing
+  // quietly: the number is the entire reason to log it.
+  const r = dayReceipt({ day: PETTING_DAY(), balance: PETTING_BALANCE() });
+  const work = r.out.lines.find(l => l.what === 'Work and moving about');
+  assert.equal(work.calories, 1100);
+  // Itemised underneath, with the hours on it.
+  assert.deepEqual(work.of, [{ what: 'Petting zoo, 4h', hours: 4, calories: 1050 }]);
+  // And the shift is visible in the spoken form, not just the structure.
+  assert.match(r.say, /Petting zoo, 4h \(4h\) — 1,050/);
+  assert.match(r.say, /NET — 4,603 down/);
+
+  // Every eaten item keeps its own figure — the same doctrine, the other side.
+  assert.equal(r.in.lines.length, 3);
+  assert.ok(r.say.includes('Ciabatta bun with cheddar — 110'));
+
+  // The tool that logs it carries the receipt, or none of this is reachable.
+  const mcp = readFileSync(new URL('../netlify/functions/mcp.js', import.meta.url), 'utf8');
+  const fn = mcp.slice(mcp.indexOf('async function logActivity('), mcp.indexOf('const VALID_EVENT_TYPES'));
+  assert.match(fn, /receipt: dayReceipt\(/, 'log_activity does not return the receipt');
+  assert.match(fn, /SAY WHAT IT WAS WORTH/, 'nothing tells the model to say the number');
+});
+
+await test('what was deliberately NOT counted is said out loud', () => {
+  // The burn takes the LARGER of a logged shift and a watch's day rather than
+  // their sum, because adding them counts the same hours twice. That is
+  // correct and it is invisible — somebody who logged four hours and sees a
+  // figure smaller than their own arithmetic concludes the log was ignored.
+  const device = dayReceipt({ day: PETTING_DAY(), balance: PETTING_BALANCE({
+    active_source: 'device', other_burn: 740 }) });
+  assert.ok(device.set_aside?.some(s => /not added together/i.test(s)),
+    'the watch-versus-logged reconciliation is silent');
+
+  // A capped shift says so, and says the raw figure — capping quietly would
+  // mean the log is lying too.
+  const capped = dayReceipt({ day: PETTING_DAY(), balance: PETTING_BALANCE({
+    logged_activity: { count: 1, kcal: 5750, raw_kcal: 9000, capped: true,
+                       entries: [{ summary: 'Petting zoo, 14h', hours: 14, kcal: 9000 }] } }) });
+  assert.ok(capped.set_aside?.some(s => /held at/i.test(s)));
+
+  // A session with no minutes contributes nothing while looking logged. Named,
+  // never silently dropped from the receipt.
+  const untimed = dayReceipt({ day: PETTING_DAY(), balance: PETTING_BALANCE({
+    training_detail: { kcal: 0, source: 'none',
+      entries: [{ summary: 'Gym', minutes: null, kcal: 0, source: 'uncounted', why: 'no duration on it' }] } }) });
+  assert.ok(untimed.set_aside?.some(s => /counting nothing/i.test(s)));
+  assert.equal(untimed.out.lines[1].of[0].counts_as, 0);
+
+  // A meal logged with no macros makes the intake look lower than it was —
+  // the direction that matters, because it overstates the deficit.
+  const noMacros = dayReceipt({
+    day: PETTING_DAY({ food: { calories: 330, protein_g: 11, carbs_g: 59, fat_g: 6,
+                               meals: 4, estimated: true, meals_uncounted: 1, say: '330 kcal' } }),
+    balance: PETTING_BALANCE(),
+  });
+  assert.ok(noMacros.set_aside?.some(s => /real intake is higher/i.test(s)));
+});
+
+await test('a day still running is not a finished subtraction', () => {
+  // The rule already written for the dashboard hero, and it applies to the
+  // receipt for exactly the same reason. The resting burn is a WHOLE DAY's
+  // figure, so at 7pm against 330 eaten the net reads "4,603 down" — a fact
+  // about the day being incomplete, not a reading of it. And it errs in the
+  // dangerous direction: an overstated deficit is the number that tells
+  // somebody to eat less than they need.
+  const now = dayReceipt({ day: PETTING_DAY(), balance: PETTING_BALANCE(), today: '2026-08-13' });
+  assert.equal(now.partial, true);
+  // Still SHOWN — hiding a number somebody asked for is its own dishonesty.
+  assert.equal(now.net, -4603);
+  assert.match(now.say, /so far — the burn is the whole day/);
+  assert.match(now.partial_note, /not a deficit they have actually run/);
+  assert.match(now.note, /SAY THAT TODAY IS NOT OVER/);
+
+  // A day that is over carries none of it.
+  const past = dayReceipt({ day: PETTING_DAY(), balance: PETTING_BALANCE(), today: '2026-08-14' });
+  assert.equal(past.partial, false);
+  assert.ok(!past.partial_note);
+  assert.ok(!/so far — the burn is the whole day/.test(past.say));
+
+  // And every door passes today, or the label never fires where it matters.
+  const mcp = readFileSync(new URL('../netlify/functions/mcp.js', import.meta.url), 'utf8');
+  assert.equal((mcp.match(/dayReceipt\(\{ day, balance, date, today:/g) || []).length, 3,
+    'a receipt door does not tell the receipt what today is');
+});
+
+await test('half a subtraction is never presented as the whole picture', () => {
+  // Without the profile facts there is no burn, and showing the intake alone
+  // as if it were the day is how somebody reads 330 as a finished thought.
+  const r = dayReceipt({ day: PETTING_DAY(), balance: { known: false, missing: ['a birth year'] } });
+  assert.equal(r.out, null);
+  assert.equal(r.net, null);
+  assert.match(r.say, /OUT — not known yet/);
+  assert.match(r.note, /rather than presenting the intake alone/);
+});
+
+await test('the receipt is read out rather than summarised', () => {
+  const r = dayReceipt({ day: PETTING_DAY(), balance: PETTING_BALANCE() });
+  assert.match(r.note, /LINE BY LINE|line by line/);
+  assert.match(r.note, /do not add them up yourself/i);
+  // Still an estimate. Breaking a total into parts must not make the parts
+  // look measured.
+  assert.match(r.note, /estimate/i);
+  assert.equal(r.estimated, true);
+
+  assert.match(SERVER_INSTRUCTIONS, /BOTH SIDES OF THE SUBTRACTION GET ITEMISED/);
+  assert.match(SERVER_INSTRUCTIONS, /LOGGING WORK ALWAYS COMES BACK WITH WHAT IT WAS WORTH/);
+});
+
+await test('every session is itemised from the same pass that totals them', () => {
+  // Recomputing per-session figures somewhere else is how a receipt and a
+  // total end up quoting two different numbers for the same workout.
+  const t = trainingBurn([
+    { summary: 'Run', detail: { calories: 420, minutes: 35 } },
+    { summary: 'Legs', detail: { minutes: 60, kind: 'strength' } },
+    { summary: 'Gym', detail: {} },
+  ], 100);
+  assert.equal(t.entries.length, 3);
+  assert.equal(t.entries.reduce((s, e) => s + e.kcal, 0), t.kcal,
+    'the itemised sessions do not sum to the training burn');
+  assert.equal(t.entries[0].source, 'device');
+  assert.equal(t.entries[1].source, 'estimate');
+  // The one that looks logged and counts for nothing is named, not dropped.
+  assert.equal(t.entries[2].source, 'uncounted');
+  assert.match(t.entries[2].why, /duration/);
+});
+
 group('Building a workout WITH somebody, to a name they chose');
 
 const { FOCUSES, FOCUS_NAMES, focusFrom, designSession, designQuestions, movementCount, designNote } =
