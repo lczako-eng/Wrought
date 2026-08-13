@@ -4535,9 +4535,9 @@ await test('removing a movement is a slide, not a button', () => {
   // until the row has been deliberately moved.
   const src = page('app.html');
   const panel = src.slice(src.indexOf('function routinesPanel(d, {'), src.indexOf('function notesPanel('));
-  assert.match(panel, /rmv-del/, 'no revealed action behind the row');
+  assert.match(panel, /rmv-act/, 'no revealed action behind the row');
   assert.ok(!/class="rx"/.test(panel), 'the old x button is back');
-  assert.match(panel, /Slide a movement to the left/);
+  assert.match(panel, /Slide a movement left to take it out/);
 
   const wire = src.slice(src.indexOf('function wireSwipe('), src.indexOf('function wireRoutines('));
   assert.match(wire, /setPointerCapture/);
@@ -4547,7 +4547,7 @@ await test('removing a movement is a slide, not a button', () => {
   // Only a clearly horizontal drag claims the gesture.
   assert.match(wire, /Math\.abs\(mx\) > Math\.abs\(my\)/);
   // And keyboard users get the same action without the gesture.
-  assert.match(src, /\.rmv:focus-within \.rmv-body \{ transform: translateX/);
+  assert.match(src, /\.rmv:has\(\.rmv-act\.right:focus\) \.rmv-body \{ transform: translateX/);
 });
 
 await test('a routine write repaints the screen it just changed', () => {
@@ -4581,7 +4581,8 @@ await test('the badge counts what the rows actually show', () => {
   // somebody doubt the rows.
   const api = readFileSync(new URL('../netlify/functions/api-routines.js', import.meta.url), 'utf8');
   assert.match(api, /const shown = \(r\.exercises \|\| \[\]\)\.map\(readMovement\)/);
-  assert.match(api, /sets: shown\.reduce/, 'the set count is not computed from the shown movements');
+  assert.match(api, /sets: shown\.filter\(e => !e\.off\)\.reduce/,
+    'the set count is not computed from the shown movements that are actually in');
   assert.ok(!/sets: \(r\.exercises \|\| \[\]\)\.reduce/.test(api), 'the count still reads the raw rows');
 
   // TWO SHAPES ARRIVE AT THE SAME PANEL. api-progress sends `exercises` as a
@@ -4618,6 +4619,67 @@ await test('add[] carries the whole movement, not a lossy subset', () => {
   // Every movement they named goes in ONE call — one per turn is how a save
   // ends up holding half of what was asked for.
   assert.match(save.inputSchema.properties.add.description, /EVERY movement they named in this one call/);
+});
+
+await test('a movement can be taken out of a workout and put back', () => {
+  // "Give me the ability to swipe the ones I want on the workout or not, so
+  // add and remove as need be." Sliding a movement away used to DELETE it,
+  // which makes the gesture something to be careful with — and a gesture
+  // people are careful with is one they stop using.
+  //
+  // Same doctrine as a retired routine and a retired goal, one level down: a
+  // movement dropped for a month is still part of what that workout is.
+  const m = normaliseMovement({ name: 'Back Squat', sets: 4, reps: 6 });
+  assert.equal(m.off, false, 'a movement is in the workout unless taken out');
+
+  // The flag survives a partial edit and is not invented by one.
+  assert.equal(normaliseMovement({ reps: 8 }, { partial: true }).off, undefined,
+    'an unrelated edit writes an off flag');
+  assert.equal(normaliseMovement({ off: true }, { partial: true }).off, true);
+  assert.equal(readMovement({ name: 'Back Squat', sets: 4, reps: 6, off: true }).off, true);
+
+  // AND IT ACTUALLY LEAVES THE SESSION. planFromRoutine is the only door from
+  // a saved routine to a live one, so dropping it there drops it from the
+  // clipboard, the checklist, the progress percentage and the next-lift call
+  // at once. A switch that only changes the colour of a row is decoration.
+  const plan = planFromRoutine({ tier: 'intermediate', exercises: [
+    { name: 'Back Squat', sets: 4, reps: 6 },
+    { name: 'Leg Press', sets: 3, reps: 10, off: true },
+    { name: 'Calf Raise', sets: 3, reps: 12 },
+  ] });
+  assert.deepEqual(plan.map(p => p.name), ['Back Squat', 'Calf Raise']);
+  // Positions renumber over what is actually being done, not over the gaps.
+  assert.deepEqual(plan.map(p => p.index), [0, 1]);
+});
+
+await test('taking a movement out is one tap; deleting it is two and asks', () => {
+  const api = readFileSync(new URL('../netlify/functions/api-routines.js', import.meta.url), 'utf8');
+  assert.match(api, /action === 'bench'/, 'there is no way to take a movement out');
+  // It toggles rather than only setting, so the same gesture puts it back.
+  assert.match(api, /\{ \.\.\.e, off: !e\.off \}/);
+  // And it never drops the row: everything else about the movement survives.
+  assert.ok(!/action === 'bench'[\s\S]{0,400}filter\(/.test(api), 'taking one out deletes it');
+
+  const src = page('app.html');
+  const panel = src.slice(src.indexOf('function routinesPanel(d, {'), src.indexOf('function notesPanel('));
+  // Delete is only offered on a row that is ALREADY out — two deliberate
+  // steps for the one action that cannot be undone.
+  assert.match(panel, /data-act="\$\{m\.off \? 'remove' : 'bench'\}"/);
+  const wire = src.slice(src.indexOf('function wireRoutines('), src.indexOf('function checklistPanel('));
+  assert.match(wire, /act === 'remove' && !confirm\(/, 'deleting a movement no longer asks');
+
+  // The gesture goes both ways, and only where there is something behind it.
+  const sw = src.slice(src.indexOf('function wireSwipe('), src.indexOf('function wireRoutines('));
+  assert.match(sw, /const canRight = off/, 'every row can be pulled right, including ones already in');
+  assert.match(sw, /row\.dataset\.open = 'right'/);
+  assert.match(sw, /row\.dataset\.open = 'left'/);
+  // Vertical scrolling still belongs to the browser.
+  assert.match(src, /touch-action: pan-y/);
+
+  // Taken out reads as taken out, and the affirmative action is the only one
+  // in this list that is not warm.
+  assert.match(src, /\.rmv\.benched \.rmvn \{[^}]*line-through/);
+  assert.match(src, /\.rmv-act\.left \{[^}]*var\(--moss\)/);
 });
 
 await test('the box that takes the setup is not shorter than the setup', () => {
@@ -4694,6 +4756,147 @@ await test('the page says which build it is, so stale and broken are tellable ap
   // Absent on a deploy that does not set it, rather than printing an empty box.
   const fn = src.slice(src.indexOf('function buildLine()'), src.indexOf('// A view that needs a live session'));
   assert.match(fn, /if \(!b\) return ''/);
+});
+
+group('Building a workout WITH somebody, to a name they chose');
+
+const { FOCUSES, FOCUS_NAMES, focusFrom, designSession, designQuestions, movementCount, designNote } =
+  await import('../netlify/functions/lib/design.js');
+
+await test('not one weight comes out of a designed session', () => {
+  // The single most important assertion in this file. A workout designed to
+  // somebody's own specification is exactly where a plausible-looking working
+  // weight would slip through — it would read as considered rather than
+  // invented — and it is the same failure as the 2,600 in the place where
+  // being wrong hurts fastest.
+  for (const focus of FOCUS_NAMES) {
+    for (const tier of ['beginner', 'intermediate', 'advanced']) {
+      for (const minutes of [20, 45, 90]) {
+        const s = designSession({ focus, minutes, tier, equipment: ['full gym'] });
+        if (!s) continue;
+        for (const e of s) {
+          assert.equal(e.load_kg, null, `${focus}/${tier} prescribed a load`);
+          assert.ok(!('weight' in e) && !('weight_kg' in e), `${focus}/${tier} carries a weight field`);
+          assert.ok(!/\d+\s*(kg|lb|pound)/i.test(JSON.stringify(e)), `${focus}/${tier} names a weight in text`);
+        }
+      }
+    }
+  }
+});
+
+await test('length is a ceiling, not ambition', () => {
+  // Same rule as days available. Designing seventy minutes of work for
+  // somebody who said forty is how a plan gets abandoned in week two.
+  assert.ok(movementCount(20) < movementCount(45));
+  assert.ok(movementCount(45) < movementCount(90));
+  // Floored so it is a session rather than a gesture, capped because past
+  // seven movements nobody finishes.
+  assert.equal(movementCount(5), 3);
+  assert.equal(movementCount(240), 7);
+
+  const short = designSession({ focus: 'legs', minutes: 20, equipment: ['full gym'] });
+  const long  = designSession({ focus: 'legs', minutes: 90, equipment: ['full gym'] });
+  assert.ok(short.length < long.length, 'the clock changes nothing about the session');
+});
+
+await test('a tier can never be handed a movement above it', () => {
+  // The library rule, still holding through the new door.
+  const RANK = { beginner: 0, intermediate: 1, advanced: 2 };
+  const tierOf = name => MOVEMENTS.find(m => m.name === name)?.tier;
+  for (const tier of ['beginner', 'intermediate', 'advanced']) {
+    for (const focus of FOCUS_NAMES) {
+      for (const e of designSession({ focus, minutes: 75, tier, equipment: ['full gym'] }) || []) {
+        assert.ok(RANK[tierOf(e.name)] <= RANK[tier],
+          `${tier} was offered ${e.name}, which is ${tierOf(e.name)}`);
+      }
+    }
+  }
+  // And the gate is real rather than an accident of ordering: something in the
+  // library IS above a beginner and reachable at a higher tier.
+  const advNames = new Set(FOCUS_NAMES.flatMap(f =>
+    (designSession({ focus: f, minutes: 75, tier: 'advanced', equipment: ['full gym'] }) || []).map(e => e.name)));
+  const begNames = new Set(FOCUS_NAMES.flatMap(f =>
+    (designSession({ focus: f, minutes: 75, tier: 'beginner', equipment: ['full gym'] }) || []).map(e => e.name)));
+  assert.ok([...advNames].some(n => !begNames.has(n) && RANK[tierOf(n)] > 0),
+    'no movement is actually gated, so the tier check proves nothing');
+
+  const beginner = designSession({ focus: 'legs', minutes: 60, tier: 'beginner', equipment: ['full gym'] });
+  // And a beginner is told why; an advanced lifter is left alone.
+  assert.ok(beginner.some(e => e.cue), 'a beginner gets no cues');
+  const adv = designSession({ focus: 'legs', minutes: 60, tier: 'advanced', equipment: ['full gym'] });
+  assert.ok(adv.every(e => e.cue === null), 'an advanced lifter is being explained to');
+});
+
+await test('equipment is a hard filter, never a suggestion', () => {
+  const home = designSession({ focus: 'legs', minutes: 45, equipment: ['dumbbell'] });
+  assert.ok(home && home.length, 'nothing could be built from dumbbells');
+  assert.ok(!home.some(e => /barbell|machine|leg press/i.test(e.name)),
+    'a movement was programmed on kit they do not have');
+});
+
+await test('something to leave alone is worked around, never made lighter', () => {
+  // How much a sore joint can take today is a claim nothing here is entitled
+  // to make — so the movement is DROPPED rather than prescribed at some
+  // invented reduction. And it is never presented as treating anything.
+  const s = designSession({ focus: 'upper', minutes: 60, equipment: ['full gym'], avoid: ['shoulders'] });
+  assert.ok(s && s.length, 'avoiding one area emptied the session');
+  assert.ok(!s.some(e => e.muscles.includes('shoulders')), 'a movement loading the sore area survived');
+  // Nothing anywhere in the built session claims to fix, treat or rehabilitate.
+  assert.ok(!/rehab|physio|heal|fix|treat|therapy/i.test(JSON.stringify(s)));
+});
+
+await test('it never asks what the record already answers', () => {
+  // The commonest way an interview turns into the form this product exists not
+  // to be — and re-asking tells somebody the memory does not work.
+  const full = designQuestions({
+    focus: 'legs', minutes: 45,
+    profile: { equipment: ['full gym'], tier: 'intermediate' },
+    limitations: ['left knee, no deep lunges'], gyms: ['Main gym'],
+  });
+  assert.deepEqual(full, [], 'it asked about something already on file');
+
+  // With nothing on file the two that genuinely block come FIRST.
+  const empty = designQuestions({ profile: {}, limitations: [], gyms: [] });
+  assert.deepEqual(empty.slice(0, 2).map(q => q.key), ['focus', 'minutes']);
+  // Every question says why it is worth asking, so none can quietly become a
+  // form field nobody justified.
+  assert.ok(empty.every(q => q.why && q.ask));
+
+  // Where they are is only asked when there is genuinely a choice.
+  assert.ok(!designQuestions({ profile: {}, gyms: ['Main gym'] }).some(q => q.key === 'where'));
+  assert.ok(designQuestions({ profile: {}, gyms: ['Main gym', 'Home'] }).some(q => q.key === 'where'));
+});
+
+await test('how people actually name a session lands somewhere sensible', () => {
+  // Making somebody pick off a list is the form again.
+  assert.equal(focusFrom('leg day'), 'legs');
+  assert.equal(focusFrom('chest and tris'), 'chest');
+  assert.equal(focusFrom('arms day'), 'upper');
+  assert.equal(focusFrom('cardio'), 'conditioning');
+  assert.equal(focusFrom('full body'), 'full body');
+  assert.equal(focusFrom('abs'), 'core');
+  assert.equal(focusFrom(''), null);
+  // An unrecognised one is not guessed at.
+  assert.equal(focusFrom('zumba'), null);
+});
+
+await test('the instruction says build on two answers, and never a weight', () => {
+  // Two answers are enough. A session that arrives beats one still being
+  // specified, and that has to be said or the model finishes the list.
+  assert.match(designNote([{ key: 'avoid' }], null), /Two answers are enough to build/);
+  assert.match(designNote([], true), /NOT ONE WEIGHT/);
+  // The tool is reachable by the words people use.
+  assert.match(SERVER_INSTRUCTIONS, /design_workout — "build me a workout"/);
+  assert.match(SERVER_INSTRUCTIONS, /A NAMED WORKOUT IS A BRIEF, AND A BRIEF GETS TAKEN/);
+  // Changing it is never a negotiation — the same doctrine as drop_goal.
+  assert.match(SERVER_INSTRUCTIONS, /swapping something out is one call, never a negotiation/);
+
+  const t = TOOLS.find(x => x.name === 'design_workout');
+  assert.ok(t, 'the tool is not declared');
+  assert.match(t.description, /NO WEIGHTS are returned and none may be invented/);
+  assert.equal(t.inputSchema.required[0], 'name');
+  // Dropped, not softened — stated where the model will read it.
+  assert.match(t.inputSchema.properties.avoid.description, /DROPPED, never made lighter/);
 });
 
 group('The max — recorded, estimated, and never something to go and test');

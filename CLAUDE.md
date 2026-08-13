@@ -1902,6 +1902,76 @@ between retiring a routine and deleting one.
   clearly-horizontal drag claims the gesture; `:focus-within` slides the row
   open for keyboard users so the gesture is never the only way in.
 
+### In or out of the workout — the reversible half of removing
+
+`off` on a movement + `action: 'bench'` + the two-way slide. The founder:
+*"should give me the ability to swipe the ones I want on the workout or not,
+so add and remove as need be."*
+
+Sliding a movement away **deleted** it, and that is what was wrong with the
+gesture rather than the gesture itself. **A control people have to be careful
+with is one they stop using** — so the swipe was doing the most destructive
+thing available in one motion, on a list built up over weeks.
+
+- **Left takes it out, right puts it back.** The row keeps its detail, its cue
+  and its place in the order — the position IS the information — and simply
+  stops being in the session.
+- **Retire-then-delete, one level down.** Delete is only reachable on a row
+  that is already out, and it still asks. Two deliberate steps for the one
+  action nothing can undo, exactly like the routine switch and the Delete link
+  beside it. Same doctrine as a retired goal: what somebody used to run is part
+  of the record.
+- **`planFromRoutine` is the only door** from a saved routine to a live one, so
+  filtering there drops it from the clipboard, the checklist, the progress
+  percentage and the next-lift call at once. **A switch that only changes the
+  colour of a row is decoration**, and there is a test that the plan actually
+  loses it.
+- **The badge counts what is IN.** A movement taken out still shows — that is
+  the point of taking it out rather than deleting it — but counting its sets
+  would make the chip promise work nobody is going to do.
+- The gesture only travels in a direction that has something behind it: a row
+  already in the workout cannot be pulled right, because revealing an inert
+  button teaches people the gesture does nothing.
+
+### A named workout is a brief, and a brief gets taken
+
+`lib/design.js` + the `design_workout` tool. The founder: *"we could add new
+workouts — like, I call it whatever, and they can fulfil it with me. So like a
+questionnaire trying to get me, you know, what kind of workout do you want, so
+they can build a workout pro level."*
+
+Everything needed to BUILD one already existed — patterns, the curated library,
+tier gating, equipment matching. What did not exist was **the conversation that
+decides what to build**. `suggest_workout` answers *"what should I train
+today"* from what is most overdue, which is right on average and is not what
+somebody means when they say *"make me a leg day and call it Leg Day"*.
+
+- **Not one weight, ever**, in any focus at any tier at any length — tested
+  across every combination, including that no text anywhere names one. A
+  session designed to somebody's own specification is exactly where a
+  plausible working weight would slip through, because it would read as
+  considered rather than invented.
+- **It never asks what the record already answers.** Tier, equipment, days and
+  injuries are on file; re-asking is how a brief turns into the form this
+  product exists not to be, and it tells somebody the memory does not work.
+  Every question carries its own `why`, so none can quietly become a field
+  nobody justified.
+- **Two answers are enough to build** — what it is for, and how long they have.
+  Everything else has a defensible default already on file, and **a session
+  that arrives is worth more than one still being specified.** The instruction
+  says so explicitly, because otherwise the model finishes the list.
+- **Length is a hard ceiling**, the same rule as days available: twenty minutes
+  and ninety minutes are different workouts, and programming seventy for
+  somebody who said forty is how the last third of every session gets abandoned
+  and starts feeling like a failure.
+- **Something to leave alone is worked around, never made lighter.** The
+  movement is DROPPED — how much a sore joint can take today is a claim nothing
+  here is entitled to make — and nothing in a built session claims to treat,
+  rehabilitate or fix anything. There is a test grepping for the words.
+- **How people actually name a session is what lands**: *"chest and tris"*,
+  *"arms day"*, *"leg day"*, *"cardio"*. Making somebody pick off a list is the
+  form again.
+
 ### The save that worked and the screen that never said so
 
 *"It didn't add the other stuff."* It did. Three faults, and the loudest one

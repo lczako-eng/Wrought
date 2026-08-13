@@ -860,7 +860,12 @@ export function earnedRoom({ days, dailyTarget, flags = [], honestyDays = null }
 // ── Building a session ──────────────────────────────────────────────────────
 
 export function planFromRoutine(routine) {
-  const list = Array.isArray(routine.exercises) ? routine.exercises : [];
+  // A movement taken out is not in the session. This is the ONLY door from a
+  // saved routine to a live one, which is what makes the switch mean something
+  // rather than being a screen decoration — the clipboard, the checklist, the
+  // progress percentage and the next-lift call all read the plan, so dropping
+  // it here drops it everywhere at once.
+  const list = (Array.isArray(routine.exercises) ? routine.exercises : []).filter(e => !e.off);
   return list.map((e, i) => ({
     index: i,
     name: e.name,
@@ -1534,6 +1539,7 @@ export function normaliseMovement(e = {}, { partial = false } = {}) {
     if (has('rest_s'))    out.rest_s = Number(e.rest_s) || 120;
     if (Array.isArray(e.muscles)) out.muscles = e.muscles;
     if (has('cue'))       out.cue = e.cue ? String(e.cue).slice(0, 300) : null;
+    if (e.off !== undefined) out.off = !!e.off;
 
     // Supplying minutes for something previously counted in sets — or sets for
     // something previously timed — has to clear the other, or the movement
@@ -1555,6 +1561,16 @@ export function normaliseMovement(e = {}, { partial = false } = {}) {
     rest_s: Number(e.rest_s) || 120,
     muscles: Array.isArray(e.muscles) ? e.muscles : [],
     cue: e.cue ? String(e.cue).slice(0, 300) : null,
+    // TAKEN OUT, NOT DELETED. The founder: "give me the ability to swipe the
+    // ones I want on the workout or not, so add and remove as need be."
+    //
+    // Same doctrine as a retired routine and a retired goal, one level down. A
+    // movement somebody drops for a month is still part of what that workout
+    // is — the machine was taken, the shoulder was sore, they are running a
+    // shorter version this block — and deleting it means rebuilding it from
+    // memory later. Off keeps the row, its detail and its place in the order,
+    // and takes it out of the session.
+    off: !!e.off,
   };
 }
 
