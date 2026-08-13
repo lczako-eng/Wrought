@@ -1764,3 +1764,46 @@ function countClaimed(events) {
   }
   return n;
 }
+
+/**
+ * Derive sets for workout events that predate the bridge.
+ *
+ * The bridge only fires when an event is WRITTEN — logged, amended or
+ * structured. Every workout that went in before it existed, or before 016
+ * was run, sits with its exercises on the event and nothing in the set
+ * record: the founder's own bench, rows and shoulder press from the night
+ * the connector was still refusing sessions. "None of the exercises landed"
+ * is those events, waiting.
+ *
+ * Runs on the way into the dashboard, exactly like closeStaleSessions: one
+ * cheap read when there is nothing to do, real work only the first time.
+ * Bounded to 60 days because deriving a year of history in one page load is
+ * how a dashboard times out — older events derive whenever they are next
+ * touched.
+ */
+export async function backfillDerivedSets(userId, { sinceDate = null } = {}) {
+  if (!(await setsCanBeTracked())) return { written: 0, skipped: 'needs_migration' };
+
+  let q = supabase.from('wrought_events')
+    .select('id, event_type, local_date, occurred_at, detail')
+    .eq('user_id', userId).eq('event_type', 'workout')
+    .order('local_date', { ascending: false }).limit(120);
+  if (sinceDate) q = q.gte('local_date', sinceDate);
+  const { data: events } = await q;
+
+  // Candidates: exercises on the event, no backing session.
+  const candidates = (events || []).filter(e =>
+    !e.detail?.session_id && Array.isArray(e.detail?.exercises) && e.detail.exercises.length);
+  if (!candidates.length) return { written: 0 };
+
+  // Which of them already derived. One query, not one per event.
+  const { data: existing } = await supabase.from('wrought_sets')
+    .select('event_id').eq('user_id', userId)
+    .in('event_id', candidates.map(e => e.id));
+  const done = new Set((existing || []).map(r => r.event_id));
+
+  const fresh = candidates.filter(e => !done.has(e.id));
+  if (!fresh.length) return { written: 0 };
+
+  return syncSetsFromWorkouts(userId, fresh);
+}

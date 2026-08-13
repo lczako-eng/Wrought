@@ -29,7 +29,7 @@ import { pendingVoice } from './lib/voice.js';
 import { activityBurn, EFFORTS } from './lib/activity.js';
 import { warmupFor, cooldownFor, sessionProgress } from './lib/warmup.js';
 import { formWatch, cardioProgress } from './lib/form.js';
-import { intakeState } from './lib/intake.js';
+import { intakeState, intakeGate } from './lib/intake.js';
 import { planRead } from './lib/plan.js';
 import { guideRead } from './lib/guide.js';
 import { nextNudge, nudgeNote } from './lib/prompt.js';
@@ -120,6 +120,8 @@ WHEN THEY DO NOT KNOW WHAT TO AIM AT, suggest, do not interrogate. Two or three,
 TARGETS ARE FLEXIBLE AND CHANGING ONE IS NORMAL. "Make it 8,000" or "drop the steps one" is a set_goal call or an undo, not a negotiation and never a comment about commitment. A target somebody keeps missing is a target set wrong, and lowering it to what they will actually do is the correct move — a goal nobody hits stops being read at all.
 
 Every goal with a number is scored in every brief and drawn as a ring on the dashboard the moment it exists. A goal without a number cannot be scored, so attach one when they will give you one — and never invent it silently.
+
+THE QUESTIONNAIRE IS A GATE — THE FOUNDER'S EXPLICIT INSTRUCTION. suggest_workout, start_session, programmes and start_block will refuse with setup_required until the intake questionnaire is finished, and you must not work around them: no improvised sessions, no "quick workout while we set up". Run the questionnaire the response hands you conversationally — three or four questions per message, never the whole list, arithmetic five first, injuries next. Loose combined answers are fine ("lose weight AND build muscle" is recomp) and "none" is a real answer that closes its question — record it. Save every answer the moment it arrives (set_profile, set_goal, set_plan, remember), then call the training tool again in the same turn and hand over the workout without making them ask twice. CAPTURE IS NEVER GATED: food, weight, or training they already did gets logged immediately, questionnaire finished or not.
 
 GETTING SOMEBODY TRAINING — THE EXPECTATION IS SET ONCE, THEN KEPT VISIBLE. The FIRST time they want a workout, a plan, or say they should be training more, and the profile has no train_days or equipment: ask ONCE, in one short message, all together — how many days a week they will honestly train (take their number; if they ask what is realistic, three to five is the honest range and three beats five for anybody new), what equipment they have, and whether there is anything they cannot do — an injury, a condition, a movement that hurts. Save days and equipment with set_profile, save limitations with remember (category "health"), and NEVER silently program a movement around a limitation without saying so. Then offer start_block so the expectation has a structure with an end.
 
@@ -1921,9 +1923,26 @@ Answer in 2-4 short sentences: what to do right now and why, in their units. If 
   };
 }
 
+// THE STOP PLACE. The founder, twice, the second time as an instruction:
+// "we can't further any workouts until the questionnaire is finished." So
+// every door that BUILDS training checks the questionnaire first. Capture is
+// never gated — log and log_set record what already happened, and refusing to
+// remember somebody's training would be the opposite of the product.
+async function trainingGate(user, profile, goals, memory) {
+  const f = await planFacts(user.id);
+  const state = intakeState({
+    profile, goals: goals ?? f.goals, memory: memory ?? await getMemory(user.id),
+    weightKg: f.weightKg, intent: f.intent,
+  });
+  return intakeGate(state);
+}
+
 async function suggestWorkout(args, user) {
-  const { profile, memory } = await context(user.id);
+  const { profile, memory, goals } = await context(user.id);
   const today = localDateFor(profile.timezone);
+
+  const gate = await trainingGate(user, profile, goals, memory);
+  if (gate) return { ...gate, next_actions: ['set_profile / set_goal / set_plan / remember with the answers', 'suggest_workout again once the questionnaire is finished'] };
 
   const range   = await rangeFacts(user.id, profile, addDays(today, -27), today);
   const summary = summariseRange(range, profile);
@@ -2039,8 +2058,11 @@ No preamble, no disclaimers, no warm-up boilerplate unless it matters for a name
 // told; it is never responsible for remembering where anybody is.
 
 async function startSession(args, user) {
-  const { profile, memory } = await context(user.id);
+  const { profile, memory, goals } = await context(user.id);
   const today = localDateFor(profile.timezone);
+
+  const gate = await trainingGate(user, profile, goals, memory);
+  if (gate) return { ...gate, next_actions: ['finish the questionnaire, saving each answer', 'start_session again once it is done'] };
 
   // One workout at a time. But STARTING ANOTHER IS NOT A REASON TO THROW THE
   // LAST ONE AWAY, and it used to be: the previous session was marked
@@ -3405,6 +3427,10 @@ async function blockDone(blockId) {
 
 async function startBlock(args, user) {
   const profile = await getProfile(user.id);
+
+  const gate = await trainingGate(user, profile);
+  if (gate) return { ...gate, next_actions: ['finish the questionnaire, saving each answer', 'start_block again once it is done'] };
+
   const tier = profile.training_age === 'beginner' ? 'beginner'
              : profile.training_age === 'advanced' ? 'advanced' : 'intermediate';
   const today = localDateFor(profile.timezone);
@@ -3543,7 +3569,7 @@ async function programmes(args, user) {
              : profile.training_age === 'advanced' ? 'advanced' : 'intermediate';
 
   // Asking about one pattern is the mid-session case — the bench is taken and
-  // they want the next best thing — so it answers narrowly and gets out.
+  // they want the next best thing — and mid-session is past the gate, so it answers narrowly and gets out.
   if (args.pattern) {
     const list = movementsFor(String(args.pattern).toLowerCase(), { equipment: profile.equipment, tier });
     if (!list.length) {
@@ -3562,6 +3588,10 @@ async function programmes(args, user) {
       next_actions: ['log_set once they have done it', 'save_routine if they want it kept'],
     };
   }
+
+  // Building or adopting a whole programme is prescribing — the gate applies.
+  const gate = await trainingGate(user, profile);
+  if (gate) return { ...gate, next_actions: ['finish the questionnaire, saving each answer', 'programmes again once it is done'] };
 
   const chosen = args.programme
     ? (PROGRAMMES.find(p => p.id === args.programme)

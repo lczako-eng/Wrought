@@ -24,9 +24,24 @@
 //   2. Somebody who WANTS to sit down and do it can say so, and the assistant
 //      walks the list. Available on demand, never imposed.
 //
-// The distinction that keeps it honest: nothing here BLOCKS anything. A blank
-// field means WROUGHT does not know it and will say so rather than guessing —
-// the same rule as the profile screen.
+// THE FOUNDER OVERRODE HALF OF THAT, twice, and the second time is decisive:
+// "we should put that as a stop place — we can't further any workouts until
+// the questionnaire is finished." So the questionnaire is now a GATE, and the
+// line it gates is drawn precisely:
+//
+//   WROUGHT never refuses to RECORD. A meal, a weight, a set somebody already
+//   did — capture is the soul of the product and gating it would kill the
+//   memory. log, log_set and the briefs stay open forever.
+//
+//   WROUGHT refuses to PRESCRIBE until it knows who it is prescribing for.
+//   suggest_workout, start_session, programmes and start_block stop at the
+//   gate until the questionnaire is finished — building a plan for a stranger
+//   is guesswork wearing a coach's voice, and the founder is right that the
+//   product should not pretend otherwise.
+//
+// "Finished" means every item answered — and "none" IS an answer. No sports,
+// no medication, no injuries are all worth exactly as much as their opposites,
+// and recording them is what lets the questionnaire actually end.
 
 // Where each fact lives once it is known. `profile` fields are columns;
 // everything else is a memory row in the named category, which is why this
@@ -144,5 +159,28 @@ export function intakeState({ profile = {}, goals = [], memory = [], weightKg = 
     note: hard.length
       ? `${hard.length} of these BLOCK the arithmetic — ask for those together in one message the next time a number needs them, and not before.`
       : 'NEVER ask more than ONE of these at a time, and only when the conversation has already walked into it — somebody mentioning a sore knee is the moment to ask about injuries, and no other moment is. Do not work through the list, do not present it as a form, and do not mention that a list exists. Over a fortnight of ordinary use it fills itself in. The exception is somebody asking to be set up properly: then walk the whole thing, because they asked.',
+  };
+}
+
+/**
+ * The stop place. Null when training tools may run; otherwise the gate object
+ * the tool returns instead of a workout.
+ *
+ * The questions go out in GROUPS, not one at a time — the in-passing doctrine
+ * still governs ordinary conversation, but somebody standing at the gate asked
+ * for a workout and the fastest way through is to finish. Loose answers are
+ * fine: "weight loss and muscle building" is recomp, "none" closes a question
+ * for good.
+ */
+export function intakeGate(state) {
+  if (!state || state.complete) return null;
+  const remaining = state.still_unknown || [];
+  return {
+    setup_required: true,
+    answered: state.known,
+    of: state.total,
+    remaining,
+    say: `Before WROUGHT builds you a workout it needs to finish getting to know you — ${state.known} of ${state.total} answered, ${remaining.length} to go.`,
+    note: 'THE QUESTIONNAIRE IS A GATE, at the founder\'s explicit instruction: do NOT build, suggest or start a workout until it is finished. Run it conversationally — three or four questions per message, never the whole list at once, in the order given (the arithmetic five first, then injuries). Loose, combined answers are fine: "lose weight AND build muscle" is recomp. "None" is a real answer — record it (remember with the right category, or the profile field) so the question closes. Save every answer as it arrives: set_profile for profile fields, set_goal for intent and target weight, set_plan for pace and push, remember for the rest. When the list is done, call the training tool again in the same turn and hand them the workout without making them ask twice. Logging is NEVER gated — if they mention food or training they already did, record it immediately, gate or no gate.',
   };
 }
