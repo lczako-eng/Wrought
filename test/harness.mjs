@@ -4620,6 +4620,24 @@ await test('add[] carries the whole movement, not a lossy subset', () => {
   assert.match(save.inputSchema.properties.add.description, /EVERY movement they named in this one call/);
 });
 
+await test('the page says which build it is, so stale and broken are tellable apart', () => {
+  // Three bugs running were reported as "still broken" when the fix was live
+  // and the page in hand was older than it. Nobody could tell a fix that had
+  // not worked from a fix that had not arrived.
+  const cfg = readFileSync(new URL('../netlify/functions/config.js', import.meta.url), 'utf8');
+  assert.match(cfg, /window\.WROUGHT_BUILD/);
+  assert.match(cfg, /COMMIT_REF/);
+  // Nothing secret rides along. The commit is public; the keys are not.
+  assert.ok(!/SERVICE_ROLE/.test(cfg), 'the service role key is named in config.js');
+
+  const src = page('app.html');
+  assert.match(src, /function buildLine\(\)/);
+  assert.match(src, /\$\{buildLine\(\)\}/, 'the build line is never rendered');
+  // Absent on a deploy that does not set it, rather than printing an empty box.
+  const fn = src.slice(src.indexOf('function buildLine()'), src.indexOf('// A view that needs a live session'));
+  assert.match(fn, /if \(!b\) return ''/);
+});
+
 group('The max — recorded, estimated, and never something to go and test');
 
 await test('a max makes sets at different rep ranges comparable', () => {

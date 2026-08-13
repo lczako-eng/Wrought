@@ -1757,6 +1757,24 @@ document.querySelectorAll('#gate .oauth').forEach(b => b.addEventListener('click
   if (error) $('msg').textContent = providerError(error.message, provider);
 }));
 
+// WHICH BUILD IS THIS PHONE ACTUALLY RUNNING.
+//
+// Three bugs in a row were reported as "still broken" when the fix was live
+// and the page in hand was older than it. Nobody — not the person holding the
+// phone, not anybody trying to help them — could tell a fix that had not
+// worked from a fix that had not arrived, so the same evening got spent twice.
+//
+// One line, at the bottom of Account where a version belongs. It is not
+// decoration: it is the difference between "this is broken" and "this is
+// stale", and those two sentences lead to completely different afternoons.
+function buildLine() {
+  const b = window.WROUGHT_BUILD || '';
+  if (!b) return '';
+  return `<p class="sub dim">Running build <code>${esc(b)}</code>.
+    If something was just fixed and still looks wrong here, close this page fully and reopen it,
+    then check whether this changed.</p>`;
+}
+
 // A view that needs a live session, asked for without one.
 //
 // loadTrainer, loadPhotos, loadAccount and loadAdmin all began with
@@ -1907,6 +1925,7 @@ function renderAccount(user, ids, factors, linkNote) {
         <button class="ghost" id="signout">Sign out</button>
         <button class="ghost" id="switch">Switch account</button>
       </div>
+      ${buildLine()}
     </section>
 
     <section class="panel">

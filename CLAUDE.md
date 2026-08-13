@@ -1902,6 +1902,45 @@ between retiring a routine and deleting one.
   clearly-horizontal drag claims the gesture; `:focus-within` slides the row
   open for keyboard users so the gesture is never the only way in.
 
+### The save that worked and the screen that never said so
+
+*"It didn't add the other stuff."* It did. Three faults, and the loudest one
+was not a save failing at all — which is why it had already been "fixed" twice.
+
+- **The write was blocked by the guard meant to stop the flicker.** The
+  Trainer tab's *unchanged answer never repaints* check was keyed on the
+  api-session body ALONE, and that screen also draws the saved workouts. So
+  adding a movement went: save it, server returns the new list, re-render,
+  identical SESSION payload, **early return, nothing on screen.** Reproduced
+  in a browser: the server held `Bench press` and the list showed two
+  movements. From the outside that is indistinguishable from a save that
+  failed. **A guard against repainting is only safe while it can see the whole
+  of what is painted.**
+- **The setup text was dropped at the door.** *"Incline treadmill walk at
+  level 10+, 2.5–3 mph"* is naturally an `add[]` call, and `add[]` declared
+  `name`, `sets`, `reps`, `muscles` — no `minutes`, no `detail`. The model had
+  the words; the tool had no field for them. The implementation always merged
+  the full shape, so **only the schema was narrow** — the worst version of
+  this bug, because nothing errors and nothing logs and the save merely looks
+  like it half-worked. One `MOVEMENT_ITEM` now, used by both doors.
+- **The badge counted what the rows retired.** A treadmill walk stored with
+  the old 3×8 default renders as `—` (`readMovement` retires the artifact) and
+  the count still read the RAW rows: one visible 3×8 movement, *"6 SETS"* on
+  the chip. **A number that contradicts the rows under it is worse than no
+  number** — it makes somebody doubt the rows. Fixing it exposed a latent
+  shape bug underneath: `api-progress` sends `exercises` as a COUNT and
+  `api-routines` sends the ARRAY, and the old fallback printed the array
+  straight into the markup the moment `sets` hit 0 — which a routine of
+  nothing but timed work legitimately is.
+
+**And the page now says which build it is.** Three bugs running were reported
+as *"still broken"* when the fix was live and the page in hand was older than
+it, so the same evening got spent twice. `window.WROUGHT_BUILD` off Netlify's
+`COMMIT_REF`, one line at the bottom of Account. It is not decoration: **a fix
+that cannot be confirmed as delivered is a fix that gets re-reported,
+re-diagnosed and re-shipped**, and "this is broken" and "this is stale" lead
+to completely different afternoons.
+
 ### The workout nobody STARTED — the other half of the same lesson
 
 `log_set` refused outright without an active session: *"No workout is
