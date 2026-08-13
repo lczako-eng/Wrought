@@ -1701,7 +1701,7 @@ comment on index public.wrought_events_source_ref_idx is
 -- ever find or undo.
 
 alter table public.wrought_sets
-  add column if not exists event_id bigint references public.wrought_events(id) on delete cascade;
+  add column if not exists event_id uuid references public.wrought_events(id) on delete cascade;
 
 create index if not exists wrought_sets_event_idx
   on public.wrought_sets (event_id) where event_id is not null;
