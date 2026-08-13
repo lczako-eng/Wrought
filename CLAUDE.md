@@ -1933,6 +1933,30 @@ was not a save failing at all — which is why it had already been "fixed" twice
   straight into the markup the moment `sets` hit 0 — which a routine of
   nothing but timed work legitimately is.
 
+**Then the same complaint one layer further in, found with a browser rather
+than a guess.** The badge was fixed and the treadmill row was still empty, and
+all three remaining causes were on the way IN:
+
+- **The input ate it.** The how-much box carried `maxlength="20"`, sized for
+  *"3×8 or 25 min"* — and it is the box the **verbatim** setup goes in, the one
+  thing that must be kept word for word because for cardio that text IS the
+  instruction. *"25 min level 10+, 2.5-3 mph"* is 27 characters, so the FIELD
+  truncated it to *"level 10+, 2."* before anything was sent. **Nothing errors
+  when an input truncates** — it just saves a shorter truth, and a clipped
+  detail is indistinguishable from one that never saved. A test now asserts
+  the input can never truncate before `normaliseMovement` does.
+- **The row clipped what survived.** `.rmv` is `overflow: hidden` — the swipe
+  needs it, Remove sits behind the row — so a flex child that refuses to
+  shrink does not overflow visibly, it **disappears in silence**. `.rmvn` had
+  the default `min-width: auto`. Second time a swipe affordance has hidden a
+  layout bug rather than shown one.
+- **And a dash said nothing.** A movement with no sets, no minutes and no
+  detail drew an em dash, which cannot be told apart from a row that failed to
+  render. It says *"not set"* now, and the panel says once how to fill it —
+  type the same name with how much and it UPDATES that movement rather than
+  adding a second, which is the part nobody would guess. Dim and italic, never
+  red: a gap in a plan is information, not an alarm.
+
 **And the page now says which build it is.** Three bugs running were reported
 as *"still broken"* when the fix was live and the page in hand was older than
 it, so the same evening got spent twice. `window.WROUGHT_BUILD` off Netlify's
