@@ -4620,6 +4620,64 @@ await test('add[] carries the whole movement, not a lossy subset', () => {
   assert.match(save.inputSchema.properties.add.description, /EVERY movement they named in this one call/);
 });
 
+await test('the box that takes the setup is not shorter than the setup', () => {
+  // "It didn't have the other information." Third cause, and the stupidest:
+  // the how-much input carried maxlength="20", sized for "3×8 or 25 min".
+  // "25 min level 10+, 2.5-3 mph" is 27 characters, so the FIELD ate it at
+  // "level 10+, 2." before anything was sent. Nothing errors when an input
+  // truncates — it just saves a shorter truth, and a clipped detail and a
+  // never-saved one look identical to the person reading the row.
+  //
+  // This is the box the verbatim setup goes in, and verbatim is the whole
+  // doctrine for timed work: for cardio that text IS the instruction.
+  const src = page('app.html');
+  const m = src.match(/<input class="ra-sets"[\s\S]{0,200}?maxlength="(\d+)"/);
+  assert.ok(m, 'the how-much input lost its maxlength');
+  assert.ok(+m[1] >= 200, `the setup box truncates at ${m[1]} characters`);
+
+  // It must not be shorter than what the server will store, or the screen and
+  // the tool disagree about how much of somebody's words survive.
+  const training = readFileSync(new URL('../netlify/functions/lib/training.js', import.meta.url), 'utf8');
+  const cap = training.match(/out\.detail = e\.detail \? String\(e\.detail\)\.slice\(0, (\d+)\)/);
+  assert.ok(cap, 'normaliseMovement no longer bounds detail');
+  assert.ok(+m[1] >= +cap[1], 'the input truncates before the server does');
+});
+
+await test('a movement with nothing on it says so instead of drawing a dash', () => {
+  // An em dash is honest and useless: it cannot be told apart from a row that
+  // failed to draw, and it tells nobody that anything is theirs to fix. Same
+  // doctrine as a named food with no macros — something that looks saved and
+  // counts for nothing when the session starts is worth naming, once, quietly.
+  const src = page('app.html');
+  const panel = src.slice(src.indexOf('function routinesPanel(d, {'), src.indexOf('function notesPanel('));
+  assert.match(panel, /const unset = m => !howMuch\(m\) && !m\.detail/);
+  assert.match(panel, /unset\(m\) \? 'not set' : '—'/);
+  // The hint names the fix and says it UPDATES rather than adds a second row,
+  // which is the part nobody would guess.
+  assert.match(panel, /it fills that one in rather than adding a second/);
+  // Only when something is actually unset — a hint on every routine forever is
+  // one nobody reads.
+  assert.match(panel, /editable && anyUnset \?/);
+
+  // A gap in a plan is information, not an alarm. Nothing red, same restraint
+  // the clinical readings get.
+  const unsetCss = src.match(/\.rmv b\.unset \{([^}]+)\}/);
+  assert.ok(unsetCss, 'the unset marker has no style of its own');
+  assert.ok(!/var\(--heat\)|#f?[dD][0-9a-fA-F]{2}[0-3]/.test(unsetCss[1]), 'the unset marker shouts');
+});
+
+await test('a long setup line is not clipped by the row that holds it', () => {
+  // .rmv is overflow: hidden — the swipe needs it, the Remove button sits
+  // behind the row. So a flex child that refuses to shrink does not overflow
+  // visibly, it gets CLIPPED in silence. min-width: 0 is load-bearing here.
+  const src = page('app.html');
+  assert.match(src, /\.rmvn \{[^}]*min-width: 0/, 'the movement column cannot shrink, so it clips');
+  assert.match(src, /\.rmvn em \{[^}]*overflow-wrap: anywhere/);
+  // And the amount never shrinks to make room — "25 min" wrapping mid-word is
+  // its own kind of broken.
+  assert.match(src, /\.rmv b \{[\s\S]{0,200}?flex: none; white-space: nowrap/);
+});
+
 await test('the page says which build it is, so stale and broken are tellable apart', () => {
   // Three bugs running were reported as "still broken" when the fix was live
   // and the page in hand was older than it. Nobody could tell a fix that had
