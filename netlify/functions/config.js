@@ -24,9 +24,22 @@ export const handler = async () => {
   const url = (process.env.SUPABASE_URL || '').replace(/\/$/, '');
   const anon = KEY();
 
+  // WHICH BUILD AM I LOOKING AT. Three separate bugs have now been reported
+  // as "still broken" when the fix was live and the phone was holding an older
+  // page — and there was no way for anybody, including the person holding it,
+  // to tell those two apart. That is not a caching problem, it is a missing
+  // fact: a fix that cannot be confirmed as delivered is a fix that gets
+  // re-reported, re-diagnosed and re-shipped.
+  //
+  // Netlify sets COMMIT_REF and DEPLOY_ID on every build. Neither is secret —
+  // the commit is public and the deploy id identifies a build, not an account.
+  const build = (process.env.COMMIT_REF || '').slice(0, 7)
+    || (process.env.DEPLOY_ID || '').slice(0, 7) || '';
+
   const body = `// Generated per deploy from the environment. Nothing secret is here.
 window.WROUGHT_SUPABASE_URL = ${JSON.stringify(url)};
 window.WROUGHT_SUPABASE_ANON = ${JSON.stringify(anon)};
+window.WROUGHT_BUILD = ${JSON.stringify(build)};
 ${url && anon ? '' : `console.warn('WROUGHT: ${!url ? 'SUPABASE_URL' : 'SUPABASE_ANON_KEY'} is not set on this deploy. See /status.');\n`}`;
 
   return {
