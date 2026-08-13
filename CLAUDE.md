@@ -1671,6 +1671,49 @@ figure the whole plan rests on. They get their own thirty days whatever the
 buttons say. Third time this rule has had to be applied: **a window is not a
 memory.**
 
+### The bridge — a workout logged afterwards reaches the set record
+
+`setRowsFromWorkout()` / `syncSetsFromWorkouts()` in `lib/training.js` +
+`016_wrought_set_source.sql`. The founder asked *"what did I do today"* and
+ChatGPT recited the whole session from its own chat memory — bench, rows,
+treadmill — while **none of it stood in the record that matters.** A workout
+logged after the fact arrives as ONE event whose `detail.exercises` carries
+the lifts, and those exercises never reached `wrought_sets`: the grain the
+lift record, the estimated max, `orderInsight` and `progressionCall` are all
+computed from. The person logging by telling their AI afterwards — the most
+ordinary way to log — had training that counted for nothing in the one place
+it matters.
+
+- **The event's claim is expanded faithfully, never embellished.** "3 sets of
+  8 at 100" becomes exactly three rows of 8×100; a missing weight stays null.
+- **A session-backed event derives nothing** — the finaliser wrote it FROM
+  real sets, and deriving more would double every gym session.
+- **`event_id` (016) makes it idempotent**: `structure_entries` and
+  `amend_last` REPLACE an event's derived sets rather than doubling them, and
+  deleting the event cascades its derived sets away. The code works before the
+  migration runs (the 015 lesson) — it only loses idempotency until then.
+- **Every door feeds it**: `log` (typed or in passing), `structure_entries`
+  (dictated), `amend_last` (corrected later).
+- **The conversation is not the record.** The phrasebook maps *"what did I do
+  today"* to the tool and says why: reciting the chat back hides exactly the
+  entries that failed to land.
+
+### One movement normaliser, and the regex that was eating crunches
+
+`normaliseMovement()` + `TIMED_MOVEMENT` in `lib/training.js`, used by
+`save_routine`, `api-routines` and `api-progress` alike. The inline copies of
+the timed-movement pattern had `/row|run/` without word boundaries: **"row" is
+the front of every barbell row and "run" is the middle of "crunch"**, so
+strength movements were classified as cardio and had their sets silently
+nulled on save. Word boundaries plus lookarounds — a **Farmer's walk** and
+**walking lunges** are loaded strength movements that merely contain "walk".
+
+The old save defaulted every movement to 3×8, so a timed movement stored as
+EXACTLY that pair with no minutes is the artifact of a default that never
+described it — it reads back as unknown. **Only the exact pair**: somebody who
+genuinely stored 4×10 on a timed movement keeps it, because rewriting real
+data to fit a theory is worse than the artifact.
+
 ### A saved workout, edited from either door
 
 *"Didn't save all the info — some of it saved."* Two faults, and the first one
@@ -2105,7 +2148,7 @@ self-reporting scale removes the most-abandoned manual entry), then Strava.
 
 ## Conventions
 
-- `npm test` runs `test/harness.mjs` — 509 offline tests, no network, no database.
+- `npm test` runs `test/harness.mjs` — 515 offline tests, no network, no database.
   Run it before every push. It covers the JSON-RPC envelope (which fails as an
   uninformative "could not connect" inside ChatGPT) and all the arithmetic
   (which fails as a confidently wrong number in somebody's verdict).

@@ -41,6 +41,7 @@ import {
   exerciseKey, lastPerformance, progressionCall, TIERS,
   restingBurn, energyBalance, planFromRoutine, sessionTotals, earnedRoom,
   orderPlan, orderInsight, deviceMatrix, weekdayPattern, weekSoFar, goalCall, baselineFromClaim, readiness, nextSetLoad,
+  normaliseMovement, syncSetsFromWorkouts,
   ACTIVITY,
   targetOptions,
   PACES, PUSH,
@@ -149,7 +150,7 @@ The tell is the subject, not the spelling. "What's my route to the gym" is direc
 HOW PEOPLE ACTUALLY ASK. Nobody says "call the brief tool". They say one of a hundred things, half of them sideways, most of them while doing something else. Treat all of these as the named tool, without asking which they meant:
 "what should I be running", "give me a plan", "what am I doing for the next two months", "I need a programme to follow" mean start_block; "what am I doing today", "what week am I on", "how far through am I" mean block_status.
 
-  brief — "how am I doing", "how'd I do", "how was today", "what's the damage", "read me back", "give me the verdict", "the honest version", "morning", "night", "bedtime", "hit me", "am I on track", "how's the week", "recap", "the score", "how bad was it", "gym bro", "hey gym bro", "jim bro", "hey jim bro", "broski", "broheim", "coach", "hey coach", "trainer", "give it to me straight", "don't sugarcoat it", "roast me", "be honest with me"
+  brief — "how am I doing", "how'd I do", "how was today", "what's the damage", "read me back", "give me the verdict", "the honest version", "morning", "night", "bedtime", "hit me", "am I on track", "how's the week", "recap", "the score", "how bad was it", "gym bro", "hey gym bro", "jim bro", "hey jim bro", "broski", "broheim", "coach", "hey coach", "trainer", "give it to me straight", "don't sugarcoat it", "roast me", "be honest with me", "what did I do today", "did I train today", "what did I log today", "what did I eat today". THE CONVERSATION IS NOT THE RECORD: even when the whole workout was discussed in this very chat, answer these from the tool — what the server holds is what actually counts, and reciting the chat back hides exactly the entries that failed to land.
   whats_next — "what should I eat", "what now", "can I have a snack", "I'm hungry", "is there room", "should I train", "what do I need", "how much protein left", "am I allowed", "talk me out of it", "it's late and I'm at the fridge"
   progress — "am I actually progressing", "show me the trend", "how's the month", "is it working", "what's moving", "charts", "the numbers", "am I wasting my time"
   suggest_workout / programmes — "what should I train", "give me a workout", "what's today", "programme me", "build me something", "I've got 40 minutes", "what am I neglecting", "proper programme", "what should I be running"
@@ -973,6 +974,14 @@ async function log(args, user) {
   const structuredBy = supplied ? 'client' : parsed ? 'server' : 'none';
 
   const written = await insertEvents(user.id, profile, events, { rawInput: text });
+
+  // THE BRIDGE. A workout logged after the fact carries its exercises on the
+  // event, and until now they never reached wrought_sets — the grain the lift
+  // record, the estimated max and the progression call are computed from. So
+  // "log my workout: bench 235 for 4" now counts everywhere a live session
+  // would, not just on the day card.
+  await syncSetsFromWorkouts(user.id, written);
+
   const hungry = needsMacros(written, events);
   const untimed = needsDuration(written, events);
 
@@ -1139,6 +1148,16 @@ async function amendLast(args, user) {
     raw_input: combined,
   }).eq('id', prev.id);
   if (error) return { error: error.message };
+
+  // An amended workout re-derives its sets — "that was 235, not 225" has to
+  // reach the lift record too, not just the day card. Idempotent under 016:
+  // the event's derived sets are replaced, never doubled.
+  if (first.event_type === 'workout') {
+    await syncSetsFromWorkouts(user.id, [{
+      id: prev.id, event_type: 'workout', local_date: prev.local_date,
+      detail: { ...(prev.detail || {}), ...(first.detail || {}) },
+    }]);
+  }
 
   return {
     amended: true,
@@ -1467,6 +1486,21 @@ async function structureEntries(args, user) {
     if (error) skipped.push({ id: e.id, why: error.message });
     else updated.push({ id: prev.id, was: prev.summary, now: String(e.summary || prev.summary), type });
   }
+
+  // A dictated workout, once structured, feeds the set record exactly as a
+  // typed one does. Idempotent under 016: re-structuring replaces the derived
+  // sets rather than doubling them.
+  const structuredWorkouts = [];
+  for (const u of updated) {
+    if (u.type !== 'workout') continue;
+    const prev = byId.get(String(u.id)) || {};
+    const incoming = list.find(x => String(x.id) === String(u.id));
+    structuredWorkouts.push({
+      id: u.id, event_type: 'workout', local_date: prev.local_date,
+      detail: { ...(prev.detail || {}), ...(incoming?.detail && typeof incoming.detail === 'object' ? incoming.detail : {}) },
+    });
+  }
+  if (structuredWorkouts.length) await syncSetsFromWorkouts(user.id, structuredWorkouts);
 
   return {
     updated: updated.length,
@@ -2664,23 +2698,11 @@ async function saveRoutine(args, user) {
   // carry `minutes` and a free-text `detail` ("level 10+, 2.5–3 mph"), and when
   // it does, sets and reps stay NULL rather than being filled with a default
   // that describes nothing.
-  const shape = (e) => {
-    const minutes = Number(e.minutes) > 0 ? Math.round(Number(e.minutes)) : null;
-    const timed = minutes != null || /treadmill|bike|row(er)?|elliptical|walk|run|stair|cardio|swim/i.test(String(e.name || ''));
-    return {
-      name: String(e.name || '').trim(),
-      sets: e.sets != null ? Number(e.sets) || null : (timed ? null : 3),
-      reps: e.reps != null ? e.reps : (timed ? null : 8),
-      minutes,
-      // How it is actually set up. Kept verbatim, because "level 10+, 2.5–3 mph"
-      // is the whole instruction and there is no field that decomposes it well.
-      detail: e.detail ? String(e.detail).slice(0, 200) : null,
-      load_kg: e.load_kg ?? null,
-      rest_s: Number(e.rest_s) || 120,
-      muscles: Array.isArray(e.muscles) ? e.muscles : [],
-      cue: e.cue || null,
-    };
-  };
+  // ONE normaliser, shared with the website's editing door (lib/training.js) —
+  // the inline copy of this had /row|run/ without word boundaries, which
+  // classified every barbell ROW and every cRUNch as timed cardio and nulled
+  // their sets on save. Two copies of a regex is two chances at that.
+  const shape = normaliseMovement;
 
   // How a movement reads back, whichever kind it is.
   const describe = e => [

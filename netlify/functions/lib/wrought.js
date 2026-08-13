@@ -1138,7 +1138,7 @@ export async function insertEvents(userId, profile, parsedEvents, { source = 'ag
     };
   });
 
-  const { data, error } = await supabase.from('wrought_events').insert(rows).select('id, event_type, summary, local_date, estimated');
+  const { data, error } = await supabase.from('wrought_events').insert(rows).select('id, event_type, summary, local_date, estimated, detail');
   if (error) throw new Error(error.message);
   return data || [];
 }

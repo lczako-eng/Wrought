@@ -25,6 +25,7 @@
 //   effort. A weight typed into a plan is a guess with a text box around it.
 
 import { getAuthUser, supabase } from './lib/wrought.js';
+import { normaliseMovement } from './lib/training.js';
 import { allowed } from './lib/membership.js';
 
 const CORS = {
@@ -38,25 +39,16 @@ const CORS = {
 const ok  = body => ({ statusCode: 200, headers: CORS, body: JSON.stringify(body) });
 const bad = (code, error, say) => ({ statusCode: code, headers: CORS, body: JSON.stringify({ error, say }) });
 
-// Same shape the tool writes, so a routine built on the website and one built
-// by talking are indistinguishable afterwards.
-const TIMED = /treadmill|bike|row(er)?|elliptical|walk|run|stair|cardio|swim/i;
-
-function shape(e = {}) {
-  const minutes = Number(e.minutes) > 0 ? Math.round(Number(e.minutes)) : null;
-  const timed = minutes != null || TIMED.test(String(e.name || ''));
-  return {
-    name: String(e.name || '').trim().slice(0, 120),
-    sets: e.sets != null && e.sets !== '' ? Number(e.sets) || null : (timed ? null : 3),
-    reps: e.reps != null && e.reps !== '' ? e.reps : (timed ? null : 8),
-    minutes,
-    detail: e.detail ? String(e.detail).slice(0, 200) : null,
-    // Deliberately absent: load_kg. See the note at the top.
-    rest_s: Number(e.rest_s) || 120,
-    muscles: Array.isArray(e.muscles) ? e.muscles : [],
-    cue: e.cue ? String(e.cue).slice(0, 300) : null,
-  };
-}
+// ONE normaliser, shared with the save_routine tool — so a routine built on
+// the website and one built by talking are indistinguishable afterwards, and
+// a fixed classification bug is fixed at both doors at once.
+//
+// Loads pass THROUGH but cannot enter here: the Add box offers no load field,
+// which is the doctrine (a weight typed into a plan is a guess with a text
+// box around it) — but a load already stored by the tool must survive an
+// unrelated edit, because "a save never silently deletes" applies to fields
+// exactly as it applies to movements.
+const shape = normaliseMovement;
 
 export const handler = async (event) => {
   if (event.httpMethod === 'OPTIONS') return { statusCode: 204, headers: CORS, body: '' };

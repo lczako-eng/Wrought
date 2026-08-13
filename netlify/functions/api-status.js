@@ -47,6 +47,7 @@ const MIGRATIONS = [
   // An index rebuild, so there is no table or column to probe for. Assumed —
   // /ingest reports events_error and names this file when the write falls back.
   { file: '015_wrought_ingest_dedupe_fix.sql', probe: t('wrought_events'), gives: 'workouts from a watch actually landing', assume: true },
+  { file: '016_wrought_set_source.sql',  probe: col('wrought_sets', 'event_id'),    gives: 'after-the-fact workouts counting toward lifts without doubling on re-edits' },
 ];
 
 // A probe that treats EVERY error as "not run" lies twice over: a timeout reads

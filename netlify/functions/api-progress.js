@@ -13,7 +13,7 @@ import {
   rangeFacts, summariseRange, dayFacts, careFlags, scoreGoals, supabase,
 } from './lib/wrought.js';
 import { orderInsight, earnedRoom, energyBalance, exerciseKey, deviceMatrix, weekdayPattern, focusCall, lastSession,
-         weekSoFar, readiness, targetOptions, estimatedMax } from './lib/training.js';
+         weekSoFar, readiness, targetOptions, estimatedMax, normaliseMovement } from './lib/training.js';
 import { planRead } from './lib/plan.js';
 import { formWatch, cardioProgress } from './lib/form.js';
 import { nextNudge } from './lib/prompt.js';
@@ -572,9 +572,14 @@ export const handler = async (event) => {
         // The movements and the write-up, so a saved workout can be READ on the
         // website rather than only recited by the assistant. A routine you
         // cannot open is a name, and the founder asked for the procedure.
-        movements: (r.exercises || []).map(e => ({
-          name: e.name, sets: e.sets, reps: e.reps, cue: e.cue || null,
-        })),
+        // Through the same normaliser as both saving doors, which also carries
+        // minutes and detail — without them a treadmill walk on the Record tab
+        // rendered as a rep scheme nobody chose, and the stored 3×8 artifact
+        // from the old default kept being read back as if somebody meant it.
+        movements: (r.exercises || []).map(e => {
+          const m = normaliseMovement(e);
+          return { name: m.name, sets: m.sets, reps: m.reps, minutes: m.minutes, detail: m.detail, cue: m.cue };
+        }),
         sets: (r.exercises || []).reduce((a, e) => a + (Number(e.sets) || 0), 0),
         notes: r.notes || null,
         minutes: r.est_minutes || null,

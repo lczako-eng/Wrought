@@ -1491,3 +1491,149 @@ export function estimatedMax(weightKg, reps) {
   if (!Number.isFinite(w) || w <= 0 || !Number.isFinite(r) || r < 1) return null;
   return Math.round(w * (1 + Math.min(r, 12) / 30) * 10) / 10;
 }
+
+// ── Timed movements, and the artifact the old default left behind ───────────
+// WORD BOUNDARIES, because the first version of this pattern lived inline in
+// two files as /treadmill|bike|row(er)?|...|run|.../ and matched far more than
+// it meant to: "row" is the front of "Hammer Strength Row" and every barbell
+// row — strength movements, not cardio — and "run" is the middle of "crunch".
+// A crunch classified as timed work gets its sets silently nulled on save,
+// which is data loss by regex.
+// And the boundaries are not quite enough on their own: a FARMER'S WALK and
+// WALKING LUNGES are loaded strength movements that happen to contain the
+// word "walk". The lookarounds carve those out — a carry is sets and reps,
+// whatever the word inside it says.
+export const TIMED_MOVEMENT =
+  /\b(treadmill|bike|biking|cycling|spin|rower|rowing|erg|elliptical|(?<!farmer'?s\s)(?<!loaded\s)(?<!suitcase\s)walk(ing)?(?!\s*lunge)|run(ning)?(?!\s*lunge)|jog(ging)?|stairs?|stairmaster|cardio|swim(ming)?)\b/i;
+
+/**
+ * One movement, normalised the same way at every door.
+ *
+ * Two jobs. First, timed work carries minutes and a verbatim detail instead of
+ * sets and reps — a treadmill walk is not 3 sets of 8. Second, it quietly
+ * retires the exact artifact the OLD save left in stored routines: before
+ * minutes existed, every movement was defaulted to sets 3, reps 8, so a timed
+ * movement stored as precisely 3×8 with no minutes is the old default wearing
+ * a movement it never described, and it reads back as unknown rather than as a
+ * rep scheme nobody ever chose.
+ */
+export function normaliseMovement(e = {}) {
+  const minutes = Number(e.minutes) > 0 ? Math.round(Number(e.minutes)) : null;
+  const timed = minutes != null || TIMED_MOVEMENT.test(String(e.name || ''));
+
+  let sets = e.sets != null && e.sets !== '' ? Number(e.sets) || null : (timed ? null : 3);
+  let reps = e.reps != null && e.reps !== '' ? e.reps : (timed ? null : 8);
+
+  // The old default, on a movement it cannot describe. Only the EXACT pair is
+  // treated as the artifact — somebody who genuinely stored different numbers
+  // on a timed movement keeps them, because rewriting real data to fit a
+  // theory is worse than the artifact.
+  if (timed && minutes == null && sets === 3 && Number(reps) === 8) {
+    sets = null;
+    reps = null;
+  }
+
+  return {
+    name: String(e.name || '').trim().slice(0, 120),
+    sets,
+    reps,
+    minutes,
+    detail: e.detail ? String(e.detail).slice(0, 200) : null,
+    load_kg: e.load_kg ?? null,
+    rest_s: Number(e.rest_s) || 120,
+    muscles: Array.isArray(e.muscles) ? e.muscles : [],
+    cue: e.cue ? String(e.cue).slice(0, 300) : null,
+  };
+}
+
+// ── The bridge from a logged workout to the set record ──────────────────────
+// A workout logged AFTER THE FACT — "log my workout: bench 235 for 4, rows
+// 220 for 8" — arrives as one event whose detail carries the exercises, and
+// until this existed those exercises never reached wrought_sets: the grain
+// the lift record, the estimated max, last session and progressionCall are
+// all computed from. So the person logging by telling their AI afterwards —
+// the most ordinary way to log — had training that counted for nothing in
+// the one place it matters.
+
+/**
+ * The set rows a workout event implies. Pure, so the harness can hold it.
+ *
+ * "bench, 3 sets of 8 at 100" is a claim about three sets, and expanding it
+ * into three rows of 8×100 is a faithful expansion of exactly what was said —
+ * nothing is invented, the top set is not smeared into a PR, and a missing
+ * weight stays null rather than becoming a guess.
+ */
+export function setRowsFromWorkout(userId, event = {}) {
+  const d = event.detail || {};
+  // A session-backed event already has REAL sets — the finaliser wrote the
+  // event from them. Deriving more would double every gym session.
+  if (d.session_id) return [];
+  const exercises = Array.isArray(d.exercises) ? d.exercises : [];
+  if (!exercises.length) return [];
+
+  const rows = [];
+  // Caps are a backstop against a mangled parse, not a policy: twenty
+  // exercises of ten sets is already beyond any real session.
+  for (const [i, x] of exercises.slice(0, 20).entries()) {
+    const name = String(x.name || '').trim();
+    if (!name) continue;
+    const n = Math.min(Math.max(parseInt(x.sets, 10) || 1, 1), 10);
+    const reps = x.reps != null ? Math.round(Number(x.reps)) || null : null;
+    const kg = x.weight_kg != null ? Number(x.weight_kg) || null : null;
+    for (let s = 1; s <= n; s++) {
+      rows.push({
+        user_id: userId,
+        session_id: null,
+        event_id: event.id ?? null,
+        exercise: name.slice(0, 120),
+        exercise_key: exerciseKey(name),
+        set_number: s,
+        position: i + 1,
+        reps,
+        weight_kg: kg,
+        rpe: null,
+        muscles: Array.isArray(d.muscles) ? d.muscles : [],
+        note: null,
+        local_date: event.local_date,
+      });
+    }
+  }
+  return rows;
+}
+
+/**
+ * Write the derived sets for workout events, idempotently where the schema
+ * allows. Re-structuring or amending an event REPLACES its derived sets
+ * rather than doubling them — that is what event_id (016) is for. Before 016
+ * runs, the delete is skipped and the insert drops the column, so the door
+ * works either way; it just loses idempotency until the SQL is run.
+ */
+export async function syncSetsFromWorkouts(userId, events = []) {
+  const all = [];
+  for (const ev of events) {
+    if (ev?.event_type !== 'workout') continue;
+    all.push(...setRowsFromWorkout(userId, ev));
+  }
+  if (!all.length) return { written: 0 };
+
+  const ids = [...new Set(all.map(r => r.event_id).filter(Boolean))];
+  if (ids.length) {
+    // Best-effort: fails harmlessly before 016 (no column to match).
+    await supabase.from('wrought_sets').delete()
+      .eq('user_id', userId).in('event_id', ids);
+  }
+
+  const { error } = await supabase.from('wrought_sets').insert(all);
+  if (!error) return { written: all.length };
+
+  // 016 not run yet: the event_id column does not exist. Insert without it —
+  // correct before the migration, idempotent after. Never swallowed silently
+  // beyond this one known shape; anything else is a real error.
+  if (/event_id/.test(error.message)) {
+    const bare = all.map(({ event_id, ...r }) => r);
+    const { error: err2 } = await supabase.from('wrought_sets').insert(bare);
+    if (err2) return { written: 0, error: err2.message };
+    return { written: bare.length, fallback: true };
+  }
+  return { written: 0, error: error.message };
+}
