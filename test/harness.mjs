@@ -4118,6 +4118,45 @@ await test('every foreign key matches the type of the column it points at', () =
   assert.equal(ev.type, 'uuid');
 });
 
+await test('a running total is the whole day, never the item just logged', () => {
+  // "Add another ciabatta bun — how many am I at today?" came back with 330
+  // kcal, 11g protein, 59g carbs, 6g fat: ONE ciabatta bun, reported as a
+  // whole day. Structural rather than a model slip — `log` returned the day
+  // only as prose, and `amend_last` (the tool the model calls straight
+  // afterwards to fill in the macros it estimated) returned NO day total at
+  // all. At the moment the question was asked, the only numbers in front of
+  // it were the ones it had just written for that single item.
+  const mcp = readFileSync(new URL('../netlify/functions/mcp.js', import.meta.url), 'utf8');
+
+  assert.match(mcp, /function dayTotal\(day\)/);
+  assert.match(mcp, /is: 'EVERYTHING logged today, not the item just added'/);
+
+  // Every door that CHANGES the day hands the day back in numbers.
+  for (const [fn, next] of [
+    ['async function log(', 'async function parseLog('],
+    ['async function amendLast(', '// Reading back what the phone could only hear'],
+    ['async function structureEntries(', 'async function undoLast('],
+  ]) {
+    const at = mcp.indexOf(fn);
+    const end = mcp.indexOf(next, at);
+    const body = mcp.slice(at, end > at ? end : at + 6000);
+    assert.match(body, /day_total: dayTotal\(/, `${fn} does not return the day's total`);
+  }
+
+  // amend_last re-reads the day AFTER the change, or the total is stale by
+  // exactly the edit that was just made.
+  const amend = mcp.slice(mcp.indexOf('async function amendLast('),
+                          mcp.indexOf('// Reading back what the phone could only hear'));
+  const changeAt = amend.indexOf('.update({');
+  const readAt = amend.indexOf('const dayNow = await dayFacts(');
+  assert.ok(readAt > changeAt, 'the day is read before the amend lands');
+
+  assert.match(SERVER_INSTRUCTIONS, /A RUNNING TOTAL IS THE WHOLE DAY, NEVER THE THING JUST LOGGED/);
+  assert.match(SERVER_INSTRUCTIONS, /never quote back the macros you just estimated for one meal/);
+  // A low total is surfaced, not inflated — the same honesty as everywhere else.
+  assert.match(SERVER_INSTRUCTIONS, /a fact worth surfacing, not a number to quietly inflate/);
+});
+
 group('The questionnaire is a gate — the founder\'s explicit instruction');
 
 const { intakeGate } = await import('../netlify/functions/lib/intake.js');
