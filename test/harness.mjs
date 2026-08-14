@@ -5906,6 +5906,49 @@ await test('the dashboard does not queue its queries one behind the next', () =>
   }
 });
 
+await test('the head start can always be thrown away', () => {
+  // Asking for the dashboard used to wait on four things the SERVER does not
+  // need — the CDN answering, the client initialising, the session being read,
+  // the MFA check — when the only thing it wants is the bearer token, which is
+  // already in localStorage.
+  //
+  // The request now goes out first. That is only safe because nothing depends
+  // on it: every failure resolves to null and the ordinary path runs, so a
+  // token shape this does not recognise can never be the reason somebody
+  // cannot load their own dashboard.
+  const src = page('app.html');
+  const tok = src.slice(src.indexOf('function tokenFromStorage()'), src.indexOf('function prefetchProgress()'));
+  assert.match(tok, /catch \{ return null; \}/, 'an unreadable token throws instead of falling back');
+
+  const pre = src.slice(src.indexOf('function prefetchProgress()'), src.indexOf('// Last visit\'s screen'));
+  assert.match(pre, /if \(!token\) return null;/);
+  assert.match(pre, /r\.ok \? r\.json\(\) : null/, 'a rejected head start is treated as data');
+  assert.match(pre, /\.catch\(\(\) => null\)/, 'a failed head start rejects instead of falling back');
+
+  // Claimed ONCE. A second load must go to the network rather than redraw an
+  // answer that merely happens to still be in a variable.
+  const load = src.slice(src.indexOf('async function load(token)'), src.indexOf('function keepPayload('));
+  assert.match(load, /const head = earlyHit; earlyHit = null;/);
+  // And both paths store the same thing, or the next warm paint disagrees with
+  // the screen it is standing in for.
+  assert.match(load, /keepPayload\(got\)/);
+  assert.match(src, /function keepPayload\(d\)/);
+
+  // The warm paint never runs for somebody who is signed out — a flash of your
+  // own old data before a sign-in form is worse than waiting.
+  const warm = src.slice(src.indexOf('function paintLastVisit()'), src.indexOf('async function boot()'));
+  assert.match(warm, /if \(!tokenFromStorage\(\)\) return false;/,
+    'the paint and the request disagree about who is signed in');
+  // Presence of a token is not the same question as a VALID one: an expired
+  // session left the old dashboard flashing up and then sitting in the DOM
+  // behind the sign-in form.
+  const tokfn = src.slice(src.indexOf('function tokenFromStorage()'), src.indexOf('function prefetchProgress()'));
+  assert.match(tokfn, /body\.exp && body\.exp \* 1000 < Date\.now\(\)/, 'an expired token still counts as signed in');
+  // A payload from an older build that no longer renders is a cold load, never
+  // a broken screen.
+  assert.match(warm, /catch \{ return false; \}/);
+});
+
 await test('the browser does not queue its round trips either', () => {
   // The same lesson, one layer out, and it recurred within a day of being
   // written down: opening the Trainer tab fetched the routines, then the
