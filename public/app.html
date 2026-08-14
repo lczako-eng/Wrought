@@ -3054,6 +3054,7 @@ async function loadTrainer() {
   if (!session) { stopTrainer(); return; }
   const data = { session };
   if (!trainerRoutinesFull.length) await loadRoutines();
+  if (trainerConnected === null) await loadConnectedCount(session.access_token);
   const res = await fetch('/.netlify/functions/api-session', {
     headers: { Authorization: `Bearer ${data.session.access_token}` },
   });
@@ -3117,6 +3118,7 @@ function renderTrainer(d) {
     $('content').innerHTML = `<section class="panel hero">
       <h2>Trainer</h2>
       <p class="caveat">${esc(d.say)}</p></section>
+      ${notConnectedCallout()}
       ${routinesPanel({ routines: trainerRoutinesFull.length ? trainerRoutinesFull : (d.routines?.length ? d.routines : trainerRoutines) }, { editable: true })}`;
     wireRoutines();
     stagger();
@@ -3180,6 +3182,32 @@ function renderTrainer(d) {
 // ids, the active flag and the full movement detail, which the dashboard has
 // no use for.
 let trainerRoutinesFull = [];
+
+// IS ANY ASSISTANT ACTUALLY WRITING TO THIS ACCOUNT.
+//
+// The saved-workouts panel says "say the name of one of these to your AI and
+// it starts" — and that sentence is FALSE, on this account, if nothing is
+// connected to it. Which is the shape of the worst failure this product has:
+// the AI answers "saved" perfectly truthfully, into an account that is not the
+// one on screen, and nothing anywhere errors. It does not look broken. It
+// looks like you did nothing.
+//
+// The connector's token and this browser's session are separate logins — that
+// is settled and correct — but the consequence is that a fork is invisible
+// from both ends unless something says so. So the screen where somebody is
+// staring at a workout that is not there is the screen that says it.
+let trainerConnected = null;
+
+async function loadConnectedCount(token) {
+  try {
+    const res = await fetch('/.netlify/functions/api-connections', {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) return;                       // Unknown stays unknown; never guess a fork.
+    const body = await res.json();
+    trainerConnected = (body.connections || []).length;
+  } catch { /* offline — say nothing rather than accuse */ }
+}
 
 async function loadRoutines() {
   const { data } = sb ? await sb.auth.getSession() : { data: {} };
@@ -3289,6 +3317,10 @@ function wireSwipe() {
 
 function wireRoutines() {
   wireSwipe();
+  $('gotoacct')?.addEventListener('click', (e) => {
+    e.preventDefault();
+    document.querySelector('.range.view[data-view="account"]')?.click();
+  });
 
   // Taking one out is one tap because it is reversible. Deleting one asks,
   // and is only reachable on a row already taken out — the same two deliberate
@@ -3324,6 +3356,23 @@ function wireRoutines() {
     if (!name) { el?.focus(); return; }
     routineAction({ action: 'create', name });
   });
+}
+
+// Said ONCE, where it matters, and only when it is definitely true. Nothing is
+// claimed while the answer is unknown — accusing somebody's setup of being
+// broken when the request merely failed is its own kind of wrong.
+function notConnectedCallout() {
+  if (trainerConnected !== 0) return '';
+  return `<section class="panel">
+    <h2>Nothing is connected to this account</h2>
+    <p class="sub">No assistant holds a token for <strong>this</strong> record. So "say the name to your AI
+    and it starts" will not work yet, and anything an AI has told you it saved went somewhere else.</p>
+    <p class="sub dim">Two causes, and they look identical from the outside: the connector was never added,
+    or it was added while signed in under a different email — in which case there are two accounts with half
+    a history each. Ask your AI <em>"what account am I on"</em> and compare it with the address at the bottom
+    of this page.</p>
+    <p class="sub"><a class="linky" href="#account" id="gotoacct">Open Account to connect or merge</a></p>
+  </section>`;
 }
 
 function checklistPanel(p) {

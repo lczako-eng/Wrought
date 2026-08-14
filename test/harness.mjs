@@ -4924,6 +4924,34 @@ await test('saying something was saved may only ever come from a tool', () => {
   assert.match(SERVER_INSTRUCTIONS, /save_routine — "save that", "add that to my list"/);
 });
 
+await test('a workout that is not there says whether anything is even connected', () => {
+  // "Still not done." The saved-workouts panel says "say the name of one of
+  // these to your AI and it starts" — and that sentence is FALSE on this
+  // account if nothing holds a token for it. Which is the shape of the worst
+  // failure this product has: the AI answers "saved" perfectly truthfully,
+  // into an account that is not the one on screen, and nothing errors. It does
+  // not look broken. It looks like you did nothing.
+  const src = page('app.html');
+  assert.match(src, /function notConnectedCallout\(\)/);
+  assert.match(src, /\$\{notConnectedCallout\(\)\}/, 'the callout is never rendered');
+
+  // NOTHING IS CLAIMED WHILE THE ANSWER IS UNKNOWN. A failed request must not
+  // become an accusation that somebody's setup is broken.
+  const fn = src.slice(src.indexOf('function notConnectedCallout()'), src.indexOf('function checklistPanel('));
+  assert.match(fn, /if \(trainerConnected !== 0\) return ''/,
+    'the warning fires on unknown, not only on zero');
+  const load = src.slice(src.indexOf('async function loadConnectedCount('), src.indexOf('function notConnectedCallout('));
+  assert.match(load, /if \(!res\.ok\) return;/, 'a failed lookup is treated as a fork');
+  assert.match(load, /catch \{ \/\* offline/, 'an offline browser accuses the account');
+
+  // Both causes are named, because they are indistinguishable from outside and
+  // lead to completely different fixes.
+  assert.match(fn, /never added/);
+  assert.match(fn, /different email/);
+  // And it hands over the one question that actually settles it.
+  assert.match(fn, /what account am I on/);
+});
+
 await test('a save proves itself by reading the account back afterwards', () => {
   // Echoing the object just sent proves nothing — it is the same sentence a
   // model could write unaided. What cannot be fabricated is the state of the
