@@ -4938,8 +4938,23 @@ await test('a workout that is not there says whether anything is even connected'
   // NOTHING IS CLAIMED WHILE THE ANSWER IS UNKNOWN. A failed request must not
   // become an accusation that somebody's setup is broken.
   const fn = src.slice(src.indexOf('function notConnectedCallout()'), src.indexOf('function checklistPanel('));
-  assert.match(fn, /if \(trainerConnected !== 0\) return ''/,
-    'the warning fires on unknown, not only on zero');
+  // THREE STATES, and nothing is said while the answer is unknown. The default
+  // path returns nothing at all, so an unreachable endpoint stays silent.
+  assert.match(fn, /trainerLinkState === 'nothing_connected'/);
+  assert.match(fn, /trainerLinkState === 'connected_never_written'/);
+  assert.match(fn, /\n  return '';\n\}/, 'an unknown state still says something');
+
+  // The state the dashboard could never see before: a perfectly good token
+  // that has never been used. From here that looked exactly like a fork, and
+  // exactly like broken software.
+  assert.match(fn, /is connected but has never written here/);
+  assert.match(fn, /answering from the conversation instead/);
+  const api = readFileSync(new URL('../netlify/functions/api-connections.js', import.meta.url), 'utf8');
+  assert.match(api, /state: !active\.length \? 'nothing_connected'/);
+  assert.match(api, /'connected_never_written'/);
+  // Derived from the events the connector itself writes, so it cannot be
+  // fooled by a token that merely exists.
+  assert.match(api, /\.eq\('source', 'agent'\)/);
   const load = src.slice(src.indexOf('async function loadConnectedCount('), src.indexOf('function notConnectedCallout('));
   assert.match(load, /if \(!res\.ok\) return;/, 'a failed lookup is treated as a fork');
   assert.match(load, /catch \{ \/\* offline/, 'an offline browser accuses the account');
