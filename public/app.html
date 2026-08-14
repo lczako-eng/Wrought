@@ -1469,11 +1469,23 @@ a.ghost { display: inline-block; }
 <link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm">
 <script src="/config.js"></script>
 <script type="module">
-import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm';
-
+// THE SUPABASE CLIENT IS IMPORTED LATE, ON PURPOSE.
+//
+// It used to be a static import, which means the ENTIRE module body waits for
+// a third-party CDN before a single line of it runs — and the warm render, the
+// one thing built to put last visit's screen up instantly, is in that body. So
+// "paints instantly" was a lie in practice: it could not paint until jsdelivr
+// answered (a cold DNS lookup, a TLS handshake and ~110KB), and then until
+// Supabase itself answered a network call to say who you are. Measured on a
+// throttled phone: FIVE serial round trips, and the first thing on screen at
+// just over a second — three of those trips spent only working out the
+// identity of somebody whose last screen was already sitting in localStorage.
+//
+// Dynamic, so the body runs immediately, paints what it already has, and picks
+// the client up afterwards.
 const SUPABASE_URL  = window.WROUGHT_SUPABASE_URL  || '';
 const SUPABASE_ANON = window.WROUGHT_SUPABASE_ANON || '';
-const sb = SUPABASE_URL ? createClient(SUPABASE_URL, SUPABASE_ANON) : null;
+let sb = null;
 
 const $ = id => document.getElementById(id);
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;' }[c]));
@@ -1494,6 +1506,70 @@ let logDays = [];
 // whose main screen they have never seen. Same render path as the real thing,
 // so the demo can never drift from what people actually get.
 const DEMO = new URLSearchParams(location.search).has('demo');
+
+// The bearer token, read the same place the Supabase client reads it from.
+//
+// Deliberately forgiving: any shape it cannot understand returns null and the
+// ordinary path runs. This is a head start, never a source of truth, and it
+// must never be the reason somebody cannot load their own dashboard.
+function tokenFromStorage() {
+  try {
+    const key = Object.keys(localStorage).find(k => /^sb-.*-auth-token$/.test(k));
+    if (!key) return null;
+    const raw = JSON.parse(localStorage.getItem(key));
+    const t = raw?.access_token || raw?.currentSession?.access_token
+           || (Array.isArray(raw) ? raw[0] : null);
+    if (typeof t !== 'string' || t.length < 20) return null;
+    // AND IT HAS TO STILL BE VALID. Presence of the key was the first version
+    // and it was not the same question: somebody whose session expired last
+    // week still has one sitting there, so they got a flash of their own old
+    // dashboard and then the sign-in form — with the data left in the DOM
+    // underneath it. Reading the expiry costs nothing and makes the rule true.
+    const body = JSON.parse(atob(t.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')));
+    if (body.exp && body.exp * 1000 < Date.now()) return null;
+    return t;
+  } catch { return null; }
+}
+
+// Fired before the client exists. Never awaited here — the promise is handed
+// to load(), which uses it if it arrived and re-fetches if it did not.
+function prefetchProgress() {
+  if (DEMO || view !== 'record') return null;
+  const token = tokenFromStorage();
+  if (!token) return null;
+  return fetch(`/.netlify/functions/api-progress?days=${days}`,
+               { headers: { Authorization: `Bearer ${token}` } })
+    .then(r => (r.ok ? r.json() : null))
+    .catch(() => null);
+}
+
+// Last visit's screen, straight from localStorage, before any network at all.
+//
+// Only when a Supabase session token is actually sitting there — otherwise a
+// signed-out person gets a flash of their old data before the sign-in form,
+// which is a worse thing to do than making them wait. Only the Record view at
+// the current range, because that is what is cached. And if the stored payload
+// is from an older build and no longer renders, the throw is caught and the
+// load is simply cold — a stale shape must never take the screen down.
+function paintLastVisit() {
+  if (DEMO || view !== 'record') return false;
+  if (/type=recovery/.test(location.hash)) return false;
+  if (new URLSearchParams(location.search).has('merge')) return false;
+  try {
+    // The same check the head start uses, so the screen and the request can
+    // never disagree about whether this person is signed in.
+    if (!tokenFromStorage()) return false;
+    const kept = localStorage.getItem(`wrought_last_${days}`);
+    if (!kept) return false;
+    const d = JSON.parse(kept);
+    if (!d || !d.today) return false;
+    $('app').hidden = false;
+    render(d);
+    $('content').insertAdjacentHTML('afterbegin',
+      '<div class="updating" id="updating">updating<i></i><i></i><i></i></div>');
+    return true;
+  } catch { return false; }   // a corrupt or outdated cache is just a cold load
+}
 
 async function boot() {
   if (DEMO) {
@@ -4237,6 +4313,16 @@ async function load(token) {
     }
   } catch { /* a corrupt cache is just a cold load */ }
   if (!warm) $('content').innerHTML = skeleton();
+
+  // The request that went out before the client loaded, if it landed. Claimed
+  // once — a second load must go to the network rather than redraw a stale
+  // answer that happens to still be in a variable.
+  const head = earlyHit; earlyHit = null;
+  if (head) {
+    const got = await head;
+    if (got) { lastPayload = got; render(got); keepPayload(got); return; }
+  }
+
   const res = await fetch(`/.netlify/functions/api-progress?days=${days}`, { headers: { Authorization: `Bearer ${token}` } });
   // The generic message was a dead end during setup: a misconfigured key, an
   // expired session and a broken query all read identically. The status and the
@@ -4248,9 +4334,15 @@ async function load(token) {
   }
   lastPayload = await res.json();
   render(lastPayload);
-  // Kept for the NEXT open. Only the record view, only per range, and only
-  // after a successful fresh load — an error never refreshes the cache.
-  try { localStorage.setItem(`wrought_last_${days}`, JSON.stringify(lastPayload)); } catch { /* full or blocked: cold loads still work */ }
+  keepPayload(lastPayload);
+}
+
+// Kept for the NEXT open. Only the record view, only per range, and only after
+// a successful fresh load — an error never refreshes the cache. One function,
+// because the head-start path and the ordinary path must store the same thing.
+function keepPayload(d) {
+  try { localStorage.setItem(`wrought_last_${days}`, JSON.stringify(d)); }
+  catch { /* full or blocked: cold loads still work */ }
 }
 
 // The day as one graphic. A ring reads as a proportion before it reads as a
@@ -6748,6 +6840,44 @@ function notesPanel(d) {
        <span class="when">${esc(x.date.slice(5))}</span></div>`).join('')}</div></section>`;
 }
 
+// PAINT BEFORE ANYTHING IS FETCHED, then boot.
+//
+// Reading the previous screen out of localStorage needs no network, no client
+// and no identity, so it happens first. Nothing here decides anything: boot
+// still runs, still checks the session, and still replaces this — with the
+// gate if they are signed out, with fresh data when it lands, or with the
+// error if the fetch fails. A cached screen presented as current is a wrong
+// screen, which is why the "updating" pill goes on in the same breath.
+// THE FETCH STARTS FIRST, THE PAINT HAPPENS WHILE IT IS IN FLIGHT.
+//
+// Order matters and the obvious order is wrong both ways round. A static
+// import blocks the whole module, so nothing can paint until a third-party CDN
+// answers. But simply awaiting a dynamic one after painting is worse in the
+// other direction — measured, it pushed real data half a second later, because
+// the request had not even started while the screen was being drawn.
+//
+// So: kick the import off, paint from localStorage while it travels, then pick
+// it up. Neither waits for the other.
+const clientReady = import('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm');
+
+// AND THE DAY'S DATA IS ASKED FOR BEFORE ANY OF THAT.
+//
+// This is where the second actually went. Fetching the dashboard waited on:
+// the CDN answering, the client initialising, the session being read, and the
+// MFA check — four things, none of which the SERVER needs in order to answer,
+// because the only thing it wants is the bearer token. And the token is
+// already sitting in localStorage; that is where the client reads it from too.
+//
+// So the request goes out immediately and travels while all of that happens.
+// If the token is missing, stale in shape, or rejected, this resolves to null
+// and load() does exactly what it always did — nothing here is authoritative,
+// it is a head start that can be thrown away.
+let earlyHit = prefetchProgress();
+
+paintLastVisit();
+
+const { createClient } = await clientReady;
+if (SUPABASE_URL) sb = createClient(SUPABASE_URL, SUPABASE_ANON);
 boot();
 </script>
 </body>
