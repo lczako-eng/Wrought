@@ -784,6 +784,41 @@ table.matrix td.rh.cold { color: var(--heat-3); }
    pushed the row wider than the card — and .rmv is overflow: hidden (the swipe
    needs it, the Remove button sits behind), so the excess was CLIPPED in
    silence. Clipped and never-saved look identical to whoever is reading it. */
+/* The manual, shown rather than described.
+   A gap in a plan is information, not an alarm — and so is a manual: this is
+   the calmest panel in the product on purpose, because somebody reading it is
+   already unsure. */
+.guidehero { background: linear-gradient(180deg, #1B1714, var(--scale)); }
+.demo {
+  margin: 10px 0 12px; padding: 14px 15px; border-radius: 12px;
+  background: #12100E; border: 1px solid var(--edge); min-height: 96px;
+}
+.demo-say {
+  margin: 0; font-size: 16px; line-height: 1.45; color: var(--bright);
+  /* The sentence a person said, so it is set like speech rather than like a
+     label. */
+  font-family: var(--grotesk); letter-spacing: .01em;
+}
+.demo-does {
+  margin: 9px 0 0; font-size: 13px; line-height: 1.5; color: var(--ash);
+  opacity: 0; transform: translateY(4px); transition: opacity .32s var(--ease), transform .32s var(--ease);
+}
+.demo-does.in { opacity: 1; transform: none; }
+.demo-does::before { content: '↳ '; color: var(--heat-2); }
+.caret {
+  display: inline-block; width: 2px; height: 1.05em; margin-left: 2px;
+  vertical-align: -.16em; background: var(--heat-2); animation: blink 1.05s steps(1) infinite;
+}
+@keyframes blink { 50% { opacity: 0; } }
+/* Told the phone that movement makes them ill: no typing, no rotation, no
+   caret. Not a slower animation — none. The content still has to be there. */
+.demo.still .caret { display: none; }
+@media (prefers-reduced-motion: reduce) {
+  .caret { animation: none; opacity: 0; }
+  .demo-does { transition: none; }
+}
+.sub.tight { margin: 2px 0 9px; }
+.taphint { text-align: center; margin: -2px 0 14px; }
 .rmvn { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .rmvn em { font-family: var(--mono); font-size: 10.5px; font-style: normal; color: var(--ash-dim);
            overflow-wrap: anywhere; }
@@ -1352,6 +1387,14 @@ a.ghost { display: inline-block; }
     </p>
     <p class="msg" id="msg"></p>
 
+    <!-- THE MANUAL HAS TO BE REACHABLE WITHOUT A PASSWORD.
+         The Guide is written to need no session and no request, for exactly
+         one reason: it is the screen somebody needs most when they cannot get
+         signed in, or when they are deciding whether this is worth signing up
+         for at all. The gate covered the whole app, so there was no way to get
+         to it — a promise made in a comment and not kept in the markup. -->
+    <p class="gate-alt gate-peek"><a href="#" id="peek">What do I say to it?</a></p>
+
     <!-- Coming back from a reset email. Landing on the ordinary sign-in form
          with a password they do not know is the one thing that screen must not
          do — it is the exact moment somebody gives up. -->
@@ -1385,11 +1428,11 @@ a.ghost { display: inline-block; }
       <a class="mark" href="#record" id="home" aria-label="WROUGHT — back to your record"><img src="/icon.svg" alt="" width="26" height="26"><span class="name">Wrought</span></a>
       <nav class="ranges views" role="group" aria-label="View">
         <button class="range view" data-view="record" aria-pressed="true">Record</button>
+        <button class="range view" data-view="guide" aria-pressed="false">Say this</button>
         <button class="range view" data-view="log" aria-pressed="false">Log</button>
         <button class="range view" data-view="calendar" aria-pressed="false">Calendar</button>
         <button class="range view" data-view="trainer" aria-pressed="false">Trainer</button>
         <button class="range view" data-view="photos" aria-pressed="false">Photos</button>
-        <button class="range view" data-view="guide" aria-pressed="false">Guide</button>
         <button class="range view" data-view="account" aria-pressed="false">Account</button>
         <button class="range view" data-view="admin" aria-pressed="false" id="admintab" hidden>Admin</button>
       </nav>
@@ -1572,6 +1615,22 @@ async function submitAuth() {
   boot();
 }
 
+// Reading the manual is not signing in, and it must not look like it. The
+// tab row comes along because every other view says "sign in to see this"
+// rather than doing nothing, so wandering is answered honestly.
+let peeking = false;
+$('peek')?.addEventListener('click', (e) => {
+  e.preventDefault();
+  peeking = true;
+  $('gate').hidden = true;
+  $('app').hidden = false;
+  document.querySelectorAll('.range.view').forEach(x =>
+    x.setAttribute('aria-pressed', String(x.dataset.view === 'guide')));
+  view = 'guide';
+  $('rangebtns').style.display = 'none';
+  refresh();
+});
+
 $('send')?.addEventListener('click', submitAuth);
 $('pass')?.addEventListener('keydown', e => { if (e.key === 'Enter') submitAuth(); });
 $('email')?.addEventListener('keydown', e => { if (e.key === 'Enter') $('pass').focus(); });
@@ -1603,13 +1662,14 @@ document.querySelectorAll('.range.view').forEach(b => b.addEventListener('click'
   $('rangebtns').style.display = (view === 'record' || view === 'calendar') ? '' : 'none';
   logCursor = null; logDays = [];
   stopTrainer();
+  stopGuide();
   refresh();
 }));
 
 async function refresh() {
   // No session needed and no request made — it is the manual, and somebody
   // who cannot get signed in is exactly who needs to read it.
-  if (view === 'guide') { $('content').innerHTML = guideView(); wireGuide(); stagger(); return; }
+  if (view === 'guide') { $('content').innerHTML = guideView(); wireGuide(); playGuideDemo(); stagger(); return; }
   if (view === 'log') return loadLog(true);
   if (view === 'trainer') return startTrainer();
   if (view === 'photos') return loadPhotos();
@@ -4477,30 +4537,49 @@ function burnSplit(b) {
 // one screen that has to work when somebody cannot get signed in, which is
 // precisely when they most need to know what to say. There is a test that the
 // two agree on what matters.
+// WHAT IT LOOKS LIKE, before what it is. Nobody reads a description of
+// talking; they need to SEE somebody talk and see what came back. Mirrored
+// from lib/guide.js — NOT ONE INVENTED NUMBER on the answering side, because a
+// demo figure on a health product reads as somebody's own data at a glance,
+// and this is the one screen a person is on precisely because they do not yet
+// know which is which.
+const GUIDE_DEMO = [
+  { say: 'had a steak and a baked potato', does: 'Logged, with its macros, under today.' },
+  { say: 'just did ten push-ups', does: 'Kept — even mid-way through a conversation about something else.' },
+  { say: "I'm going to the gym", does: 'One line back: what is most overdue, and how long.' },
+  { say: 'got 8 at 92.5, felt heavy', does: 'The set, and your own words about it, on the record.' },
+  { say: "what's the damage", does: 'Your week, read back honestly.' },
+];
+
 const GUIDE_SECTIONS = [
   { title: 'Just say it',
+    short: 'One sentence. Any conversation.',
     note: 'One sentence is a complete log. Never a form, never "what were the macros".',
     lines: ['had a steak and a baked potato', 'two eggs and black coffee', '330 this morning',
             'slept about six hours, badly', 'just did ten push-ups',
             'worked at the petting zoo, about four hours on task'],
     after: 'It works in any conversation, not just one about training. Mention push-ups while asking about a tax form and the push-ups get filed — quietly — and the tax conversation carries on.' },
   { title: 'Set it up — once',
+    short: 'Five facts, asked once.',
     note: 'Five facts and a plan, asked in passing and never as a signup form.',
     lines: ['I\'m 6\'3", 330lb, born 1982, male, on my feet most days',
             'I want to lose weight, steady pace, four days a week, normal push',
             'make it aggressive', 'ease off, this is too much', 'stop nagging me about training'],
     after: 'Pace and push are separate on purpose. Pace is how fast the plan aims; push is how often training gets raised unprompted — turning down the nagging must not turn down the honesty.' },
   { title: 'Get a workout',
+    short: 'A proposal, not three questions.',
     note: 'One line back with a proposal already in it, not three questions.',
     lines: ['I\'m going to the gym', 'let\'s do legs tonight, an hour', 'what should I train',
             'let\'s do S-Tier', 'I\'m at the home gym today', 'give me a proper programme'],
     after: 'It picks what is most overdue from your own log. If your resting heart rate is up or you slept badly it says so BEFORE the plan and tells you to go lighter — the body gets a veto, never a spur.' },
   { title: 'At the rack',
+    short: 'How it felt beats the number.',
     note: 'Say what happened. Anything about how it FELT is worth more than the number.',
     lines: ['got 8', '92.5 for 6', 'failed at 5', 'third set I rushed it',
             'someone\'s on the bench', 'what\'s left', 'that was legs, forty minutes'],
     after: 'You never have to say "end session". Finish the last set and walk out — a session with sets in it is filed as training whether or not anybody closed it.' },
   { title: 'Save a workout you like',
+    short: 'A name and the reason for the order.',
     note: 'A name, the movements, and the reason they are in that order.',
     lines: ['save this as my S-Tier workout',
             'save a routine called S-Tier: bench 4×8, incline dumbbell 3×10, dips 3× to failure, cable flyes 3×12. It\'s for chest volume — go heavy on bench, leave a rep in on the rest',
@@ -4508,16 +4587,19 @@ const GUIDE_SECTIONS = [
             'what routines do I have'],
     after: 'The write-up is what makes it a workout rather than a list, and it is shown at the top every time you start it. It survives adding exercises later.' },
   { title: 'Show it your gym',
+    short: 'A photo is an equipment list.',
     note: 'A photograph of a gym is an equipment list.',
     lines: ['here are some pictures of my gym', 'this is the hotel gym I\'m in this week',
             'what can I actually do with this'],
     after: 'The AI reads the photographs — this server never sees them — and saves the equipment as it goes, so plans are built around machines that are actually there. More than one gym is normal; name them and they are kept apart.' },
   { title: 'Ask how it is going',
+    short: 'Every number computed, never guessed.',
     note: 'Every number is computed on the server. None of it is a language model guessing.',
     lines: ['gym bro', 'what\'s the damage', 'hit me', 'how am I doing this week',
             'what\'s my plan', 'I\'m hungry', 'it\'s late and I\'m at the fridge', 'talk me out of it'],
     after: 'The honesty is the point and the register is yours: gentle, honest or brutal. Say which. It is never about your body, only about what you did.' },
   { title: 'Fix something',
+    short: 'Changing your mind is one sentence.',
     note: 'Changing your mind is one sentence and never a negotiation.',
     lines: ['that was 28 minutes, not 20', 'that steak was more like 400 grams', 'undo that',
             'change my step goal to 12,000', 'drop the protein goal'],
@@ -4534,35 +4616,103 @@ const GUIDE_REFUSES = [
   'Medicine. It is not a medical device, it says so, and it points at a doctor.',
 ];
 
+// SHOW IT, THEN LIST IT.
+//
+// The founder: "the top, about how to use this thing, has to be more apparent
+// — easier to use, less words, or it needs to be just easier to read.
+// Animated."
+//
+// He is right, and the old screen was the exact failure this file's own
+// doctrine warns about: sixteen paragraphs of prose explaining that you do not
+// need to learn anything. Reading a description of talking teaches nobody how
+// to talk. So the screen now OPENS with somebody talking — a real sentence
+// typing itself out and the thing that happens next — and everything under it
+// is trimmed to the sentences themselves, which are the actual manual. The
+// long-form reasoning still exists, in the `guide` tool, where a model reads
+// it and prose is the right shape.
 function guideView() {
   return `
-    <section class="panel">
-      <h2>How to use it</h2>
-      <p class="sub">You do not learn commands. You talk — to ChatGPT or Claude, in any
-      conversation, with the connector on. Everything below is a sentence you can say
-      exactly as written. <strong>Tap one to copy it.</strong></p>
+    <section class="panel guidehero">
+      <h2>Just talk to it</h2>
+      <div class="demo" id="demo" aria-live="polite">
+        <p class="demo-say"><span id="demo-text"></span><i class="caret"></i></p>
+        <p class="demo-does" id="demo-does"></p>
+      </div>
+      <p class="sub dim">An example, not your data. In ChatGPT or Claude, any conversation.</p>
+      ${peeking ? '<p class="sub"><a class="linky" href="#" id="unpeek">← Back to sign in</a></p>' : ''}
     </section>
     ${GUIDE_SECTIONS.map(sec => `<section class="panel">
       <h2>${esc(sec.title)}</h2>
-      <p class="sub">${esc(sec.note)}</p>
+      <p class="sub tight">${esc(sec.short || sec.note)}</p>
       <div class="says">${sec.lines.map(l =>
         `<button class="say" type="button" data-say="${esc(l)}">${esc(l)}</button>`).join('')}</div>
-      <p class="sub dim">${esc(sec.after)}</p>
     </section>`).join('')}
+    <p class="sub dim taphint">Tap any line to copy it.</p>
     <section class="panel">
       <h2>What it will not do</h2>
-      <p class="sub">Printed here because "give us years of your life" is only a fair ask
-      next to what it refuses to do with them.</p>
       <div class="rows">${GUIDE_REFUSES.map(r =>
         `<div class="wkrow"><span class="nm">${esc(r)}</span></div>`).join('')}</div>
-      <p class="caveat">Your whole record comes back on demand as JSON or CSV, always —
-      even lapsed, even revoked. There is more at <a class="linky" href="/about.html">wrought.fit/about</a>.</p>
+      <p class="caveat">Your record comes back on demand as JSON or CSV, always — even lapsed,
+      even revoked. More at <a class="linky" href="/about.html">wrought.fit/about</a>.</p>
     </section>`;
+}
+
+// The demo types itself. One sentence at a time, then what happens to it.
+//
+// REDUCED MOTION IS OBEYED, not approximated: the whole line appears at once
+// and the rotation stops. Somebody who has told their phone that movement
+// makes them ill has not asked for a slower animation, they have asked for
+// none — and a manual is exactly the screen where they still need the content.
+let guideTimers = [];
+function stopGuide() { guideTimers.forEach(clearTimeout); guideTimers = []; }
+const wait = (ms, fn) => { guideTimers.push(setTimeout(fn, ms)); };
+
+function playGuideDemo() {
+  stopGuide();
+  const text = $('demo-text'), does = $('demo-does'), box = $('demo');
+  if (!text || !does) return;
+
+  const still = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+  if (still) {
+    box?.classList.add('still');
+    text.textContent = GUIDE_DEMO[0].say;
+    does.textContent = GUIDE_DEMO[0].does;
+    does.classList.add('in');
+    return;
+  }
+
+  let i = 0;
+  const run = () => {
+    const d = GUIDE_DEMO[i % GUIDE_DEMO.length];
+    text.textContent = '';
+    does.textContent = '';
+    does.classList.remove('in');
+
+    let c = 0;
+    const type = () => {
+      text.textContent = d.say.slice(0, ++c);
+      // Slightly uneven, because a metronome reads as a machine typing and the
+      // whole point is that a person said this.
+      if (c < d.say.length) return wait(28 + (c % 3) * 9, type);
+      wait(420, () => {
+        does.textContent = d.does;
+        does.classList.add('in');
+        wait(2600, () => { i++; run(); });
+      });
+    };
+    wait(260, type);
+  };
+  run();
 }
 
 // Copy on tap, and say so on the button itself. The gap between reading an
 // example and using it should be nothing at all.
 function wireGuide() {
+  $('unpeek')?.addEventListener('click', (e) => {
+    e.preventDefault();
+    peeking = false; stopGuide();
+    $('app').hidden = true; $('gate').hidden = false;
+  });
   document.querySelectorAll('.say[data-say]').forEach(b => b.addEventListener('click', async () => {
     try {
       await navigator.clipboard.writeText(b.dataset.say);

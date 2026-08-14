@@ -29,12 +29,39 @@ export const GUIDE = {
     'symptom in ANY conversation and it is kept — filed under the right day, ' +
     'forever — then read back honestly.',
 
+  // WHAT IT LOOKS LIKE, rather than what it is.
+  //
+  // The founder: "the top, about how to use this thing, has to be more
+  // apparent — easier to use, less words, or it needs to be just easier to
+  // read. Animated." He is right, and the reason is the one this whole file
+  // already rests on: nobody reads a description of talking. They need to SEE
+  // somebody talk and see what came back, and then they know.
+  //
+  // NOT ONE INVENTED NUMBER on the answering side. A demo figure on a health
+  // product reads as somebody's own data at a glance, and this is the one
+  // screen a person is on precisely because they do not yet know what is
+  // theirs and what is an example. So the reply says what HAPPENS — which is
+  // the part being taught anyway.
+  demo: [
+    { say: 'had a steak and a baked potato',
+      does: 'Logged, with its macros, under today.' },
+    { say: 'just did ten push-ups',
+      does: 'Kept — even mid-way through a conversation about something else.' },
+    { say: "I'm going to the gym",
+      does: 'One line back: what is most overdue, and how long.' },
+    { say: 'got 8 at 92.5, felt heavy',
+      does: 'The set, and your own words about it, on the record.' },
+    { say: "what's the damage",
+      does: 'Your week, read back honestly.' },
+  ],
+
   // Ordered the way somebody actually meets the product, not the way the code
   // is organised. Logging first, because it is the thing that costs nothing and
   // makes everything else work.
   sections: [
     {
       title: 'Just say it',
+      short: 'One sentence. Any conversation.',
       note: 'One sentence is a complete log. Never a form, never "what were the macros".',
       lines: [
         'had a steak and a baked potato',
@@ -51,6 +78,7 @@ export const GUIDE = {
     },
     {
       title: 'Set it up — once',
+      short: 'Five facts, asked once.',
       note: 'Five facts and a plan. Asked once, in passing, never as a signup form.',
       lines: [
         "I'm 6'3\", 330lb, born 1982, male, on my feet most days",
@@ -66,6 +94,7 @@ export const GUIDE = {
     },
     {
       title: 'Get a workout',
+      short: 'A proposal, not three questions.',
       note: 'One line back with a proposal in it, not three questions.',
       lines: [
         "I'm going to the gym",
@@ -82,6 +111,7 @@ export const GUIDE = {
     },
     {
       title: 'At the rack',
+      short: 'How it felt beats the number.',
       note: 'Say what happened. Anything about how it FELT is worth more than the number.',
       lines: [
         'got 8',
@@ -99,6 +129,7 @@ export const GUIDE = {
     },
     {
       title: 'Save a workout you like',
+      short: 'A name and the reason for the order.',
       note: 'A name, the movements, and the reason it is in that order.',
       lines: [
         'save this as my S-Tier workout',
@@ -113,6 +144,7 @@ export const GUIDE = {
     },
     {
       title: 'Show it your gym',
+      short: 'A photo is an equipment list.',
       note: 'A photograph of a gym is an equipment list.',
       lines: [
         'here are some pictures of my gym',
@@ -126,6 +158,7 @@ export const GUIDE = {
     },
     {
       title: 'Ask how it is going',
+      short: 'Every number computed, never guessed.',
       note: 'Every number is computed on the server. Nothing here is a language model guessing.',
       lines: [
         'gym bro',
@@ -143,6 +176,7 @@ export const GUIDE = {
     },
     {
       title: 'Fix something',
+      short: 'Changing your mind is one sentence.',
       note: 'Changing your mind is one sentence and never a negotiation.',
       lines: [
         'that was 28 minutes, not 20',

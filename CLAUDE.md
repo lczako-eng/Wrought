@@ -1668,6 +1668,30 @@ save one you like, show it your gym, ask how it is going, fix something.
 - **Tapping a line copies it.** The gap between reading an example and using
   it should be nothing at all. A blocked clipboard selects the text instead —
   silence would read as a dead button.
+- **It SHOWS somebody talking before it describes talking.** The founder:
+  *"the top, about how to use this thing, has to be more apparent — easier to
+  use, less words, or it needs to be just easier to read. Animated."* The old
+  screen was this file's own doctrine failing: sixteen paragraphs of prose
+  explaining that you do not need to learn anything. So it opens with a real
+  sentence typing itself out and the thing that happens to it, and the prose
+  underneath is cut to one short line per section — 798 words on screen down
+  to 459. The long form still exists in the `guide` TOOL, where a model reads
+  it and prose is the right shape.
+- **Not one invented number on the answering side.** A demo figure on a health
+  product reads as somebody's own data at a glance, and this is the one screen
+  a person is on precisely because they cannot yet tell which is which. The
+  reply says what HAPPENS, which is the part being taught anyway.
+- **Reduced motion is obeyed, not approximated** — the whole line appears at
+  once and the rotation stops. Somebody who told their phone that movement
+  makes them ill did not ask for a slower animation, and a manual is exactly
+  the screen where they still need the content.
+- **It is reachable without a password**, which it had never actually been:
+  the gate covered the whole app, so the one screen written to need no session
+  could not be opened by anybody who could not get past the sign-in form. A
+  promise made in a comment and not kept in the markup.
+- **Second tab, and called "Say this".** Sixth in a sideways-scrolling row is
+  not apparent whatever the label says, and *"Guide"* reads as documentation
+  nobody opens — the screen is sentences you say.
 - **No session and no request.** It is the one screen that must work for
   somebody who cannot get signed in, which is precisely when they most need to
   know what to say.
