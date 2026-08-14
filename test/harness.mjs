@@ -3121,6 +3121,72 @@ await test('the tutorial is a tool, not the model\'s memory of a README', () => 
   assert.match(app, /function guideView\(/);
 });
 
+await test('the manual shows somebody talking before it describes talking', () => {
+  // "The top, about how to use this thing, has to be more apparent — easier to
+  // use, less words, or it needs to be just easier to read. Animated."
+  //
+  // The old screen was the exact failure this file's own doctrine warns about:
+  // sixteen paragraphs of prose explaining that you do not need to learn
+  // anything. Reading a description of talking teaches nobody how to talk.
+  const app = page('app.html');
+  assert.ok(GUIDE.demo?.length >= 3, 'nothing to demonstrate');
+  assert.match(app, /const GUIDE_DEMO = \[/, 'the page has no demo of its own');
+  assert.match(app, /function playGuideDemo\(/);
+  assert.match(app, /id="demo-text"/);
+
+  // NOT ONE INVENTED NUMBER on the answering side. A demo figure on a health
+  // product reads as somebody's own data at a glance, and this is the one
+  // screen a person is on precisely because they do not yet know which is
+  // which. What they SAY may carry numbers — that is how people talk.
+  for (const d of GUIDE.demo) {
+    assert.ok(!/\d/.test(d.does), `the demo answer invents a figure: "${d.does}"`);
+  }
+  assert.match(app, /An example, not your data/);
+
+  // FEWER WORDS ON THE SCREEN. The long-form reasoning still exists for the
+  // `guide` tool, where a model reads it and prose is the right shape — but
+  // the screen shows the short line and the sentences, which are the manual.
+  for (const s of GUIDE.sections) {
+    assert.ok(s.short, `"${s.title}" has no screen-length line`);
+    assert.ok(s.short.length <= 40, `"${s.short}" is not short`);
+    assert.ok(s.after, `"${s.title}" lost its long form, which the tool still needs`);
+  }
+  const view = app.slice(app.indexOf('function guideView()'), app.indexOf('function playGuideDemo('));
+  assert.ok(!/sec\.after/.test(view), 'the long prose is still being printed on the screen');
+  assert.match(view, /sec\.short \|\| sec\.note/);
+
+  // REDUCED MOTION IS OBEYED, NOT APPROXIMATED. Somebody who told their phone
+  // that movement makes them ill has not asked for a slower animation — and a
+  // manual is exactly the screen where they still need the content.
+  const play = app.slice(app.indexOf('function playGuideDemo('), app.indexOf('function wireGuide('));
+  assert.match(play, /prefers-reduced-motion: reduce/);
+  assert.match(play, /if \(still\)/);
+  assert.match(play, /text\.textContent = GUIDE_DEMO\[0\]\.say/, 'reduced motion shows nothing at all');
+  // And it stops when the view is left, rather than typing into a dead screen.
+  assert.match(app, /function stopGuide\(\)/);
+  assert.match(app, /stopTrainer\(\);\n  stopGuide\(\);/);
+});
+
+await test('the manual is reachable without a password', () => {
+  // It is written to need no session and no request for exactly one reason: it
+  // is the screen somebody needs most when they cannot get signed in, or when
+  // they are deciding whether this is worth signing up for at all. The gate
+  // covered the whole app, so there was no way to get to it — a promise made
+  // in a comment and not kept in the markup.
+  const app = page('app.html');
+  assert.match(app, /id="peek"/, 'no way into the manual from the sign-in screen');
+  assert.match(app, /\$\('peek'\)\?\.addEventListener/);
+  // And a way back, or somebody who only wanted to read is stranded.
+  assert.match(app, /id="unpeek"/);
+
+  // It is also the second tab now, not the sixth — a tab nobody can see
+  // without scrolling the row sideways is not apparent, whatever it says.
+  const tabs = [...app.matchAll(/data-view="([a-z]+)" aria-pressed/g)].map(m => m[1]);
+  assert.equal(tabs[1], 'guide', `guide is tab ${tabs.indexOf('guide') + 1}, not 2`);
+  // Named for what it is. "Guide" reads as documentation nobody opens.
+  assert.match(app, /data-view="guide"[^>]*>Say this</);
+});
+
 await test('a photo of the gym becomes an equipment list — and never reaches us', () => {
   // Same architecture as the dinner plate: the connected model reads the
   // image, only the extraction arrives here. Multiple gyms are normal and
