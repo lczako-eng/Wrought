@@ -48,52 +48,52 @@
 // needs no migration and why free-text answers survive intact.
 export const INTAKE = [
   // ── The five that arithmetic cannot run without ─────────────────────────
-  { key: 'height_cm',      where: 'profile', asks: 'how tall they are', hard: true },
-  { key: 'birth_year',     where: 'profile', asks: 'what year they were born', hard: true },
-  { key: 'sex',            where: 'profile', asks: 'male or female, for the metabolic formula', hard: true },
-  { key: 'weight',         where: 'event',   asks: 'what they weigh now', hard: true },
-  { key: 'activity_level', where: 'profile', asks: 'how much they are on their feet in a normal day', hard: true },
+  { key: 'height_cm', ask: 'How tall are you',      where: 'profile', asks: 'how tall they are', hard: true },
+  { key: 'birth_year', ask: 'What year were you born',     where: 'profile', asks: 'what year they were born', hard: true },
+  { key: 'sex', ask: 'Male or female — it changes the metabolic formula',            where: 'profile', asks: 'male or female, for the metabolic formula', hard: true },
+  { key: 'weight', ask: 'What do you weigh at the moment',         where: 'event',   asks: 'what they weigh now', hard: true },
+  { key: 'activity_level', ask: 'How much are you on your feet in a normal day', where: 'profile', asks: 'how much they are on their feet in a normal day', hard: true },
 
   // ── The plan ────────────────────────────────────────────────────────────
-  { key: 'intent',     where: 'goal',    asks: 'what they are actually after — losing, gaining, or both' },
-  { key: 'plan_pace',  where: 'profile', asks: 'how fast they want it — gentle, steady or aggressive' },
-  { key: 'plan_push',  where: 'profile', asks: 'how hard WROUGHT should chase them when they are behind' },
-  { key: 'goal_weight', where: 'goal',   asks: 'whether they have a weight in mind, and by when' },
+  { key: 'intent', ask: 'What are you actually after — losing, gaining, or both',     where: 'goal',    asks: 'what they are actually after — losing, gaining, or both' },
+  { key: 'plan_pace', ask: 'How fast do you want it — gentle, steady or aggressive',  where: 'profile', asks: 'how fast they want it — gentle, steady or aggressive' },
+  { key: 'plan_push', ask: 'How hard should I chase you when you are behind — light, normal or relentless',  where: 'profile', asks: 'how hard WROUGHT should chase them when they are behind' },
+  { key: 'goal_weight', ask: 'Have you got a weight in mind, and by when', where: 'goal',   asks: 'whether they have a weight in mind, and by when' },
 
   // ── Training ────────────────────────────────────────────────────────────
-  { key: 'train_days',   where: 'profile', asks: 'how many sessions a week they will honestly do' },
-  { key: 'training_age', where: 'profile', asks: 'how long they have been training' },
-  { key: 'equipment',    where: 'profile', asks: 'what kit they actually have access to' },
-  { key: 'sports',       where: 'memory', category: 'training',
+  { key: 'train_days', ask: 'How many sessions a week will you honestly do',   where: 'profile', asks: 'how many sessions a week they will honestly do' },
+  { key: 'training_age', ask: 'How long have you been training — new to it, a while, or years', where: 'profile', asks: 'how long they have been training' },
+  { key: 'equipment', ask: 'What kit have you actually got access to',    where: 'profile', asks: 'what kit they actually have access to' },
+  { key: 'sports', ask: 'Anything you do outside the gym — five-a-side, running, climbing',       where: 'memory', category: 'training',
     asks: 'anything they do outside the gym — five-a-side, running, climbing' },
-  { key: 'lifts',        where: 'memory', category: 'lifts',
+  { key: 'lifts', ask: 'Roughly what do you lift on the main movements',        where: 'memory', category: 'lifts',
     asks: 'roughly what they lift on the main movements, so the first session is not a guess' },
 
   // ── The body, and the things that quietly change everything ─────────────
   // Injuries and limitations are the highest-value item on this list. Never
   // programme around one that was never mentioned, and never treat one.
-  { key: 'limitations', where: 'memory', category: 'health',
+  { key: 'limitations', ask: 'Any injuries, joints or movements to work around', where: 'memory', category: 'health',
     asks: 'any injuries, joints or movements to work around' },
-  { key: 'conditions',  where: 'memory', category: 'health',
+  { key: 'conditions', ask: 'Anything a doctor is already managing that food or training affects',  where: 'memory', category: 'health',
     asks: 'anything a doctor is already managing that food or training affects — recorded, never advised on' },
-  { key: 'medication',  where: 'memory', category: 'health',
+  { key: 'medication', ask: 'Does anything you take affect appetite, weight or heart rate',  where: 'memory', category: 'health',
     asks: 'whether anything they take affects appetite, weight or heart rate — recorded only, never advised on' },
-  { key: 'sleep',       where: 'memory', category: 'health',
+  { key: 'sleep', ask: 'What is your sleep usually like',       where: 'memory', category: 'health',
     asks: 'roughly what their sleep is like' },
 
   // ── Food, as it actually happens ────────────────────────────────────────
-  { key: 'dietary',   where: 'profile', asks: 'anything they do not eat' },
-  { key: 'cooking',   where: 'memory', category: 'food',
+  { key: 'dietary', ask: 'Anything you do not eat',   where: 'profile', asks: 'anything they do not eat' },
+  { key: 'cooking', ask: 'How do you usually eat — cooking, takeaways, canteen, shifts',   where: 'memory', category: 'food',
     asks: 'how they usually eat — cooking, takeaways, canteen, shifts' },
-  { key: 'alcohol',   where: 'memory', category: 'food',
+  { key: 'alcohol', ask: 'Roughly how much do you drink',   where: 'memory', category: 'food',
     asks: 'roughly how much they drink, since it is the most under-logged thing there is' },
-  { key: 'weak_spot', where: 'memory', category: 'food',
+  { key: 'weak_spot', ask: 'Where does your eating actually fall apart — evenings, weekends, stress, the drive home', where: 'memory', category: 'food',
     asks: 'where their eating actually falls apart — evenings, weekends, stress, the drive home' },
 
   // ── How they want to be spoken to ───────────────────────────────────────
-  { key: 'bluntness',  where: 'profile', asks: 'how hard they want the verdict to hit' },
-  { key: 'brief_hour', where: 'profile', asks: 'what time the nightly read should land' },
-  { key: 'timezone',   where: 'profile', asks: 'where they are, so a day is their day' },
+  { key: 'bluntness', ask: 'How hard do you want the verdict to hit — gentle, honest or brutal',  where: 'profile', asks: 'how hard they want the verdict to hit' },
+  { key: 'brief_hour', ask: 'What time should the nightly read land', where: 'profile', asks: 'what time the nightly read should land' },
+  { key: 'timezone', ask: 'Where are you, so a day is your day',   where: 'profile', asks: 'where they are, so a day is their day' },
 ];
 
 const HAS = {
@@ -151,6 +151,11 @@ export function intakeState({ profile = {}, goals = [], memory = [], weightKg = 
     complete: unknown.length === 0,
     blocking: hard.map(i => i.asks),
     still_unknown: ordered.map(i => i.asks),
+    // The same questions in the second person, ready to be said out loud. The
+    // `asks` forms are written FOR A MODEL to read — "what they are actually
+    // after" — and reading one of those to a person is baffling. Two forms,
+    // one list, so they cannot drift apart.
+    still_unknown_asked: ordered.map(i => i.ask),
     // The one to ask if a natural moment turns up. One, not a list.
     ask_next: ordered.length ? ordered[0].asks : null,
     say: unknown.length
@@ -175,12 +180,36 @@ export function intakeState({ profile = {}, goals = [], memory = [], weightKg = 
 export function intakeGate(state) {
   if (!state || state.complete) return null;
   const remaining = state.still_unknown || [];
+
+  // A GATE THAT ONLY REFUSES IS A DEAD END.
+  //
+  // The founder asked for the gate and then hit it: "the GPT hasn't really
+  // prompted me on anything — when I say I want to do a workout it should be
+  // saying where you at, and the checkmark thing is not happening." All true,
+  // and all downstream of this: every training door was answering with a
+  // refusal, so no session ever started, so there was never a clipboard to
+  // tick. Nineteen questions became nineteen turns of nothing happening.
+  //
+  // The refusal was carrying the whole list and a sentence saying how many
+  // were left, which leaves the asking entirely to the model — and a model
+  // handed a list and no script writes one polite sentence and stops. So the
+  // next few are pulled out ready to ask, and they go in `say` as well: even
+  // a relay that reads nothing else moves the setup forward by four.
+  const spoken = state.still_unknown_asked || [];
+  const next = spoken.slice(0, 4);
+  const asked = next.map((q, i) => `${i + 1}. ${q}?`).join(' ');
+
   return {
     setup_required: true,
     answered: state.known,
     of: state.total,
     remaining,
-    say: `Before WROUGHT builds you a workout it needs to finish getting to know you — ${state.known} of ${state.total} answered, ${remaining.length} to go.`,
-    note: 'THE QUESTIONNAIRE IS A GATE, at the founder\'s explicit instruction: do NOT build, suggest or start a workout until it is finished. Run it conversationally — three or four questions per message, never the whole list at once, in the order given (the arithmetic five first, then injuries). Loose, combined answers are fine: "lose weight AND build muscle" is recomp. "None" is a real answer — record it (remember with the right category, or the profile field) so the question closes. Save every answer as it arrives: set_profile for profile fields, set_goal for intent and target weight, set_plan for pace and push, remember for the rest. When the list is done, call the training tool again in the same turn and hand them the workout without making them ask twice. Logging is NEVER gated — if they mention food or training they already did, record it immediately, gate or no gate.',
+    // The ONLY ones to ask in this message. A list is a form; four is a
+    // conversation, and it is the difference between finishing this in five
+    // messages and abandoning it.
+    ask_now: next,
+    ask_now_for_you: remaining.slice(0, 4),
+    say: `Quick — ${state.known} of ${state.total} answered, ${remaining.length} to go, then the workout. ${asked}`,
+    note: 'ASK THE QUESTIONS IN ask_now, IN THIS MESSAGE. Not "shall we finish setting you up?" — ask them, all four, right now, and answer nothing else first. A gate that only announces itself is a dead end: they asked for a workout, and every turn that passes without four questions being asked is a turn where nothing happens. THE QUESTIONNAIRE IS A GATE, at the founder\'s explicit instruction: do NOT build, suggest or start a workout until it is finished. Run it conversationally — the four in ask_now per message, never the whole list at once, in the order given (the arithmetic five first, then injuries). Loose, combined answers are fine: "lose weight AND build muscle" is recomp. "None" is a real answer — record it (remember with the right category, or the profile field) so the question closes. Save every answer as it arrives: set_profile for profile fields, set_goal for intent and target weight, set_plan for pace and push, remember for the rest. When the list is done, call the training tool again in the same turn and hand them the workout without making them ask twice. Logging is NEVER gated — if they mention food or training they already did, record it immediately, gate or no gate.',
   };
 }

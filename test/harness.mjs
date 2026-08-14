@@ -4276,7 +4276,52 @@ await test('every item carries its own calories, and the total sits underneath',
 
 group('The questionnaire is a gate — the founder\'s explicit instruction');
 
-const { intakeGate } = await import('../netlify/functions/lib/intake.js');
+const intakeModule = await import('../netlify/functions/lib/intake.js');
+const { intakeGate } = intakeModule;
+
+await test('a gate that only refuses is a dead end', () => {
+  // The founder asked for the gate and then hit it: "the GPT hasn't really
+  // prompted me on anything — when I say I want to do a workout it should be
+  // saying where you at, and the checkmark thing is not happening." All true,
+  // and all downstream of this: every training door answered with a refusal,
+  // so no session ever started, so there was never a clipboard to tick.
+  // Nineteen questions became nineteen turns of nothing happening.
+  const st = intakeState({
+    profile: { height_cm: 190, birth_year: 1982, sex: 'male', activity_level: 'moderate', timezone: 'America/Toronto' },
+    goals: [], memory: [], weightKg: 149.7,
+  });
+  const g = intakeGate(st);
+
+  // Four, ready to ask — not the whole list, which is a form, and not none,
+  // which is what leaves the asking to a model that then writes one polite
+  // sentence and stops.
+  assert.equal(g.ask_now.length, 4);
+  assert.ok(g.remaining.length > 4, 'this account is not actually short of answers');
+
+  // THEY ARE IN THE SECOND PERSON. The `asks` forms are written for a MODEL to
+  // read — "what they are actually after" — and reading one of those to a
+  // person is baffling.
+  for (const q of g.ask_now) {
+    assert.ok(!/\bthey\b|\bthem\b|\btheir\b/i.test(q), `"${q}" is written about them, not to them`);
+  }
+  // And they are in `say` too, so even a relay that reads nothing else moves
+  // the setup forward by four instead of announcing itself.
+  for (const q of g.ask_now) assert.ok(g.say.includes(q), `"${q}" is not in the spoken line`);
+  assert.match(g.say, /then the workout/, 'nothing says why they are being asked');
+  assert.match(g.note, /ASK THE QUESTIONS IN ask_now, IN THIS MESSAGE/);
+
+  // Every one of the 25 has both forms, or a question turns up unsaid.
+  const { INTAKE } = intakeModule;
+  for (const i of INTAKE) {
+    assert.ok(i.ask, `"${i.key}" has no spoken form`);
+    assert.ok(!/\bthey\b|\btheir\b/i.test(i.ask), `"${i.key}" is asked in the third person`);
+  }
+
+  // The words he actually used reach the door at all.
+  for (const p of ['I want to do a workout', 'I wanna do a workout', "let's do a workout"]) {
+    assert.ok(SERVER_INSTRUCTIONS.includes(p), `"${p}" maps to nothing`);
+  }
+});
 
 await test('an unfinished questionnaire stops every door that BUILDS training', () => {
   // "We should put that as a stop place — we can't further any workouts until
