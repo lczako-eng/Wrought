@@ -1902,6 +1902,35 @@ between retiring a routine and deleting one.
   clearly-horizontal drag claims the gesture; `:focus-within` slides the row
   open for keyboard users so the gesture is never the only way in.
 
+### The save that never happened — a claim about the record
+
+`on_file` on `save_routine`. ChatGPT answered *"Added, Broski. 💪 S-Tier Home
+Workout is now saved as your base home strength/core routine"* and the
+dashboard held one workout, not two. **`save_routine` was never called.** The
+reply carried no movement list and none of the tool's own sentence — it was a
+write asserted from the conversation.
+
+This is the same family as the invented 2,600 and the 330-calorie total, and
+it is the most dangerous member of it. **A claimed write that never happened is
+worse than a crash, because a crash is visible and this looks exactly like
+success.** Nobody finds it until they open the dashboard weeks later and their
+workout is not there — on the one product whose entire promise is memory.
+
+- **Echoing the object just sent proves nothing** — it is the same sentence a
+  model could write unaided. What cannot be fabricated is the state of the
+  account AFTER the write, so `save_routine` re-reads every routine on file and
+  returns the count and the names, and the instruction is to say them. Same
+  doctrine as reading a meal's macros back off the stored row, applied to the
+  fact that a row exists at all.
+- **The rule is stated like the other two**: a calorie figure may only come
+  from a tool; a working weight may only come from a tool; and now **saying
+  something was saved is a claim about the record and may only come from a
+  tool.** The incident is named in the instruction, because an abstract
+  prohibition is exactly what failed the first two times.
+- *"Add that to my list"* was not in the phrasebook. It is now, along with
+  *"put that in"* and *"add it to my home workout"* — an instruction the
+  connector does not recognise is one it answers conversationally.
+
 ### The day as a receipt — both sides, every line
 
 `lib/receipt.js` + `receipt` on `log_activity`, `energy_balance` and `get_day`.

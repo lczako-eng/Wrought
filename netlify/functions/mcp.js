@@ -164,7 +164,7 @@ HOW PEOPLE ACTUALLY ASK. Nobody says "call the brief tool". They say one of a hu
   my_plan — "what's my plan", "what am I on", "what am I actually doing", "what am I aiming for", "why that number", "what's my target", "remind me what this is", "what's my route" (dictation for WROUGHT), "how does this work for me"
   set_plan — "make it aggressive", "I want this off faster", "go harder on me", "chase me", "ease off", "nothing drastic", "stop nagging me", "leave me alone a bit", "make it four days a week", "I can only do three", "change my plan"
   log_activity — "I was at work all day", "worked at the petting zoo", "did a double shift", "on site since six", "been on my feet since seven", "spent the afternoon digging", "moved house today", "was doing the garden", "shovelled the drive", "long shift", "physical day", "grafting all day"
-  save_routine — "save that", "remember this as my chest day", "call it my S-tier workout", "keep that one", "that was good, keep it", "add calf raises to my leg day", "make it four sets", "write it up for me"
+  save_routine — "save that", "add that to my list", "add it to my home workout", "put that in", "remember this as my chest day", "call it my S-tier workout", "keep that one", "that was good, keep it", "add calf raises to my leg day", "make it four sets", "write it up for me"
   design_workout — "build me a workout", "make me a leg day", "I want a new workout called X", "design me something", "put a push session together", "make me a proper chest day", "let's build a workout", "help me make one"
   list_routines — "what workouts do I have", "my saved workouts", "what's in my leg day", "show me my routines", "what have I got saved"
   swap_exercise — "machine's taken"
@@ -180,6 +180,8 @@ HOW PEOPLE ACTUALLY ASK. Nobody says "call the brief tool". They say one of a hu
   get_profile — "what account am I on", "which account is this", "who am I", "what email is this", "what do you know about me", "what's my height", "what have you got on me", "am I set up", "is this connected", "plugged in", "are you working", "what account are you writing to"
 
 A RUNNING TOTAL IS THE WHOLE DAY, NEVER THE THING JUST LOGGED. "How many am I at today", "what's my total", "how many calories so far" are answered from day_total — which log, amend_last and structure_entries all return and which is labelled EVERYTHING logged today. Never add up the items yourself, never quote back the macros you just estimated for one meal as if they were the day, and never answer this from memory of the conversation. If day_total looks smaller than they expect, say the number and say how many meals it counts — a total that is low because something did not get logged is a fact worth surfacing, not a number to quietly inflate.
+
+SAYING SOMETHING WAS SAVED IS A CLAIM ABOUT THE RECORD, AND IT MAY ONLY EVER COME FROM A TOOL. Never say saved, added, logged, updated, changed, removed or "it's on your list" unless a tool call in THIS turn came back and said so. This has already gone wrong in production: "Added, Broski — S-Tier Home Workout is now saved" was answered without save_routine ever being called, and the account held one workout, not two. On a product whose entire promise is that it remembers, a claimed write that never happened is the worst failure there is — worse than a crash, because a crash is visible and this looks exactly like success. Nobody discovers it until they open the dashboard weeks later and their workout is not there. So: if they ask for something to be kept, CALL THE TOOL, in the same turn, before answering — "add that to my list", "save that", "keep it" are instructions, not conversation. Then quote what came back: save_routine returns on_file, which is every saved workout read from the database AFTER the write, and saying the count and the names is the only thing that tells a real save apart from a claimed one. If a call fails, say it failed and what to do — an honest error is worth ten confident sentences. Never write the confirmation first and the tool call later, and never let a long conversation about designing something stand in for having stored it.
 
 BOTH SIDES OF THE SUBTRACTION GET ITEMISED, NOT JUST THE EATING. "What did I do today", "how many calories", "what were those hours worth", "how am I doing on the day" are answered from the receipt block — which log_activity, energy_balance and get_day all return. Read it out LINE BY LINE: every item in with its own calories, then resting, training and work each with their own figure and what each is made of, then the two totals, then the net. Do not collapse it into a sentence, do not quote only the totals, and never add anything up yourself — the lines are there so each one can be argued with separately, which is the only way an estimate is worth anything. LOGGING WORK ALWAYS COMES BACK WITH WHAT IT WAS WORTH: "logged four hours as activity" with no number is the feature failing, because the number is the entire reason to log it. And set_aside is not optional — a figure that looks smaller than somebody's own arithmetic reads as the log having been ignored, so say what was not counted and why.
 
@@ -3045,6 +3047,27 @@ async function saveRoutine(args, user) {
     : await supabase.from('wrought_routines').insert([row]);
   if (error) return { error: error.message };
 
+  // READ BACK WHAT THE RECORD NOW HOLDS, not what was just sent to it.
+  //
+  // ChatGPT answered "Added, Broski — S-Tier Home Workout is now saved as your
+  // base home strength/core routine" and the dashboard held one routine, not
+  // two. It had not called this tool at all; it asserted a write from the
+  // conversation. On a product whose entire promise is memory, a claimed save
+  // that never happened is the worst failure there is — worse than a crash,
+  // because a crash is visible and this looks exactly like success.
+  //
+  // Echoing back the object we just built proves nothing: it is the same
+  // sentence the model could have written unaided. What a model cannot
+  // fabricate is the state of the account AFTER the write — every routine on
+  // file, counted. So that is what comes back, and the instruction is to say
+  // it. Same doctrine as reading a meal's macros off the stored row.
+  const { data: onFile } = await supabase.from('wrought_routines')
+    .select('name, exercises, active').eq('user_id', user.id).eq('active', true)
+    .order('updated_at', { ascending: false });
+
+  const all = onFile || [];
+  const mine = all.find(r => String(r.name).toLowerCase() === name.toLowerCase());
+
   return {
     saved: name, updated: !!existing, exercises: exercises.length, tier,
     captured_from_session: !!args.from_last_session,
@@ -3052,10 +3075,20 @@ async function saveRoutine(args, user) {
     has_notes: !!row.notes,
     total_sets: exercises.reduce((a, e) => a + (Number(e.sets) || 0), 0),
     ...(removed.length ? { removed } : {}),
+    // The proof. Read from the database after the write, so it cannot be
+    // produced by a model that skipped the call.
+    on_file: {
+      is: 'every saved workout on this account, read back AFTER the write',
+      count: all.length,
+      names: all.map(r => r.name),
+      this_one_has: mine ? (mine.exercises || []).length : 0,
+      verified: !!mine,
+    },
     say: `${existing ? 'Updated' : 'Saved'} "${name}" — ${exercises.map(describe).join(', ')}.` +
          (removed.length ? ` Took out ${removed.join(', ')}.` : '') +
+         ` You now have ${all.length} saved workout${all.length === 1 ? '' : 's'}: ${all.map(r => r.name).join(', ')}.` +
          ' Say the name any time and it starts.',
-    note: 'Read the exercise list back once so a mis-captured lift gets caught now. They can add to this later with save_routine and the add field — never make them rebuild it.' +
+    note: 'Say the count and the names from on_file — that is read back from the record AFTER the write, so quoting it is the only thing that distinguishes a real save from a claimed one. Read the exercise list back once too, so a mis-captured lift gets caught now. They can add to this later with save_routine and the add field — never make them rebuild it.' +
       (row.notes ? '' : ' NO WRITE-UP ON IT YET. Offer one in half a line — how to run it, what to push, what to leave in the tank — and write it with save_routine notes if they want it. It is what turns a saved list of names into a workout, and it is shown at the top every time the session starts.'),
     next_actions: [`start_session with routine "${name}"`, 'save_routine with add[] to grow it later'],
   };
