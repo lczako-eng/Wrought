@@ -66,21 +66,51 @@ export const handler = async (event) => {
         seen.set(t.client_id, {
           client_id: t.client_id,
           name: nameFor(byId.get(t.client_id)),
-          connected_at: t.created_at,
+          // Rows come back newest first, so the first one seen is the newest.
+          // An access token is short-lived and only reissued when the assistant
+          // actually calls, which makes this the closest thing to "last used"
+          // available without a migration.
+          last_token_at: t.created_at,
           expires_at: t.expires_at,
           active: live,
         });
-      } else if (live && !cur.active) {
-        cur.active = true; cur.expires_at = t.expires_at;
+      } else {
+        // The OLDEST row is when this connection began; keep walking down.
+        cur.connected_at = t.created_at;
+        if (live && !cur.active) { cur.active = true; cur.expires_at = t.expires_at; }
       }
     }
 
     const list = [...seen.values()];
+    for (const c of list) if (!c.connected_at) c.connected_at = c.last_token_at;
     const active = list.filter(c => c.active);
+
+    // HAS AN ASSISTANT EVER ACTUALLY WRITTEN TO THIS ACCOUNT.
+    //
+    // "Connected" and "doing anything" are different facts, and the gap
+    // between them is invisible: an assistant can hold a perfectly good token
+    // and never call a tool, which looks — from the dashboard — exactly like
+    // an assistant that is not connected at all, and exactly like a product
+    // that is broken. "Hey Jim bro, which account am I on?" answered with
+    // "your ChatGPT Plus account", from the model's own context, with no tool
+    // touched. Nothing on either screen could tell that apart from a fork.
+    //
+    // Every event the connector writes carries source 'agent'. The newest one
+    // is the last time this account heard from an assistant at all.
+    const { data: lastWrite } = await supabase.from('wrought_events')
+      .select('created_at, summary').eq('user_id', user.id).eq('source', 'agent')
+      .order('created_at', { ascending: false }).limit(1);
 
     return json(200, {
       connections: list,
       active: active.length,
+      last_write: lastWrite?.[0]?.created_at || null,
+      last_write_was: lastWrite?.[0]?.summary || null,
+      // The three states, named, because they need completely different fixes
+      // and look identical from outside.
+      state: !active.length ? 'nothing_connected'
+           : !lastWrite?.length ? 'connected_never_written'
+           : 'working',
       // Said plainly, because the difference is not obvious and the confusion is
       // reasonable: the connector's token IS a login, just not this browser's.
       note: 'An assistant holds its own token. That is a separate login from this browser — signing out here does not disconnect it, and connecting it does not sign you in here.',
