@@ -2809,6 +2809,41 @@ await test('the handshake carries the icon and the site', async () => {
   // exactly the unprofessional tile the founder kept seeing.
   assert.equal(info.icons[0].mimeType, 'image/png');
   assert.equal(info.icons[info.icons.length - 1].mimeType, 'image/svg+xml');
+
+  // AND THE CONVENTIONAL PATH IS ONE OF THEM. Plenty of clients and crawlers
+  // ask for /favicon.ico by name and read no markup at all, so a 404 there is
+  // a listing with an empty square in it — somebody else's placeholder rather
+  // than nothing. It is raster, so it sits with the PNGs; SVG stays last
+  // because that is the one clients refuse.
+  const ico = info.icons.findIndex(i => i.mimeType === 'image/x-icon');
+  assert.ok(ico > 0, 'the conventional favicon path is not offered');
+  assert.ok(ico < info.icons.length - 1, 'the ico is after the SVG a client may refuse');
+});
+
+await test('the symbol exists at every path something might ask for', () => {
+  // "Install — no connector symbol." A favicon slot and a connector listing
+  // render SOMETHING whether you supply one or not, and an empty slot is
+  // somebody else's placeholder.
+  for (const f of ['favicon.ico', 'og.png', 'icon.svg', 'icon-32.png', 'icon-192.png', 'icon-512.png']) {
+    const buf = readFileSync(new URL(`../public/${f}`, import.meta.url));
+    assert.ok(buf.length > 500, `${f} is missing or empty`);
+  }
+  // A real ICO container, not a PNG wearing the extension — a strict parser
+  // rejects that and shows nothing, which is the failure being fixed.
+  const ico = readFileSync(new URL('../public/favicon.ico', import.meta.url));
+  assert.equal(ico.readUInt16LE(0), 0, 'not an ICO: bad reserved field');
+  assert.equal(ico.readUInt16LE(2), 1, 'not an ICO: bad type');
+  assert.ok(ico.readUInt16LE(4) >= 3, 'the ico carries too few sizes');
+
+  // Declared on every page, so nothing renders a blank tab.
+  for (const f of ['index.html', 'app.html', 'about.html', 'connect.html', 'authorize.html', 'privacy.html', 'terms.html']) {
+    assert.match(page(f), /href="\/favicon\.ico"/, `${f} does not declare the favicon`);
+  }
+  // A card with no image is a grey rectangle with a URL in it.
+  const home = page('index.html');
+  assert.match(home, /property="og:image" content="https:\/\/wrought\.fit\/og\.png"/);
+  assert.match(home, /name="twitter:card" content="summary_large_image"/);
+  assert.match(home, /property="og:image:width" content="1200"/);
 });
 
 await test('the negotiated version is one that carries icons', async () => {

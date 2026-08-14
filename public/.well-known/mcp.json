@@ -19,6 +19,11 @@
       "type": "image/png"
     },
     {
+      "src": "https://wrought.fit/favicon.ico",
+      "sizes": "16x16 32x32 48x48",
+      "type": "image/x-icon"
+    },
+    {
       "src": "https://wrought.fit/icon.svg",
       "sizes": "any",
       "type": "image/svg+xml"
@@ -76,5 +81,6 @@
   "disclaimers": [
     "Wrought is not a medical device. It does not diagnose, treat, or advise on any medical condition.",
     "Nutrition figures inferred from described meals are estimates and are labelled as such."
-  ]
+  ],
+  "ogImage": "https://wrought.fit/og.png"
 }

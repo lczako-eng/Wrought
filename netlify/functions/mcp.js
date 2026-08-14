@@ -4229,6 +4229,12 @@ export async function handleRpc(msg, authUser) {
             { src: 'https://wrought.fit/icon-512.png', mimeType: 'image/png',     sizes: ['512x512'] },
             { src: 'https://wrought.fit/icon-192.png', mimeType: 'image/png',     sizes: ['192x192'] },
             { src: 'https://wrought.fit/icon-32.png',  mimeType: 'image/png',     sizes: ['32x32'] },
+            // The conventional path. Plenty of clients and crawlers ask for
+            // /favicon.ico by name and read no markup at all — a 404 there is
+            // a listing with an empty square in it, which is somebody else's
+            // placeholder rather than nothing. Raster, so it sits with the
+            // PNGs; SVG stays last because that is the one clients refuse.
+            { src: 'https://wrought.fit/favicon.ico', mimeType: 'image/x-icon',  sizes: ['16x16', '32x32', '48x48'] },
             { src: 'https://wrought.fit/icon.svg',     mimeType: 'image/svg+xml', sizes: ['any'] },
           ],
         },
