@@ -4337,23 +4337,54 @@ await test('an unfinished questionnaire stops every door that BUILDS training', 
   assert.equal(gate.setup_required, true);
   assert.ok(gate.remaining.length > 0);
   assert.match(gate.note, /do NOT build, suggest or start a workout/);
+  // It ASKS rather than only announcing itself.
+  assert.equal(gate.ask_now.length, 4);
   // Loose answers are allowed and "none" closes a question — both said, or the
   // model interrogates people into precision they never offered.
   assert.match(gate.note, /"lose weight AND build muscle" is recomp/);
   assert.match(gate.note, /"None" is a real answer/);
 
   const mcp = readFileSync(new URL('../netlify/functions/mcp.js', import.meta.url), 'utf8');
-  for (const fn of ['suggestWorkout', 'startSession', 'startBlock']) {
-    const body = mcp.slice(mcp.indexOf(`async function ${fn}(`), mcp.indexOf(`async function ${fn}(`) + 1200);
-    assert.match(body, /trainingGate\(user, profile/, `${fn} is not gated`);
+  const bodyOf = fn => {
+    const at = mcp.indexOf(`async function ${fn}(`);
+    return mcp.slice(at, mcp.indexOf('\nasync function ', at + 10));
+  };
+  for (const fn of ['suggestWorkout', 'startBlock', 'designWorkout']) {
+    assert.match(bodyOf(fn), /trainingGate\(user, profile/, `${fn} is not gated`);
   }
+
+  // START_SESSION IS GATED ONLY WHEN IT WOULD HAVE TO INVENT THE SESSION.
+  //
+  // The line moved once, on the founder's call, because the first version was
+  // too wide: gating start_session outright meant somebody with the
+  // questionnaire unfinished could not run a workout THEY had already saved —
+  // which is not prescribing, it is their own plan plus recording what they do
+  // against it. The symptom was total. No session, so no clipboard, so nothing
+  // to tick and no position to be asked about: "the GPT hasn't really prompted
+  // me on anything."
+  const start = bodyOf('startSession');
+  const routineAt = start.indexOf('if (args.routine)');
+  const gateInStart = start.indexOf('trainingGate(user, profile');
+  assert.ok(gateInStart > routineAt, 'start_session is gated before it knows whether they named a routine');
+  assert.match(start, /if \(!routine\) \{\n\s*const gate = await trainingGate/,
+    'start_session gates a workout they already saved');
+  // And the refusal names the way through, or somebody concludes the product
+  // is broken while a saved workout sits right there.
+  assert.match(start, /can_run_now: names/);
+  assert.match(start, /just say the name/);
+
+  // log_set is NEVER gated — it opens an ad-hoc session on the first set, and
+  // that is capture, which is the one thing that stays open forever.
+  assert.ok(!/trainingGate/.test(bodyOf('logSet')), 'logging a set went behind the gate');
+
   // programmes gates the BUILDING half only — the single-pattern lookup is the
   // mid-session swap case and mid-session is past the gate.
   const prog = mcp.slice(mcp.indexOf('async function programmes(args, user)'));
   const patternAt = prog.indexOf('if (args.pattern)');
   const gateAt = prog.indexOf('trainingGate(user, profile)');
   assert.ok(gateAt > patternAt, 'the mid-session pattern lookup is gated too');
-  assert.match(SERVER_INSTRUCTIONS, /THE QUESTIONNAIRE IS A GATE/);
+  assert.match(SERVER_INSTRUCTIONS, /THE QUESTIONNAIRE GATES BUILDING A WORKOUT, NOT RUNNING ONE/);
+  assert.match(SERVER_INSTRUCTIONS, /STARTING A WORKOUT THEY ALREADY SAVED IS NEVER GATED/);
 });
 
 await test('a finished questionnaire opens the gate, and capture is never behind it', () => {
@@ -5437,7 +5468,8 @@ await test('both doors into a workout offer a warm-up, and the end offers the ho
   // waited for was, for most sessions, never offered at all.
   const mcp = readFileSync(new URL('../netlify/functions/mcp.js', import.meta.url), 'utf8');
   for (const fn of ['suggestWorkout', 'startSession']) {
-    const body = mcp.slice(mcp.indexOf(`async function ${fn}(`), mcp.indexOf(`async function ${fn}(`) + 9000);
+    const at = mcp.indexOf(`async function ${fn}(`);
+    const body = mcp.slice(at, mcp.indexOf('\nasync function ', at + 10));
     assert.match(body, /warmup: warm|warmup,/, `${fn} offers no warm-up`);
   }
   const end = mcp.slice(mcp.indexOf('async function endSession('), mcp.indexOf('async function previousBest('));
@@ -5541,8 +5573,8 @@ await test('the check-in rides on both doors into a workout', () => {
   // start_session. On one only, it exists half the time.
   const mcp = readFileSync(new URL('../netlify/functions/mcp.js', import.meta.url), 'utf8');
   for (const fn of ['suggestWorkout', 'startSession']) {
-    const body = mcp.slice(mcp.indexOf(`async function ${fn}(`),
-                           mcp.indexOf(`async function ${fn}(`) + 9000);
+    const at = mcp.indexOf(`async function ${fn}(`);
+    const body = mcp.slice(at, mcp.indexOf('\nasync function ', at + 10));
     assert.match(body, /preflight\(\{/, `${fn} has no check-in`);
     assert.match(body, /preflight: check/, `${fn} does not return it`);
   }

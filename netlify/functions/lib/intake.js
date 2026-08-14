@@ -34,10 +34,19 @@
 //   memory. log, log_set and the briefs stay open forever.
 //
 //   WROUGHT refuses to PRESCRIBE until it knows who it is prescribing for.
-//   suggest_workout, start_session, programmes and start_block stop at the
-//   gate until the questionnaire is finished — building a plan for a stranger
-//   is guesswork wearing a coach's voice, and the founder is right that the
+//   suggest_workout, design_workout, programmes, start_block and start_session
+//   WITH NO ROUTINE NAMED stop at the gate — building a plan for a stranger is
+//   guesswork wearing a coach's voice, and the founder is right that the
 //   product should not pretend otherwise.
+//
+//   AND THE LINE MOVED ONCE, ON HIS CALL, BECAUSE THE FIRST VERSION WAS TOO
+//   WIDE. Gating start_session outright meant somebody with the questionnaire
+//   unfinished could not run a workout THEY had already saved — which is not
+//   prescribing at all, it is their own plan plus recording what they do
+//   against it, and recording is the one thing that is never gated. The
+//   symptom was total: no session, so no clipboard, so nothing to tick and no
+//   position to be asked about. "The GPT hasn't really prompted me on
+//   anything." So: named routine runs, log_set runs, building waits.
 //
 // "Finished" means every item answered — and "none" IS an answer. No sports,
 // no medication, no injuries are all worth exactly as much as their opposites,

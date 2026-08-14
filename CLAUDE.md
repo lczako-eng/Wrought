@@ -1557,9 +1557,29 @@ is drawn precisely:
   open forever — capture is the soul of the product and gating it would kill
   the memory. There is a test asserting neither capture door touches the gate.
 - **WROUGHT refuses to PRESCRIBE until it knows who for.** `suggest_workout`,
-  `start_session`, `programmes` (the building half — the single-pattern lookup
-  is the mid-session swap case and stays open) and `start_block` return
-  `setup_required` until all 25 intake items are answered.
+  `design_workout`, `programmes` (the building half — the single-pattern lookup
+  is the mid-session swap case and stays open), `start_block` and
+  `start_session` **with no routine named** return `setup_required` until all
+  25 intake items are answered.
+- **The line moved once, on the founder's call, because the first version was
+  too wide.** Gating `start_session` outright meant somebody mid-questionnaire
+  could not run a workout **they had already saved** — which is not
+  prescribing, it is their own plan plus recording what they do against it.
+  The symptom was total and he found it: *"the GPT hasn't really prompted me
+  on anything — when I say I want to do a workout it should be saying where
+  you at, and the checkmark thing is not happening."* No session means no
+  clipboard, nothing to tick and no position to be asked about. **Named
+  routine runs, `log_set` runs, building waits** — and the refusal carries
+  `can_run_now` so the saved workouts are offered by name rather than the
+  product just reading as broken.
+- **A gate that only refuses is a dead end.** It used to hand back all
+  nineteen remaining questions and a sentence saying how many were left, which
+  leaves the asking to the model — and a model handed a list and no script
+  writes one polite sentence and stops. Nineteen questions became nineteen
+  turns of nothing happening. `ask_now` pulls the next four out and puts them
+  in `say`, so even a relay that reads nothing else moves the setup forward by
+  four. **And every question has a second-person form** beside its
+  model-facing one: *"what they are actually after"* read aloud is baffling.
 - **"None" is a real answer.** No injuries, no sports, no medication close
   their questions once recorded — that is what lets the questionnaire finish.
 - **Loose answers are fine**: *"lose weight and build muscle"* is recomp. The
