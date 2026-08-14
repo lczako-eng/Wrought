@@ -3054,11 +3054,25 @@ async function loadTrainer() {
   const session = await needsSession('Trainer', 'The live session at the rack');
   if (!session) { stopTrainer(); return; }
   const data = { session };
-  if (!trainerRoutinesFull.length) await loadRoutines();
-  if (trainerConnected === null) await loadConnectedCount(session.access_token);
-  const res = await fetch('/.netlify/functions/api-session', {
-    headers: { Authorization: `Bearer ${data.session.access_token}` },
-  });
+
+  // THREE ROUND TRIPS AT ONCE, NOT ONE AFTER ANOTHER.
+  //
+  // These were three statement-level awaits on three consecutive lines, and
+  // none of them needs anything the others return — the routines, the
+  // connection state and the live session are independent answers to
+  // independent questions. Each arrived individually harmless, exactly as the
+  // api-progress waterfall did, and together they made opening the Trainer tab
+  // cost three serial hops to a cold Netlify function.
+  //
+  // The guards stay: routines are cached across renders and the connection
+  // state is fetched once, so the poll does not re-ask for either.
+  const [, , res] = await Promise.all([
+    trainerRoutinesFull.length ? null : loadRoutines(),
+    trainerConnected === null ? loadConnectedCount(session.access_token) : null,
+    fetch('/.netlify/functions/api-session', {
+      headers: { Authorization: `Bearer ${data.session.access_token}` },
+    }),
+  ]);
   if (!res.ok) {
     const detail = await res.text().catch(() => '');
     $('content').innerHTML = `<p class="empty">Could not load the session.<br><small>${res.status} ${esc(detail).slice(0, 300)}</small></p>`;

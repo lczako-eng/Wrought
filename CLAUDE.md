@@ -1771,6 +1771,16 @@ answer arrived as its own `await` on its own line, and each was individually
 harmless.** There is a test that counts the serial hops now, because this is
 invisible in review and obvious to whoever is holding the phone.
 
+**And it recurred in the browser within a day of being written down.** Opening
+the Trainer tab fetched the routines, then the connection state, then the live
+session — three consecutive `await`s, none needing anything the others return,
+three serial hops to a cold function before the screen could draw. Batched now,
+with the same test applied one layer out: it counts only awaits that START a
+request, because `await res.json()` is reading a response already in hand and
+counting it would make the assertion noise nobody trusts. **The pattern is not
+a bug that gets fixed once — it is the default shape of adding one more
+answer**, so the guard has to live wherever answers get added.
+
 ### Built, correct, and nowhere to look at it
 
 The founder: *"a lot of things are not showing up on the website."* He was
