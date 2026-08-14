@@ -5906,6 +5906,33 @@ await test('the dashboard does not queue its queries one behind the next', () =>
   }
 });
 
+await test('the browser does not queue its round trips either', () => {
+  // The same lesson, one layer out, and it recurred within a day of being
+  // written down: opening the Trainer tab fetched the routines, then the
+  // connection state, then the live session — three statement-level awaits on
+  // three consecutive lines, none of them needing anything the others return.
+  // Each arrived individually harmless. Together they cost three serial hops
+  // to a cold function before the screen could draw.
+  const src = page('app.html');
+  const fn = src.slice(src.indexOf('async function loadTrainer()'), src.indexOf('function renderTrainer('));
+
+  // Only awaits that START a request count — reading a body off a response
+  // already in hand (res.json(), res.text()) is not another round trip, and
+  // counting it would make the assertion noise.
+  const STARTS_A_TRIP = /fetch\(|loadRoutines\(|loadConnectedCount\(|needsSession\(/;
+  const serial = fn.split('\n').filter(l =>
+    /^\s*(const .*=\s*)?await /.test(l) && STARTS_A_TRIP.test(l) && !/Promise\.all/.test(l));
+  // Only the session lookup, which everything else needs a token from.
+  assert.ok(serial.length <= 1,
+    `${serial.length} serial round trips before the Trainer tab can draw:\n${serial.join('\n')}`);
+
+  assert.match(fn, /await Promise\.all\(\[/, 'the independent fetches are not batched');
+  // And the guards survive the batching, or the 5-second poll starts re-asking
+  // for things that never change.
+  assert.match(fn, /trainerRoutinesFull\.length \? null : loadRoutines\(\)/);
+  assert.match(fn, /trainerConnected === null \? loadConnectedCount/);
+});
+
 await test('a 7.7MB client is not loaded to draw a dashboard', () => {
   // Every function in the product imports lib/wrought.js, so a top-level
   // `import OpenAI from "openai"` bundled the whole SDK into the dashboard,
