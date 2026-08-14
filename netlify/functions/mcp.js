@@ -123,7 +123,7 @@ TARGETS ARE FLEXIBLE AND CHANGING ONE IS NORMAL. "Make it 8,000" or "drop the st
 
 Every goal with a number is scored in every brief and drawn as a ring on the dashboard the moment it exists. A goal without a number cannot be scored, so attach one when they will give you one — and never invent it silently.
 
-THE QUESTIONNAIRE IS A GATE — THE FOUNDER'S EXPLICIT INSTRUCTION. suggest_workout, start_session, programmes and start_block will refuse with setup_required until the intake questionnaire is finished, and you must not work around them: no improvised sessions, no "quick workout while we set up". Run the questionnaire the response hands you conversationally — three or four questions per message, never the whole list, arithmetic five first, injuries next. Loose combined answers are fine ("lose weight AND build muscle" is recomp) and "none" is a real answer that closes its question — record it. Save every answer the moment it arrives (set_profile, set_goal, set_plan, remember), then call the training tool again in the same turn and hand over the workout without making them ask twice. CAPTURE IS NEVER GATED: food, weight, or training they already did gets logged immediately, questionnaire finished or not.
+THE QUESTIONNAIRE GATES BUILDING A WORKOUT, NOT RUNNING ONE. suggest_workout, design_workout, programmes, start_block, and start_session WITH NO ROUTINE NAMED will refuse with setup_required until the questionnaire is finished, and you must not work around them: no improvised sessions, no "quick workout while we set up", and never a plan of your own composed in prose. But STARTING A WORKOUT THEY ALREADY SAVED IS NEVER GATED — start_session with a routine name runs, and so does log_set, which opens an ad-hoc session on the first set. That is their own plan and their own record, not WROUGHT prescribing for a stranger. When the gate fires it carries can_run_now: offer those saved workouts BY NAME first, in one line, because they can train this minute. Run the questionnaire the response hands you conversationally — three or four questions per message, never the whole list, arithmetic five first, injuries next. Loose combined answers are fine ("lose weight AND build muscle" is recomp) and "none" is a real answer that closes its question — record it. Save every answer the moment it arrives (set_profile, set_goal, set_plan, remember), then call the training tool again in the same turn and hand over the workout without making them ask twice. CAPTURE IS NEVER GATED: food, weight, or training they already did gets logged immediately, questionnaire finished or not.
 
 GETTING SOMEBODY TRAINING — THE EXPECTATION IS SET ONCE, THEN KEPT VISIBLE. The FIRST time they want a workout, a plan, or say they should be training more, and the profile has no train_days or equipment: ask ONCE, in one short message, all together — how many days a week they will honestly train (take their number; if they ask what is realistic, three to five is the honest range and three beats five for anybody new), what equipment they have, and whether there is anything they cannot do — an injury, a condition, a movement that hurts. Save days and equipment with set_profile, save limitations with remember (category "health"), and NEVER silently program a movement around a limitation without saying so. Then offer start_block so the expectation has a structure with an end.
 
@@ -2245,9 +2245,25 @@ async function startSession(args, user) {
   const { profile, memory, goals } = await context(user.id);
   const today = localDateFor(profile.timezone);
 
-  const gate = await trainingGate(user, profile, goals, memory);
-  if (gate) return { ...gate, next_actions: ['finish the questionnaire, saving each answer', 'start_session again once it is done'] };
-
+  // THE GATE MOVED, AND THE LINE IS NOW EXACTLY WHERE IT BELONGS.
+  //
+  // It used to sit here, before anything, so with the questionnaire unfinished
+  // there was no way to start a session at all — and the founder hit the
+  // consequence: "when I say I want to do a workout it should be saying where
+  // you at, and the checkmark thing is not happening." No session means no
+  // clipboard, no position, nothing to tick. The whole live-session half of
+  // the product was unreachable.
+  //
+  // Running a workout THEY ALREADY SAVED is not WROUGHT prescribing anything.
+  // It is their own plan, and recording what they do against it is capture —
+  // which is never gated, by the oldest rule in this file. Building one from
+  // scratch IS prescribing, and that is what the founder actually asked to
+  // stop: "we can't further any workouts until the questionnaire is finished"
+  // was about being programmed for as a stranger.
+  //
+  // So the check is below, after the routine lookup, and only when there is no
+  // routine to run. Named and found: go. Nothing named: the questionnaire.
+  //
   // One workout at a time. But STARTING ANOTHER IS NOT A REASON TO THROW THE
   // LAST ONE AWAY, and it used to be: the previous session was marked
   // 'abandoned' outright, which meant every set in it stayed in the set table
@@ -2277,6 +2293,37 @@ async function startSession(args, user) {
       .select('*').eq('user_id', user.id).eq('active', true)
       .ilike('name', args.routine).maybeSingle();
     routine = data || null;
+  }
+
+  // Nothing of theirs to run, so the next thing that happens is WROUGHT
+  // choosing exercises for them — which is the thing the gate exists for.
+  if (!routine) {
+    const gate = await trainingGate(user, profile, goals, memory);
+    if (gate) {
+      // NAME THE WAY THROUGH. A refusal that does not say what would work is
+      // how somebody concludes the product is broken rather than unfinished —
+      // and they may well have a saved workout sitting right there.
+      const { data: saved } = await supabase.from('wrought_routines')
+        .select('name').eq('user_id', user.id).eq('active', true)
+        .order('last_used_on', { ascending: false, nullsFirst: false }).limit(5);
+      const names = (saved || []).map(r => r.name);
+      return {
+        ...gate,
+        can_run_now: names,
+        say: names.length
+          ? `I can start one you have already saved right now — ${names.join(', ')} — just say the name. ` +
+            `Building you a NEW one needs the rest of the questionnaire first. ${gate.say}`
+          : gate.say,
+        note: (names.length
+          ? 'THEY CAN TRAIN RIGHT NOW. Offer the saved workouts in can_run_now by name FIRST, in one line — starting one of those is not gated and needs nothing answered. Only building a new session is blocked. If they pick one, call start_session again with that routine name in the same turn. If they would rather have something new, then: '
+          : '') + gate.note,
+        next_actions: [
+          ...(names.length ? [`start_session with routine "${names[0]}"`] : []),
+          'finish the questionnaire, saving each answer',
+          'start_session again once it is done',
+        ],
+      };
+    }
   }
 
   // No saved routine: build one from what the log says is actually stale,
