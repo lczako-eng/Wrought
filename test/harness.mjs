@@ -4758,6 +4758,50 @@ await test('the page says which build it is, so stale and broken are tellable ap
   assert.match(fn, /if \(!b\) return ''/);
 });
 
+group('A claimed save that never happened');
+
+await test('saying something was saved may only ever come from a tool', () => {
+  // "Added, Broski — S-Tier Home Workout is now saved as your base home
+  // strength/core routine." The account held one workout, not two. save_routine
+  // was never called; the model asserted a write from the conversation.
+  //
+  // On a product whose entire promise is memory this is the worst failure
+  // there is — worse than a crash, because a crash is visible and this looks
+  // exactly like success. Nobody finds it until they open the dashboard weeks
+  // later and the workout is not there.
+  assert.match(SERVER_INSTRUCTIONS, /SAYING SOMETHING WAS SAVED IS A CLAIM ABOUT THE RECORD, AND IT MAY ONLY EVER COME FROM A TOOL/);
+  // The incident is named, because the abstract prohibition is what failed for
+  // the invented 2,600 as well.
+  assert.match(SERVER_INSTRUCTIONS, /S-Tier Home Workout is now saved/);
+  // An honest error beats a confident sentence.
+  assert.match(SERVER_INSTRUCTIONS, /If a call fails, say it failed/);
+  // And a long design conversation is not a substitute for storing anything.
+  assert.match(SERVER_INSTRUCTIONS, /never let a long conversation about designing something stand in for having stored it/);
+
+  // The words he actually used are mapped, or the tool is not reached at all.
+  assert.match(SERVER_INSTRUCTIONS, /save_routine — "save that", "add that to my list"/);
+});
+
+await test('a save proves itself by reading the account back afterwards', () => {
+  // Echoing the object just sent proves nothing — it is the same sentence a
+  // model could write unaided. What cannot be fabricated is the state of the
+  // account AFTER the write.
+  const mcp = readFileSync(new URL('../netlify/functions/mcp.js', import.meta.url), 'utf8');
+  const fn = mcp.slice(mcp.indexOf('async function saveRoutine('), mcp.indexOf('async function listRoutines('));
+
+  const writeAt = fn.indexOf('.insert([row])');
+  const readAt = fn.indexOf("const { data: onFile } = await supabase.from('wrought_routines')");
+  assert.ok(readAt > writeAt && writeAt > 0, 'the account is read back before the write, or not at all');
+
+  assert.match(fn, /is: 'every saved workout on this account, read back AFTER the write'/);
+  assert.match(fn, /count: all\.length/);
+  assert.match(fn, /names: all\.map\(r => r\.name\)/);
+  assert.match(fn, /verified: !!mine/);
+  // The spoken line carries it too, so it survives a model that reads only say.
+  assert.match(fn, /You now have \$\{all\.length\} saved workout/);
+  assert.match(fn, /quoting it is the only thing that distinguishes a real save from a claimed one/);
+});
+
 group('The day as a receipt — every line with its own number');
 
 const { dayReceipt } = await import('../netlify/functions/lib/receipt.js');
