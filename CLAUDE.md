@@ -1956,6 +1956,27 @@ between retiring a routine and deleting one.
   clearly-horizontal drag claims the gesture; `:focus-within` slides the row
   open for keyboard users so the gesture is never the only way in.
 
+### The instruction sheet not every client reads
+
+The decisive fact behind a whole run of ChatGPT failures — the phrasebook
+ignored, saves claimed without calls, *"what account am I on"* answered with a
+ChatGPT plan, the gate never asking its questions: **every one of those rules
+lived in `SERVER_INSTRUCTIONS`, and not every client shows that sheet to its
+model.** Claude honours MCP `instructions`; ChatGPT's support is
+spotty-to-absent. What every client demonstrably does read is the **tool
+descriptions** and the **tool results**.
+
+So the rule is now structural: **anything load-bearing rides on the tool it
+governs, and nothing critical may exist only in the instruction sheet.**
+`save_routine` leads with its own trigger phrases and the never-claim-a-save
+rule; `design_workout` says to chain into `save_routine` in the same
+conversation; `get_profile` names the account question it exists to answer.
+The sheet stays, for clients that read it — it is the belt, the descriptions
+are the braces, and the tool RESULTS (say/note/on_file/day_total) remain the
+strongest surface of all, because a model cannot skip reading the answer to a
+call it just made. Tested: the harness pins the critical rules to the
+descriptions, not just the sheet.
+
 ### The save that never happened — a claim about the record
 
 `on_file` on `save_routine`. ChatGPT answered *"Added, Broski. 💪 S-Tier Home
