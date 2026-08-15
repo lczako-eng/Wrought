@@ -4630,7 +4630,7 @@ await test('a save can never silently delete what is already there', () => {
   // And the tool says so, or the model never passes the right field.
   const tool = TOOLS.find(t => t.name === 'save_routine');
   assert.match(tool.description, /MERGES/);
-  assert.match(tool.description, /ever dropped as a side effect/);
+  assert.match(tool.description, /nothing already there is dropped/);
   assert.ok(tool.inputSchema.properties.remove, 'no remove field');
   assert.ok(tool.inputSchema.properties.replace, 'no replace field');
 });
@@ -5000,6 +5000,34 @@ await test('a workout that is not there says whether anything is even connected'
   assert.match(fn, /different email/);
   // And it hands over the one question that actually settles it.
   assert.match(fn, /what account am I on/);
+});
+
+await test('the rules a connector must not miss live on the tools themselves', () => {
+  // The pattern behind a whole run of failures — the phrasebook ignored, saves
+  // claimed without calls, "what account am I on" answered with a ChatGPT plan
+  // — has one common thread: every rule lived in SERVER_INSTRUCTIONS, and not
+  // every client shows that sheet to its model at all. Claude reads it;
+  // ChatGPT's support for it is spotty-to-absent. What every client
+  // demonstrably DOES read is the tool descriptions and the tool results.
+  //
+  // So anything load-bearing rides on the tool it governs. The instruction
+  // sheet remains for clients that honour it, but nothing critical may exist
+  // ONLY there.
+  const save = TOOLS.find(t => t.name === 'save_routine').description;
+  assert.match(save, /^CALL THIS THE MOMENT/, 'the trigger is buried instead of leading');
+  assert.ok(save.includes('add that to my list'), 'the words he actually said are not on the tool');
+  assert.ok(save.includes('create another workout'), 'creating by name is not a trigger');
+  assert.match(save, /NEVER say "saved" or "added" from the conversation alone/);
+  assert.match(save, /on_file/, 'the proof is not named where the model will see it');
+
+  const design = TOOLS.find(t => t.name === 'design_workout').description;
+  assert.match(design, /^CALL THIS when the user asks for a new workout/);
+  assert.match(design, /Never design a session in prose without calling it/);
+  assert.match(design, /THEN CALL save_routine/, 'design does not chain into the save');
+
+  const prof = TOOLS.find(t => t.name === 'get_profile').description;
+  assert.ok(prof.includes('what account am I on'), 'the question that failed is not on the tool');
+  assert.match(prof, /account\.email/);
 });
 
 await test('a save proves itself by reading the account back afterwards', () => {
