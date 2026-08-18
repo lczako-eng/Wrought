@@ -507,7 +507,7 @@ const TOOLS = [
   {
     name: 'save_routine',
     title: 'Remember a workout by name',
-    description: 'CALL THIS THE MOMENT the user asks to save, create, keep or add to a workout — "save that", "add that to my list", "create another workout called X", "put that in my home workout", "remember this as my leg day". These are instructions, not conversation: call the tool IN THE SAME TURN, before replying. NEVER say "saved" or "added" from the conversation alone — a claimed save that never happened is the worst failure this product has, and it has happened. The response returns on_file: every workout now on the account, read back from the database AFTER the write. Say that count and those names; they are the only proof the save is real. Saving an existing name MERGES into it: matching movements update in place, new ones append, nothing already there is dropped. Taking something out needs `remove`; starting over needs `replace: true`. Timed work carries `minutes` and `detail` (verbatim, e.g. "level 10+, 2.5-3 mph") instead of sets and reps. Also use after a good session so they never rebuild it, and write the notes field — the write-up is what makes it a workout rather than a list.',
+    description: 'CALL THIS THE MOMENT the user asks to save, create, keep or add to a workout — "save that", "add that to my list", "create another workout called X", "put that in my home workout", "remember this as my leg day". These are instructions, not conversation: call the tool IN THE SAME TURN, before replying, and pass EVERY movement they named in ONE call — sending one and narrating the rest is how half a workout gets saved. Never store their workout in your own memory instead: your memory is not their record and does not appear on their screen. NEVER say "saved" or "added" from the conversation alone — a claimed save that never happened is the worst failure this product has, and it has happened. The response returns on_file: every workout now on the account, read back from the database AFTER the write. Say that count and those names; they are the only proof the save is real. Saving an existing name MERGES into it: matching movements update in place, new ones append, nothing already there is dropped. Taking something out needs `remove`; starting over needs `replace: true`. Timed work carries `minutes` and `detail` (verbatim, e.g. "level 10+, 2.5-3 mph") instead of sets and reps. Also use after a good session so they never rebuild it, and write the notes field — the write-up is what makes it a workout rather than a list.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -3131,11 +3131,23 @@ async function saveRoutine(args, user) {
       this_one_has: mine ? (mine.exercises || []).length : 0,
       verified: !!mine,
     },
-    say: `${existing ? 'Updated' : 'Saved'} "${name}" — ${exercises.map(describe).join(', ')}.` +
+    say: (exercises.length
+           ? `${existing ? 'Updated' : 'Saved'} "${name}" — ${exercises.map(describe).join(', ')}.`
+           // A name with nothing in it is a real state and a loud one. "Saved"
+           // with zero movements reads as done and starts as an empty session.
+           : `Saved the NAME "${name}" — but it holds NO movements yet, so it will start empty.`) +
          (removed.length ? ` Took out ${removed.join(', ')}.` : '') +
          ` You now have ${all.length} saved workout${all.length === 1 ? '' : 's'}: ${all.map(r => r.name).join(', ')}.` +
          ' Say the name any time and it starts.',
-    note: 'Say the count and the names from on_file — that is read back from the record AFTER the write, so quoting it is the only thing that distinguishes a real save from a claimed one. Read the exercise list back once too, so a mis-captured lift gets caught now. They can add to this later with save_routine and the add field — never make them rebuild it.' +
+    // THE SHORTFALL CHECK — the reply the model cannot skip is the one place a
+    // partial save gets caught. A real day proved the need: fourteen exercises
+    // were asked for, ONE was sent, and the other thirteen were narrated as
+    // saved (and stashed in the assistant's own memory, which is not the
+    // record). The server cannot know what the user asked for; the model does,
+    // and it is now told to reconcile before it answers.
+    note: `THIS ROUTINE NOW HOLDS ${exercises.length} MOVEMENT${exercises.length === 1 ? '' : 'S'}: ${exercises.map(e => e.name).join(', ') || 'none'}. ` +
+      'COMPARE that list with every movement the user actually named. If ANY are missing, they did NOT save — you did not send them. Call save_routine again NOW with the missing ones in add[] (full shape: sets/reps, or minutes and detail for timed work), and only reply once the lists match. Never cover the gap with prose, and never store their workout in your own memory instead of here — your memory is not their record and does not appear on their Trainer screen. ' +
+      'Say the count and the names from on_file — read back from the record AFTER the write, the only thing that distinguishes a real save from a claimed one. Read the exercise list back once too, so a mis-captured lift gets caught now.' +
       (row.notes ? '' : ' NO WRITE-UP ON IT YET. Offer one in half a line — how to run it, what to push, what to leave in the tank — and write it with save_routine notes if they want it. It is what turns a saved list of names into a workout, and it is shown at the top every time the session starts.'),
     next_actions: [`start_session with routine "${name}"`, 'save_routine with add[] to grow it later'],
   };
