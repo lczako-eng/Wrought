@@ -5002,6 +5002,34 @@ await test('a workout that is not there says whether anything is even connected'
   assert.match(fn, /what account am I on/);
 });
 
+await test('a partial save is caught by the reply, not covered by prose', () => {
+  // Fourteen exercises asked for, ONE sent, thirteen narrated as saved — and
+  // stashed in the assistant's own memory ("Memory updated"), which is not the
+  // record and never reaches the Trainer screen. The server cannot know what
+  // was asked for; the model does, so the reply it cannot skip now makes it
+  // reconcile the two lists before answering.
+  const mcp = readFileSync(new URL('../netlify/functions/mcp.js', import.meta.url), 'utf8');
+  const fn = mcp.slice(mcp.indexOf('async function saveRoutine('), mcp.indexOf('async function listRoutines('));
+
+  // The note leads with what the routine NOW holds and orders the comparison.
+  assert.match(fn, /THIS ROUTINE NOW HOLDS \$\{exercises\.length\} MOVEMENT/);
+  assert.match(fn, /COMPARE that list with every movement the user actually named/);
+  assert.match(fn, /Call save_routine again NOW with the missing ones in add\[\]/);
+  // The assistant's own memory is named as the wrong place, because that is
+  // where the thirteen actually went.
+  assert.match(fn, /never store their workout in your own memory/);
+
+  // A save that stored a NAME and nothing else says so in the spoken line —
+  // "Saved" with zero movements reads as done and starts as an empty session.
+  assert.match(fn, /holds NO movements yet, so it will start empty/);
+
+  // And the one-call rule rides on the tool description itself, where every
+  // client reads it — not only on a property schema a client may truncate.
+  const save = TOOLS.find(t => t.name === 'save_routine').description;
+  assert.match(save, /pass EVERY movement they named in ONE call/);
+  assert.match(save, /your memory is not their record/);
+});
+
 await test('the rules a connector must not miss live on the tools themselves', () => {
   // The pattern behind a whole run of failures — the phrasebook ignored, saves
   // claimed without calls, "what account am I on" answered with a ChatGPT plan
@@ -5047,7 +5075,7 @@ await test('a save proves itself by reading the account back afterwards', () => 
   assert.match(fn, /verified: !!mine/);
   // The spoken line carries it too, so it survives a model that reads only say.
   assert.match(fn, /You now have \$\{all\.length\} saved workout/);
-  assert.match(fn, /quoting it is the only thing that distinguishes a real save from a claimed one/);
+  assert.match(fn, /the only thing that distinguishes a real save from a claimed one/);
 });
 
 group('The day as a receipt — every line with its own number');
