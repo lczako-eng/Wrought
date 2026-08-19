@@ -5488,6 +5488,113 @@ await test('the instruction says build on two answers, and never a weight', () =
   assert.match(t.inputSchema.properties.avoid.description, /DROPPED, never made lighter/);
 });
 
+group('What the session cost, and the cardio counted apart');
+
+const { sessionEffort, splitWork } = await import('../netlify/functions/lib/effort.js');
+
+const AT = Date.parse('2026-08-14T18:00:00Z');
+const mins = n => new Date(AT + n * 60000).toISOString();
+
+await test('the session already had a clock — heart rate is read against it', () => {
+  // "When you start your workout you should officially start the heart rate
+  // during that period." It turns out to be a query rather than a feature:
+  // wrought_sessions has started_at and ended_at, heart_rate samples arrive
+  // with measured_at, and nothing was reading one against the other.
+  const sets = [
+    { exercise: 'Bench press', logged_at: mins(5) },
+    { exercise: 'Bench press', logged_at: mins(9) },
+    { exercise: 'Barbell row', logged_at: mins(16) },
+  ];
+  const samples = Array.from({ length: 40 }, (_, i) => ({
+    value: 95 + (i > 4 && i < 12 ? 55 : i > 14 && i < 20 ? 40 : 5),
+    measured_at: mins(i),
+  }));
+
+  const e = sessionEffort({ session: { started_at: mins(0), ended_at: mins(30) }, sets, samples });
+  assert.equal(e.known, true);
+  assert.equal(e.max_hr, 150);
+
+  // PER EXERCISE, from the set clock — the grain the log already keeps.
+  assert.equal(e.by_exercise.length, 2);
+  assert.equal(e.by_exercise[0].exercise, 'Bench press');
+  assert.equal(e.hardest.exercise, 'Bench press');
+
+  // Samples outside the window belong to somebody's afternoon, not the session.
+  const outside = sessionEffort({
+    session: { started_at: mins(0), ended_at: mins(10) }, sets,
+    samples: [{ value: 190, measured_at: mins(400) }],
+  });
+  assert.equal(outside.known, false);
+  // "No heart rate" and "no watch on" look identical on a screen and only one
+  // is worth acting on, so the reason is named.
+  assert.match(outside.why, /the window is right, the samples are missing/);
+
+  // A wrist reading is a noisy instrument and a number people over-read.
+  assert.match(e.caveat, /grip and cold hands/);
+  assert.match(e.caveat, /trend across sessions, not as a score for one set/);
+});
+
+await test('a treadmill is not a bench press — two statistics, never one', () => {
+  // "Yesterday my treadmill stuff should be calculated as a separate
+  // statistic." Same doctrine as a shift not being a session, one level down:
+  // blending 25 minutes of incline walking into "volume moved" makes the
+  // volume wrong and hides the cardio entirely.
+  const w = splitWork({
+    sets: [
+      { exercise: 'Bench press', logged_at: mins(5), reps: 8, weight_kg: 100 },
+      { exercise: 'Bench press', logged_at: mins(9), reps: 8, weight_kg: 100 },
+      { exercise: 'Incline treadmill walk', logged_at: mins(25) },
+    ],
+    plan: [{ name: 'Bench press', sets: 2, reps: 8 }, { name: 'Incline treadmill walk', minutes: 25 }],
+  });
+
+  assert.equal(w.strength.sets, 2, 'the treadmill was counted as a lifting set');
+  assert.equal(w.strength.volume_kg, 1600);
+  assert.ok(w.cardio.exercises.includes('Incline treadmill walk'));
+  assert.equal(w.cardio.minutes, 25);
+  assert.equal(w.mixed, true);
+  // Both numbers in the spoken line, kept apart.
+  assert.match(w.say, /2 lifting sets/);
+  assert.match(w.say, /25 min cardio/);
+  assert.match(w.note, /TWO statistics, never one/);
+
+  // A pure lifting session is not "mixed" and gets no cardio line invented.
+  const pure = splitWork({
+    sets: [{ exercise: 'Back squat', logged_at: mins(5), reps: 5, weight_kg: 140 }],
+    plan: [{ name: 'Back squat', sets: 3, reps: 5 }],
+  });
+  assert.equal(pure.mixed, false);
+  assert.equal(pure.cardio.minutes, null);
+
+  // The split rides on the closed session, and end_session reports both.
+  const ses = readFileSync(new URL('../netlify/functions/lib/session.js', import.meta.url), 'utf8');
+  assert.match(ses, /const \{ data: hr \} = await supabase\.from\('wrought_metrics'\)/);
+  assert.match(ses, /\.eq\('metric', 'heart_rate'\)/);
+  assert.match(ses, /work_split: split/);
+  const mcp = readFileSync(new URL('../netlify/functions/mcp.js', import.meta.url), 'utf8');
+  const end = mcp.slice(mcp.indexOf('async function endSession('), mcp.indexOf('async function previousBest('));
+  assert.match(end, /give the two numbers SEPARATELY/);
+});
+
+await test('a heart rate is a training statistic and nothing else', () => {
+  // The clinical line, in the one place it is most tempting to cross: a number
+  // off a chest strap next to a workout invites "is that bad", and the honest
+  // answer to that is a doctor, never a fitness app. Blood oxygen and
+  // respiratory rate are stored and shown as readings — never interpreted, and
+  // never pulled into this.
+  const eff = readFileSync(new URL('../netlify/functions/lib/effort.js', import.meta.url), 'utf8');
+  assert.match(eff, /Nothing here diagnoses/);
+  // It reads heart_rate ONLY. Pulling spo2 into a training statistic is how a
+  // fitness number becomes a medical claim.
+  assert.ok(!/spo2|blood_oxygen|respiratory/i.test(eff.replace(/\/\/.*$/gm, '')),
+    'a clinical metric leaked into the training read');
+
+  const mcp = readFileSync(new URL('../netlify/functions/mcp.js', import.meta.url), 'utf8');
+  const end = mcp.slice(mcp.indexOf('async function endSession('), mcp.indexOf('async function previousBest('));
+  assert.match(end, /never read a heart rate as a sign of anything/);
+  assert.match(end, /never compare it to anybody else/);
+});
+
 group('The trainer standing next to you, between the sets');
 
 const { effortFromWords, beforeSet, afterSet, methodsFor, METHODS } =

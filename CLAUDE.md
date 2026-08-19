@@ -1393,6 +1393,45 @@ longer hidden behind the trends gate: *"what is my best bench"* must have the
 same answer whichever range button is pressed, and a record that changes when
 you press one is not a record.
 
+### What the session cost, and the cardio counted apart
+
+`lib/effort.js`, stamped on the workout event at close. The founder: *"when you
+start your workout you should officially start the heart rate during that
+period, during each exercise... and yesterday my treadmill stuff should be
+calculated as a separate statistic."*
+
+**All of it was answerable from data already arriving, and no new sensor was
+needed for any of it.** "Officially start the heart rate" turns out to be a
+QUERY rather than a feature: `wrought_sessions` already stores `started_at` and
+`ended_at`, `heart_rate` samples already arrive with `measured_at`, and nothing
+was reading one against the other.
+
+- **Per exercise, from the set clock.** `wrought_sets.logged_at` means the
+  samples between one lift's first set and the next lift's belong to the lift
+  being done then — including its rest gaps, which is correct: the cost of a
+  heavy triple is partly what it does to you for the two minutes after.
+- **A treadmill is not a bench press.** Blending twenty-five minutes of incline
+  walking into "volume moved" makes the volume wrong and hides the cardio
+  entirely — same doctrine as a shift not being a session, one level down. Two
+  statistics, and the split is by MOVEMENT rather than by session, because a
+  session is very often both.
+- **"No heart rate" and "no watch on" are different facts** and the reason is
+  named: *the window is right, the samples are missing.*
+- **The caveat rides every time.** A wrist reading moves with grip and cold
+  hands as well as effort — a trend across sessions, never a score for one set.
+
+**And a heart rate is a training statistic and nothing else.** Blood oxygen,
+respiratory rate and the rest of `CLINICAL_CAUTION` are stored and shown as
+readings, never pulled into this: a clinical number beside a workout invites
+*"is that bad"*, and the honest answer is a doctor, never a fitness app. There
+is a test that greps for the leak.
+
+**On more sensors: the door is already open.** `/ingest` is a documented public
+endpoint that takes any named metric, and Apple Health and Health Connect are
+already aggregators — a strap, a ring or an oximeter that writes to either is
+carried with no new integration. That is the whole reason the hub was built
+wide.
+
 ### The trainer between the sets — words in, load out
 
 `lib/coach.js` + `felt` on `log_set`. The founder: *"we have to get like a

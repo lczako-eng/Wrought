@@ -2975,12 +2975,18 @@ async function endSession(args, user) {
     // Planned against done, the same numbers now filed on the workout event —
     // "if I only do half of them, you'll know that, or half of one of them."
     ...(done.completion ? { completion: done.completion } : {}),
+    // What it cost, measured against the session's own clock — and the cardio
+    // inside it counted as its own statistic rather than blended into volume.
+    ...(done.effort?.known ? { effort: done.effort } : {}),
+    ...(done.split?.mixed ? { work_split: done.split } : {}),
     day_so_far: { food: day.food.say, energy: balance.say },
     training_week: week,
     // The held stretches, offered where they belong and nowhere else.
     cooldown: cool,
     next_workout: nextWorkout,
-    say: `${session.name} done — ${minutes} minutes, ${totals.sets} sets, ${totals.volume_kg}kg moved.` +
+    say: `${session.name} done — ${minutes} minutes, ` +
+         (done.split?.mixed ? `${done.split.say}.` : `${totals.sets} sets, ${totals.volume_kg}kg moved.`) +
+         (done.effort?.known ? ` ${done.effort.say}` : '') +
          (done.completion && done.completion.percent < 100
            ? ` ${done.completion.percent}% of the plan — ${done.completion.skipped.length
                ? `skipped ${done.completion.skipped.join(', ')}`
@@ -2990,7 +2996,7 @@ async function endSession(args, user) {
          ` ${balance.say}` +
          (week ? ` ${week.say}` : '') +
          (nextWorkout?.say ? ` ${nextWorkout.say}` : ''),
-    note: 'State completion as a FACT, never a scolding — a half-done plan recorded honestly beats a finished one invented, and the skipped list is information about the plan, not the person. Lead with anything in beat_last_time — that is the only part of a session summary anyone actually cares about. OFFER THE COOLDOWN in one short line, with the holds named, and say they can skip it in the same breath — this is where static stretching belongs and the reason none of it was in the warm-up. Never insist and never repeat it: the record of the workout matters more than the stretching does, and a cool-down that becomes a chore is how somebody stops closing sessions. Close with next_workout: naming the next session at the end of this one is the only prompt this server can ever give.',
+    note: 'If work_split is there, give the two numbers SEPARATELY — lifting volume and cardio minutes are different statistics and a blended total describes neither. If effort is there, it is a TRAINING statistic and nothing more: never read a heart rate as a sign of anything, never compare it to anybody else, and say the caveat once — a wrist moves with grip and cold hands as well as effort. State completion as a FACT, never a scolding — a half-done plan recorded honestly beats a finished one invented, and the skipped list is information about the plan, not the person. Lead with anything in beat_last_time — that is the only part of a session summary anyone actually cares about. OFFER THE COOLDOWN in one short line, with the holds named, and say they can skip it in the same breath — this is where static stretching belongs and the reason none of it was in the warm-up. Never insist and never repeat it: the record of the workout matters more than the stretching does, and a cool-down that becomes a chore is how somebody stops closing sessions. Close with next_workout: naming the next session at the end of this one is the only prompt this server can ever give.',
     next_actions: ['log what they eat next', 'brief tonight for the full read'],
   };
 }
