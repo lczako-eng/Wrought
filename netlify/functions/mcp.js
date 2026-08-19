@@ -180,6 +180,8 @@ HOW PEOPLE ACTUALLY ASK. Nobody says "call the brief tool". They say one of a hu
   guide — "help", "how do I use this", "how does wrought work", "what can you do", "what is wrought", "what does wrought mean", "tutorial", "teach me", "walk me through it"
   get_profile — "what account am I on", "which account is this", "who am I", "what email is this", "what do you know about me", "what's my height", "what have you got on me", "am I set up", "is this connected", "plugged in", "are you working", "what account are you writing to"
 
+A TOTAL IS ONE COMPUTED NUMBER, AND A RANGE IS THE TELL THAT YOU MADE IT UP. This went wrong in production: "Total so far: ~880 calories", then "what about breakfast???", then "you're right, I missed it — you're at about 1,280–1,330 calories today." Both halves are the same failure. day_total returns ONE figure computed from stored rows, so quoting "1,280–1,330" can only mean the arithmetic happened in prose. And the breakfast was not "missed" by the total — IT WAS NEVER LOGGED. It was mentioned in conversation, acknowledged, and never written. When somebody names food that is not in day_total.items, that is a missing ENTRY, not a missing sum: call log for it immediately, then re-read the total and quote the new figure. Patching the gap with mental arithmetic is the worst available answer — it hides a missing entry behind a number that looks right, and tomorrow the day is still short a bagel. Never sum items yourself, never present a range as a total, and never let "you're right, I missed that" be followed by anything except a write.
+
 A RUNNING TOTAL IS THE WHOLE DAY, NEVER THE THING JUST LOGGED. "How many am I at today", "what's my total", "how many calories so far" are answered from day_total — which log, amend_last and structure_entries all return and which is labelled EVERYTHING logged today. Never add up the items yourself, never quote back the macros you just estimated for one meal as if they were the day, and never answer this from memory of the conversation. If day_total looks smaller than they expect, say the number and say how many meals it counts — a total that is low because something did not get logged is a fact worth surfacing, not a number to quietly inflate.
 
 SAYING SOMETHING WAS SAVED IS A CLAIM ABOUT THE RECORD, AND IT MAY ONLY EVER COME FROM A TOOL. Never say saved, added, logged, updated, changed, removed or "it's on your list" unless a tool call in THIS turn came back and said so. This has already gone wrong in production: "Added, Broski — S-Tier Home Workout is now saved" was answered without save_routine ever being called, and the account held one workout, not two. On a product whose entire promise is that it remembers, a claimed write that never happened is the worst failure there is — worse than a crash, because a crash is visible and this looks exactly like success. Nobody discovers it until they open the dashboard weeks later and their workout is not there. So: if they ask for something to be kept, CALL THE TOOL, in the same turn, before answering — "add that to my list", "save that", "keep it" are instructions, not conversation. Then quote what came back: save_routine returns on_file, which is every saved workout read from the database AFTER the write, and saying the count and the names is the only thing that tells a real save apart from a claimed one. If a call fails, say it failed and what to do — an honest error is worth ten confident sentences. Never write the confirmation first and the tool call later, and never let a long conversation about designing something stand in for having stored it.
@@ -347,7 +349,7 @@ const TOOLS = [
   {
     name: 'log',
     title: 'Log anything, in plain words',
-    description: 'THE main tool. Records whatever the user said about their day — food, training, weight, measurements, sleep, mood, supplements. Pass their words AND your structured reading of them; both are required. "Two eggs and black coffee, pushed 40 minutes upper body, 182 on the scale" becomes three separate entries with macros estimated and the weight converted. Pass their words VERBATIM; do not tidy, summarise or ask for detail first. Use this for every log unless the user is giving only a weight or only a measurement, which have their own tools.',
+    description: 'THE main tool, and the one that must fire the moment food is MENTIONED — not when they ask for it to be saved. A meal acknowledged in conversation and never written is the commonest way a day ends up short: the record is right, the recital is wrong, and nobody finds out until the total looks small. If you find yourself saying "you\'re right, I missed that", the next thing you do is call this, never arithmetic. Records whatever the user said about their day — food, training, weight, measurements, sleep, mood, supplements. Pass their words AND your structured reading of them; both are required. "Two eggs and black coffee, pushed 40 minutes upper body, 182 on the scale" becomes three separate entries with macros estimated and the weight converted. Pass their words VERBATIM; do not tidy, summarise or ask for detail first. Use this for every log unless the user is giving only a weight or only a measurement, which have their own tools.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -582,7 +584,7 @@ const TOOLS = [
   {
     name: 'get_day',
     title: 'Read one day\'s log',
-    description: 'The raw entries for one calendar day with times, plus that day\'s totals. Use when the user asks what they ate or did on a specific day, or wants to check something was recorded correctly.',
+    description: 'The raw entries for one calendar day with times, plus that day\'s totals — ONE computed figure, never a range. If the user names something that is not among the items, it was never logged: call log for it and read this again rather than adding it up in prose. Use when the user asks what they ate or did on a specific day, or wants to check something was recorded correctly.',
     inputSchema: {
       type: 'object',
       properties: { date: { type: 'string', description: 'YYYY-MM-DD. Defaults to today.' } },
@@ -1057,6 +1059,20 @@ function dayTotal(day) {
         estimated: e.estimated,
       })),
     say: day.food.say,
+    // THE RECONCILIATION, because the server cannot do it and the model can.
+    //
+    // "Total so far: ~880 calories." — "Huh, what about breakfast???" — "You're
+    // right, I missed your breakfast... you're at about 1,280–1,330 calories
+    // today." Two failures in one reply, and the range is the tell: a range is
+    // a model doing arithmetic in prose. day_total is ONE computed number.
+    //
+    // The deeper one is that the bagel was never LOGGED. It was mentioned in
+    // conversation, acknowledged conversationally, and never written — so the
+    // record was right and the recital was wrong. Noticing the gap and then
+    // patching it with mental arithmetic is the worst possible response: it
+    // hides a missing entry behind a number that looks like an answer, and
+    // tomorrow the day is still short a bagel.
+    check: 'These items ARE the day. If they mention food that is not in this list, it was never logged — call log for it NOW, then read this again. Never add it up in prose, never quote a range, and never fill a gap you noticed with arithmetic instead of a write.',
   };
 }
 
