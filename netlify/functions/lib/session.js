@@ -35,6 +35,7 @@
 
 import { supabase, insertEvents, localDateFor } from './wrought.js';
 import { sessionTotals } from './training.js';
+import { sessionProgress } from './warmup.js';
 
 // How long a gap means the session is over rather than resting. Real sets sit
 // minutes apart; four hours is not a rest, it is somebody who left. Generous on
@@ -102,9 +103,44 @@ export async function finaliseSession(userId, profile, session,
   const totals = sessionTotals(rows);
   const muscles = [...new Set(rows.flatMap(s => s.muscles || []))];
 
+  // WHAT WAS PLANNED AGAINST WHAT WAS DONE, kept on the record forever.
+  //
+  // The founder: "it needs to keep, in like a database, how much I've done of
+  // each exercise, or I decided to skip or whatever — so if I only do half of
+  // them you'll know that, or half of one of them." The clipboard already knew
+  // all of this DURING the session and then threw it away at the close: the
+  // event kept only what happened, so a six-exercise plan finished at three
+  // read back identically to a three-exercise plan finished in full.
+  //
+  // Same function the live checklist uses, so the percentage somebody watched
+  // during the session and the one filed on the record can never disagree.
+  // An ad-hoc session has open slots (sets: null) and no real plan, so its
+  // completion would be noise — only a session with planned sets carries one.
+  const plan = Array.isArray(session.plan) ? session.plan : [];
+  const progress = sessionProgress(plan, rows);
+  const completion = progress.sets_planned > 0 ? {
+    percent: progress.percent,
+    sets_done: progress.sets_done,
+    sets_planned: progress.sets_planned,
+    // Per exercise: planned, done, and the two states worth naming. "Skipped"
+    // is a plan line never touched; "short" is one started and left. They are
+    // different facts — one is a choice about the session, the other is about
+    // the exercise — and flattening them loses the founder's "half of one".
+    exercises: progress.exercises.map(e => ({
+      name: e.exercise, planned: e.sets, done: e.done,
+      ...(e.done === 0 ? { skipped: true } : e.complete ? {} : { short: true }),
+    })),
+    skipped: progress.exercises.filter(e => e.done === 0).map(e => e.exercise),
+  } : null;
+
   const [written] = await insertEvents(userId, profile, [{
     event_type: 'workout',
-    summary: `${session.name} — ${totals.sets} sets, ${minutes} min`,
+    // The shortfall is IN the summary, because the summary is what every list,
+    // day card and brief actually shows. "12 sets, 40 min" over a half-done
+    // plan reads as a finished workout — which hides exactly the fact the
+    // founder asked to keep.
+    summary: `${session.name} — ${totals.sets} sets, ${minutes} min` +
+      (completion && completion.percent < 100 ? ` (${completion.percent}% of plan)` : ''),
     detail: {
       kind: session.kind, minutes, muscles,
       exercises: totals.top_sets.map(t => ({
@@ -114,6 +150,7 @@ export async function finaliseSession(userId, profile, session,
       volume_kg: totals.volume_kg,
       session_id: session.id,
       note: note || null,
+      ...(completion ? { completion } : {}),
       // Said out loud on the row itself, so anybody reading the record later
       // can tell a session somebody closed from one the server closed for them.
       closed_by: closedBy,
@@ -134,7 +171,7 @@ export async function finaliseSession(userId, profile, session,
     // Handed back so the caller does not re-read what was just written — and
     // so a hand-closed session and a server-closed one go through identical
     // code and can never produce two different-looking rows.
-    totals, rows, event_id: written?.id || null,
+    totals, rows, completion, event_id: written?.id || null,
     local_date: localDateFor(profile.timezone, new Date(endAt)),
   };
 }

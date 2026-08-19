@@ -4677,10 +4677,10 @@ await test('a routine can be built and edited on the website too', () => {
   // record, exactly like a retired goal.
   assert.match(api, /RETIRING IS NOT DELETING/);
   assert.match(api, /active: !row\.active/);
-  // And a routine still carries no working weight, on either door.
-  assert.match(api, /NO LOADS/);
-  assert.ok(!/load_kg:/.test(api.slice(api.indexOf('function shape'), api.indexOf('export const handler'))),
-    'a load got into a routine built on the website');
+  // A typed weight is theirs; a generated one still does not exist. The
+  // founder overrode the flat no-loads rule for HIS OWN typed reference —
+  // the door must never invent one of its own.
+  assert.match(api, /A TYPED WEIGHT IS THEIRS; A GENERATED ONE STILL DOES NOT EXIST/);
 
   const src = page('app.html');
   assert.match(src, /function wireRoutines\(/);
@@ -4857,6 +4857,64 @@ await test('taking a movement out is one tap; deleting it is two and asks', () =
   // in this list that is not warm.
   assert.match(src, /\.rmv\.benched \.rmvn \{[^}]*line-through/);
   assert.match(src, /\.rmv-act\.left \{[^}]*var\(--moss\)/);
+});
+
+await test('a typed weight is theirs — parsed with a unit, kept in kg, shown in theirs', () => {
+  // The founder overrode the flat no-loads rule in as many words: "I can add
+  // it for amount of weight or time." The line that survives is the one that
+  // was always the point: WROUGHT never INVENTS a load. A weight the person
+  // types on their own plan is their own reference.
+  const src = page('app.html');
+  const fnText = src.slice(src.indexOf('function parseHowMuch(raw)'), src.indexOf('// The slide. Pointer events'));
+  const parseHowMuch = new Function(`${fnText}; return parseHowMuch;`)();
+
+  // Stored in kg like every weight in the record, whatever unit was typed.
+  assert.deepEqual(parseHowMuch('2x8 135lb'), { sets: 2, reps: 8, load_kg: 61.2 });
+  assert.deepEqual(parseHowMuch('2x8 at 60kg'), { sets: 2, reps: 8, load_kg: 60 });
+  // A bare number is AMBIGUOUS — guessing lb-or-kg on a health product is how
+  // a number doubles. No unit, no load: it stays in the verbatim detail.
+  assert.deepEqual(parseHowMuch('2x8 135'), { sets: 2, reps: 8, detail: '135' });
+  // And the timed form is untouched.
+  assert.deepEqual(parseHowMuch('25 min level 10+, 2.5-3 mph'),
+    { minutes: 25, detail: 'level 10+, 2.5-3 mph' });
+
+  // Shown back in THEIR unit — a 135 lb man must see his 135, not a silent
+  // conversion — and the unit survives across tabs and visits.
+  assert.match(src, /function sayLoad\(kg\)/);
+  assert.match(src, /localStorage\.getItem\('wrought_wu'\)/);
+  assert.match(src, /localStorage\.setItem\('wrought_wu', wu\)/);
+  assert.match(src, /m\.load_kg \? sayLoad\(m\.load_kg\) : null/);
+});
+
+await test('a half-done plan is filed as a half-done plan', () => {
+  // "It needs to keep, in like a database, how much I've done of each
+  // exercise, or I decided to skip or whatever — so if I only do half of them
+  // you'll know that, or half of one of them." The clipboard knew all of this
+  // DURING the session and threw it away at the close: a six-exercise plan
+  // finished at three read back identically to a three-exercise plan finished
+  // in full.
+  const ses = readFileSync(new URL('../netlify/functions/lib/session.js', import.meta.url), 'utf8');
+  // Same function as the live checklist, so the percent somebody watched
+  // mid-session and the one on the record can never disagree.
+  assert.match(ses, /import \{ sessionProgress \} from '\.\/warmup\.js'/);
+  assert.match(ses, /const progress = sessionProgress\(plan, rows\)/);
+  // Skipped (never touched) and short (started and left) are different facts.
+  assert.match(ses, /\{ skipped: true \}/);
+  assert.match(ses, /\{ short: true \}/);
+  // The shortfall is IN the summary, because the summary is what every list,
+  // day card and brief actually shows.
+  assert.match(ses, /completion\.percent < 100 \? ` \(\$\{completion\.percent\}% of plan\)` : ''/);
+  // An ad-hoc session has open slots and no real plan — its completion would
+  // be noise, so only a session with planned sets carries one.
+  assert.match(ses, /progress\.sets_planned > 0 \?/);
+  assert.match(ses, /: null;/);
+
+  // And end_session says it, as a fact, never a scolding.
+  const mcp = readFileSync(new URL('../netlify/functions/mcp.js', import.meta.url), 'utf8');
+  const end = mcp.slice(mcp.indexOf('async function endSession('), mcp.indexOf('async function previousBest('));
+  assert.match(end, /completion: done\.completion/);
+  assert.match(end, /skipped \$\{done\.completion\.skipped\.join/);
+  assert.match(end, /never a scolding/);
 });
 
 await test('the box that takes the setup is not shorter than the setup', () => {

@@ -1025,10 +1025,12 @@ table.matrix td.rh.cold { color: var(--heat-3); }
    BEHIND the content, so nothing destructive is tappable until the row has
    been deliberately moved — which is the whole safety argument for the
    gesture over a visible button. */
-.rmv { position: relative; overflow: hidden; border-radius: 5px; background: var(--scale); font-size: 14px; }
+.rmv { position: relative; overflow: hidden; border-radius: 7px; background: var(--scale); font-size: 15px; }
 .rmv-body {
   display: flex; justify-content: space-between; align-items: center; gap: 12px;
-  padding: 7px 10px; background: var(--scale); border-radius: 5px;
+  /* Finger-sized on the founder's direct ask — these rows are tapped and slid
+     mid-session, and 34px rows in a gym are a stylus target. */
+  padding: 13px 12px; background: var(--scale); border-radius: 7px;
   position: relative; z-index: 1;
   /* pan-y: vertical scrolling stays the browser's; only the horizontal drag
      is ours. Without this the list becomes unscrollable on a phone. */
@@ -3348,6 +3350,19 @@ function parseHowMuch(raw) {
   else if (mins) { out.minutes = +mins[1]; rest = rest.replace(mins[0], ' '); }
   else if (/^\d+$/.test(rest)) { out.sets = +rest; rest = ''; }
 
+  // A WEIGHT THE PERSON TYPES IS THEIRS TO KEEP — the founder asked for this
+  // in as many words. It needs an explicit unit, because a bare "135" after a
+  // rep scheme is ambiguous and guessing lb-or-kg on a health product is how a
+  // number gets doubled. Stored in kg, like every weight in the record; a bare
+  // number without a unit stays in the verbatim detail instead.
+  const wt = rest.match(/(?:@|at\s+)?(\d+(?:\.\d+)?)\s*(kg|kgs?|kilos?|lbs?|pounds?)\b/i);
+  if (wt) {
+    const n = parseFloat(wt[1]);
+    out.load_kg = /k/i.test(wt[2]) ? Math.round(n * 10) / 10
+                                   : Math.round(n * 0.45359237 * 10) / 10;
+    rest = rest.replace(wt[0], ' ');
+  }
+
   // Whatever is left is how it is set up — "level 10+, 2.5-3 mph" — and it is
   // kept verbatim rather than thrown away, because for cardio that trailing
   // text IS the instruction.
@@ -5648,6 +5663,7 @@ function targetsPanel(d) {
 
 function render(d) {
   const s = d.summary, wu = d.weight_unit, out = [];
+  if (wu) { weightUnit = wu; try { localStorage.setItem('wrought_wu', wu); } catch { /* fine */ } }
   // Kept so the Trainer tab can list them without its own request.
   trainerRoutines = d.routines || [];
 
@@ -6715,6 +6731,16 @@ function devicePanel2(d) {
 // markup the moment `sets` was 0 — which a routine of nothing but timed work
 // legitimately is. Count the sets if there are any, otherwise count the
 // movements, and never trust one field to be one type.
+// The account's weight unit, learned from the last dashboard payload and kept
+// so the Trainer tab (which has no profile fetch of its own) shows a 135 lb
+// man his 135, not a silent conversion to 61.2.
+let weightUnit = localStorage.getItem('wrought_wu') || 'kg';
+function sayLoad(kg) {
+  return weightUnit === 'lb'
+    ? `${Math.round(kg / 0.45359237)} lb`
+    : `${Math.round(kg * 10) / 10} kg`;
+}
+
 function chipCount(r, movesOf) {
   const sets = Number(r.sets) || movesOf.reduce((a, m) => a + (Number(m.sets) || 0), 0);
   if (sets > 0) return `${sets} ${sets === 1 ? 'set' : 'sets'}`;
@@ -6736,6 +6762,10 @@ function routinesPanel(d, { editable = false } = {}) {
     const howMuch = m => [
       m.sets && m.reps ? `${m.sets}×${esc(String(m.reps))}` : null,
       m.minutes ? `${m.minutes} min` : null,
+      // Their own typed reference, shown in their own unit. NOT a prescription:
+      // the rack screen still computes the working load from real history, and
+      // the record beats this the moment one exists.
+      m.load_kg ? sayLoad(m.load_kg) : null,
     ].filter(Boolean).join(' · ');
 
     // A MOVEMENT WITH NOTHING ON IT SAYS SO. An em dash is honest and useless:
@@ -6803,7 +6833,7 @@ function routinesPanel(d, { editable = false } = {}) {
                it at "level 10+, 2." before anything was even sent. Nothing
                errors when an input truncates; it just saves a shorter truth.
                200 to match what the server stores. -->
-          <input class="ra-sets" placeholder="3×8, or 25 min level 10+, 2.5-3 mph"
+          <input class="ra-sets" placeholder="3×8 135lb, or 25 min level 10+"
                  data-rid="${esc(r.id)}" maxlength="200">
           <button class="ra-go" type="button" data-rid="${esc(r.id)}">Add</button>
         </div>
