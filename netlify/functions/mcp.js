@@ -35,6 +35,7 @@ import { guideRead } from './lib/guide.js';
 import { nextNudge, nudgeNote } from './lib/prompt.js';
 import { preflight } from './lib/preflight.js';
 import { finaliseSession, closeStaleSessions } from './lib/session.js';
+import { effortFromWords, beforeSet, afterSet, methodsFor } from './lib/coach.js';
 import { PROVIDERS, providerSummary, recommendRoute } from './lib/providers.js';
 import { nutritionTotals, composition, macroMatrix, yearOverYear } from './lib/nutrition.js';
 import {
@@ -198,6 +199,8 @@ Say the readiness line FIRST if it is not "ready" — the body's veto belongs be
 CHANGING A TARGET IS ONE CALL AND NO DISCUSSION. "Switch my goal to 12,000 steps" is set_goal with metric steps and target 12000 — the server retires the old steps goal itself, so never create a second one and never ask whether they want to keep the old. "Drop the steps one" is drop_goal. Both are maintenance; neither gets a remark about commitment or a question about why.
 
 A NEW WEIGHT IS JUST LOG_WEIGHT. "I'm down to 325" or "I weighed 148 this morning" is a weigh-in, logged in their own units, and it silently re-bases everything computed from bodyweight — the resting burn, the calorie target, the protein target. Say the number back and what it means for the trend, never congratulate a direction: praising a loss and staying silent on a gain is how a log starts getting edited to please the app.
+
+BETWEEN THE SETS, YOU ARE THE TRAINER STANDING THERE — AND THE QUESTIONS ARE INPUTS, NOT CONVERSATION. Every log_set answer carries ask_after ("how did that feel — how many more could you have got?") and, at the top of a new exercise, ask_before ("where are you with this today — as it is, a little harder, or a little softer?"). Ask ONE of them, in the same message as the count, never as a separate turn, and never both. THEIR REPLY GOES TO log_set AS the felt field, VERBATIM — do not convert it to an RPE number yourself. The server reads the words against the reps-in-reserve scale and that reading is what decides the next load, so a number you inferred is a guess about how much weight goes on a bar: the same failure as an invented calorie target, in the place it hurts fastest. Words that report no effort produce no number and the load holds, which is deliberate. effort_read on the response says what it heard and from which phrase — relay that in half a clause when it matters ("taking that as about one rep left") so a wrong reading can be corrected rather than silently moving the weight.
 
 AT THE RACK, THE SERVER HOLDS THE CLIPBOARD. During a session, every log_set answer carries the checklist — every exercise with its sets and reps, marked done, current or to come. "What's left", "what's next", "how much more" are answered from the LATEST checklist, never from memory of the conversation. Ask at most ONE short question per rest gap — the reps, or how it felt — never a form. If they mention pain, log_set's note field takes their words verbatim AND it goes to remember (category health).
 
@@ -456,7 +459,8 @@ const TOOLS = [
       properties: {
         reps:      { type: 'integer', description: 'Reps completed. If they only said "done", use the prescribed target.' },
         weight_kg: { type: 'number',  description: 'Load used in kg. Convert from lb first. Omit for bodyweight work.' },
-        rpe:       { type: 'number',  description: 'How close to failure, 1-10, if they indicated it ("that was easy" ≈ 6, "barely got it" ≈ 9.5). Drives the next load, so pass it whenever they hint at effort.' },
+        felt:      { type: 'string',  description: 'WHAT THEY SAID ABOUT THE SET, VERBATIM — "with ease", "started to struggle a bit", "had two more in me", "barely got it". Do NOT convert this to a number: the server reads it against the reps-in-reserve scale, and this is the input that decides the next load. Pass their words exactly, including the vague ones; if they said nothing about effort, leave it out and the load holds, which is deliberate.' },
+        rpe:       { type: 'number',  description: 'Only when they actually gave a number — "that was an 8", "RPE 9". Otherwise use `felt` and let the server read their words; a number you inferred yourself is a guess about how much weight goes on a bar.' },
         exercise:  { type: 'string',  description: 'Only if they did something other than what was prescribed — a swap or an extra lift.' },
         note:      { type: 'string',  description: 'Anything they said at the rack — "left shoulder pinched", "grip went before the legs", "felt light today", "bar speed was slow". Pass it VERBATIM and never discard it as chatter. It attaches to this exact set, so six weeks later it is the thing that explains a plateau.' },
         skip:      { type: 'boolean', description: 'True if they are skipping this exercise entirely and moving on.' },
@@ -2429,6 +2433,13 @@ async function startSession(args, user) {
     // How they feel, what they want out of it, and where the day actually
     // stands. Asked in one line, in the same breath as the session.
     preflight: check,
+    // HOW PROFESSIONAL COACHES RUN THIS, offered and never imposed — "you
+    // could suggest that and I'll see if I want it or not". Two at a time with
+    // what each costs, tier-gated like every other prescription, and honest
+    // that it is textbook methodology rather than insider knowledge.
+    methods: methodsFor({ tier, using: (memory || []).filter(m => m.category === 'training')
+      .flatMap(m => ['rir','top_backoff','double_progression','planned_deload','wave','bar_speed']
+        .filter(k => String(m.fact || '').toLowerCase().includes(k.replace('_', ' ')))) }),
     up_next: { ...first, set: 1, of: first.sets, load: opener },
     readiness: ready?.known ? ready : undefined,
     coaching: TIERS[tier]?.doctrine,
@@ -2581,6 +2592,19 @@ async function logSet(args, user) {
 
   let setsDone = doneCount || 0;
 
+  // THEIR WORDS ABOUT THE SET, READ HERE RATHER THAN GUESSED THERE.
+  //
+  // The tool description used to tell the MODEL to convert — '"that was easy"
+  // ≈ 6' — which made a language model the thing deciding how much weight goes
+  // on a bar. Same class as the invented calorie target, in the place where
+  // being wrong hurts fastest. The conversion now runs against the RIR-anchored
+  // scale in lib/coach.js, an explicit number still wins if they gave one, and
+  // words that report no effort produce no number at all — which is what keeps
+  // "an unreported effort never adds weight" true.
+  const effort = args.rpe != null
+    ? { rpe: Number(args.rpe), rir: Math.max(0, 10 - Number(args.rpe)), basis: 'they gave a number' }
+    : effortFromWords([args.felt, args.note].filter(Boolean).join('. '));
+
   if (args.skip) {
     setsDone = current.sets ?? setsDone;        // force the move on
   } else {
@@ -2595,7 +2619,7 @@ async function logSet(args, user) {
       position: session.cursor_index + 1,
       reps: args.reps != null ? Math.round(Number(args.reps)) : (parseInt(String(current.reps), 10) || null),
       weight_kg: args.weight_kg != null ? Number(args.weight_kg) : null,
-      rpe: args.rpe != null ? Number(args.rpe) : null,
+      rpe: effort.rpe,
       muscles: current.muscles || [],
       // Verbatim. "Left shoulder pinched on the third set" is the whole reason
       // a number went the way it did, and it is worthless paraphrased.
@@ -2636,7 +2660,7 @@ async function logSet(args, user) {
     ? nextSetLoad({
         weightKg: args.weight_kg ?? null,
         reps: args.reps ?? null,
-        rpe: args.rpe ?? null,
+        rpe: effort.rpe,
         targetReps: current.reps,
         key: current.key,
         tier: session.plan[0]?.tier || 'intermediate',
@@ -2671,6 +2695,21 @@ async function logSet(args, user) {
       sets: running.sets, volume_kg: running.volume_kg, minutes: elapsed,
       exercise: `${cursor + 1} of ${plan.length}`,
     },
+    // THE TRAINER'S HALF OF THE REST GAP. Two questions, and only ever one at
+    // a time: what that set cost (asked only when they have not already said),
+    // and — at the top of a new exercise — where they are with it today. A
+    // rest gap is the only moment somebody will answer either, and the answers
+    // are not conversation: they are the input the next load is computed from.
+    effort_read: effort.rpe != null
+      ? { rpe: effort.rpe, rir: effort.rir, from: effort.matched || 'a number they gave',
+          ...(effort.conflicted ? { conflicted: true, took: effort.took } : {}),
+          basis: effort.basis }
+      : { rpe: null, why: 'they did not say how it felt, so the load holds — an unreported effort never adds weight' },
+    ask_after: afterSet({ reps: args.reps ?? null, target: current.reps, hadEffort: effort.rpe != null }),
+    ...(setNo === 1 && !moreSetsHere
+      ? { ask_before: beforeSet({ exercise: nextExercise.name, setNumber: 1,
+                                 load: load?.weight_kg ?? null }) }
+      : {}),
     checklist: planChecklist(plan, cursor, moreSetsHere ? setsDone : 0),
     // How far through, computed here so the conversation and the Trainer
     // screen can never quote two different percentages at the same moment.

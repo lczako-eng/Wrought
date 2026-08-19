@@ -5488,6 +5488,118 @@ await test('the instruction says build on two answers, and never a weight', () =
   assert.match(t.inputSchema.properties.avoid.description, /DROPPED, never made lighter/);
 });
 
+group('The trainer standing next to you, between the sets');
+
+const { effortFromWords, beforeSet, afterSet, methodsFor, METHODS } =
+  await import('../netlify/functions/lib/coach.js');
+
+await test('their words become the effort — the server reads it, not the model', () => {
+  // The tool description used to tell the MODEL to convert: '"that was easy"
+  // ≈ 6'. That made a language model the thing deciding how much weight goes
+  // on a bar — the same class as an invented calorie target, in the place it
+  // hurts fastest.
+  //
+  // The founder's own sentence is the fixture: "I did eight, my full reps with
+  // ease. I added 25, second set, and I started to struggle a little bit. It
+  // felt fine."
+  assert.equal(effortFromWords('my full reps with ease').rpe, 6);
+  const struggled = effortFromWords('I started to struggle a little bit. It felt fine');
+  assert.equal(struggled.rpe, 9, '"felt fine" overrode the struggle');
+  assert.equal(struggled.rir, 1);
+
+  // Reps in reserve is the scale, because it is the question a lifter can
+  // actually answer mid-session.
+  assert.equal(effortFromWords('had 2 in the tank').rir, 2);
+  assert.equal(effortFromWords('could have got 4 more').rir, 4);
+  assert.equal(effortFromWords('RIR 1').rir, 1);
+  assert.equal(effortFromWords('barely got it, real grinder').rpe, 9.5);
+  assert.equal(effortFromWords('failed on the last one').failed, true);
+
+  // NULL IS A REAL ANSWER, and the common one. Inventing a number for "done"
+  // is what keeps "an unreported effort never adds weight" from being true.
+  for (const quiet of ['done', 'that is logged', 'next', '']) {
+    assert.equal(effortFromWords(quiet).rpe, null, `"${quiet}" produced an effort`);
+  }
+
+  // WHEN SIGNALS CONFLICT, THE HARDER READING WINS — an overstated ease is the
+  // one that puts weight on the bar; an overstated effort only holds it there.
+  const mixed = effortFromWords('easy but I struggled on the last rep');
+  assert.equal(mixed.rpe, 9);
+  assert.equal(mixed.conflicted, true);
+
+  // And the tool asks for WORDS now, with the conversion named as the server's.
+  const t = TOOLS.find(x => x.name === 'log_set');
+  assert.match(t.inputSchema.properties.felt.description, /VERBATIM/);
+  assert.match(t.inputSchema.properties.felt.description, /Do NOT convert this to a number/);
+  assert.match(t.inputSchema.properties.rpe.description, /Only when they actually gave a number/);
+});
+
+await test('the effort actually drives the load, and silence holds it', () => {
+  // The whole point of reading the words: nextSetLoad is the engine, and it
+  // only moves on a reported effort.
+  const read = w => effortFromWords(w).rpe;
+  const at = (words, reps) => nextSetLoad({
+    weightKg: 100, reps, rpe: read(words), targetReps: 8, key: 'bench_press', tier: 'intermediate',
+  });
+  // The founder's day: eight with ease → the weight goes up.
+  assert.equal(at('my full reps with ease', 8).verdict, 'up');
+  // Then it got hard → it holds rather than climbing again.
+  assert.equal(at('started to struggle a little bit', 8).verdict, 'same');
+  // A grinder comes down.
+  assert.equal(at('barely got it, total grinder', 8).verdict, 'down');
+  // And saying nothing about effort never adds weight.
+  assert.equal(at('done', 8).verdict, 'same');
+});
+
+await test('the between-sets questions are one line, and never offer harder on a bad day', () => {
+  const fresh = beforeSet({ exercise: 'Bench press', setNumber: 1 });
+  assert.match(fresh.ask, /a little harder, or a little softer/);
+
+  // THE BODY'S VETO COMES FIRST AND ONLY EVER SOFTENS. Offering "harder" on a
+  // day their own numbers flagged is how a tool talks somebody into a session
+  // they should not have.
+  const strained = beforeSet({ exercise: 'Bench press', setNumber: 1,
+    ready: { known: true, state: 'strained', say: 'Resting heart rate is up on your fortnight.' } });
+  assert.ok(!/harder/.test(strained.ask), 'harder was offered on a strained day');
+  assert.equal(strained.readiness_first, true);
+  assert.match(strained.say, /Resting heart rate/);
+
+  // Asked in reps left, because "rate that out of ten" is a quiz.
+  assert.match(afterSet({ reps: 8, target: 8 }).ask, /how many more could you have got/);
+  // A short set gets a different question — did it come apart, or run out.
+  assert.match(afterSet({ reps: 5, target: 8 }).ask, /come apart, or just run out/);
+  // And it is NEVER asked twice: if they already said, the load is relayed.
+  assert.equal(afterSet({ reps: 8, target: 8, hadEffort: true }).ask, null);
+  assert.match(afterSet({ reps: 8, target: 8, hadEffort: true }).note, /do NOT ask again/);
+});
+
+await test('professional methods are offered, tier-gated, and honest about provenance', () => {
+  // "I need you to investigate what pro trainers would be doing... and then we
+  // could suggest that and I'll see if I want it or not." The last clause is
+  // the design: offered, never imposed.
+  const beg = methodsFor({ tier: 'beginner' });
+  assert.ok(beg.offer.length <= 2, 'a menu of six is a menu nobody reads');
+  assert.ok(!beg.offer.some(m => m.tier === 'advanced'), 'a beginner was offered an advanced method');
+
+  // A stall changes what is worth raising — the plateau-breakers go first.
+  const stalled = methodsFor({ tier: 'advanced', stalled: true });
+  assert.ok(['top_backoff', 'wave'].includes(stalled.offer[0].key));
+
+  // Nothing they already run is re-offered.
+  assert.ok(!methodsFor({ tier: 'any', using: ['rir'] }).offer.some(m => m.key === 'rir'));
+
+  // Every method says what it COSTS, or it is a pitch rather than a choice.
+  for (const m of METHODS) {
+    assert.ok(m.what && m.why && m.costs, `${m.key} is missing what/why/costs`);
+  }
+  // HONEST PROVENANCE: textbook methodology, said to be. Presenting it as
+  // insider knowledge is a small lie that makes the honest numbers harder to
+  // believe.
+  assert.match(beg.provenance, /Established published methodology/);
+  assert.match(beg.provenance, /Not a live survey/);
+  assert.match(beg.note, /never present them as insider knowledge/);
+});
+
 group('The wall, named — and answered with structure');
 
 
