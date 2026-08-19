@@ -1454,6 +1454,27 @@ already aggregators — a strap, a ring or an oximeter that writes to either is
 carried with no new integration. That is the whole reason the hub was built
 wide.
 
+### "Never estimate — you have the Apple Watch"
+
+Two halves, and the first is a presentation failure rather than an arithmetic
+one. On a measured day the hero read *"524 TRAINING (ESTIMATED)"* — but
+524 + 68 = 592 was **exactly the watch's active total**; only the SPLIT
+between training and the rest of the day was derived. Labelling the split
+"estimated" made a measured day look invented. The hero now says the truth in
+one line: *"Your watch measured 592 moving in total today — the split between
+training and the rest of the day is the estimated part."*
+
+The second half is a real measurement upgrade: `windowedActive()` in
+`lib/effort.js`. The watch's `active_calories` rows inside the session window
+become the session's own calories, stamped at close (`calories_source:
+'watch'`), so `trainingBurn` counts them as measured and the label goes away
+honestly. **The guard is the point**: active energy often arrives as ONE
+daily-total row, and a single row falling inside the window is the whole day
+wearing a session's clothes — billing a day's 592 to a fifty-minute session
+overstates the burn in the direction that tells somebody they have room to
+eat. Two or more rows for the day (sub-daily granularity) or the labelled
+estimate stands. Verified to bite.
+
 ### The trainer between the sets — words in, load out
 
 `lib/coach.js` + `felt` on `log_set`. The founder: *"we have to get like a

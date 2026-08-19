@@ -5562,7 +5562,8 @@ await test('the instruction says build on two answers, and never a weight', () =
 
 group('What the session cost, and the cardio counted apart');
 
-const { sessionEffort, splitWork } = await import('../netlify/functions/lib/effort.js');
+const effortModule = await import('../netlify/functions/lib/effort.js');
+const { sessionEffort, splitWork } = effortModule;
 
 const AT = Date.parse('2026-08-14T18:00:00Z');
 const mins = n => new Date(AT + n * 60000).toISOString();
@@ -5640,12 +5641,53 @@ await test('a treadmill is not a bench press — two statistics, never one', () 
 
   // The split rides on the closed session, and end_session reports both.
   const ses = readFileSync(new URL('../netlify/functions/lib/session.js', import.meta.url), 'utf8');
-  assert.match(ses, /const \{ data: hr \} = await supabase\.from\('wrought_metrics'\)/);
+  assert.match(ses, /\.eq\('metric', 'heart_rate'\)[\s\S]{0,200}\.order\('measured_at'/);
   assert.match(ses, /\.eq\('metric', 'heart_rate'\)/);
   assert.match(ses, /work_split: split/);
   const mcp = readFileSync(new URL('../netlify/functions/mcp.js', import.meta.url), 'utf8');
   const end = mcp.slice(mcp.indexOf('async function endSession('), mcp.indexOf('async function previousBest('));
   assert.match(end, /give the two numbers SEPARATELY/);
+});
+
+await test('the watch measures the session when its data can actually say so', () => {
+  // "Never estimate — you have the Apple Watch, read off of that." Right, and
+  // there is one trap that has to be guarded by construction: active_calories
+  // often arrives as ONE daily total, and a single row falling inside the
+  // session window is not a measurement of the session — it is the whole day
+  // wearing a session's clothes. Billing a day's 592 to a fifty-minute session
+  // overstates the burn in the direction that tells somebody they have room
+  // to eat.
+  const { windowedActive } = effortModule;
+  const at = h => `2026-08-16T${String(h).padStart(2, '0')}:00:00Z`;
+
+  // Sub-daily granularity: the in-window rows sum, the rest of the day stays out.
+  const hourly = [4, 5, 6, 7, 8, 9, 10].map(h => ({ value: 50, measured_at: at(h) }));
+  const m = windowedActive(hourly, at(6), at(8));
+  assert.equal(m.kcal, 150);
+  assert.equal(m.source, 'watch');
+
+  // THE GUARD: one row for the day is a daily total, wherever its timestamp
+  // happens to fall. Null, so the labelled estimate stands instead.
+  assert.equal(windowedActive([{ value: 592, measured_at: at(6) }], at(5), at(7)), null);
+  // No rows inside the window is no measurement, however many the day has.
+  assert.equal(windowedActive(hourly, at(20), at(22)), null);
+  assert.equal(windowedActive([], at(5), at(7)), null);
+
+  // Wired: the close stamps it as the session's calories with its source, so
+  // trainingBurn counts it as measured and the hero stops saying "estimated"
+  // about a session the watch actually saw.
+  const ses = readFileSync(new URL('../netlify/functions/lib/session.js', import.meta.url), 'utf8');
+  assert.match(ses, /const watched = windowedActive\(activeRows \|\| \[\]/);
+  assert.match(ses, /calories: watched\.kcal, calories_source: 'watch'/);
+  // The guard needs the WHOLE day's rows, not just the window — granularity
+  // cannot be judged from a slice.
+  assert.match(ses, /\.eq\('metric', 'active_calories'\)[\s\S]{0,40}\.eq\('local_date', dayOf\)/);
+
+  // And when the total is the watch's but the split is derived, the hero says
+  // exactly that instead of stamping "(estimated)" on a measured day.
+  const src = page('app.html');
+  assert.match(src, /the split between training and the rest of the day/i);
+  assert.match(src, /training, your watch/);
 });
 
 await test('a heart rate is a training statistic and nothing else', () => {
