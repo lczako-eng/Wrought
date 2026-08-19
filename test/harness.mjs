@@ -4258,6 +4258,43 @@ await test('a running total is the whole day, never the item just logged', () =>
   assert.match(SERVER_INSTRUCTIONS, /a fact worth surfacing, not a number to quietly inflate/);
 });
 
+await test('the day is spoken directly under the numbers', () => {
+  // "If you're showing the facts of the numbers, you should be speaking to it
+  // underneath — what did you do today? What did you log today? How much food
+  // did you eat?" The Record tab drew the arithmetic ABOUT the day while the
+  // actual entries lived only on the Log tab — so the first screen could say
+  // "3,065 to burn" and hold no answer to "against what".
+  const src = page('app.html');
+  assert.match(src, /function foodTodayPanel\(d\)/);
+
+  // Ordered: hero, then food, then training — the story before more arithmetic.
+  const r = src.slice(src.indexOf('function render(d)'), src.indexOf('function stagger('));
+  const heroAt = r.indexOf('out.push(hero(d));');
+  const foodAt = r.indexOf('out.push(foodTodayPanel(d));');
+  const trainAt = r.indexOf('out.push(trainingTodayPanel(d));');
+  const windowAt = r.indexOf('out.push(windowPanel(d));');
+  assert.ok(heroAt > -1 && foodAt > heroAt && trainAt > foodAt && windowAt > trainAt,
+    'the day panels are not directly under the hero');
+  // Moved, not duplicated — two copies of the training panel is a rendering bug.
+  assert.equal((r.match(/out\.push\(trainingTodayPanel\(d\)\);/g) || []).length, 1);
+
+  // Every item its own number, and the sum underneath — the day-card doctrine,
+  // now on the screen that opens first. An entry with no calories says it
+  // counts for nothing rather than showing a quiet dash.
+  const fn = src.slice(src.indexOf('function foodTodayPanel(d)'), src.indexOf('function trainingTodayPanel(d)'));
+  assert.match(fn, /counts for nothing yet/);
+  assert.match(fn, /kcal in so far/);
+  assert.match(fn, /the real total is higher/);
+  // The empty state names the failure it is most often hiding: food said to an
+  // AI that heard it and never wrote it down.
+  assert.match(fn, /it heard you and never wrote it down/);
+
+  // Heart rate on the training rows reads the session effort stamp as well as
+  // a device's own fields — an assistant-run session carries it under effort.
+  const train = src.slice(src.indexOf('function trainingTodayPanel(d)'), src.indexOf('// ── Calendar'));
+  assert.match(train, /x\.avg_hr \?\? x\.effort\?\.avg_hr/);
+});
+
 await test('a missing meal is a missing ENTRY, never a missing sum', () => {
   // "Total so far: ~880 calories." — "Huh, what about breakfast???" — "You're
   // right, I missed your breakfast... you're at about 1,280–1,330 calories

@@ -1341,6 +1341,28 @@ formula chosen because its answer is nicer.
 bar says *"moving, projected"* rather than *"moving today"*. Reporting a
 projection as movement that has happened is a claim about a morning nobody had.
 
+### The day is spoken directly under the numbers
+
+`foodTodayPanel()` in `app.html`, first thing under the hero, with the training
+panel moved up beside it. The founder, looking at *"3,065 to burn today"* over
+an empty day: *"if you're showing the facts of the numbers, you should be
+speaking to it underneath — what did you do today? What did you log today? How
+much food did you eat? What kind?"*
+
+The gap was structural: the Record tab drew the arithmetic ABOUT the day and
+the actual entries lived only on the Log tab, so the screen that opens first
+could quote a burn with no answer to *"against what"*. Now: every food item
+with its own calories and time, the sum underneath (the day-card doctrine, on
+the first screen), an entry with no calories saying it *counts for nothing
+yet* rather than dashing quietly, and the training rows reading heart rate
+from the session effort stamp as well as a device's own fields.
+
+**The empty state names the failure it usually hides.** *"Nothing logged yet"*
+on this panel most often means food was said to an AI that heard it and never
+wrote it down — so the panel says exactly that, with the one-word fix ("say
+'log that'"). A screen that reads the truth plainly is the fork-detector the
+conversation cannot be.
+
 ### Two bugs a screenshot at 7am found
 
 Both looked like amnesia and neither was.
