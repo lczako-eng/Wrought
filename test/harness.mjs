@@ -4258,6 +4258,41 @@ await test('a running total is the whole day, never the item just logged', () =>
   assert.match(SERVER_INSTRUCTIONS, /a fact worth surfacing, not a number to quietly inflate/);
 });
 
+await test('a missing meal is a missing ENTRY, never a missing sum', () => {
+  // "Total so far: ~880 calories." — "Huh, what about breakfast???" — "You're
+  // right, I missed your breakfast... you're at about 1,280–1,330 calories
+  // today." Two failures in one reply.
+  //
+  // The RANGE is the tell: day_total returns one figure computed from stored
+  // rows, so "1,280–1,330" can only mean the arithmetic happened in prose.
+  // The deeper one is that the bagel was never LOGGED — mentioned,
+  // acknowledged, never written. The total was right; the recital was wrong.
+  const mcp = readFileSync(new URL('../netlify/functions/mcp.js', import.meta.url), 'utf8');
+  const fn = mcp.slice(mcp.indexOf('function dayTotal(day)'), mcp.indexOf('function itemSay('));
+
+  // The reconciliation the server cannot do and the model can, carried where
+  // it cannot be skipped: on the answer to the call it just made.
+  assert.match(fn, /check: 'These items ARE the day/);
+  assert.match(fn, /it was never logged — call log for it NOW/);
+  assert.match(fn, /never quote a range/);
+  // Patching a noticed gap with arithmetic is named as the worst answer,
+  // because it hides a missing entry behind a number that looks right.
+  assert.match(fn, /never fill a gap you noticed with arithmetic instead of a write/);
+
+  assert.match(SERVER_INSTRUCTIONS, /A TOTAL IS ONE COMPUTED NUMBER, AND A RANGE IS THE TELL THAT YOU MADE IT UP/);
+  assert.match(SERVER_INSTRUCTIONS, /that is a missing ENTRY, not a missing sum/);
+  assert.match(SERVER_INSTRUCTIONS, /tomorrow the day is still short a bagel/);
+
+  // AND IT RIDES ON THE TOOLS, not only the sheet — the surface every client
+  // demonstrably reads.
+  const log = TOOLS.find(t => t.name === 'log').description;
+  assert.match(log, /the moment food is MENTIONED/);
+  assert.match(log, /the next thing you do is call this, never arithmetic/);
+  const day = TOOLS.find(t => t.name === 'get_day').description;
+  assert.match(day, /ONE computed figure, never a range/);
+  assert.match(day, /rather than adding it up in prose/);
+});
+
 await test('every item carries its own calories, and the total sits underneath', () => {
   // The founder, having got the total fixed: "when I ask to add something he
   // has to give the individual calories as well, not just a total." The same

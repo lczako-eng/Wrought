@@ -2093,6 +2093,31 @@ workout is not there — on the one product whose entire promise is memory.
   *"put that in"* and *"add it to my home workout"* — an instruction the
   connector does not recognise is one it answers conversationally.
 
+### The breakfast that was never logged, and the range that proved it
+
+*"Total so far: ~880 calories."* — *"Huh, what about breakfast???"* — *"You're
+right, I missed your breakfast... you're at about 1,280–1,330 calories today."*
+
+**Two failures in one reply, and the range is the tell.** `day_total` returns
+ONE figure computed from stored rows, so *"1,280–1,330"* can only mean the
+arithmetic happened in prose. A range in a total is a model computing, never
+a server relaying.
+
+**The deeper one: the bagel was never LOGGED.** It was mentioned in
+conversation, acknowledged conversationally, and never written. The total was
+right; the recital was wrong. This is the claimed-save failure in food form —
+and noticing the gap and then patching it with mental arithmetic is the worst
+available response, because it hides a missing ENTRY behind a number that
+looks like an answer, and tomorrow the day is still short a bagel.
+
+So `day_total` carries a `check`: **these items ARE the day — if they mention
+food that is not in the list, it was never logged, so call `log` for it now
+and read the total again.** A missing meal is a missing entry, not a missing
+sum. `log`'s own description leads with firing the moment food is MENTIONED
+rather than when a save is requested, and says that *"you're right, I missed
+that"* may only ever be followed by a write. `get_day` says the total is one
+figure and never a range. Belt on the sheet, braces on the tools.
+
 ### The day as a receipt — both sides, every line
 
 `lib/receipt.js` + `receipt` on `log_activity`, `energy_balance` and `get_day`.
