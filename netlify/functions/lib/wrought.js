@@ -903,7 +903,16 @@ Rules:
 // there is anything usable here at all, or whether to fall back to parsing.
 export function eventsFromClient(raw) {
   if (!Array.isArray(raw)) return null;
-  const usable = raw.filter(e => e && typeof e === 'object' && (e.event_type || e.summary));
+  const usable = raw
+    .filter(e => e && typeof e === 'object' && (e.event_type || e.summary))
+    // A CLIENT MAY NOT DATE ITS OWN EVENTS. eventTimestamp honours an explicit
+    // occurred_at because the SERVER's own callers (finaliseSession, the
+    // bridge) genuinely know when a thing happened — but these objects come
+    // from a language model, and a model that writes occurred_at midnight-UTC
+    // files dinner on the wrong local day while everything looks logged. The
+    // connector logs in real time; "at 9:30" travels as time_hint, which is
+    // anchored in the user's own zone. Strip the field rather than trust it.
+    .map(({ occurred_at, local_date, ...e }) => e);
   return usable.length ? usable : null;
 }
 
