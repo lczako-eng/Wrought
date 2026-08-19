@@ -393,3 +393,49 @@ export async function backfillCompletion(userId, { days = 21 } = {}) {
   }
   return { checked: cands.length, stamped };
 }
+
+
+// ── Re-filing the workouts the bug put on the wrong day ─────────────────────
+//
+// Until eventTimestamp existed, every session closed by the sweep was stamped
+// with the moment the DASHBOARD LOADED rather than the moment the last set
+// went down — so a Friday evening session closed on Saturday morning sat on
+// Saturday, and Friday read as a rest day. The truth is still stored: the
+// session row knows when it ended. This puts the event back on the day the
+// training actually happened.
+//
+// Idempotent by arithmetic: once an event's occurred_at matches its session's
+// end within the tolerance, it is never touched again. The tolerance is six
+// hours because end_session legitimately stamps "now" a little after the last
+// set — the target is events filed the better part of a day late, not minutes.
+export async function refileMisdated(userId, profile, { days = 21 } = {}) {
+  const since = new Date(Date.now() - days * 86400000).toISOString().slice(0, 10);
+
+  const { data: sessions } = await supabase.from('wrought_sessions')
+    .select('id, ended_at, event_id')
+    .eq('user_id', userId).eq('status', 'done')
+    .not('event_id', 'is', null).not('ended_at', 'is', null)
+    .gte('local_date', since);
+  if (!sessions?.length) return { checked: 0, refiled: 0 };
+
+  const { data: events } = await supabase.from('wrought_events')
+    .select('id, occurred_at, local_date').in('id', sessions.map(x => x.event_id));
+  const byId = new Map((events || []).map(e => [String(e.id), e]));
+
+  let refiled = 0;
+  for (const sesh of sessions) {
+    const ev = byId.get(String(sesh.event_id));
+    if (!ev) continue;
+    const endedAt = new Date(sesh.ended_at).getTime();
+    const filedAt = new Date(ev.occurred_at).getTime();
+    if (!Number.isFinite(endedAt) || !Number.isFinite(filedAt)) continue;
+    if (Math.abs(filedAt - endedAt) <= 6 * 3600000) continue;
+
+    const { error } = await supabase.from('wrought_events').update({
+      occurred_at: sesh.ended_at,
+      local_date: localDateFor(profile.timezone, new Date(endedAt)),
+    }).eq('id', ev.id);
+    if (!error) refiled++;
+  }
+  return { checked: sessions.length, refiled };
+}

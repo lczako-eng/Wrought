@@ -1113,18 +1113,39 @@ Never diagnose anything. Never comment on their body or appearance beyond the nu
 
 // ── Writing ─────────────────────────────────────────────────────────────────
 
+// When an event actually happened, as one pure decision.
+//
+// THE BUG THIS FIXES COST A DAY ITS WORKOUT. finaliseSession has always passed
+// occurred_at — the time of the session's last set — and insertEvents silently
+// discarded it, stamping "now" instead. Invisible when the writer and the
+// workout share a day; wrong the moment the stale-session sweep closes
+// yesterday's session on today's dashboard load, which files yesterday's
+// training under today. The founder caught it as "I didn't have a workout
+// today — that was yesterday's, why is it even on today?" Same class of error
+// as deriving local_date from UTC: the record is right about WHAT and wrong
+// about WHEN, which corrupts both days at once.
+export function eventTimestamp(e = {}, profile = {}, now = new Date()) {
+  // An explicit timestamp from the caller wins — it is the one party that
+  // actually knows when the thing happened.
+  if (e.occurred_at) {
+    const t = new Date(e.occurred_at);
+    if (Number.isFinite(t.getTime())) return t;
+  }
+  if (e.time_hint && /^\d{1,2}:\d{2}$/.test(e.time_hint)) {
+    // Anchor a stated time to today in the user's zone by nudging off "now".
+    const wantMin = minutesFromTime(e.time_hint);
+    const nowMin  = localMinutesFor(profile.timezone, now);
+    return new Date(now.getTime() + (wantMin - nowMin) * 60000);
+  }
+  return now;
+}
+
 export async function insertEvents(userId, profile, parsedEvents, { source = 'agent', rawInput = null } = {}) {
   const now = new Date();
   const today = localDateFor(profile.timezone, now);
 
   const rows = parsedEvents.map(e => {
-    let occurredAt = now;
-    if (e.time_hint && /^\d{1,2}:\d{2}$/.test(e.time_hint)) {
-      // Anchor a stated time to today in the user's zone by nudging off "now".
-      const wantMin = minutesFromTime(e.time_hint);
-      const nowMin  = localMinutesFor(profile.timezone, now);
-      occurredAt = new Date(now.getTime() + (wantMin - nowMin) * 60000);
-    }
+    const occurredAt = eventTimestamp(e, profile, now);
     return {
       user_id: userId,
       event_type: VALID_TYPES.has(e.event_type) ? e.event_type : 'note',

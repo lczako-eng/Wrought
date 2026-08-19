@@ -2397,6 +2397,27 @@ a clause and never as a correction.
   reads as *your workout was lost*. If one was already filed today it says so;
   otherwise it offers to take the sets.
 
+### The workout filed on the wrong day — the sweep stamped "now"
+
+*"I didn't have a workout today — that was yesterday's S-Tier, why is it even
+on today?"* He was right. `finaliseSession` has always passed the session's
+real end time as `occurred_at` — and **`insertEvents` silently discarded it**,
+stamping "now". Invisible when the writer and the workout share a day; wrong
+the moment `closeStaleSessions` closes yesterday's session on today's
+dashboard load, which is its ordinary case. The doctrine *"the event is filed
+when it happened"* was written in the comments and untrue in the code — same
+class as deriving `local_date` from UTC: right about WHAT, wrong about WHEN,
+corrupting two days at once (a phantom workout today, a false rest day
+yesterday, and the weekly count wrong through both).
+
+`eventTimestamp()` is the pure decision now — explicit `occurred_at` wins,
+then `time_hint`, then now — and `refileMisdated()` repairs what the bug
+already wrote: the session row still knows when it ended, so the sweep puts
+the event back on that day. **Six hours of tolerance**, because `end_session`
+legitimately stamps minutes after the last set; the target is events filed the
+better part of a day late, and a tight tolerance would churn every
+honestly-closed session. Verified to fail on the original discard.
+
 ### The workout nobody closed — the data was there the whole time
 
 `lib/session.js`. The founder, twice: *"it's not logging my training again."*
