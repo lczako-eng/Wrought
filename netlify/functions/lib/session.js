@@ -36,6 +36,7 @@
 import { supabase, insertEvents, localDateFor } from './wrought.js';
 import { sessionTotals } from './training.js';
 import { sessionProgress } from './warmup.js';
+import { sessionEffort, splitWork } from './effort.js';
 
 // How long a gap means the session is over rather than resting. Real sets sit
 // minutes apart; four hours is not a rest, it is somebody who left. Generous on
@@ -146,6 +147,25 @@ export async function finaliseSession(userId, profile, session,
   // completion would be noise — only a session with planned sets carries one.
   const completion = completionFrom(session.plan, rows);
 
+  // WHAT IT COST, MEASURED — and the cardio counted apart from the lifting.
+  //
+  // The session already had a clock (started_at, ended_at), and heart rate
+  // samples already arrived with timestamps; nothing was reading one against
+  // the other. "Officially start the heart rate" turns out to be a query, not
+  // a feature: the window was always there.
+  const { data: hr } = await supabase.from('wrought_metrics')
+    .select('value, measured_at').eq('user_id', userId).eq('metric', 'heart_rate')
+    .gte('measured_at', session.started_at).lte('measured_at', endedIso)
+    .order('measured_at', { ascending: true });
+
+  const effort = sessionEffort({
+    session: { ...session, ended_at: endedIso }, sets: rows, samples: hr || [],
+  });
+  // A treadmill is not a bench press. Blending twenty-five minutes of incline
+  // walking into "volume moved" makes the volume wrong and hides the cardio
+  // entirely — two numbers, each honest.
+  const split = splitWork({ sets: rows, plan: session.plan });
+
   const [written] = await insertEvents(userId, profile, [{
     event_type: 'workout',
     // The shortfall is IN the summary, because the summary is what every list,
@@ -164,6 +184,11 @@ export async function finaliseSession(userId, profile, session,
       session_id: session.id,
       note: note || null,
       ...(completion ? { completion } : {}),
+      ...(effort.known ? { effort: {
+        avg_hr: effort.avg_hr, max_hr: effort.max_hr,
+        by_exercise: effort.by_exercise, samples: effort.samples,
+      } } : {}),
+      ...(split.mixed ? { work_split: split } : {}),
       // Said out loud on the row itself, so anybody reading the record later
       // can tell a session somebody closed from one the server closed for them.
       closed_by: closedBy,
@@ -184,7 +209,7 @@ export async function finaliseSession(userId, profile, session,
     // Handed back so the caller does not re-read what was just written — and
     // so a hand-closed session and a server-closed one go through identical
     // code and can never produce two different-looking rows.
-    totals, rows, completion, event_id: written?.id || null,
+    totals, rows, completion, effort, split, event_id: written?.id || null,
     local_date: localDateFor(profile.timezone, new Date(endAt)),
   };
 }
