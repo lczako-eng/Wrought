@@ -977,6 +977,12 @@ table.matrix td.rh.cold { color: var(--heat-3); }
 .ticks li.ticked i { background: var(--heat-3); border-color: var(--heat-3); }
 /* Half-done reads as started, not as untouched — a set logged has to show. */
 .ticks li.part i { border-color: var(--heat-3); }
+/* The day-after readout: skipped is dim and says so in words — a fact about
+   the plan, never a mark against the person. */
+.ticks.daydone { margin: 2px 0 10px; }
+.ticks.daydone li { font-size: 12.5px; }
+.ticks li.skip { opacity: .55; }
+.ticks li.skip i { border-style: dashed; }
 .tkname { flex: 1; min-width: 0; }
 .tkcount { font-family: var(--mono); font-size: 11px; font-variant-numeric: tabular-nums; }
 
@@ -5253,6 +5259,18 @@ function trainingTodayPanel(d) {
     // than as detail. Whatever the name already says, the line below drops.
     const name = w.summary || x.kind || 'Session';
     const said = s => new RegExp(s).test(name);
+    // WHAT WAS PLANNED AGAINST WHAT HAPPENED, on the day it happened. The
+    // founder: "I didn't do all my workout today, so it should have, for
+    // today's workout, what I did exactly — like partially of my workout."
+    // Skipped and short read differently on purpose: one is a line never
+    // touched, the other is the founder's "half of one of them".
+    const c = x.completion;
+    const ticks = c ? `<ul class="ticks daydone">${c.exercises.map(e => `<li class="${
+        e.skipped ? 'skip' : e.short ? 'part' : 'ticked'}">
+      <i>${e.skipped || e.short ? '' : '✓'}</i>
+      <span class="tkname">${esc(e.name)}</span>
+      <span class="tkcount">${e.skipped ? 'skipped' : `${e.done}/${e.planned}`}</span>
+    </li>`).join('')}</ul>` : '';
     return line(name, [
       x.minutes && !said('\\bmin\\b') ? `${x.minutes} min` : null,
       x.distance_km && !said('\\bkm\\b') ? `${x.distance_km} km` : null,
@@ -5260,7 +5278,7 @@ function trainingTodayPanel(d) {
       // The training spike, on the day it happened rather than three months on.
       x.avg_hr ? `${x.avg_hr} bpm avg` : null,
       x.max_hr ? `${x.max_hr} bpm peak` : null,
-    ]);
+    ]) + ticks;
   }).concat(shifts.map(s => {
     const x = s.detail || {};
     // A SHIFT IS NOT A SESSION. It is listed here because it burned calories
