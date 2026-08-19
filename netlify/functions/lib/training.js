@@ -1521,6 +1521,102 @@ export function estimatedMax(weightKg, reps) {
   return Math.round(w * (1 + Math.min(r, 12) / 30) * 10) / 10;
 }
 
+// ── The wall, named — and answered with structure, never with "add weight" ──
+//
+// The founder: "it should be keeping progress on my max weights, telling that
+// where I'm kind of levelling off, and it should be thinking of solutions to
+// find out how I can push harder."
+//
+// The first half existed: the estimated max is computed on every lift and
+// graphed. What did not exist was the VERDICT — the log knew the number had
+// not moved in six sessions and never said so, and "am I levelling off" is
+// precisely the question a training record is for. cardioProgress already
+// names the wall for runs; this is the barbell's version.
+//
+// THE SOLUTIONS ARE STRUCTURE, NEVER A HEAVIER PRESCRIPTION. Every option
+// here changes the SHAPE of the training — a deload and rebuild, a different
+// rep range, a look at recovery — and every one is priced from the lifter's
+// own recorded history. None of them ends in "add weight": a stalled lift is
+// stalled precisely because adding weight stopped working, and "push harder
+// at the thing that is not moving" is the one suggestion that is both useless
+// and dangerous. Same family as readiness and the form watch: the record can
+// say what it sees and what usually moves it; it cannot see the lifter.
+export function liftTrend(points = [], { fmt = v => `${v}kg` } = {}) {
+  // Per-session bests, ascending by date, each reduced to an estimated max so
+  // 100×8 and 105×3 sit on one scale — the only scale a trend can live on.
+  const es = (points || [])
+    .map(p => ({ date: p.date, e: estimatedMax(p.weight_kg, p.reps), reps: p.reps }))
+    .filter(p => p.e != null);
+
+  if (es.length < 5) {
+    return { state: 'early', sessions: es.length,
+      say: es.length >= 2 ? 'Too few sessions to call a trend yet.' : null };
+  }
+
+  let best = es[0], bestAt = 0;
+  for (let i = 1; i < es.length; i++) if (es[i].e > best.e) { best = es[i]; bestAt = i; }
+  // Sessions since the estimated max last moved. One quiet session is a rest
+  // week; four is a wall — the same "one bad day cannot sink it" reasoning as
+  // the run trend, pointed the other way.
+  const flat = es.length - 1 - bestAt;
+  const recentBest = Math.max(...es.slice(-3).map(p => p.e));
+
+  const base = {
+    sessions: es.length,
+    best_e_kg: best.e,
+    best_date: best.date,
+    sessions_since_best: flat,
+    recent_best_kg: recentBest,
+  };
+
+  if (flat <= 1) {
+    return { ...base, state: 'climbing',
+      say: `Climbing — best estimated max ${fmt(best.e)}, set ${flat === 0 ? 'last session' : 'a session ago'}.` };
+  }
+
+  if (flat < 4) {
+    // Not news yet. Naming a wall after two quiet sessions is how the word
+    // stops meaning anything.
+    return { ...base, state: 'holding',
+      say: `Holding — best estimated max ${fmt(best.e)} on ${best.date}, ${flat} sessions ago.` };
+  }
+
+  // ── Levelled. Say it plainly, and answer it. ─────────────────────────────
+  const gap = Math.round((best.e - recentBest) * 10) / 10;
+  const push = [];
+
+  push.push({
+    what: 'deload_rebuild',
+    say: `${flat} sessions without the estimated max moving. The standard answer is a light week — same lifts, about half the sets — then building back up: backing off is what usually moves a wall, and a block schedules the deload automatically.`,
+  });
+
+  // The rep range they have actually been living in, from their own sets.
+  const recentReps = es.slice(-5).map(p => p.reps).filter(r => Number.isFinite(r)).sort((a, b) => a - b);
+  if (recentReps.length >= 3) {
+    const median = recentReps[Math.floor(recentReps.length / 2)];
+    if (median >= 8) {
+      push.push({ what: 'lower_reps',
+        say: `Recent sets are almost all ${median}s and up — a few weeks in the 4–6 range is a different stimulus, at loads your own history already supports.` });
+    } else if (median <= 5) {
+      push.push({ what: 'higher_reps',
+        say: `Recent sets are almost all heavy ${median}s — a spell of 8s builds the base the heavy sets pull from.` });
+    }
+  }
+
+  push.push({
+    what: 'recovery_context',
+    say: 'Worth reading beside sleep and the recovery panel — a wall this long is as often a recovery fact as a training one.',
+  });
+
+  return {
+    ...base,
+    state: 'levelled',
+    say: `Levelled — nothing past ${fmt(best.e)} estimated since ${best.date}, ${flat} sessions ago` +
+         (gap > 0 ? ` (recent best sits ${fmt(gap)} under it)` : ', and recent sessions are knocking on it') + '.',
+    push,
+  };
+}
+
 // ── Timed movements, and the artifact the old default left behind ───────────
 // WORD BOUNDARIES, because the first version of this pattern lived inline in
 // two files as /treadmill|bike|row(er)?|...|run|.../ and matched far more than
