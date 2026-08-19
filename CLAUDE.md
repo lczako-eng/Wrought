@@ -1393,6 +1393,54 @@ longer hidden behind the trends gate: *"what is my best bench"* must have the
 same answer whichever range button is pressed, and a record that changes when
 you press one is not a record.
 
+### The trainer between the sets — words in, load out
+
+`lib/coach.js` + `felt` on `log_set`. The founder: *"we have to get like a
+professional trainer... asking me questions in between reps. Where are you with
+this today — you can go a little harder or a little softer. And when I say I'm
+done my first set: how'd it go, were you struggling."* And the day that made it
+concrete: *"285 on each side, I did eight, my full reps with ease. I added 25,
+second set, and I started to struggle a little bit. It felt fine."*
+
+That sentence is a complete autoregulation event, and every part of it arrived
+as WORDS. `nextSetLoad` needs a number — and the conversion was being left to
+the language model, in the tool description, in as many words: *"that was
+easy" ≈ 6*.
+
+**That is the invented-calorie failure in the place it hurts fastest.** A model
+deciding what "felt fine" means is a model deciding how much weight goes on a
+bar. The conversion is server-side now, against the **RIR-anchored RPE scale**
+(10 is nothing left, 9 is one more rep, 8 is two) — because reps-in-reserve is
+a question a lifter can actually answer mid-session, where a bare 1-to-10 is a
+vibe.
+
+- **Null is a real answer, and the common one.** "Done", "logged it", "next"
+  report no effort, so no number is produced and the load holds — which is what
+  keeps *an unreported effort never adds weight* true rather than decorative.
+- **When signals conflict, the harder reading wins.** The founder's own
+  sentence proves the need: *"I started to struggle a little bit. It felt
+  fine."* An overstated ease is the one that puts weight on the bar; an
+  overstated effort only holds it there. Tested, and verified to fail on the
+  naive last-match implementation.
+- **`effort_read` says what it heard and from which phrase**, so a wrong
+  reading gets corrected out loud rather than silently moving the weight.
+- **Two questions, never both at once.** `ask_after` is asked in reps left;
+  `ask_before` opens a new exercise with *harder, softer, or as it is* — and
+  **never offers "harder" on a day readiness flagged**, because the body's veto
+  only ever softens. A short set gets a different question: did it come apart,
+  or just run out.
+
+**And the professional methods are offered, never imposed** — *"you could
+suggest that and I'll see if I want it or not."* `METHODS` names six (reps in
+reserve, top set and back-offs, double progression, a scheduled deload, wave
+loading, watching bar speed), two at a time, tier-gated like every other
+prescription, each with what it COSTS — a method without its cost is a pitch
+rather than a choice. A stalled lift reorders them so the plateau-breakers come
+first. **The provenance is stated honestly**: this is established published
+methodology, not a live survey of any particular coach. Presenting textbook as
+insider knowledge is a small lie that makes the honest numbers harder to
+believe.
+
 ### Gauging — the set that just happened decides the next one
 
 The founder, after logging a set and getting nothing back: *"it's not really
