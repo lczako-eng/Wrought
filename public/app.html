@@ -566,6 +566,14 @@ svg.ser .trend { stroke-dasharray: none; }
   font-size: 19px; letter-spacing: .01em; text-transform: uppercase;
 }
 .lift-foot { color: var(--ash-dim); font-size: 11.5px; font-family: var(--mono); margin: 8px 0 0; }
+/* The verdict on the curve. Climbing is warm, a wall is stated in the same
+   calm voice as everything else — a plateau is information, not a failure. */
+.lift-trend { margin: 7px 0 0; font-size: 12.5px; color: var(--ash); }
+.lift-trend.climbing { color: var(--moss); }
+.lift-trend.levelled { color: var(--ash); }
+.lift-push { margin: 4px 0 0 2px; }
+.lift-push .sub { margin: 3px 0; font-size: 12px; }
+.pushfoot { font-style: italic; }
 /* Bars rather than a line: a session is a discrete event, and a line between two
    of them draws days that never happened. */
 .lift .bars {
@@ -6480,6 +6488,12 @@ function liftsPanel(d) {
         ? `${l.best.reps ?? '—'} reps`
         : `${l.best.weight}${d.weight_unit} × ${l.best.reps ?? '—'}`} · ${l.sessions} sessions${
         l.metric === 'reps' ? ' · bodyweight, measured in reps' : ''}</p>
+      ${l.trend?.say && l.trend.state !== 'early' ? `<p class="lift-trend ${esc(l.trend.state)}">${esc(l.trend.say)}</p>` : ''}
+      ${l.trend?.push?.length ? `<div class="lift-push">
+        ${l.trend.push.map(x => `<p class="sub dim">↳ ${esc(x.say)}</p>`).join('')}
+        <p class="sub dim pushfoot">Options, not orders — none of them is "add weight", because a stalled lift is
+        stalled precisely because that stopped working.</p>
+      </div>` : ''}
     </div>`;
   }).join('');
   const anyMax = d.lifts.some(l => l.max);

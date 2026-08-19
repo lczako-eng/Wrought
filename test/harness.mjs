@@ -23,7 +23,7 @@ import {
   normaliseMovement, readMovement, setRowsFromWorkout, TIMED_MOVEMENT, _resetEventIdProbe,
   restingBurn, energyBalance, planFromRoutine, sessionTotals, earnedRoom,
   orderPlan, orderInsight, deviceMatrix, weekdayPattern, ACTIVITY, focusCall,
-  trainingBurn, targetOptions,
+  trainingBurn, targetOptions, liftTrend,
 } from '../netlify/functions/lib/training.js';
 import { activityBurn, activityTotal, matchActivity, ACTIVITIES, EFFORTS } from '../netlify/functions/lib/activity.js';
 import { warmupFor, sessionProgress } from '../netlify/functions/lib/warmup.js';
@@ -5486,6 +5486,79 @@ await test('the instruction says build on two answers, and never a weight', () =
   assert.equal(t.inputSchema.required[0], 'name');
   // Dropped, not softened — stated where the model will read it.
   assert.match(t.inputSchema.properties.avoid.description, /DROPPED, never made lighter/);
+});
+
+group('The wall, named — and answered with structure');
+
+
+await test('a levelled lift is named as a wall, with the evidence', () => {
+  // "It should be keeping progress on my max weights, telling that where I'm
+  // kind of levelling off." The estimated max was computed and graphed; the
+  // VERDICT did not exist — the log knew the number had not moved in six
+  // sessions and never said so.
+  const mk = a => a.map(([date, weight_kg, reps]) => ({ date, weight_kg, reps }));
+
+  const wall = liftTrend(mk([['07-01',100,8],['07-04',105,8],['07-08',102.5,8],
+    ['07-11',103,8],['07-15',102.5,8],['07-18',103,8],['07-22',102.5,8]]));
+  assert.equal(wall.state, 'levelled');
+  assert.equal(wall.sessions_since_best, 5);
+  assert.match(wall.say, /Levelled — nothing past/);
+  assert.match(wall.say, /07-04/);
+
+  // A new best in the last two sessions is climbing, and says when.
+  const climb = liftTrend(mk([['08-01',90,6],['08-04',92.5,6],['08-07',95,5],
+    ['08-10',95,6],['08-13',97.5,6]]));
+  assert.equal(climb.state, 'climbing');
+
+  // Two quiet sessions are a rest, not a wall — naming one that early is how
+  // the word stops meaning anything.
+  const hold = liftTrend(mk([['08-01',90,6],['08-04',95,6],['08-07',92.5,6],
+    ['08-10',92.5,6],['08-13',93,6]]));
+  assert.equal(hold.state, 'holding');
+  assert.ok(!hold.push, 'a holding lift got pushed at');
+
+  // And under five sessions there is no trend to call at all.
+  assert.equal(liftTrend(mk([['08-01',90,6],['08-04',92.5,6]])).state, 'early');
+
+  // The unit follows the account: a 135 lb man is not shown 61.2.
+  const lb = liftTrend(mk([['07-01',100,8],['07-04',105,8],['07-08',102,8],
+    ['07-11',102,8],['07-15',102,8],['07-18',102,8]]),
+    { fmt: v => `${Math.round(v / 0.45359237)} lb` });
+  assert.match(lb.say, /lb/);
+});
+
+await test('the answer to a wall is structure, never a heavier prescription', () => {
+  // "It should be thinking of solutions to find out how I can push harder."
+  // Every option changes the SHAPE of the training and is priced from their
+  // own history. None ends in "add weight": a stalled lift is stalled
+  // precisely because that stopped working — same family as readiness and the
+  // form watch, which only ever soften.
+  const mk = a => a.map(([date, weight_kg, reps]) => ({ date, weight_kg, reps }));
+  const eights = liftTrend(mk([['07-01',100,8],['07-04',105,8],['07-08',102,8],
+    ['07-11',102,9],['07-15',102,8],['07-18',102,9],['07-22',102,8]]));
+  assert.ok(eights.push.length >= 2);
+  assert.equal(eights.push[0].what, 'deload_rebuild');
+  assert.ok(eights.push.some(x => x.what === 'lower_reps'), 'living in 8s did not suggest heavy fives');
+
+  const fives = liftTrend(mk([['07-01',120,5],['07-04',125,5],['07-08',122,5],
+    ['07-11',122,4],['07-15',122,5],['07-18',122,5],['07-22',121,5]]));
+  assert.ok(fives.push.some(x => x.what === 'higher_reps'), 'living in 5s did not suggest a base spell');
+
+  // The one suggestion that is both useless and dangerous never appears — in
+  // the DATA, which is where a violation would live (the page's disclaimer
+  // legitimately contains the words as a prohibition).
+  for (const t of [eights, fives]) {
+    assert.ok(!/add (more )?weight|go heavier|increase the (weight|load)|push harder/i.test(JSON.stringify(t)),
+      'a wall was answered with a heavier prescription');
+  }
+
+  // Wired: the API attaches it per lift and the panel draws it with the
+  // options marked as options.
+  const api = readFileSync(new URL('../netlify/functions/api-progress.js', import.meta.url), 'utf8');
+  assert.match(api, /trend: loaded \? liftTrend\(points/);
+  const src = page('app.html');
+  assert.match(src, /l\.trend\?\.push\?\.length/);
+  assert.match(src, /Options, not orders/);
 });
 
 group('The max — recorded, estimated, and never something to go and test');

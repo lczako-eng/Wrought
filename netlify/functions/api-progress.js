@@ -13,7 +13,7 @@ import {
   rangeFacts, summariseRange, dayFacts, careFlags, scoreGoals, supabase,
 } from './lib/wrought.js';
 import { orderInsight, earnedRoom, energyBalance, exerciseKey, deviceMatrix, weekdayPattern, focusCall, lastSession,
-         weekSoFar, readiness, targetOptions, estimatedMax, readMovement, backfillDerivedSets } from './lib/training.js';
+         weekSoFar, readiness, targetOptions, estimatedMax, liftTrend, readMovement, backfillDerivedSets } from './lib/training.js';
 import { planRead } from './lib/plan.js';
 import { intakeState } from './lib/intake.js';
 import { formWatch, cardioProgress } from './lib/form.js';
@@ -405,6 +405,12 @@ export const handler = async (event) => {
         };
       })(),
       latest: { weight: w(last.weight_kg), reps: last.reps, date: last.date },
+      // The verdict on the curve — climbing, holding, or levelled, with the
+      // wall answered by structure. Computed in lib/training.js so the panel
+      // and any tool that carries it can never disagree.
+      trend: loaded ? liftTrend(points, {
+        fmt: v => imperial ? `${kgToLb(v)} lb` : `${v} kg`,
+      }) : null,
       change: points.length > 1 ? Math.round((at(last) - at(first)) * 10) / 10 : null,
       // Both numbers ride along on every point: the question is never just
       // "how heavy" — 100kg for 3 and 100kg for 8 are different weeks.
