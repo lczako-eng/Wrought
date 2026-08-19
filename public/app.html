@@ -568,6 +568,9 @@ svg.ser .trend { stroke-dasharray: none; }
 .lift-foot { color: var(--ash-dim); font-size: 11.5px; font-family: var(--mono); margin: 8px 0 0; }
 /* The verdict on the curve. Climbing is warm, a wall is stated in the same
    calm voice as everything else — a plateau is information, not a failure. */
+.daysum { margin: 10px 0 0; font-size: 16px; font-weight: 700; color: var(--bright);
+          font-family: var(--grotesk); }
+.daysum .sub { font-weight: 400; font-family: inherit; }
 .lift-trend { margin: 7px 0 0; font-size: 12.5px; color: var(--ash); }
 .lift-trend.climbing { color: var(--moss); }
 .lift-trend.levelled { color: var(--ash); }
@@ -5247,6 +5250,52 @@ function windowPanel(d) {
 // from the assistant's own session table. A run that came off the watch an
 // hour ago belonged to neither, so the day it happened on showed a burn that
 // included it and nothing that said what it was.
+// THE DAY, SPOKEN, DIRECTLY UNDER THE NUMBERS. The founder, looking at a hero
+// full of arithmetic over an empty day: "if you're showing the facts of the
+// numbers, you should be speaking to it underneath — what did you do today?
+// What did you log today? How much food did you eat? What kind?"
+//
+// He is right, and the gap was structural: the Record tab drew the arithmetic
+// ABOUT the day and the actual entries lived only on the Log tab. So the one
+// screen that opens first could say "3,065 to burn" while holding no answer to
+// "burn against WHAT". This is that answer — every food item with its own
+// number, straight off the same dayFacts the hero is computed from, so the two
+// can never disagree.
+function foodTodayPanel(d) {
+  const t = d.today;
+  if (!t) return '';
+  const items = (t.log || []).filter(e => e.type === 'food' || e.type === 'drink');
+  const f = t.food || {};
+
+  if (!items.length) {
+    // An empty day says so in words, right where the eye lands after the burn.
+    // "Nothing logged" and "nothing eaten" are different facts and this screen
+    // can only know one of them.
+    return `<section class="panel">
+      <h2>Food · today</h2>
+      <p class="empty">Nothing logged yet. Mention a meal to your AI — <em>“had a steak and a baked
+      potato”</em> — and it lands here with its calories. If you already told it about food today and
+      this is still empty, it heard you and never wrote it down: say <em>“log that”</em>.</p>
+    </section>`;
+  }
+
+  const rows = items.map(e => `<div class="wkrow">
+    <span class="nm">${esc(e.summary)}</span>
+    <span class="sub dim">${esc(e.at || '')}</span>
+    <b class="${e.calories == null ? 'unset' : ''}">${e.calories != null ? `${n(e.calories)} kcal` : 'counts for nothing yet'}</b>
+  </div>`).join('');
+
+  const uncounted = f.meals_uncounted || 0;
+  return `<section class="panel">
+    <h2>Food · today</h2>
+    <div class="rows">${rows}</div>
+    <p class="daysum">${n(f.calories)} kcal in so far
+      <span class="sub dim">· ${n(f.protein_g)}g protein · ${n(f.carbs_g)}g carbs · ${n(f.fat_g)}g fat${
+      f.estimated ? ' · estimated' : ''}</span></p>
+    ${uncounted ? `<p class="caveat">${uncounted === 1 ? 'One thing has' : uncounted + ' things have'} no calories on ${uncounted === 1 ? 'it' : 'them'}, so the real total is higher — ask your AI to fill ${uncounted === 1 ? 'it' : 'them'} in.</p>` : ''}
+  </section>`;
+}
+
 function trainingTodayPanel(d) {
   const t = d.today?.training || {};
   const a = d.today?.activity || {};
@@ -5284,8 +5333,8 @@ function trainingTodayPanel(d) {
       x.distance_km && !said('\\bkm\\b') ? `${x.distance_km} km` : null,
       x.calories ? `${Number(x.calories).toLocaleString()} kcal` : null,
       // The training spike, on the day it happened rather than three months on.
-      x.avg_hr ? `${x.avg_hr} bpm avg` : null,
-      x.max_hr ? `${x.max_hr} bpm peak` : null,
+      (x.avg_hr ?? x.effort?.avg_hr) ? `${x.avg_hr ?? x.effort.avg_hr} bpm avg` : null,
+      (x.max_hr ?? x.effort?.max_hr) ? `${x.max_hr ?? x.effort.max_hr} bpm peak` : null,
     ]) + ticks;
   }).concat(shifts.map(s => {
     const x = s.detail || {};
@@ -5726,6 +5775,12 @@ function render(d) {
   // a flag is the one thing that outranks the day's arithmetic.
   out.push(hero(d));
 
+  // THE DAY IN PLAIN WORDS, before any more arithmetic — what was eaten and
+  // what was trained, each with its own number. The founder's ask, verbatim:
+  // "you should be speaking to it underneath — what did you log today?"
+  out.push(foodTodayPanel(d));
+  out.push(trainingTodayPanel(d));
+
   // Directly under the day, because that is where the range buttons were doing
   // nothing. Null on the 1d view — a running total over one day is the hero
   // above it, printed twice.
@@ -5746,7 +5801,6 @@ function render(d) {
   out.push(planPanel(d));
   out.push(weekPanelSoFar(d));
   out.push(readinessPanel(d));
-  out.push(trainingTodayPanel(d));
 
   // Summary before detail: the verdict and today, then everything else.
   if (d.latest_verdict?.verdict) {
