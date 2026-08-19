@@ -20,9 +20,14 @@
 // - RETIRING IS NOT DELETING. `active: false` keeps the routine and its
 //   history — what somebody used to run is part of the record, exactly like a
 //   retired goal. Only an explicit delete removes the row.
-// - NO LOADS. A routine has never carried a working weight and must not start
-//   here: loads come from `progressionCall` against real history, or as an
-//   effort. A weight typed into a plan is a guess with a text box around it.
+// - A TYPED WEIGHT IS THEIRS; A GENERATED ONE STILL DOES NOT EXIST. The rule
+//   used to be no loads at all, and the founder overrode it in as many words:
+//   "I can add it for amount of weight or time." The line that survives is the
+//   one that was always the point — WROUGHT never invents a load. A weight the
+//   person types on their own plan is their own reference, stored as load_kg
+//   and shown back in their unit; the rack still computes the working load
+//   from real history, and the record beats the reference the moment one
+//   exists. Nothing generated — library, programmes, design — carries one.
 
 import { getAuthUser, supabase } from './lib/wrought.js';
 import { normaliseMovement, readMovement } from './lib/training.js';
@@ -46,10 +51,10 @@ const bad = (code, error, say) => ({ statusCode: code, headers: CORS, body: JSON
 // treadmill as intervals, as a side effect of adding an unrelated movement.
 // The judgement belongs on the way out only.
 //
-// Loads pass THROUGH but cannot enter here: the Add box offers no load field,
-// which is the doctrine (a weight typed into a plan is a guess with a text box
-// around it) — but a load already stored by the tool survives, because "a save
-// never silently deletes" applies to FIELDS exactly as it applies to movements.
+// Loads pass through unchanged: the page parses a typed weight (explicit unit
+// only — a bare number is ambiguous and stays in the verbatim detail), and a
+// load already stored survives every edit, because "a save never silently
+// deletes" applies to FIELDS exactly as it applies to movements.
 
 export const handler = async (event) => {
   if (event.httpMethod === 'OPTIONS') return { statusCode: 204, headers: CORS, body: '' };

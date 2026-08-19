@@ -2118,6 +2118,41 @@ somebody means when they say *"make me a leg day and call it Leg Day"*.
   *"arms day"*, *"leg day"*, *"cardio"*. Making somebody pick off a list is the
   form again.
 
+### A typed weight is theirs; a generated one still does not exist
+
+The founder overrode the flat no-loads rule in as many words: *"I can slide to
+delete or I can add it for amount of weight or time."* The line that survives
+is the one that was always the point — **WROUGHT never INVENTS a load.** A
+weight the person types on their own plan is their own reference: parsed only
+with an explicit unit (`2x8 135lb`, `at 60kg` — a bare number is ambiguous and
+stays in the verbatim detail, because guessing lb-or-kg on a health product is
+how a number doubles), stored in kg like every weight in the record, and shown
+back in **their** unit (`wrought_wu`, learned from the dashboard payload and
+kept in localStorage so the Trainer tab shows a 135 lb man his 135). The rack
+still computes the working load from real history, and the record beats the
+reference the moment one exists. Nothing generated — library, programmes,
+design — carries a weight, and those tests are untouched.
+
+### A half-done plan is filed as a half-done plan
+
+`completion` on the workout event, computed in `finaliseSession` by the same
+`sessionProgress` the live checklist uses — so the percent somebody watched
+mid-session and the one on the record can never disagree. The founder: *"it
+needs to keep, in like a database, how much I've done of each exercise, or I
+decided to skip or whatever — so if I only do half of them you'll know that,
+or half of one of them."*
+
+The clipboard knew all of it DURING the session and threw it away at the
+close: a six-exercise plan finished at three read back identically to a
+three-exercise plan finished in full. Now the event keeps planned-vs-done per
+exercise, and **skipped (never touched) and short (started and left) are
+different facts** — one is a choice about the session, the other about the
+exercise. **The shortfall is in the summary itself** — `(62% of plan)` — because
+the summary is what every list, day card and brief actually shows. An ad-hoc
+session has open slots and no real plan, so it carries no completion rather
+than a noisy one. `end_session` states it as a fact, never a scolding: a
+half-done plan recorded honestly beats a finished one invented.
+
 ### The save that worked and the screen that never said so
 
 *"It didn't add the other stuff."* It did. Three faults, and the loudest one
