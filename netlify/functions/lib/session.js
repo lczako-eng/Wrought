@@ -68,6 +68,34 @@ export function stillRunning({ lastSetAt = null, startedAt, now = Date.now() } =
  * @param note      the user's own words, when there are any
  * @returns { closed, empty, minutes, sets } — or null if nothing was done
  */
+/**
+ * Planned against done, as one pure shape — used by the close AND the
+ * backfill, so a session filed today and one repaired tomorrow can never
+ * carry two different-looking completions.
+ *
+ * Per exercise, the two states are named apart: "skipped" is a plan line
+ * never touched; "short" is one started and left. They are different facts —
+ * one is a choice about the session, the other about the exercise — and
+ * flattening them loses the founder's "half of one of them".
+ *
+ * An ad-hoc session has open slots (sets: null) and no real plan, so its
+ * completion would be noise: null, deliberately.
+ */
+export function completionFrom(plan, rows) {
+  const progress = sessionProgress(Array.isArray(plan) ? plan : [], rows || []);
+  if (!(progress.sets_planned > 0)) return null;
+  return {
+    percent: progress.percent,
+    sets_done: progress.sets_done,
+    sets_planned: progress.sets_planned,
+    exercises: progress.exercises.map(e => ({
+      name: e.exercise, planned: e.sets, done: e.done,
+      ...(e.done === 0 ? { skipped: true } : e.complete ? {} : { short: true }),
+    })),
+    skipped: progress.exercises.filter(e => e.done === 0).map(e => e.exercise),
+  };
+}
+
 export async function finaliseSession(userId, profile, session,
                                       { note = null, closedBy = 'server', endedAt = null } = {}) {
   if (!session?.id) return null;
@@ -116,22 +144,7 @@ export async function finaliseSession(userId, profile, session,
   // during the session and the one filed on the record can never disagree.
   // An ad-hoc session has open slots (sets: null) and no real plan, so its
   // completion would be noise — only a session with planned sets carries one.
-  const plan = Array.isArray(session.plan) ? session.plan : [];
-  const progress = sessionProgress(plan, rows);
-  const completion = progress.sets_planned > 0 ? {
-    percent: progress.percent,
-    sets_done: progress.sets_done,
-    sets_planned: progress.sets_planned,
-    // Per exercise: planned, done, and the two states worth naming. "Skipped"
-    // is a plan line never touched; "short" is one started and left. They are
-    // different facts — one is a choice about the session, the other is about
-    // the exercise — and flattening them loses the founder's "half of one".
-    exercises: progress.exercises.map(e => ({
-      name: e.exercise, planned: e.sets, done: e.done,
-      ...(e.done === 0 ? { skipped: true } : e.complete ? {} : { short: true }),
-    })),
-    skipped: progress.exercises.filter(e => e.done === 0).map(e => e.exercise),
-  } : null;
+  const completion = completionFrom(session.plan, rows);
 
   const [written] = await insertEvents(userId, profile, [{
     event_type: 'workout',
@@ -281,4 +294,60 @@ function daysApart(from, to) {
   const a = new Date(`${from}T00:00:00Z`).getTime();
   const b = new Date(`${to}T00:00:00Z`).getTime();
   return Math.round((b - a) / 86400000);
+}
+
+
+// ── Repairing the record the feature predates ───────────────────────────────
+//
+// Completion is stamped when a session closes — so every session closed
+// BEFORE the stamp existed reads as a finished workout forever, including the
+// founder's own half-done session on the day he asked for this. The plan is
+// still on the session row and the sets are still in the set table, so the
+// answer is recoverable; leaving it unrecoverable would make "you'll know
+// that" true only for workouts that happen from now on.
+//
+// Idempotent by inspection: an event already carrying completion is skipped,
+// so the sweep costs one read per call once the backlog is done. Bounded to
+// the recent past because the founder's ask is about days he can still act
+// on, and a wholesale rewrite of years of summaries is a bigger decision.
+export async function backfillCompletion(userId, { days = 21 } = {}) {
+  const since = new Date(Date.now() - days * 86400000).toISOString().slice(0, 10);
+
+  const { data: sessions } = await supabase.from('wrought_sessions')
+    .select('id, plan, event_id, local_date')
+    .eq('user_id', userId).eq('status', 'done')
+    .not('event_id', 'is', null).gte('local_date', since);
+
+  // Only sessions that HAD a plan — ad-hoc sessions carry no completion by
+  // design, and re-deciding that here would fork the shape.
+  const cands = (sessions || []).filter(s =>
+    Array.isArray(s.plan) && s.plan.some(e => Number(e.sets) > 0));
+  if (!cands.length) return { checked: 0, stamped: 0 };
+
+  const { data: events } = await supabase.from('wrought_events')
+    .select('id, summary, detail').in('id', cands.map(s => s.event_id));
+  const byId = new Map((events || []).map(e => [String(e.id), e]));
+
+  let stamped = 0;
+  for (const s of cands) {
+    const ev = byId.get(String(s.event_id));
+    if (!ev || ev.detail?.completion) continue;
+
+    const { data: sets } = await supabase.from('wrought_sets')
+      .select('exercise').eq('session_id', s.id);
+    const completion = completionFrom(s.plan, sets || []);
+    if (!completion) continue;
+
+    // The shortfall goes into the summary exactly as the close writes it —
+    // and never twice, however many times the sweep runs.
+    const summary = completion.percent < 100 && !/% of plan\)/.test(ev.summary || '')
+      ? `${ev.summary} (${completion.percent}% of plan)`
+      : ev.summary;
+
+    const { error } = await supabase.from('wrought_events')
+      .update({ summary, detail: { ...(ev.detail || {}), completion } })
+      .eq('id', ev.id);
+    if (!error) stamped++;
+  }
+  return { checked: cands.length, stamped };
 }

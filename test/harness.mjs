@@ -4897,7 +4897,10 @@ await test('a half-done plan is filed as a half-done plan', () => {
   // Same function as the live checklist, so the percent somebody watched
   // mid-session and the one on the record can never disagree.
   assert.match(ses, /import \{ sessionProgress \} from '\.\/warmup\.js'/);
-  assert.match(ses, /const progress = sessionProgress\(plan, rows\)/);
+  // ONE shape for the close and the backfill alike, so a session filed today
+  // and one repaired tomorrow cannot carry two different-looking completions.
+  assert.match(ses, /export function completionFrom\(plan, rows\)/);
+  assert.match(ses, /const completion = completionFrom\(session\.plan, rows\)/);
   // Skipped (never touched) and short (started and left) are different facts.
   assert.match(ses, /\{ skipped: true \}/);
   assert.match(ses, /\{ short: true \}/);
@@ -4906,8 +4909,7 @@ await test('a half-done plan is filed as a half-done plan', () => {
   assert.match(ses, /completion\.percent < 100 \? ` \(\$\{completion\.percent\}% of plan\)` : ''/);
   // An ad-hoc session has open slots and no real plan — its completion would
   // be noise, so only a session with planned sets carries one.
-  assert.match(ses, /progress\.sets_planned > 0 \?/);
-  assert.match(ses, /: null;/);
+  assert.match(ses, /if \(!\(progress\.sets_planned > 0\)\) return null;/);
 
   // And end_session says it, as a fact, never a scolding.
   const mcp = readFileSync(new URL('../netlify/functions/mcp.js', import.meta.url), 'utf8');
@@ -4915,6 +4917,32 @@ await test('a half-done plan is filed as a half-done plan', () => {
   assert.match(end, /completion: done\.completion/);
   assert.match(end, /skipped \$\{done\.completion\.skipped\.join/);
   assert.match(end, /never a scolding/);
+
+  // AND THE RECORD THE FEATURE PREDATES IS REPAIRED. Completion is stamped at
+  // close, so every session closed before the stamp existed — including the
+  // founder's half-done session on the day he asked — would read as finished
+  // forever. The plan and the sets are both still stored, so it is
+  // recoverable, and the dashboard sweep recovers it.
+  assert.match(ses, /export async function backfillCompletion\(userId/);
+  // Idempotent: an event already carrying completion is skipped, and the
+  // summary suffix can never be appended twice.
+  assert.match(ses, /if \(!ev \|\| ev\.detail\?\.completion\) continue;/);
+  assert.match(ses, /!\/% of plan\\\)\/\.test\(ev\.summary/);
+  const prog = readFileSync(new URL('../netlify/functions/api-progress.js', import.meta.url), 'utf8');
+  // After the stale sweep, because the sweep files the event the stamp lands on.
+  const sweepAt = prog.indexOf('closeStaleSessions(user.id, profile)');
+  const backAt = prog.indexOf('await backfillCompletion(user.id)');
+  assert.ok(backAt > sweepAt && sweepAt > 0, 'the backfill does not run after the stale sweep');
+
+  // And the day view DRAWS it — "for today's workout, what I did exactly."
+  // Skipped is dim and says so in words; short shows done-of-planned. A fact
+  // about the plan, never a mark against the person: nothing red, no scold.
+  const src = page('app.html');
+  const panel = src.slice(src.indexOf('function trainingTodayPanel(d)'), src.indexOf('// ── Calendar'));
+  assert.match(panel, /x\.completion/);
+  assert.match(panel, /e\.skipped \? 'skip' : e\.short \? 'part' : 'ticked'/);
+  assert.match(panel, /e\.skipped \? 'skipped' : `\$\{e\.done\}\/\$\{e\.planned\}`/);
+  assert.match(src, /\.ticks li\.skip \{ opacity/);
 });
 
 await test('the box that takes the setup is not shorter than the setup', () => {
