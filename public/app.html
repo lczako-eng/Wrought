@@ -4724,9 +4724,12 @@ function burnSplit(b) {
       <span class="bskey"><i class="rest"></i>${n(rest)}<em>${
         b.resting_source === 'device' ? 'at rest, your watch' : 'at rest'}</em></span>
       ${train ? `<span class="bskey"><i class="train"></i>${n(train)}<em>${
-        b.training_source === 'device' ? 'training' : 'training (estimated)'}</em></span>` : ''}
+        b.training_source === 'device' ? 'training, your watch' : 'training (estimated)'}</em></span>` : ''}
       ${other ? `<span class="bskey"><i class="move"></i>${n(other)}<em>${otherLabel}</em></span>` : ''}
     </div>
+    ${b.active_source === 'device' && b.training_source !== 'device' && train ? `<div class="bswork">Your watch
+      measured ${n(train + other)} moving in total today — the split between training and the rest of the day
+      is the estimated part.</div>` : ''}
     ${b.logged_activity?.count ? `<div class="bswork">${esc(b.logged_activity.entries.map(e => e.summary).join(' · '))}</div>` : ''}
   </div>`;
 }

@@ -177,3 +177,32 @@ export function splitWork({ sets = [], plan = [] } = {}) {
     note: 'Report these as TWO statistics, never one. Volume moved is a lifting number and minutes is a cardio number; a session total that blends them describes neither, and the treadmill disappears into it.',
   };
 }
+
+
+/**
+ * The watch's own energy for the session window — measured, not estimated.
+ *
+ * The founder: "never estimate, you have the Apple Watch — read off of that."
+ * Right, with one trap that must be guarded by construction: Health Auto
+ * Export and the iOS courier often send active_calories as ONE daily total.
+ * A single row that happens to fall inside the session window is not a
+ * measurement of the session — it is the whole day, and billing a day's 592
+ * to a fifty-minute session would overstate the burn in the direction that
+ * tells somebody they have room to eat.
+ *
+ * So this only measures when the day has sub-daily granularity: two or more
+ * rows, at least one inside the window. A daily total returns null and the
+ * MET estimate stands, labelled as the estimate it is.
+ */
+export function windowedActive(rows = [], startIso, endIso) {
+  if (!Array.isArray(rows) || rows.length < 2) return null;
+  const start = Date.parse(startIso), end = Date.parse(endIso);
+  if (!Number.isFinite(start) || !Number.isFinite(end)) return null;
+  const inWin = rows.filter(r => {
+    const t = Date.parse(r.measured_at);
+    return Number.isFinite(t) && t >= start && t <= end;
+  });
+  if (!inWin.length) return null;
+  const kcal = Math.round(inWin.reduce((a, r) => a + (num(r.value) || 0), 0));
+  return kcal > 0 ? { kcal, samples: inWin.length, source: 'watch' } : null;
+}

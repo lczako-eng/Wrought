@@ -36,7 +36,7 @@
 import { supabase, insertEvents, localDateFor } from './wrought.js';
 import { sessionTotals } from './training.js';
 import { sessionProgress } from './warmup.js';
-import { sessionEffort, splitWork } from './effort.js';
+import { sessionEffort, splitWork, windowedActive } from './effort.js';
 
 // How long a gap means the session is over rather than resting. Real sets sit
 // minutes apart; four hours is not a rest, it is somebody who left. Generous on
@@ -153,10 +153,26 @@ export async function finaliseSession(userId, profile, session,
   // samples already arrived with timestamps; nothing was reading one against
   // the other. "Officially start the heart rate" turns out to be a query, not
   // a feature: the window was always there.
-  const { data: hr } = await supabase.from('wrought_metrics')
-    .select('value, measured_at').eq('user_id', userId).eq('metric', 'heart_rate')
-    .gte('measured_at', session.started_at).lte('measured_at', endedIso)
-    .order('measured_at', { ascending: true });
+  const dayOf = localDateFor(profile.timezone, new Date(endAt));
+  const [{ data: hr }, { data: activeRows }] = await Promise.all([
+    supabase.from('wrought_metrics')
+      .select('value, measured_at').eq('user_id', userId).eq('metric', 'heart_rate')
+      .gte('measured_at', session.started_at).lte('measured_at', endedIso)
+      .order('measured_at', { ascending: true }),
+    // The whole DAY's rows, not just the window — the guard in windowedActive
+    // needs to see whether the day has sub-daily granularity at all, because a
+    // single daily total falling inside the window is the whole day wearing a
+    // session's clothes.
+    supabase.from('wrought_metrics')
+      .select('value, measured_at').eq('user_id', userId).eq('metric', 'active_calories')
+      .eq('local_date', dayOf),
+  ]);
+
+  // MEASURED BEATS ESTIMATED, when a measurement genuinely exists. The watch's
+  // own energy inside the session window becomes the session's calories, so
+  // trainingBurn counts it as a device figure and the hero stops saying
+  // "estimated" about a session the watch actually saw.
+  const watched = windowedActive(activeRows || [], session.started_at, endedIso);
 
   const effort = sessionEffort({
     session: { ...session, ended_at: endedIso }, sets: rows, samples: hr || [],
@@ -176,6 +192,7 @@ export async function finaliseSession(userId, profile, session,
       (completion && completion.percent < 100 ? ` (${completion.percent}% of plan)` : ''),
     detail: {
       kind: session.kind, minutes, muscles,
+      ...(watched ? { calories: watched.kcal, calories_source: 'watch' } : {}),
       exercises: totals.top_sets.map(t => ({
         name: t.exercise, sets: rows.filter(r => r.exercise === t.exercise).length,
         reps: t.reps, weight_kg: t.weight_kg,
