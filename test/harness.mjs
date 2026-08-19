@@ -26,6 +26,7 @@ import {
   trainingBurn, targetOptions, liftTrend,
 } from '../netlify/functions/lib/training.js';
 import { activityBurn, activityTotal, matchActivity, ACTIVITIES, EFFORTS } from '../netlify/functions/lib/activity.js';
+import { eventTimestamp } from '../netlify/functions/lib/wrought.js';
 import { warmupFor, sessionProgress } from '../netlify/functions/lib/warmup.js';
 import { formWatch, cardioProgress } from '../netlify/functions/lib/form.js';
 import { INTAKE, intakeState } from '../netlify/functions/lib/intake.js';
@@ -4958,6 +4959,46 @@ await test('a typed weight is theirs — parsed with a unit, kept in kg, shown i
   assert.match(src, /m\.load_kg \? sayLoad\(m\.load_kg\) : null/);
 });
 
+await test('a workout is filed on the day it happened, not the day the app opened', () => {
+  // "I didn't have a workout today — that was yesterday's S-Tier, why is it
+  // even on today?" He was right. finaliseSession has always passed the
+  // session's real end time as occurred_at, and insertEvents silently
+  // DISCARDED it, stamping "now" — so any session closed by the stale sweep
+  // filed under the day the dashboard loaded. The doctrine "the event is
+  // filed when it happened" was written in the comments and untrue in the
+  // code. Same class as deriving local_date from UTC: right about WHAT,
+  // wrong about WHEN, corrupting two days at once.
+  const profile = { timezone: 'America/Toronto' };
+  const now = new Date('2026-08-16T15:00:00Z');
+
+  // The caller's explicit timestamp wins — it is the one party that knows.
+  const yesterday = '2026-08-15T23:40:00Z';
+  assert.equal(eventTimestamp({ occurred_at: yesterday }, profile, now).toISOString(),
+    new Date(yesterday).toISOString());
+  // Garbage falls through rather than filing under Invalid Date.
+  assert.equal(eventTimestamp({ occurred_at: 'not a date' }, profile, now).getTime(), now.getTime());
+  // No claim means now, and a time hint still anchors to today.
+  assert.equal(eventTimestamp({}, profile, now).getTime(), now.getTime());
+  const hinted = eventTimestamp({ time_hint: '09:30' }, profile, now);
+  assert.ok(Number.isFinite(hinted.getTime()));
+
+  // insertEvents actually uses it — the discard was the whole bug.
+  const w = readFileSync(new URL('../netlify/functions/lib/wrought.js', import.meta.url), 'utf8');
+  assert.match(w, /const occurredAt = eventTimestamp\(e, profile, now\)/);
+
+  // AND THE RECORD THE BUG ALREADY CORRUPTED IS REPAIRED. The session row
+  // still knows when it ended; the sweep puts the event back on that day.
+  const ses = readFileSync(new URL('../netlify/functions/lib/session.js', import.meta.url), 'utf8');
+  assert.match(ses, /export async function refileMisdated\(userId, profile/);
+  // Six hours of tolerance: end_session legitimately stamps "now" minutes
+  // after the last set — the target is events filed the better part of a day
+  // late, and a tight tolerance would churn every honestly-closed session.
+  assert.match(ses, /<= 6 \* 3600000\) continue;/);
+  assert.match(ses, /local_date: localDateFor\(profile\.timezone, new Date\(endedAt\)\)/);
+  const prog = readFileSync(new URL('../netlify/functions/api-progress.js', import.meta.url), 'utf8');
+  assert.match(prog, /refileMisdated\(user\.id, profile\)/);
+});
+
 await test('a half-done plan is filed as a half-done plan', () => {
   // "It needs to keep, in like a database, how much I've done of each
   // exercise, or I decided to skip or whatever — so if I only do half of them
@@ -5003,7 +5044,7 @@ await test('a half-done plan is filed as a half-done plan', () => {
   const prog = readFileSync(new URL('../netlify/functions/api-progress.js', import.meta.url), 'utf8');
   // After the stale sweep, because the sweep files the event the stamp lands on.
   const sweepAt = prog.indexOf('closeStaleSessions(user.id, profile)');
-  const backAt = prog.indexOf('await backfillCompletion(user.id)');
+  const backAt = prog.indexOf('backfillCompletion(user.id)');
   assert.ok(backAt > sweepAt && sweepAt > 0, 'the backfill does not run after the stale sweep');
 
   // And the day view DRAWS it — "for today's workout, what I did exactly."
