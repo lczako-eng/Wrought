@@ -4986,6 +4986,17 @@ await test('a workout is filed on the day it happened, not the day the app opene
   const w = readFileSync(new URL('../netlify/functions/lib/wrought.js', import.meta.url), 'utf8');
   assert.match(w, /const occurredAt = eventTimestamp\(e, profile, now\)/);
 
+  // BUT A CLIENT MAY NOT DATE ITS OWN EVENTS. Honouring occurred_at opened a
+  // hole in the same hour it fixed the sweep: a language model that writes
+  // occurred_at midnight-UTC files dinner on the wrong local day while
+  // everything looks logged. The server's own callers know when a thing
+  // happened; a model does not, and its guess is stripped at the door.
+  const kept = eventsFromClient([{ event_type: 'food', summary: 'pizza',
+    occurred_at: '2026-08-15T00:00:00Z', local_date: '2026-08-15', detail: { calories: 800 } }]);
+  assert.equal(kept[0].occurred_at, undefined, 'a client-supplied occurred_at survived');
+  assert.equal(kept[0].local_date, undefined, 'a client-supplied local_date survived');
+  assert.equal(kept[0].detail.calories, 800, 'stripping the date stripped the data');
+
   // AND THE RECORD THE BUG ALREADY CORRUPTED IS REPAIRED. The session row
   // still knows when it ended; the sweep puts the event back on that day.
   const ses = readFileSync(new URL('../netlify/functions/lib/session.js', import.meta.url), 'utf8');
