@@ -671,6 +671,36 @@ table.matrix td.rh.cold { color: var(--heat-3); }
 
 .empty { color: var(--ash-dim); font-size: 13.5px; padding: 14px 0; }
 
+/* ── The website's own way to log a meal ──────────────────────────────────
+   One line, not a form. It sits under the day it changes, so the thing that
+   just went in is a row away from the total it moved. */
+.quickadd { margin-top: 14px; padding-top: 13px; border-top: 1px solid var(--edge); }
+.qarow { display: flex; gap: 8px; }
+.qarow input {
+  flex: 1 1 auto; min-width: 0; padding: 11px 12px; font-size: 16px;
+  color: var(--bright); background: var(--scale-2); border: 1px solid var(--edge);
+  border-radius: 9px;
+}
+.qarow input:focus { outline: none; border-color: var(--heat-2); }
+.qarow button {
+  flex: 0 0 auto; padding: 11px 18px; font-size: 14px; font-weight: 700;
+  color: #1A0A02; background: var(--heat-3); border: 0; border-radius: 9px; cursor: pointer;
+}
+.qarow button:disabled { opacity: .5; cursor: default; }
+.qahint { margin: 8px 0 0; }
+.qahint em { font-family: var(--mono); font-style: normal; color: var(--ash); }
+.qasay { margin: 8px 0 0; font-size: 13px; color: var(--ash-dim); min-height: 1px; }
+.qasay.good { color: var(--moss); }
+/* Never red. A line that did not parse is information, not an alarm — the
+   same rule as a movement with nothing set on it. */
+.qasay.bad { color: var(--temper); }
+.qadel {
+  flex: 0 0 auto; padding: 3px 9px; font-size: 11px; font-family: var(--mono);
+  color: var(--ash-dim); background: transparent; border: 1px solid var(--edge);
+  border-radius: 999px; cursor: pointer;
+}
+.qadel:hover, .qadel:focus { color: var(--ash); border-color: var(--ash-dim); }
+
 
 
 
@@ -1140,7 +1170,17 @@ label.ghost { display: inline-block; }
 .setpill {
   font-family: var(--mono); font-size: 13px; font-variant-numeric: tabular-nums;
   background: var(--scale); border: 1px solid var(--edge); border-radius: 8px;
-  padding: 6px 10px; color: var(--bright); white-space: nowrap;
+  padding: 6px 10px; color: var(--bright);
+  /* NEVER WIDER THAN THE PAGE — the .bar lesson, one class along. .setpill is
+     declared in three places and .ls-sets is the container for six different
+     things, so a rule written for a lift set ("92.5 x 6 @8") also reaches the
+     readiness signals and the form-watch evidence, which carry SENTENCES. With
+     white-space: nowrap on all of them, one evidence pill measured 565px
+     inside a 390px screen and the WHOLE DASHBOARD scrolled sideways — which
+     reads as a broken page rather than as a long pill. Wrapping a set pill on
+     a very narrow phone is the far cheaper failure, so nothing here refuses to
+     break, and nothing here can exceed the gutters. */
+  max-width: 100%;
 }
 .ls-prev { margin: 9px 0 0; font-size: 12.5px; color: var(--ash-dim); }
 .delta { font-size: 12px; font-weight: 650; text-transform: uppercase; letter-spacing: .06em; white-space: nowrap; }
@@ -5270,6 +5310,23 @@ function foodTodayPanel(d) {
   const items = (t.log || []).filter(e => e.type === 'food' || e.type === 'drink');
   const f = t.food || {};
 
+  // THE WEBSITE'S OWN DOOR. Until this box existed, wrought.fit could show a
+  // meal and not take one — so when the assistant heard food and never wrote
+  // it down, there was nowhere else to put it. One line, not a form: the
+  // oldest doctrine here is that a log costing more than a sentence is one
+  // nobody keeps. Never shown in the demo, where a real meal would be typed
+  // into a screen that discards it.
+  const box = DEMO ? '' : `<form class="quickadd" id="qaform">
+    <div class="qarow">
+      <input id="qafood" type="text" maxlength="300" autocomplete="off" enterkeyhint="done"
+        placeholder="chicken and rice 650" aria-label="Log food">
+      <button type="submit" id="qago">Log</button>
+    </div>
+    <p class="sub dim qahint">What it was, then the calories. Macros if you have them —
+      <em>steak 700 45p 10c 50f</em>. No figure is fine; it lands with none rather than a guess.</p>
+    <p class="qasay" id="qasay" role="status"></p>
+  </form>`;
+
   if (!items.length) {
     // An empty day says so in words, right where the eye lands after the burn.
     // "Nothing logged" and "nothing eaten" are different facts and this screen
@@ -5278,7 +5335,9 @@ function foodTodayPanel(d) {
       <h2>Food · today</h2>
       <p class="empty">Nothing logged yet. Mention a meal to your AI — <em>“had a steak and a baked
       potato”</em> — and it lands here with its calories. If you already told it about food today and
-      this is still empty, it heard you and never wrote it down: say <em>“log that”</em>.</p>
+      this is still empty, it heard you and never wrote it down: say <em>“log that”</em>, or type it
+      below.</p>
+      ${box}
     </section>`;
   }
 
@@ -5286,6 +5345,8 @@ function foodTodayPanel(d) {
     <span class="nm">${esc(e.summary)}</span>
     <span class="sub dim">${esc(e.at || '')}</span>
     <b class="${e.calories == null ? 'unset' : ''}">${e.calories != null ? `${n(e.calories)} kcal` : 'counts for nothing yet'}</b>
+    ${e.id && !DEMO ? `<button class="qadel" data-unlog="${esc(String(e.id))}"
+      title="Take this off">Remove</button>` : ''}
   </div>`).join('');
 
   const uncounted = f.meals_uncounted || 0;
@@ -5296,7 +5357,75 @@ function foodTodayPanel(d) {
       <span class="sub dim">· ${n(f.protein_g)}g protein · ${n(f.carbs_g)}g carbs · ${n(f.fat_g)}g fat${
       f.estimated ? ' · estimated' : ''}</span></p>
     ${uncounted ? `<p class="caveat">${uncounted === 1 ? 'One thing has' : uncounted + ' things have'} no calories on ${uncounted === 1 ? 'it' : 'them'}, so the real total is higher — ask your AI to fill ${uncounted === 1 ? 'it' : 'them'} in.</p>` : ''}
+    ${box}
   </section>`;
+}
+
+// ONE ROUND TRIP, THEN THE SERVER'S OWN WORDS. The reply carries the entry read
+// back off the stored row and the whole day recomputed from it — so what the
+// screen says after a write is what the record holds, never what the page hoped
+// it wrote. Then the dashboard reloads, because every other number on it (the
+// burn, the net, the rings, the calendar) has just changed too.
+function wireQuickAdd() {
+  $('qaform')?.addEventListener('submit', quickAddFood);
+  document.querySelectorAll('[data-unlog]').forEach(b =>
+    b.addEventListener('click', () => removeFood(b.dataset.unlog, b)));
+}
+
+async function quickAddFood(ev) {
+  ev.preventDefault();
+  const input = $('qafood');
+  const out = $('qasay');
+  const text = (input?.value || '').trim();
+  if (!text) return false;
+
+  const { data } = sb ? await sb.auth.getSession() : { data: {} };
+  if (!data?.session) { if (out) out.textContent = 'Sign in first.'; return false; }
+
+  if (out) { out.textContent = 'Saving…'; out.className = 'qasay'; }
+  try {
+    const res = await fetch('/.netlify/functions/api-log', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${data.session.access_token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text }),
+    });
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      // A refusal says what to type instead. Silence here reads as a save.
+      if (out) { out.textContent = body.say || body.error || 'That did not save.'; out.className = 'qasay bad'; }
+      input.focus();
+      return false;
+    }
+    input.value = '';
+    if (out) { out.textContent = body.say || 'Logged.'; out.className = 'qasay good'; }
+    await load();
+  } catch {
+    if (out) { out.textContent = 'Could not reach the server — nothing was saved.'; out.className = 'qasay bad'; }
+  }
+  return false;
+}
+
+// Correcting a typo has to be as cheap as making one, or the log stops being
+// worth typing into. It asks first: a meal removed by a stray thumb is a hole
+// in the day nobody notices until the week is wrong.
+async function removeFood(id, btn) {
+  if (!confirm('Take this off today?')) return;
+  const { data } = sb ? await sb.auth.getSession() : { data: {} };
+  if (!data?.session) return;
+  if (btn) { btn.disabled = true; btn.textContent = '…'; }
+  try {
+    const res = await fetch('/.netlify/functions/api-log', {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${data.session.access_token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id }),
+    });
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) { alert(body.say || 'That did not come off.'); if (btn) { btn.disabled = false; btn.textContent = 'Remove'; } return; }
+    await load();
+  } catch {
+    alert('Could not reach the server — nothing was removed.');
+    if (btn) { btn.disabled = false; btn.textContent = 'Remove'; }
+  }
 }
 
 function trainingTodayPanel(d) {
@@ -5910,6 +6039,7 @@ function render(d) {
   wireFacts(d.profile_known || {});
   wireGoTabs();
   wireGuide();          // the setup panel's questions copy on tap, same as the manual
+  wireQuickAdd();       // the website's own door onto the food log
   stagger();
 }
 

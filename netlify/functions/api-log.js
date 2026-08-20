@@ -18,11 +18,13 @@
 import {
   getAuthUser, getProfile, localDateFor, localMinutesFor, clockString,
   addDays, daysBetween, sayWeight, sayLength, kgToLb, humanDuration, supabase,
+  insertEvents,
 } from './lib/wrought.js';
+import { parseQuickAdd } from './lib/quickadd.js';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'GET, OPTIONS',
+  'Access-Control-Allow-Methods': 'GET, POST, DELETE, OPTIONS',
   'Access-Control-Allow-Headers': 'Content-Type, Authorization',
   'Content-Type': 'application/json',
   'Cache-Control': 'no-store',
@@ -45,15 +47,135 @@ function macroSplit(t) {
   };
 }
 
+const reply = (statusCode, body) => ({ statusCode, headers: CORS, body: JSON.stringify(body) });
+
+const itemNumbers = (detail = {}) => {
+  const n = v => (v == null || v === '' || !Number.isFinite(Number(v)) ? null : Math.round(Number(v)));
+  return {
+    calories: n(detail.calories), protein_g: n(detail.protein_g),
+    carbs_g: n(detail.carbs_g), sugar_g: n(detail.sugar_g), fat_g: n(detail.fat_g),
+  };
+};
+
+// The day, read back off the STORED rows rather than assembled from what was
+// just sent. Same doctrine as day_total on the connector side, and for the same
+// reason: echoing the arguments back proves a write was composed, never that it
+// landed. This is the only thing that proves the record holds it.
+async function foodDay(userId, profile) {
+  const date = localDateFor(profile.timezone);
+  const { data } = await supabase.from('wrought_events')
+    .select('id, event_type, occurred_at, summary, detail, estimated')
+    .eq('user_id', userId).eq('local_date', date)
+    .in('event_type', ['food', 'drink'])
+    .order('occurred_at', { ascending: true }).limit(200);
+
+  const rows = data || [];
+  const totals = { calories: 0, protein_g: 0, carbs_g: 0, fat_g: 0 };
+  let uncounted = 0;
+  const items = rows.map(r => {
+    const nums = itemNumbers(r.detail);
+    for (const k of Object.keys(totals)) totals[k] += num(nums[k]);
+    if (nums.calories == null) uncounted += 1;
+    return {
+      id: r.id, summary: r.summary, kind: r.event_type,
+      at: clockString(localMinutesFor(profile.timezone, new Date(r.occurred_at))),
+      estimated: !!r.estimated, ...nums,
+    };
+  });
+
+  return {
+    date,
+    items,
+    meals: items.length,
+    ...Object.fromEntries(Object.entries(totals).map(([k, v]) => [k, Math.round(v)])),
+    // A total that looks low because something never got logged is a fact worth
+    // stating, never a number to quietly inflate.
+    meals_without_macros: uncounted,
+  };
+}
+
 export const handler = async (event) => {
   if (event.httpMethod === 'OPTIONS') return { statusCode: 204, headers: CORS, body: '' };
-  if (!supabase) return { statusCode: 500, headers: CORS, body: JSON.stringify({ error: 'server_not_configured' }) };
+  if (!supabase) return reply(500, { error: 'server_not_configured' });
 
   const user = await getAuthUser(event);
-  if (!user) return { statusCode: 401, headers: CORS, body: JSON.stringify({ error: 'sign_in_required' }) };
+  if (!user) return reply(401, { error: 'sign_in_required' });
 
   const q = event.queryStringParameters || {};
   const profile = await getProfile(user.id);
+
+  // ── Writing: the website's own door onto the food log ─────────────────────
+  //
+  // Until this existed, wrought.fit could read a meal and not record one, so
+  // an assistant that would not write left the person with nowhere to go. The
+  // settled doctrine is that the website plus the connector are the complete
+  // product; a log with no way to log was that promise not being kept.
+  if (event.httpMethod === 'POST') {
+    let payload = {};
+    try { payload = JSON.parse(event.body || '{}'); } catch { payload = {}; }
+
+    const parsed = parseQuickAdd(payload.text);
+    if (!parsed.ok) return reply(400, { error: 'unparseable', say: parsed.why });
+
+    let written;
+    try {
+      // source 'web' rather than 'agent', because "why is this not in my log"
+      // is answered completely differently for something typed here and
+      // something an assistant wrote.
+      [written] = await insertEvents(user.id, profile, [parsed.event], {
+        source: 'web', rawInput: String(payload.text).slice(0, 500),
+      });
+    } catch (e) {
+      // A swallowed write error is worse than a crash — it looks exactly like
+      // success, which is the failure this whole endpoint exists to end.
+      return reply(500, { error: 'not_saved', say: `That did not save: ${e.message}` });
+    }
+
+    const day = await foodDay(user.id, profile);
+    const nums = itemNumbers(written.detail);
+    return reply(200, {
+      ok: true,
+      entry: { id: written.id, summary: written.summary, kind: written.event_type,
+               local_date: written.local_date, estimated: written.estimated, ...nums },
+      read: parsed.read,
+      day,
+      // The item, then the day, in that order — the order the person is
+      // thinking in, and the only order in which a wrong figure is catchable.
+      say: `${written.summary}${nums.calories != null ? ` — roughly ${nums.calories.toLocaleString()} kcal` : ''}. ` +
+           `${day.calories.toLocaleString()} kcal logged today across ${day.meals} ${day.meals === 1 ? 'entry' : 'entries'}.`,
+    });
+  }
+
+  // Correcting the record from the same door that writes it. Deliberately
+  // limited to food and drink: a workout event owns derived rows in
+  // wrought_sets, and deleting one here would leave a lift record standing on
+  // training the log no longer contains. Retracting a session is the
+  // connector's job, where that clean-up is already handled.
+  if (event.httpMethod === 'DELETE') {
+    let payload = {};
+    try { payload = JSON.parse(event.body || '{}'); } catch { payload = {}; }
+    const id = String(payload.id || '').trim();
+    if (!id) return reply(400, { error: 'no_id' });
+
+    // Scoped to the caller's own rows, and checked before the delete rather
+    // than trusted to a filter — an id from a page is an id from a stranger
+    // until the record says otherwise.
+    const { data: row } = await supabase.from('wrought_events')
+      .select('id, event_type, summary').eq('user_id', user.id).eq('id', id).maybeSingle();
+    if (!row) return reply(404, { error: 'not_found', say: 'That entry is not on your record.' });
+    if (row.event_type !== 'food' && row.event_type !== 'drink') {
+      return reply(400, { error: 'not_removable',
+        say: 'Only food and drink can be taken off from here. Ask your AI to retract anything else.' });
+    }
+
+    const { error } = await supabase.from('wrought_events')
+      .delete().eq('user_id', user.id).eq('id', id);
+    if (error) return reply(500, { error: 'not_removed', say: `That did not come off: ${error.message}` });
+
+    const day = await foodDay(user.id, profile);
+    return reply(200, { ok: true, removed: row.summary, day,
+      say: `Took off ${row.summary}. ${day.calories.toLocaleString()} kcal logged today.` });
+  }
 
   const span   = Math.min(Math.max(parseInt(q.days, 10) || 14, 1), 60);
   const before = q.before || localDateFor(profile.timezone);

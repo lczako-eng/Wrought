@@ -30,6 +30,7 @@ import { eventTimestamp } from '../netlify/functions/lib/wrought.js';
 import { warmupFor, sessionProgress } from '../netlify/functions/lib/warmup.js';
 import { formWatch, cardioProgress } from '../netlify/functions/lib/form.js';
 import { INTAKE, intakeState } from '../netlify/functions/lib/intake.js';
+import { parseQuickAdd } from '../netlify/functions/lib/quickadd.js';
 const { goalCall, PACES, PUSH } = await import('../netlify/functions/lib/training.js');
 import {
   localDateFor, addDays, daysBetween, clockString, humanDuration,
@@ -7059,6 +7060,29 @@ await test('nothing else claims .bar — the header owns it', () => {
   assert.ok(!/class="bar"/.test(src), 'something is still using class="bar"');
 });
 
+await test('no pill can push the dashboard sideways', () => {
+  // THE SAME LESSON, ONE CLASS ALONG. .setpill is declared in three places and
+  // .ls-sets is the container for six different things — lift sets, run stats,
+  // readiness signals, the form watch's evidence. A white-space: nowrap
+  // written for "92.5 x 6 @8" therefore also reached an evidence SENTENCE,
+  // which measured 565px inside a 390px screen and made the whole page scroll
+  // sideways. A dashboard that slides under the thumb reads as broken software,
+  // and on a phone it is the only way most people will ever see it.
+  // Comments stripped first — this rule's own explanation names the property
+  // it forbids, and grepping the warning instead of the breach is a trap this
+  // harness has fallen into twice already.
+  const src = page('app.html').replace(/\/\*[\s\S]*?\*\//g, '');
+  const rules = [...src.matchAll(/^\.setpill\s*\{([^}]*)\}/gm)].map(m => m[1]);
+  assert.ok(rules.length >= 1, '.setpill is not defined at all');
+  for (const r of rules) {
+    assert.ok(!/white-space:\s*nowrap/.test(r), 'a pill refuses to break, so a long one overflows the page');
+  }
+  assert.ok(rules.some(r => /max-width:\s*100%/.test(r)), 'nothing stops a pill exceeding the gutters');
+  // Scoping it to the container does not help: .ls-sets holds the sentences too.
+  assert.ok(!/\.ls-sets\s+\.setpill\s*\{[^}]*nowrap/.test(src),
+    '.ls-sets carries sentence pills as well as set pills — nowrap there is the same bug');
+});
+
 group('One wordmark, on every page');
 
 await test('the word is set in the same slab everywhere', () => {
@@ -8286,6 +8310,128 @@ await test('the hands-free door is routed and the app stays optional', () => {
   // Doctrine: nothing may ever REQUIRE the app. This is one more way in.
   const claude = readFileSync(new URL('../CLAUDE.md', import.meta.url), 'utf8');
   assert.match(claude, /The app is optional, forever/);
+});
+
+// ── The website's own door onto the food log ────────────────────────────────
+
+await test('a typed line becomes a meal, with only the numbers that were typed', () => {
+  const a = parseQuickAdd('chicken and rice 650');
+  assert.equal(a.ok, true);
+  assert.equal(a.event.summary, 'chicken and rice');
+  assert.equal(a.event.detail.calories, 650);
+  assert.equal(a.event.event_type, 'food');
+  // Every calorie in this product is labelled. A figure read off a packet and
+  // one remembered are indistinguishable from here, so it takes the
+  // conservative side like everything else.
+  assert.equal(a.event.estimated, true);
+
+  // Macros in the two forms people type, both parsed left to right in one pass
+  // so neither ordering reads across its own boundary.
+  const b = parseQuickAdd('steak 700 45p 10c 50f');
+  assert.deepEqual(
+    { c: b.event.detail.calories, p: b.event.detail.protein_g, cb: b.event.detail.carbs_g, f: b.event.detail.fat_g },
+    { c: 700, p: 45, cb: 10, f: 50 });
+  const c = parseQuickAdd('oats 350 45g protein 60g carbs 20g fat');
+  assert.equal(c.event.detail.protein_g, 45);
+  assert.equal(c.event.detail.carbs_g, 60);
+  assert.equal(c.event.detail.fat_g, 20);
+  const d = parseQuickAdd('chowder protein 30 carbs 40 fat 12');
+  assert.equal(d.event.detail.protein_g, 30);
+  assert.equal(d.event.detail.carbs_g, 40);
+  assert.equal(d.event.detail.fat_g, 12);
+});
+
+await test('a meal with no figure lands with none rather than a guess', () => {
+  // THE WHOLE POINT. This parser is not a model and must never behave like
+  // one — a plausible 400 on an unnumbered lunch quietly poisons the week in
+  // exactly the way a null never does.
+  const r = parseQuickAdd('half a costco hotdog and a quarter cookie');
+  assert.equal(r.ok, true);
+  assert.equal(r.event.detail.calories, undefined);
+  assert.equal(r.read.calories, null);
+  // And it says so, in the same words the day card uses.
+  assert.match(r.read.note, /counts for nothing/i);
+});
+
+await test('a leading quantity is never mistaken for a calorie figure', () => {
+  // "2 eggs" filed as a 2-calorie meal is the kind of wrong number that
+  // survives for months inside an average.
+  const r = parseQuickAdd('2 eggs');
+  assert.equal(r.event.summary, '2 eggs');
+  assert.equal(r.read.calories, null);
+  assert.equal(parseQuickAdd('500ml water').read.calories, null);
+  assert.equal(parseQuickAdd('pizza 2 slices 620').read.calories, 620);
+});
+
+await test('a number on its own is not a log', () => {
+  const r = parseQuickAdd('650');
+  assert.equal(r.ok, false);
+  // The refusal says what to type instead — a dead end here sends somebody
+  // back to the assistant that would not write it down in the first place.
+  assert.match(r.why, /chicken and rice 650/);
+  assert.equal(parseQuickAdd('   ').ok, false);
+});
+
+await test('a stated time travels as a hint, never as a date', () => {
+  // A CLIENT MAY NOT DATE ITS OWN EVENTS — time_hint is resolved against the
+  // user's own zone server-side, which is what keeps a 9pm snack off tomorrow.
+  const r = parseQuickAdd('beer at 9pm 150');
+  assert.equal(r.event.time_hint, '21:00');
+  assert.equal(r.event.occurred_at, undefined);
+  assert.equal(r.event.local_date, undefined);
+  assert.equal(r.event.detail.calories, 150);
+  assert.equal(parseQuickAdd('bagel at 7:30 320').event.time_hint, '07:30');
+  // "at the pub" is a place, not a clock.
+  assert.equal(parseQuickAdd('steak at the pub 800').event.summary, 'steak at the pub');
+});
+
+await test('a drink is filed as a drink', () => {
+  assert.equal(parseQuickAdd('coffee').event.event_type, 'drink');
+  assert.equal(parseQuickAdd('protein shake 220').event.event_type, 'drink');
+  // "coffee and a muffin" is a meal that contains a drink, not a drink.
+  assert.equal(parseQuickAdd('coffee and a muffin 400').event.event_type, 'food');
+});
+
+await test('the website can log food, and says what the record holds afterwards', () => {
+  const src = readFileSync(new URL('../netlify/functions/api-log.js', import.meta.url), 'utf8');
+  // The hole this closes: wrought.fit could read a meal and not record one, so
+  // an assistant that would not write left the person with nowhere to go. The
+  // app is optional forever — which means the website has to be complete.
+  assert.match(src, /'Access-Control-Allow-Methods': 'GET, POST, DELETE, OPTIONS'/);
+  assert.match(src, /httpMethod === 'POST'/);
+  assert.match(src, /parseQuickAdd/);
+  assert.match(src, /source: 'web'/);
+  // Read back off the STORED rows, never echoed from the arguments — echoing
+  // proves a write was composed, never that it landed.
+  assert.match(src, /async function foodDay/);
+  assert.match(src, /from\('wrought_events'\)/);
+  // A swallowed write error looks exactly like success, which is the failure
+  // this endpoint exists to end.
+  assert.match(src, /not_saved/);
+
+  // Correcting a typo is scoped to food and drink: a workout event owns rows
+  // in wrought_sets, and deleting one here would leave a lift record standing
+  // on training the log no longer contains.
+  assert.match(src, /httpMethod === 'DELETE'/);
+  assert.match(src, /not_removable/);
+  assert.match(src, /\.eq\('user_id', user\.id\)\.eq\('id', id\)/);
+});
+
+await test('the food box is on the page, and never in the demo', () => {
+  const page = readFileSync(new URL('../public/app.html', import.meta.url), 'utf8');
+  assert.match(page, /id="qaform"/);
+  assert.match(page, /quickAddFood/);
+  assert.match(page, /wireQuickAdd\(\)/);
+  // A form in the demo would collect a real meal into a screen that discards
+  // it — the same reason the five-facts form is hidden there.
+  assert.match(page, /const box = DEMO \? '' :/);
+  // The write re-reads the whole dashboard rather than patching the DOM from a
+  // guess: the burn, the net, the rings and the calendar all just changed too.
+  assert.match(page, /out\.className = 'qasay good'; \}\s*\n\s*await load\(\);/);
+  // One box, not a form. The oldest doctrine here is that a log costing more
+  // than a sentence is one nobody keeps.
+  const box = page.slice(page.indexOf('id="qaform"'), page.indexOf('id="qaform"') + 900);
+  assert.equal((box.match(/<input /g) || []).length, 1, 'the one-line box grew a second field');
 });
 
 // ── Report ──────────────────────────────────────────────────────────────────
