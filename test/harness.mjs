@@ -37,7 +37,7 @@ import {
   kgToLb, lbToKg, cmToIn, inToCm, sayWeight,
   windowStatus, weightTrend, trainingMatrix, summariseRange, careFlags, scoreGoals,
   eventsFromClient, fastLength, fastingSummary, needsMacros, needsDuration, matchEntries, setupNeeded,
-  duplicateItems, duplicateExtra,
+  duplicateItems, duplicateExtra, VALID_TYPES,
 } from '../netlify/functions/lib/wrought.js';
 import { spokenBrief, spokenLog, spokenFlag, pendingVoice, plainBrief } from '../netlify/functions/lib/voice.js';
 
@@ -8421,6 +8421,48 @@ await test('the website can log food, and says what the record holds afterwards'
   assert.match(src, /httpMethod === 'DELETE'/);
   assert.match(src, /not_removable/);
   assert.match(src, /\.eq\('user_id', user\.id\)\.eq\('id', id\)/);
+});
+
+await test('the log reads the way the record does — eaten, then active', () => {
+  // "In the record put the log in there: what was eaten, and then underneath
+  // what was worked out, active." The two screens held the same information in
+  // OPPOSITE orders — the log led with the workout and buried the food under
+  // it — which is how one tab ends up feeling like a different product.
+  const src = page('app.html');
+  const from = src.indexOf('function dayBlock(');
+  const body = src.slice(from, src.indexOf('\nfunction ', from + 10));
+  const eaten = body.indexOf('>Eaten<');
+  const active = body.indexOf('Trained &amp; active');
+  assert.ok(eaten > 0 && active > 0, 'the day is no longer grouped');
+  assert.ok(eaten < active, 'the workout is above the food again');
+
+  // A shift belongs with the active half and carries its own figure — "logged
+  // as activity" with no number is the feature failing quietly.
+  assert.match(body, /d\.activity \|\| \[\]/);
+  assert.match(body, /on task/);
+  assert.match(body, /kcal, estimated/);
+
+  const api = readFileSync(new URL('../netlify/functions/api-log.js', import.meta.url), 'utf8');
+  assert.match(api, /activity: \[\]/, 'api-log has no activity bucket');
+  assert.match(api, /day\.activity\.push/);
+  // A day with only a shift on it is not an empty day.
+  assert.match(api, /!d\.activity\.length/);
+});
+
+await test('the writer accepts exactly what the database allows', () => {
+  // A TOLERANT WRITER BESIDE A STRICTER READER IS THE WORST COMBINATION, and
+  // this one cost the founder his shifts. 013 added 'activity' to the check
+  // constraint; VALID_TYPES was never updated; anything missing from it is
+  // silently rewritten to 'note' rather than rejected. So every logged shift
+  // went in as a note — dayFacts filters on 'activity' and found none, four
+  // hours at the petting zoo burned nothing, and the entry still showed in the
+  // log, which is what made it invisible. Nothing errored anywhere.
+  const sql = readFileSync(new URL('../schema/013_wrought_work.sql', import.meta.url), 'utf8');
+  const check = sql.slice(sql.indexOf('wrought_events_type_valid'));
+  const allowed = [...check.slice(0, check.indexOf('));')).matchAll(/'([a-z]+)'/g)].map(m => m[1]);
+  assert.ok(allowed.includes('activity'), 'the migration no longer allows activity');
+  assert.deepEqual([...VALID_TYPES].sort(), [...new Set(allowed)].sort(),
+    'insertEvents and the check constraint disagree about the event types');
 });
 
 await test('the same meal counted twice is named, never quietly removed', () => {
