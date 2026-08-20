@@ -2136,6 +2136,86 @@ workout is not there — on the one product whose entire promise is memory.
   *"put that in"* and *"add it to my home workout"* — an instruction the
   connector does not recognise is one it answers conversationally.
 
+### The website can finally log a meal — the hole under every ChatGPT fix
+
+*"Wtf where is the food it worked before."* — *"Ffs it worked a few days
+ago."* Food described to ChatGPT, acknowledged conversationally, and never
+written. The tell was in its own reply: *"based on everything you've logged
+**with me** today"* — the assistant treating its conversation as the record.
+
+Every previous fix for this aimed at making the model call the tool, and every
+one of them **depended on the model**. Meanwhile the settled doctrine says the
+app is optional forever and website + connector are the complete product — and
+**wrought.fit could read a meal and not record one.** Routines had a door.
+Movements had a door. A weigh-in had a door. Food, the thing this product is
+most about, had none, so when the assistant would not write there was nowhere
+else to go. `api-log.js` was literally `GET, OPTIONS`.
+
+`lib/quickadd.js` + POST and DELETE on `/api/log` + one box under the day.
+
+- **One line, never a form.** A meal split across name / calories / protein /
+  carbs / fat boxes is exactly the thing nobody keeps — the oldest doctrine
+  here. *"chicken and rice 650"*, typed the way it would be said. A test pins
+  the box to a single input, because this is the panel a second field would
+  creep onto.
+- **IT NEVER GUESSES A NUMBER.** The connected model can turn *"a steak and a
+  baked potato"* into macros because it read the sentence and the photograph;
+  this parser is not a model and must never behave like one. It extracts the
+  figures a person TYPED and refuses to invent any they did not. No figure
+  lands as null, saying out loud that it counts for nothing yet — a plausible
+  400 on an unnumbered lunch poisons the week in a way a null never does. Same
+  rule as a typed load on a routine: their own number is theirs to keep, and a
+  generated one does not exist.
+- **A leading quantity is not a calorie figure.** Only a TRAILING number, two
+  digits minimum, so *"2 eggs"* can never be filed as a two-calorie meal — the
+  shape of wrong number that survives for months inside an average.
+- **Macros parse in ONE left-to-right pass**, and that is the whole trick. Two
+  separate sweeps for *number-then-word* and *word-then-number* read across
+  each other's boundaries, so *"45g protein 60g carbs"* comes out with protein
+  60. Alternation in one scan cannot: the engine tries every branch at a
+  position before advancing, so whichever form the line uses wins where it
+  starts. The single-letter form must be attached — *"40p"* — because *"12 c"*
+  in *"12 cookies"* is a cup far more often than twelve grams of carbohydrate.
+- **A stated time travels as `time_hint`, never as a date.** A client may not
+  date its own events; the hint is resolved in the user's own zone server-side.
+  *"steak at the pub"* is a place, not a clock.
+- **The reply is read back off the STORED row**, then the whole day recomputed
+  from the stored rows — the item, then the day, in the order the person is
+  thinking in. Echoing what was sent proves a write was composed, never that it
+  landed, and this product has been bitten by that three times now.
+- **A write error is never swallowed.** `not_saved` with the message on it: a
+  silent failure here looks exactly like success, which is the failure the
+  whole endpoint exists to end.
+- **Removing is scoped to food and drink.** A workout event owns derived rows
+  in `wrought_sets`, and deleting one from here would leave a lift record
+  standing on training the log no longer holds. Retraction of anything else
+  stays with the connector, where the clean-up exists.
+- **Never in the demo** — a form there collects a real meal into a screen that
+  discards it, the same reason the five-facts form is hidden.
+
+And on the connector side, `day_total`'s check now names the phrase that gave
+it away: **never say "everything you have logged with me"** — the conversation
+is not the record, the two are routinely different, and that difference is the
+thing the person actually needs told.
+
+### One pill, and the whole dashboard slid sideways
+
+Found while verifying the box at 390px, and it is the `.bar` lesson one class
+along. `.setpill` is declared in **three** places and `.ls-sets` is the
+container for **six** different things — lift sets, run stats, readiness
+signals, the form watch's evidence. So a `white-space: nowrap` written for
+*"92.5 × 6 @8"* also reached an evidence SENTENCE, which measured **565px
+inside a 390px screen**, and the entire page scrolled horizontally under the
+thumb. Nothing looked broken in isolation; the dashboard just slid.
+
+Nothing refuses to break now and nothing may exceed the gutters
+(`max-width: 100%`). Wrapping a set pill on a very narrow phone is by far the
+cheaper failure. Scoping the nowrap to `.ls-sets` is **not** a fix — that is
+the container holding the sentences. There is a test, and it strips CSS
+comments first, because the rule's own explanation names the property it
+forbids and grepping the warning rather than the breach is a trap this harness
+has now fallen into three times.
+
 ### The breakfast that was never logged, and the range that proved it
 
 *"Total so far: ~880 calories."* — *"Huh, what about breakfast???"* — *"You're
@@ -2776,7 +2856,7 @@ self-reporting scale removes the most-abandoned manual entry), then Strava.
 
 ## Conventions
 
-- `npm test` runs `test/harness.mjs` — 522 offline tests, no network, no database.
+- `npm test` runs `test/harness.mjs` — 587 offline tests, no network, no database.
   Run it before every push. It covers the JSON-RPC envelope (which fails as an
   uninformative "could not connect" inside ChatGPT) and all the arithmetic
   (which fails as a confidently wrong number in somebody's verdict).

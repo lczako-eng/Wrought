@@ -1072,7 +1072,7 @@ function dayTotal(day) {
     // patching it with mental arithmetic is the worst possible response: it
     // hides a missing entry behind a number that looks like an answer, and
     // tomorrow the day is still short a bagel.
-    check: 'These items ARE the day. If they mention food that is not in this list, it was never logged — call log for it NOW, then read this again. Never add it up in prose, never quote a range, and never fill a gap you noticed with arithmetic instead of a write.',
+    check: 'These items ARE the day. If they mention food that is not in this list, it was never logged — call log for it NOW, then read this again. Never add it up in prose, never quote a range, and never fill a gap you noticed with arithmetic instead of a write. And never say "everything you have logged WITH ME": your conversation is not the record and the two are routinely different — this list is the record, and the difference between them is exactly what the person needs told.',
   };
 }
 
