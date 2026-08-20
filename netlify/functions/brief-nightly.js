@@ -217,8 +217,12 @@ async function runAlerts(userId, profile, now) {
     ? Math.round((new Date(`${date}T00:00:00Z`) - new Date(`${lastWeigh.date}T00:00:00Z`)) / 86400000)
     : null;
 
+  // Scored against the SAME function the dashboard rings are drawn from, so a
+  // notification and the ring it refers to can never quote different numbers.
+  const scored = scoreGoals(goals, day, summariseRange(recent, profile), profile);
+
   const due = dueAlerts({
-    rules, day,
+    rules, day, scored,
     calorieTarget: calGoal?.target_value != null ? Number(calGoal.target_value) : null,
     week, lastWeighDays, flags,
     hour, weekday: new Date(`${date}T12:00:00Z`).getUTCDay(), date,
