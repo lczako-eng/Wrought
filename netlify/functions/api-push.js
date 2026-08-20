@@ -11,6 +11,7 @@
 
 import { supabase, getAuthUser } from './lib/wrought.js';
 import { vapidPublicKey, vapidConfigured, sendPush } from './lib/push.js';
+import { describeAlert } from './lib/alerts.js';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -35,6 +36,12 @@ export const handler = async (event) => {
       .select('id, label, created_at, last_sent_at').eq('user_id', user.id);
     const { data: prof } = await supabase.from('wrought_profile')
       .select('brief_hour, push_enabled').eq('user_id', user.id).maybeSingle();
+    // Tolerated rather than required: without migration 018 there are simply
+    // no rules to show, and the notifications screen must not break for it.
+    const { data: alertRows } = await supabase.from('wrought_alerts')
+      .select('id, kind, at_hour, threshold, text, days, active')
+      .eq('user_id', user.id).eq('active', true)
+      .order('created_at', { ascending: true });
 
     return json(200, {
       configured: vapidConfigured(),
@@ -44,6 +51,13 @@ export const handler = async (event) => {
       })),
       brief_hour: prof?.brief_hour ?? 22,
       push_enabled: prof?.push_enabled !== false,
+      // The rules somebody set by TALKING, readable and switchable off from
+      // the website too. Being able to see what is going to be sent, and stop
+      // it in one tap, is the safety valve on the whole channel: somebody who
+      // cannot find the off switch mutes the app instead, and a muted app
+      // never comes back on. Read through the same describeAlert the tools
+      // use, so the screen and the assistant cannot word a rule differently.
+      alerts: (alertRows || []).map(describeAlert).filter(Boolean),
       note: vapidConfigured()
         ? null
         : 'Push keys are not set on this deploy. Run scripts/vapid.mjs and set WROUGHT_VAPID_PUBLIC and WROUGHT_VAPID_PRIVATE.',
@@ -106,6 +120,16 @@ export const handler = async (event) => {
 
     if (error) return json(500, { error: error.message });
     return json(200, { ok: true, say: 'This phone will get your nightly read.' });
+  }
+
+  if (event.httpMethod === 'DELETE' && body.alert_id) {
+    // Off is one tap and never a question. Same doctrine as dropping a goal:
+    // a reminder somebody wants gone was set wrong, and asking them to justify
+    // it is how the whole channel gets muted instead of one rule.
+    const { error } = await supabase.from('wrought_alerts')
+      .update({ active: false }).eq('user_id', user.id).eq('id', String(body.alert_id));
+    if (error) return json(500, { error: 'not_stopped', say: error.message });
+    return json(200, { ok: true, stopped: body.alert_id });
   }
 
   if (event.httpMethod === 'DELETE') {

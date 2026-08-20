@@ -31,6 +31,7 @@ import { warmupFor, cooldownFor, sessionProgress } from './lib/warmup.js';
 import { formWatch, cardioProgress } from './lib/form.js';
 import { intakeState, intakeGate } from './lib/intake.js';
 import { weeklyVolume } from './lib/volume.js';
+import { ALERT_KINDS, describeAlert, suggestAlerts } from './lib/alerts.js';
 import { planRead } from './lib/plan.js';
 import { guideRead } from './lib/guide.js';
 import { nextNudge, nudgeNote } from './lib/prompt.js';
@@ -163,6 +164,9 @@ HOW PEOPLE ACTUALLY ASK. Nobody says "call the brief tool". They say one of a hu
   start_session — "let's go", "starting now", "at the gym", "I'm going to the gym", "heading to the gym", "gym in ten", "leg day", "chest day", "I'm at the rack", "warmed up"
   log_set — "done", "got it", "got 8", "8 at 225", "that's up", "failed at 5", "couldn't finish", "one more in the tank"
   form_check — "am I getting faster", "was that my best run", "how's my running going", "is my pace improving", "where's my wall", "why am I stalling", "check my form", "why did that feel awful", "am I grinding", "my form went", "that was ugly", "I rushed it", "why can't I hit this any more", "this used to be easy"
+  set_alert — "remind me to stop eating at nine", "tell me when I hit 80% of my calories", "nudge me if I have not trained", "let me know when my fast starts", "ping me to weigh in", "can you tell me at 6", "warn me when". ALWAYS a tool call. WROUGHT can never speak first inside a conversation, so the ONLY way to remind somebody of anything is to write a rule the hourly job sends — saying "I'll remind you" without calling set_alert is a promise nothing keeps.
+  my_alerts — "what reminders do I have", "what are you telling me about", "am I set up for notifications", "turn my notifications on"
+  drop_alert — "stop telling me about my calories", "turn off the nine o'clock one", "no more training reminders", "stop notifying me"
   training_volume — "am I doing enough back", "how much volume am I doing", "how many sets a week", "am I under-training my arms", "is my chest getting enough work", "what am I neglecting", "how much is too much". Hard SETS per muscle per week, which is what a programme is actually built on — different from the focus on suggest_workout, which counts sessions and cannot tell two sets of flyes from twelve sets of pressing. A light week is answered with more sets or better frequency, NEVER with a heavier bar.
   my_plan — "what's my plan", "what am I on", "what am I actually doing", "what am I aiming for", "why that number", "what's my target", "remind me what this is", "what's my route" (dictation for WROUGHT), "how does this work for me"
   set_plan — "make it aggressive", "I want this off faster", "go harder on me", "chase me", "ease off", "nothing drastic", "stop nagging me", "leave me alone a bit", "make it four days a week", "I can only do three", "change my plan"
@@ -677,6 +681,44 @@ const TOOLS = [
       },
     },
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+  },
+  {
+    name: 'set_alert',
+    title: 'Set a notification',
+    description: 'Sets a STANDING notification on their phone. Call it whenever somebody says they want telling, reminding, nudging or warned about something — "remind me to stop eating at nine", "tell me when I hit 80% of my calories", "nudge me if I have not trained", "let me know when my fast starts", "ping me to weigh in". WROUGHT can never speak first inside a conversation, but a rule set here is read by a scheduled job every hour and lands on their lock screen — so the way to make the assistant "remind" somebody is ALWAYS to set a rule, never to promise to remember. NEVER say you will remind them without calling this: a promise to remember is a claim about the record, and nothing keeps it. Kinds: intake_pace (where the day stands, at a proportion of their calorie target), kitchen_closed (an hour they choose to stop eating), move (training, when the week is behind), weigh_in (when a week has passed), custom (their own words at an hour they choose — use this for anything that is not one of the others, including fasting). Hours are in THEIR timezone, 0-23; "nine at night" is 21.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        kind:      { type: 'string', enum: ['intake_pace','kitchen_closed','move','weigh_in','custom'],
+                     description: 'Which rule. Use custom for anything that is not one of the named four — a fast starting, a supplement, a stretch, anything they said.' },
+        at_hour:   { type: 'integer', description: 'Hour in THEIR timezone, 0-23. Required for every kind except intake_pace. "Nine at night" is 21, "half eight in the morning" is 8 — this takes whole hours only, so round to the hour they meant.' },
+        threshold: { type: 'number',  description: 'For intake_pace only: the proportion of their calorie target to fire at. 0.8 means 80%. Defaults to 0.8.' },
+        text:      { type: 'string',  description: 'For custom only: what the notification should SAY, in THEIR OWN WORDS. It is sent verbatim and never rewritten — a reminder in house style is one they stop reading. Keep it short: a lock screen shows about a line.' },
+        days:      { type: 'array', items: { type: 'integer' }, description: 'Optional days of the week, 0 = Sunday. Omit for every day.' },
+      },
+      required: ['kind'],
+    },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+  },
+  {
+    name: 'my_alerts',
+    title: 'What am I being told about',
+    description: 'Every notification rule they have, in the words the dashboard uses for the same rules. Call it for "what reminders do I have", "what are you telling me about", "am I set up for notifications", and BEFORE setting a new one that might duplicate an existing rule. It also carries what is worth having and is not set yet — OFFER those, never switch them on. Nothing is enabled by default: a product that starts notifying somebody because it decided it knew best gets muted on day two, and a muted product never comes back on.',
+    inputSchema: { type: 'object', properties: {} },
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+  },
+  {
+    name: 'drop_alert',
+    title: 'Stop a notification',
+    description: 'Turns a notification rule off. "Stop telling me about my calories", "turn off the nine o\'clock one", "no more training reminders". Removing a notification is NEVER a negotiation and gets no remark about commitment — a reminder somebody wants off is one that was set wrong, and asking them to justify it is exactly how the whole channel gets muted instead.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        kind: { type: 'string', description: 'Which rule to stop — the kind, or "all".' },
+        id:   { type: 'string', description: 'A specific rule id from my_alerts, when there are several custom ones.' },
+      },
+    },
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
   },
   {
     name: 'training_volume',
@@ -1504,6 +1546,152 @@ async function planFacts(userId) {
 // and never turned into a reason to add weight. The whole value is that it is
 // arithmetic on rows that already exist: a coach's first question, answerable
 // for the first time.
+// ── Notifications: the one surface that can genuinely speak first ──────────
+//
+// The founder's question, and it is the right one: "you can tell your AI to
+// push anything you want — you just have to say it. Can you not do that? How
+// would that work?"
+//
+// It works because the assistant never pushes anything. MCP is strictly
+// request/response and always will be. What the assistant does is WRITE A
+// RULE; a scheduled function already runs every hour, reads the rules, and
+// sends. So "tell me at nine to stop eating" is not a promise the model has to
+// keep across a closed conversation — it is a row.
+//
+// Which is also why the instruction is blunt about never SAYING it will
+// remind somebody without calling this. A promise to remember is a claim about
+// the record, and this product has been bitten by that three times already.
+async function setAlert(args, user) {
+  const kind = String(args.kind || '').trim();
+  if (!ALERT_KINDS[kind]) {
+    return { error: 'unknown_kind',
+      say: `Not a kind I can set. The options are: ${Object.keys(ALERT_KINDS).join(', ')}.` };
+  }
+
+  const spec = ALERT_KINDS[kind];
+  const hour = Number.isInteger(args.at_hour) ? args.at_hour : null;
+  if (spec.needs_hour && (hour == null || hour < 0 || hour > 23)) {
+    return { error: 'needs_hour',
+      say: `That one needs an hour. What time should it come — in your own day, so "nine at night" is 21.` };
+  }
+  const text = kind === 'custom' ? String(args.text || '').trim().slice(0, 160) : null;
+  if (kind === 'custom' && !text) {
+    return { error: 'needs_text',
+      say: 'What should it say? I send it word for word, so put it how you would want to read it.' };
+  }
+
+  const row = {
+    user_id: user.id, kind,
+    at_hour: spec.needs_hour ? hour : null,
+    threshold: kind === 'intake_pace'
+      ? (Number.isFinite(Number(args.threshold)) ? Number(args.threshold) : spec.default_threshold)
+      : null,
+    text,
+    days: Array.isArray(args.days) && args.days.length
+      ? args.days.filter(d => Number.isInteger(d) && d >= 0 && d <= 6) : null,
+    active: true,
+  };
+
+  // One rule per kind, except custom — "remind me about my calories" said
+  // twice is one intention, not two notifications. Custom rules are genuinely
+  // several things and each stands on its own.
+  if (kind !== 'custom') {
+    const { data: had } = await supabase.from('wrought_alerts')
+      .select('id').eq('user_id', user.id).eq('kind', kind).eq('active', true).maybeSingle();
+    if (had) {
+      const { error } = await supabase.from('wrought_alerts')
+        .update({ ...row, last_sent_on: null }).eq('id', had.id);
+      if (error) return alertError(error);
+    } else {
+      const { error } = await supabase.from('wrought_alerts').insert([row]);
+      if (error) return alertError(error);
+    }
+  } else {
+    const { error } = await supabase.from('wrought_alerts').insert([row]);
+    if (error) return alertError(error);
+  }
+
+  // Read back off the record, like every other write in this server. Saying a
+  // notification is set is a claim about the record and may only come from a
+  // tool result.
+  const on_file = await alertsFor(user.id);
+  const subs = await pushReady(user.id);
+
+  return {
+    set: true,
+    on_file,
+    say: `${describeAlert({ ...row, id: null })?.say}. ` +
+      `${on_file.length} notification${on_file.length === 1 ? '' : 's'} set: ${on_file.map(a => a.label).join(', ')}.`,
+    // A rule with nowhere to land is the quietest possible failure — it looks
+    // exactly like a rule that works until the hour comes and nothing happens.
+    ...(subs ? {} : { not_deliverable: 'No phone is subscribed to notifications yet, so this rule is stored and cannot be delivered. Tell them to open wrought.fit on their phone, install it to the home screen, and turn notifications on from the Account tab. The rule is kept and starts working the moment they do.' }),
+    note: 'Say what was set in one clause and move on. Do NOT list every rule they have unless they asked.',
+  };
+}
+
+function alertError(error) {
+  return /does not exist|schema cache/i.test(error.message || '')
+    ? { error: 'migration_missing', say: 'Notifications need migration 018_wrought_alerts.sql to have been run.' }
+    : { error: error.message };
+}
+
+async function alertsFor(userId) {
+  const { data } = await supabase.from('wrought_alerts')
+    .select('id, kind, at_hour, threshold, text, days, active, last_sent_on')
+    .eq('user_id', userId).eq('active', true).order('created_at', { ascending: true });
+  return (data || []).map(describeAlert).filter(Boolean);
+}
+
+async function pushReady(userId) {
+  const { count } = await supabase.from('wrought_push_subs')
+    .select('endpoint', { count: 'exact', head: true }).eq('user_id', userId);
+  return (count || 0) > 0;
+}
+
+async function myAlerts(_args, user) {
+  const [profile, goals] = await Promise.all([getProfile(user.id), getGoals(user.id)]);
+  const on_file = await alertsFor(user.id).catch(() => []);
+  const have = new Set(on_file.map(a => a.kind));
+
+  const suggested = suggestAlerts({
+    hasCalorieTarget: goals.some(g => g.metric === 'calories' && g.cadence === 'daily'),
+    trainDays: profile.train_days || null,
+    fasting: true,
+  });
+
+  return {
+    on_file,
+    // Only what they do not already have, or the offer reads as the product
+    // not knowing what it already does.
+    worth_having: suggested.options.filter(o => o.kind === 'custom' || !have.has(o.kind)),
+    offer_note: suggested.note,
+    deliverable: await pushReady(user.id),
+    say: on_file.length
+      ? `${on_file.length} set: ${on_file.map(a => a.say).join('; ')}.`
+      : 'No notifications set.',
+    note: 'Notifications are OFFERED, never switched on. Nothing here is enabled by default.',
+  };
+}
+
+async function dropAlert(args, user) {
+  const q = supabase.from('wrought_alerts').update({ active: false }).eq('user_id', user.id);
+  if (args.id) q.eq('id', String(args.id));
+  else if (args.kind && args.kind !== 'all') q.eq('kind', String(args.kind));
+  const { error } = await q.select('id');
+  if (error) return alertError(error);
+
+  const on_file = await alertsFor(user.id);
+  return {
+    stopped: true,
+    on_file,
+    say: on_file.length
+      ? `Stopped. Still on: ${on_file.map(a => a.label).join(', ')}.`
+      : 'Stopped. Nothing is set now.',
+    // Same doctrine as drop_goal: maintenance, never a confession.
+    note: 'Acknowledge in one short line. Never ask why and never remark on commitment — a reminder somebody wants off was set wrong, and asking them to justify it is how the whole channel gets muted instead.',
+  };
+}
+
 async function trainingVolume(_args, user) {
   const profile = await getProfile(user.id);
   const today = localDateFor(profile.timezone);
@@ -4301,6 +4489,9 @@ const IMPL = {
   log_measurement: logMeasurement,
   amend_last: amendLast,
   form_check: formCheck,
+  set_alert: setAlert,
+  my_alerts: myAlerts,
+  drop_alert: dropAlert,
   training_volume: trainingVolume,
   my_plan: myPlan,
   set_plan: setPlan,

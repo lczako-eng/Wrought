@@ -2733,12 +2733,48 @@ async function loadPush() {
       <button class="ghost" id="push-hour-save">Save</button>
     </div>
     <p class="sub dim">Your time, wherever you are. A day with nothing logged gets nothing —
-    a nightly "you logged nothing" is how somebody mutes an app for good.</p>`;
+    a nightly "you logged nothing" is how somebody mutes an app for good.</p>
+    ${alertList(d.alerts || [])}`;
 
   $('push-on')?.addEventListener('click', () => subscribePush(d.vapid_public_key));
   $('push-off')?.addEventListener('click', unsubscribePush);
   $('push-test')?.addEventListener('click', testPush);
   $('push-hour-save')?.addEventListener('click', saveHour);
+  document.querySelectorAll('[data-alertoff]').forEach(b =>
+    b.addEventListener('click', () => stopAlert(b.dataset.alertoff)));
+}
+
+// The rules somebody set by TALKING, shown where they can be switched off
+// without talking. Being able to see what is going to be sent, and stop it in
+// one tap, is the safety valve on this whole channel — somebody who cannot
+// find the off switch mutes the app instead, and a muted app never comes back.
+//
+// The wording comes off the server's own describeAlert, so a rule cannot read
+// one way here and another way when the assistant says it back.
+function alertList(alerts) {
+  if (!alerts.length) {
+    return `<p class="sub dim" style="margin-top:16px">No other notifications set. Tell your AI what you
+      want telling about — <em>"remind me to stop eating at nine"</em>, <em>"tell me when I hit 80% of
+      my calories"</em>, <em>"let me know when my fast starts"</em> — and it lands here.</p>`;
+  }
+  return `<p class="sub dim" style="margin-top:16px">Also sending:</p>
+    <div class="rows">${alerts.map(a => `<div class="wkrow">
+      <span class="nm">${esc(a.say)}</span>
+      <button class="qadel" data-alertoff="${esc(String(a.id))}">Stop</button>
+    </div>`).join('')}</div>`;
+}
+
+// Off is one tap and never a question — the same doctrine as dropping a goal.
+async function stopAlert(id) {
+  const { data: s } = await sb.auth.getSession();
+  if (!s?.session) return;
+  const res = await fetch('/.netlify/functions/api-push', {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${s.session.access_token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ alert_id: id }),
+  });
+  if (!res.ok) { $('pushmsg').textContent = 'That did not stop.'; return; }
+  loadPush();
 }
 
 // base64url → the Uint8Array the Push API insists on.

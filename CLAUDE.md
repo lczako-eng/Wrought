@@ -2198,6 +2198,65 @@ it away: **never say "everything you have logged with me"** — the conversation
 is not the record, the two are routinely different, and that difference is the
 thing the person actually needs told.
 
+### Notifications you set by talking — the AI writes the rule, the cron sends it
+
+`018_wrought_alerts.sql` + `lib/alerts.js` + `set_alert` / `my_alerts` /
+`drop_alert` + the alert pass in `brief-nightly.js`. The founder: *"you can
+tell your AI to push anything you want, like you're fasting — you just have to
+say it. Can you not do that? How would that work?"*
+
+**It works because the assistant never pushes anything.** MCP is strictly
+request/response and always will be — no amount of cleverness makes ChatGPT
+speak first. What the assistant does is **write a rule**; the scheduled
+function that already runs hourly for the nightly brief reads the rules and
+sends. So *"tell me at nine to stop eating"* is not a promise a model has to
+keep across a closed conversation. It is a row.
+
+That is also why `set_alert`'s description is blunt that **saying "I'll remind
+you" without calling it is a promise nothing keeps** — the claimed-save
+failure, in the one place where the failure is invisible until the hour comes
+and nothing happens.
+
+- **A care flag silences every coaching kind, completely.** Telling somebody
+  who has eaten under 1,200 for three days that they are *"at 80% of target"*
+  is encouragement pointed straight at the harm the flags exist to prevent.
+  **Their own custom reminders survive a flag**, because those are theirs and
+  are not coaching.
+- **Nothing ever tells somebody to eat less.** The intake line states where the
+  day stands and stops — no *"you have 500 left"*, because a lock screen is the
+  worst possible place to start doing sums about what is allowed. The single
+  exception is `kitchen_closed`, and only because **they chose the hour**:
+  honouring somebody's own timetable is not the app deciding they have had
+  enough. Tested, including that the word "left" cannot appear.
+- **One at a time, once a day, never in the night.** Two notifications in an
+  hour is a lecture and the second is never read. Their own words outrank
+  anything the server worked out. `last_sent_on` is the once-a-day guard and is
+  **stamped only when delivery actually succeeded** — marking it sent on a
+  failure means the one day a phone was off is the day the rule silently skips.
+  A rule with its own hour is explicit consent for that hour; anything derived
+  from the day's numbers is held inside waking hours.
+- **Training is never guilt.** Silent on a day already trained, silent when the
+  week is met, and **an impossible week is not counted down to zero** — the
+  `weekSoFar` doctrine, in a place where repeating it is pure guilt. A test
+  greps the line for scolding words.
+- **Nothing is on by default, ever.** `suggestAlerts` OFFERS and the note says
+  so: a product that starts notifying somebody because it decided it knew best
+  is one they mute on day two, and a muted product never comes back on.
+- **Off is one tap and never a question**, on the website as well as in the
+  conversation — `drop_goal`'s doctrine. Somebody who cannot find the off
+  switch mutes the whole app instead of the one rule.
+- **One sender for every kind of notification** (`deliver()`), or one of them
+  quietly stops cleaning up dead subscriptions. And a failure in the alert pass
+  can never cost somebody their nightly read.
+- **A rule with nowhere to land is the quietest possible failure**, so
+  `set_alert` returns `not_deliverable` when no phone is subscribed — it looks
+  exactly like a rule that works right up until the hour comes.
+
+**Still blocked on the two VAPID environment variables.** `scripts/vapid.mjs`
+generates the pair once; regenerating later kills every existing subscription
+silently. Until they are set, `vapidConfigured()` is false and every send is a
+no-op — the rules are stored and start working the moment the keys exist.
+
 ### The checklist you can tick, and the aim every session states
 
 `017_wrought_session_aim.sql` + POST on `api-session.js` + `recordSet()`. The
@@ -3048,7 +3107,7 @@ self-reporting scale removes the most-abandoned manual entry), then Strava.
 
 ## Conventions
 
-- `npm test` runs `test/harness.mjs` — 600 offline tests, no network, no database.
+- `npm test` runs `test/harness.mjs` — 608 offline tests, no network, no database.
   Run it before every push. It covers the JSON-RPC envelope (which fails as an
   uninformative "could not connect" inside ChatGPT) and all the arithmetic
   (which fails as a confidently wrong number in somebody's verdict).
@@ -3070,7 +3129,7 @@ self-reporting scale removes the most-abandoned manual entry), then Strava.
    `003_wrought_training.sql`, `004_wrought_fasting.sql`,
    `005_wrought_activity.sql`, `006_wrought_identity.sql`, `007_wrought_push.sql`,
    `008_wrought_blocks.sql`, `009_wrought_photos.sql` and
-   `010_wrought_profile_web.sql`, `011_wrought_membership.sql`, `012_wrought_link_codes.sql`, `013_wrought_work.sql`, `014_wrought_plan.sql` `015_wrought_ingest_dedupe_fix.sql`, `016_wrought_set_source.sql` and `017_wrought_session_aim.sql` in Supabase. Full checklist in `docs/SETUP.md`.
+   `010_wrought_profile_web.sql`, `011_wrought_membership.sql`, `012_wrought_link_codes.sql`, `013_wrought_work.sql`, `014_wrought_plan.sql` `015_wrought_ingest_dedupe_fix.sql`, `016_wrought_set_source.sql` `017_wrought_session_aim.sql` and `018_wrought_alerts.sql` in Supabase. Full checklist in `docs/SETUP.md`.
 3. Set env vars in Netlify: `SUPABASE_URL` (**no trailing slash** — Kong answers
    "Invalid path specified in request URL" and nothing says why),
    `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_ANON_KEY`,
