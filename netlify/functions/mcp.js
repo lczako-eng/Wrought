@@ -30,6 +30,7 @@ import { activityBurn, EFFORTS } from './lib/activity.js';
 import { warmupFor, cooldownFor, sessionProgress } from './lib/warmup.js';
 import { formWatch, cardioProgress } from './lib/form.js';
 import { intakeState, intakeGate } from './lib/intake.js';
+import { weeklyVolume } from './lib/volume.js';
 import { planRead } from './lib/plan.js';
 import { guideRead } from './lib/guide.js';
 import { nextNudge, nudgeNote } from './lib/prompt.js';
@@ -162,6 +163,7 @@ HOW PEOPLE ACTUALLY ASK. Nobody says "call the brief tool". They say one of a hu
   start_session — "let's go", "starting now", "at the gym", "I'm going to the gym", "heading to the gym", "gym in ten", "leg day", "chest day", "I'm at the rack", "warmed up"
   log_set — "done", "got it", "got 8", "8 at 225", "that's up", "failed at 5", "couldn't finish", "one more in the tank"
   form_check — "am I getting faster", "was that my best run", "how's my running going", "is my pace improving", "where's my wall", "why am I stalling", "check my form", "why did that feel awful", "am I grinding", "my form went", "that was ugly", "I rushed it", "why can't I hit this any more", "this used to be easy"
+  training_volume — "am I doing enough back", "how much volume am I doing", "how many sets a week", "am I under-training my arms", "is my chest getting enough work", "what am I neglecting", "how much is too much". Hard SETS per muscle per week, which is what a programme is actually built on — different from the focus on suggest_workout, which counts sessions and cannot tell two sets of flyes from twelve sets of pressing. A light week is answered with more sets or better frequency, NEVER with a heavier bar.
   my_plan — "what's my plan", "what am I on", "what am I actually doing", "what am I aiming for", "why that number", "what's my target", "remind me what this is", "what's my route" (dictation for WROUGHT), "how does this work for me"
   set_plan — "make it aggressive", "I want this off faster", "go harder on me", "chase me", "ease off", "nothing drastic", "stop nagging me", "leave me alone a bit", "make it four days a week", "I can only do three", "change my plan"
   log_activity — "I was at work all day", "worked at the petting zoo", "did a double shift", "on site since six", "been on my feet since seven", "spent the afternoon digging", "moved house today", "was doing the garden", "shovelled the drive", "long shift", "physical day", "grafting all day"
@@ -673,6 +675,13 @@ const TOOLS = [
         days: { type: 'integer', description: 'How far back to read. Default 60.' },
       },
     },
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+  },
+  {
+    name: 'training_volume',
+    title: 'How much am I actually doing',
+    description: 'Hard sets per muscle per week — the number a real programme is built on, and the one nothing else here answers. Call it for "am I doing enough back work", "how much volume am I doing", "is my chest getting enough", "what am I under-training", and before designing or changing a programme. DIFFERENT FROM suggest_workout\'s focus, which counts SESSIONS: a day with two sets of flyes and a day with twelve sets of pressing are the same day to that, and completely different training. The counts come from the log and are never estimated. The band it is shown against is a population range from the training literature, NOT a target for this person — say that whenever the band is quoted. A light week is answered with more SETS or better frequency and NEVER with a heavier bar.',
+    inputSchema: { type: 'object', properties: {} },
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   },
   {
@@ -1488,6 +1497,23 @@ async function planFacts(userId) {
   const push = profile.plan_push || null;
 
   return { profile, goals, weightKg, bodyGoal, calGoal, proGoal, intent, pace, push };
+}
+
+// The dose. Sets per muscle per week, counted from the log — never estimated,
+// and never turned into a reason to add weight. The whole value is that it is
+// arithmetic on rows that already exist: a coach's first question, answerable
+// for the first time.
+async function trainingVolume(_args, user) {
+  const profile = await getProfile(user.id);
+  const today = localDateFor(profile.timezone);
+  const from = addDays(today, -27);
+
+  const { data } = await supabase.from('wrought_sets')
+    .select('muscles, local_date, reps, rpe')
+    .eq('user_id', user.id).gte('local_date', from).lte('local_date', today)
+    .order('logged_at', { ascending: false }).limit(3000);
+
+  return weeklyVolume(data || [], { today });
 }
 
 async function myPlan(_args, user) {
@@ -4274,6 +4300,7 @@ const IMPL = {
   log_measurement: logMeasurement,
   amend_last: amendLast,
   form_check: formCheck,
+  training_volume: trainingVolume,
   my_plan: myPlan,
   set_plan: setPlan,
   log_activity: logActivity,

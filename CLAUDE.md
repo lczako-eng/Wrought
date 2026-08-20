@@ -2198,6 +2198,46 @@ it away: **never say "everything you have logged with me"** — the conversation
 is not the record, the two are routinely different, and that difference is the
 thing the person actually needs told.
 
+### The dose — hard sets per muscle, per week
+
+`lib/volume.js` + the `training_volume` tool + the panel. The founder: *"how to
+make this pro level training?"*
+
+Everything a good programme needs was already here — double progression,
+autoregulation between sets, scheduled deloads, readiness, the form watch,
+blocks that ramp volume and end. What was missing is the **first question any
+qualified coach asks of a programme, before exercise selection and before the
+split: how many hard sets is each muscle getting a week.**
+
+`focusCall` looks like it answers this and does not. **It counts SESSIONS** —
+so a day with two sets of flyes and a day with twelve sets of pressing are the
+same day to it, and the log could report "chest was worked twice this week"
+while the chest did almost nothing. Weekly set volume is the closest thing
+strength training has to a dose, and nothing in the product could state it.
+
+- **Counted, never estimated.** It is arithmetic on rows that already exist —
+  `wrought_sets` has carried `muscles` since 003. Sets logged without a muscle
+  cannot be counted and it says so rather than reporting a confident nothing.
+- **The band is CONTEXT, not a target.** 10–20 sets per muscle per week is a
+  population range from the training literature; the caveat says that every
+  single time, because a number this easy to read as a target stops being an
+  estimate the moment it is quoted without one.
+- **The honest answer to a light week is SETS or FREQUENCY, never a heavier
+  bar.** Same shape as readiness only ever softening: the figure here is a
+  count of sets, and turning it into "go heavier" would be the invented-load
+  failure wearing a new number. Tested, on the tool description as well as the
+  sheet.
+- **A week's work in one day is its own finding**, and it is the one somebody
+  can fix without training less — 24 sets of back in a single session is a
+  different problem from 24 sets of back.
+- **The baseline is only as long as the record is.** Dividing nine days of
+  training by four weeks halves every figure and makes a well-trained
+  fortnight read as neglect.
+- **Not behind the trends gate.** It is a fixed seven-day figure off the
+  floored set history, so it must read the same whichever range button is
+  pressed — the lifts-panel lesson, and the fourth time *a window is not a
+  memory* has been needed.
+
 ### The shift that was filed as a note
 
 `insertEvents` validates `event_type` against `VALID_TYPES` and **silently
@@ -2956,7 +2996,7 @@ self-reporting scale removes the most-abandoned manual entry), then Strava.
 
 ## Conventions
 
-- `npm test` runs `test/harness.mjs` — 593 offline tests, no network, no database.
+- `npm test` runs `test/harness.mjs` — 597 offline tests, no network, no database.
   Run it before every push. It covers the JSON-RPC envelope (which fails as an
   uninformative "could not connect" inside ChatGPT) and all the arithmetic
   (which fails as a confidently wrong number in somebody's verdict).

@@ -1312,6 +1312,24 @@ a.ghost { display: inline-block; }
   display: block; font-family: var(--mono); font-size: 10px; letter-spacing: .12em;
   text-transform: uppercase; color: var(--ash-dim); margin-bottom: 2px;
 }
+/* Sets per muscle. Drawn against the published band rather than against the
+   biggest bar on the chart, so a light week reads as light instead of full. */
+.vrows { margin-top: 12px; }
+.vrow {
+  display: grid; grid-template-columns: 74px 1fr 28px; gap: 8px;
+  align-items: center; padding-block: 6px;
+}
+.vm { font-size: 12.5px; color: var(--ash); text-transform: capitalize; }
+.vbar { height: 8px; border-radius: 999px; background: var(--heat-0); box-shadow: inset 0 0 0 1px var(--edge); overflow: hidden; }
+.vfill { display: block; height: 100%; border-radius: 999px; background: var(--heat-3); }
+/* Colour is the state, never a scolding. Under the band is dimmer, not red —
+   a light week is information. */
+.vfill.low { background: var(--temper-dk); }
+.vfill.none_this_week { background: var(--edge-lit); }
+.vfill.productive { background: var(--heat-3); }
+.vfill.high { background: var(--heat-4); }
+.vn { font-family: var(--mono); font-size: 13px; color: var(--bright); text-align: right; font-variant-numeric: tabular-nums; }
+.vf { grid-column: 2 / -1; margin: 0; font-size: 11px; }
 .ent { display: grid; grid-template-columns: 46px 1fr; gap: 12px; padding-block: 7px; align-items: baseline; }
 .ent .tm { font-family: var(--mono); font-size: 11px; color: var(--ash-dim); font-variant-numeric: tabular-nums; }
 .ent .bd { min-width: 0; }
@@ -4081,6 +4099,23 @@ function demoData() {
                            entries: [{ summary: 'animal care, 7h', kcal: 980, hours: 7 }] },
       },
     },
+    // Hard sets per muscle, in the real shape the server sends — including a
+    // muscle that got its whole week in one day, because that is the finding
+    // this panel exists to surface and a demo that omits it hides the feature.
+    volume: {
+      known: true, days_counted: 28, band: { low: 10, high: 20 }, total_sets_7d: 58,
+      muscles: [
+        { muscle: 'back',      sets_7d: 22, sets_prior_7d: 14, sets_per_week_avg: 17.5, days_hit_7d: 1, frequency_ok: false, state: 'high',       direction: 'up' },
+        { muscle: 'legs',      sets_7d: 16, sets_prior_7d: 15, sets_per_week_avg: 15.2, days_hit_7d: 2, frequency_ok: true,  state: 'productive', direction: 'holding' },
+        { muscle: 'chest',     sets_7d: 12, sets_prior_7d: 12, sets_per_week_avg: 11.8, days_hit_7d: 2, frequency_ok: true,  state: 'productive', direction: 'holding' },
+        { muscle: 'shoulders', sets_7d: 6,  sets_prior_7d: 10, sets_per_week_avg: 8.1,  days_hit_7d: 1, frequency_ok: false, state: 'low',        direction: 'down' },
+        { muscle: 'arms',      sets_7d: 2,  sets_prior_7d: 6,  sets_per_week_avg: 4.4,  days_hit_7d: 1, frequency_ok: false, state: 'low',        direction: 'down' },
+        { muscle: 'core',      sets_7d: 0,  sets_prior_7d: 4,  sets_per_week_avg: 2.1,  days_hit_7d: 0, frequency_ok: false, state: 'none_this_week', direction: 'down' },
+      ],
+      lowest: ['core', 'arms', 'shoulders'], highest: ['back'], one_day_wonders: ['back'],
+      say: '58 hard sets in the last 7 days. Lightest: core 0, arms 2, shoulders 6.',
+      caveat: 'Counted from sets logged with a muscle on them, so anything logged without one is missing from it. 10\u201320 sets a week per muscle is a rough band from the training literature, not a target for you \u2014 individual variation inside it is large, and volume only counts if it is being recovered from.',
+    },
     earned_room: { available: true, room_kcal: 1420, logged_days: 6, worth: 'a proper meal out, whatever you actually want' },
     summary: {
       span_days: N, days_logged: logged,
@@ -5999,6 +6034,12 @@ function render(d) {
   // every number below is only meaningful against.
   out.push(planPanel(d));
   out.push(weekPanelSoFar(d));
+  // THE DOSE — hard sets per muscle over a FIXED seven days, computed on the
+  // server from the floored set history. It is deliberately NOT behind the
+  // trends gate: a window is not a memory, and "how much back work am I
+  // doing" must have the same answer whichever range button is pressed. Same
+  // reasoning that moved the lifts panel out from behind it.
+  out.push(volumePanel(d));
   out.push(readinessPanel(d));
 
   // Summary before detail: the verdict and today, then everything else.
@@ -6652,6 +6693,46 @@ function lastSessionPanel(d) {
 function legStat(v, label) {
   if (v == null || v === '') return '';
   return `<span class="leg"><b>${esc(String(v))}</b><i>${esc(label)}</i></span>`;
+}
+
+// Hard sets per muscle per week — the variable every real programme is built
+// on, and the one this dashboard could not answer. "What to train" above it
+// counts SESSIONS, so a day with two sets of flyes and a day with twelve sets
+// of pressing look identical there. This is the dose.
+//
+// The bar is drawn against the published band rather than against the
+// person's biggest muscle, so a light week looks light instead of looking
+// full. It marks and never prescribes: the caveat says out loud that the band
+// is a population range and not a target, and nothing here ever suggests a
+// heavier bar — the number is SETS.
+function volumePanel(d) {
+  const v = d.volume;
+  if (!v?.known) return '';
+  const shown = (v.muscles || []).filter(m => m.state !== 'never');
+  if (!shown.length) return '';
+
+  const top = Math.max(v.band.high, ...shown.map(m => m.sets_7d));
+  const rows = shown.map(m => {
+    const pct = Math.round((m.sets_7d / top) * 100);
+    return `<div class="vrow">
+      <span class="vm">${esc(m.muscle)}</span>
+      <span class="vbar"><i class="vfill ${esc(m.state)}" style="width:${pct}%"></i></span>
+      <b class="vn">${m.sets_7d}</b>
+      <span class="sub dim vf">${m.days_hit_7d === 0 ? 'not this week'
+        : `${m.days_hit_7d} ${m.days_hit_7d === 1 ? 'day' : 'days'}`}${
+        m.direction && m.direction !== 'holding' ? ` · ${m.direction}` : ''}</span>
+    </div>`;
+  }).join('');
+
+  return `<section class="panel">
+    <h2>Sets per muscle · last 7 days</h2>
+    <p class="sub">${esc(v.say)}</p>
+    <div class="vrows">${rows}</div>
+    ${v.one_day_wonders?.length ? `<p class="caveat">${
+      v.one_day_wonders.map(esc).join(', ').replace(/^./, c => c.toUpperCase())} got ${v.one_day_wonders.length === 1 ? 'its' : 'their'} whole week
+      in one day. Same sets across two sessions is the easier version of it.</p>` : ''}
+    <p class="caveat">${esc(v.caveat)}</p>
+  </section>`;
 }
 
 function focusPanel(d) {

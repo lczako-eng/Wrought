@@ -30,6 +30,7 @@ import { eventTimestamp } from '../netlify/functions/lib/wrought.js';
 import { warmupFor, sessionProgress } from '../netlify/functions/lib/warmup.js';
 import { formWatch, cardioProgress } from '../netlify/functions/lib/form.js';
 import { INTAKE, intakeState } from '../netlify/functions/lib/intake.js';
+import { weeklyVolume, SET_BAND } from '../netlify/functions/lib/volume.js';
 import { parseQuickAdd } from '../netlify/functions/lib/quickadd.js';
 const { goalCall, PACES, PUSH } = await import('../netlify/functions/lib/training.js');
 import {
@@ -8447,6 +8448,88 @@ await test('the log reads the way the record does — eaten, then active', () =>
   assert.match(api, /day\.activity\.push/);
   // A day with only a shift on it is not an empty day.
   assert.match(api, /!d\.activity\.length/);
+});
+
+await test('sets per muscle per week — the dose, counted not guessed', () => {
+  // focusCall counts SESSIONS, so two sets of flyes and twelve sets of
+  // pressing are the same day to it. This is the variable a real programme is
+  // built on, and nothing here could answer it before.
+  const day = n => new Date(Date.UTC(2026, 7, 20 - n)).toISOString().slice(0, 10);
+  const sets = [];
+  const push = (m, d, n) => { for (let i = 0; i < n; i++) sets.push({ muscles: [m], local_date: day(d) }); };
+  push('chest', 1, 6); push('chest', 4, 6);   // 12 across two days
+  push('legs', 2, 4);                          // 4 in one day
+  push('back', 3, 24);                         // a week's back in one session
+  push('chest', 9, 3);                         // prior week, so chest is UP
+
+  const v = weeklyVolume(sets, { today: day(0) });
+  assert.equal(v.known, true);
+  assert.equal(v.total_sets_7d, 40);  // 12 chest + 4 legs + 24 back; the prior week is not this week
+
+  const by = Object.fromEntries(v.muscles.map(m => [m.muscle, m]));
+  assert.equal(by.chest.sets_7d, 12);
+  assert.equal(by.chest.days_hit_7d, 2);
+  assert.equal(by.chest.state, 'productive');
+  assert.equal(by.chest.direction, 'up');
+  assert.equal(by.legs.state, 'low');
+  assert.equal(by.back.state, 'high');
+
+  // High volume crammed into one day is a DIFFERENT problem from high volume,
+  // and it is the one somebody can fix without training less.
+  assert.deepEqual(v.one_day_wonders, ['back']);
+  assert.ok(v.lowest.includes('legs'));
+});
+
+await test('the band is context, never a target, and never a heavier bar', () => {
+  const v = weeklyVolume([{ muscles: ['chest'], local_date: '2026-08-19' }], { today: '2026-08-20' });
+  // SAID EVERY TIME. A number this easy to read as a target stops being an
+  // estimate the moment it is quoted without its caveat.
+  assert.match(v.caveat, new RegExp(`${SET_BAND.low}.{1,3}${SET_BAND.high} sets a week`));
+  assert.match(v.caveat, /not a target for you/i);
+  assert.match(v.caveat, /recovered from/i);
+  // The honest answer to a light week is SETS, never load. Same shape as
+  // readiness: nothing here may ever turn a reading into "go heavier".
+  assert.match(v.note, /never a heavier bar/i);
+  assert.doesNotMatch(v.say, /add weight|go heavier|heavier/i);
+
+  // Nothing logged says so rather than drawing zeroes that look like neglect.
+  assert.equal(weeklyVolume([]).known, false);
+  // Sets with no muscle on them cannot be counted, and it says so rather than
+  // reporting a confident nothing.
+  assert.equal(weeklyVolume([{ local_date: '2026-08-19', reps: 8 }]).known, false);
+});
+
+await test('a short record is not a light record', () => {
+  // Dividing nine days of training by four weeks halves every figure and makes
+  // a well-trained fortnight read as neglect. The baseline is only as long as
+  // the record actually is.
+  const day = n => new Date(Date.UTC(2026, 7, 20 - n)).toISOString().slice(0, 10);
+  const sets = [];
+  for (const d of [1, 3, 5]) for (let i = 0; i < 5; i++) sets.push({ muscles: ['back'], local_date: day(d) });
+  const v = weeklyVolume(sets, { today: day(0) });
+  assert.equal(v.days_counted, 6, 'the baseline is being stretched past the record');
+  const back = v.muscles.find(m => m.muscle === 'back');
+  assert.ok(back.sets_per_week_avg > 15, `15 sets in 6 days read as ${back.sets_per_week_avg}/week`);
+});
+
+await test('the dose is on the dashboard and reachable by name', () => {
+  const src = readFileSync(new URL('../netlify/functions/mcp.js', import.meta.url), 'utf8');
+  assert.ok(TOOLS.some(t => t.name === 'training_volume'), 'no tool answers "am I doing enough back work"');
+  // The rules that matter ride on the TOOL, not only on the instruction sheet
+  // — not every client shows that sheet to its model.
+  const tool = TOOLS.find(t => t.name === 'training_volume');
+  assert.match(tool.description, /NOT a target/);
+  assert.match(tool.description, /NEVER with a heavier bar/);
+  assert.match(src, /training_volume — /, 'not in the phrasebook');
+
+  const page = readFileSync(new URL('../public/app.html', import.meta.url), 'utf8');
+  assert.match(page, /function volumePanel\(d\)/);
+  // NOT behind the trends gate: a fixed seven-day figure must read the same
+  // whichever range button is pressed. A window is not a memory.
+  const render = page.slice(page.indexOf('function render(d)'), page.indexOf('function stagger('));
+  const gate = render.indexOf('const trends =');
+  assert.ok(render.indexOf('out.push(volumePanel(d));') < gate,
+    'the dose is gated behind the 7d/30d buttons');
 });
 
 await test('the writer accepts exactly what the database allows', () => {
