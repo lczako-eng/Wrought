@@ -10,7 +10,7 @@
 import {
   getAuthUser, getProfile, getGoals, getWindow, windowStatus, fastingSummary, getMemory,
   localDateFor, addDays, humanDuration, kgToLb, daysBetween,
-  rangeFacts, summariseRange, dayFacts, careFlags, scoreGoals, supabase,
+  rangeFacts, summariseRange, dayFacts, careFlags, scoreGoals, duplicateItems, duplicateExtra, supabase,
 } from './lib/wrought.js';
 import { orderInsight, earnedRoom, energyBalance, exerciseKey, deviceMatrix, weekdayPattern, focusCall, lastSession,
          weekSoFar, readiness, targetOptions, estimatedMax, liftTrend, readMovement, backfillDerivedSets } from './lib/training.js';
@@ -487,6 +487,8 @@ export const handler = async (event) => {
     .slice(0, 12)
     .map(s => ({ date: s.local_date, exercise: s.exercise, note: s.note }));
 
+  const dupsToday = duplicateItems(today.log || []);
+
   return {
     statusCode: 200,
     headers: CORS,
@@ -505,9 +507,23 @@ export const handler = async (event) => {
         date: to,
         food: today.food,
         training: today.training,
+        // A SHIFT IS NOT A SESSION, and it was not on the page at all. The
+        // today panel has always drawn `today.activity.entries`, and this
+        // block never sent `activity` — so hours of physical work the burn was
+        // correctly counting had nowhere to appear, which reads as the log
+        // ignoring them. Same class as the food list: the panel and the
+        // payload disagreed about a field name, in silence.
+        activity: today.activity,
         body: today.body,
         device: today.device,
         entries: today.log,
+        // THE SAME MEAL, COUNTED TWICE. Computed here like every other claim
+        // about the day, so the screen and the connector can never disagree
+        // about which rows are doubled. It marks and never removes: two
+        // coffees is ordinary, and deleting one because it matched a string
+        // would be far worse than counting it twice.
+        duplicates: dupsToday,
+        duplicates_extra: duplicateExtra(dupsToday),
         balance,
       },
       earned_room: room,

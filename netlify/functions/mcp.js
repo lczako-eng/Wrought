@@ -21,7 +21,7 @@ import {
   sayWeight, sayWeightDelta, sayLength, lbToKg, inToCm, kgToLb,
   getProfile, getMemory, getGoals, getWindow, windowStatus,
   dayFacts, rangeFacts, summariseRange, scoreGoals, careFlags,
-  parseLog, eventsFromClient, needsMacros, needsDuration, matchEntries, setupNeeded, insertEvents, writeVerdict, rememberFact,
+  parseLog, eventsFromClient, needsMacros, needsDuration, matchEntries, duplicateItems, setupNeeded, insertEvents, writeVerdict, rememberFact,
   fastLength, fastingSummary,
 } from './lib/wrought.js';
 import { allowed } from './lib/membership.js';
@@ -1038,6 +1038,7 @@ async function context(userId) {
 // argued with: nobody can dispute a day's 2,180, and anybody can say "that
 // steak was not 900".
 function dayTotal(day) {
+  const dups = duplicateItems(day.log || []);
   return {
     // Named so it cannot be mistaken for the thing just logged.
     is: 'EVERYTHING logged today, not the item just added',
@@ -1072,6 +1073,13 @@ function dayTotal(day) {
     // patching it with mental arithmetic is the worst possible response: it
     // hides a missing entry behind a number that looks like an answer, and
     // tomorrow the day is still short a bagel.
+    // THE SAME MEAL, COUNTED TWICE — surfaced on every read of the day, not
+    // just on the write that caused it, because by the time anybody notices
+    // the write is long past. Only ever a question: two coffees is ordinary.
+    duplicates: dups.length ? dups : undefined,
+    duplicates_note: dups.length
+      ? 'These look like the same thing logged more than once. ASK whether it was one meal counted twice or genuinely eaten twice. If it was counted twice, call undo_last with a match naming it — a duplicated meal is a duplicated ENTRY, not an inflated sum. NEVER subtract it in prose and NEVER quote a corrected total while the extra row is still on the record: that leaves the number right in the conversation and wrong in the log, which is the worst of both.'
+      : undefined,
     check: 'These items ARE the day. If they mention food that is not in this list, it was never logged — call log for it NOW, then read this again. Never add it up in prose, never quote a range, and never fill a gap you noticed with arithmetic instead of a write. And never say "everything you have logged WITH ME": your conversation is not the record and the two are routinely different — this list is the record, and the difference between them is exactly what the person needs told.',
   };
 }
