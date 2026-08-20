@@ -4001,6 +4001,9 @@ function demoData() {
       activity: { count: 1, minutes: 420,
         entries: [{ event_type: 'activity', summary: 'Petting zoo, animal care',
                     detail: { hours: 7, kcal: 980 } }] },
+      // The real shape, including the fields the panel reads — a demo that
+      // omits one hides exactly the bug that made this panel draw nothing.
+      duplicates: [], duplicates_extra: 0,
       body: { weight_kg: series[Math.max(0, N - 1)].weight },
       device: { steps: 9840, active_calories: 740, sleep_minutes: 402,
         // The wide door, shown full. Somebody deciding whether this is worth a
@@ -4025,12 +4028,16 @@ function demoData() {
         ] },
       // Each with its own numbers, so the demo shows the addition rather than
       // asserting a total — the whole point of the day card.
+      // `type` and `id` are on every row because the SERVER puts them there.
+      // A demo carrying a simplified shape is how the food panel drew nothing
+      // for a fortnight while looking perfect here: it filters on type, and a
+      // demo row with no type is filtered out exactly like a real one.
       entries: [
-        { at: '08:14', summary: 'two eggs and black coffee', estimated: true, calories: 320, protein_g: 24, carbs_g: 3, fat_g: 23 },
-        { at: '08:15', summary: '82.4 kg', estimated: false, calories: null },
-        { at: '12:40', summary: 'chicken burrito bowl, no rice', estimated: true, calories: 780, protein_g: 62, carbs_g: 74, fat_g: 23 },
-        { at: '18:22', summary: 'Leg day — 19 sets, 44 min', estimated: false, calories: null },
-        { at: '20:05', summary: 'greek yoghurt and berries', estimated: true, calories: 1040, protein_g: 62, carbs_g: 119, fat_g: 25 },
+        { id: 'd1', type: 'food',    at: '08:14', summary: 'two eggs and black coffee', estimated: true, calories: 320, protein_g: 24, carbs_g: 3, fat_g: 23 },
+        { id: 'd2', type: 'weight',  at: '08:15', summary: '82.4 kg', estimated: false, calories: null },
+        { id: 'd3', type: 'food',    at: '12:40', summary: 'chicken burrito bowl, no rice', estimated: true, calories: 780, protein_g: 62, carbs_g: 74, fat_g: 23 },
+        { id: 'd4', type: 'workout', at: '18:22', summary: 'Leg day — 19 sets, 44 min', estimated: false, calories: null },
+        { id: 'd5', type: 'food',    at: '20:05', summary: 'greek yoghurt and berries', estimated: true, calories: 1040, protein_g: 62, carbs_g: 119, fat_g: 25 },
       ],
       balance: {
         known: true, calories_in: 2140, resting_burn: 1770, active_burn: 1490,
@@ -5307,7 +5314,20 @@ function windowPanel(d) {
 function foodTodayPanel(d) {
   const t = d.today;
   if (!t) return '';
-  const items = (t.log || []).filter(e => e.type === 'food' || e.type === 'drink');
+  // THE FIELD IS `entries`, AND READING `log` COST THREE REPORTS OF THIS PANEL
+  // BEING BROKEN. dayFacts calls the list `log`; api-progress renames it to
+  // `entries` on the way out; this read the server-side name, so it was
+  // ALWAYS undefined and the panel ALWAYS drew its empty state. Nothing
+  // errored, nothing logged, and the hero one panel up went on correctly
+  // reporting thousands of calories eaten — so the screen contradicted itself
+  // and the only visible symptom was a food list that was never there.
+  //
+  // The empty state made it far worse than a blank panel: it says the
+  // assistant "heard you and never wrote it down", so a typo in this line
+  // spent three rounds accusing ChatGPT of losing food it had actually
+  // logged. AN EMPTY STATE IS A CLAIM ABOUT THE RECORD, and it has to be as
+  // true as any other number on the page.
+  const items = (t.entries || []).filter(e => e.type === 'food' || e.type === 'drink');
   const f = t.food || {};
 
   // THE WEBSITE'S OWN DOOR. Until this box existed, wrought.fit could show a
@@ -5341,14 +5361,26 @@ function foodTodayPanel(d) {
     </section>`;
   }
 
-  const rows = items.map(e => `<div class="wkrow">
-    <span class="nm">${esc(e.summary)}</span>
+  // THE SAME MEAL, COUNTED TWICE, marked where the person can act on it.
+  // Computed on the server so the screen and the connector cannot disagree
+  // about which rows are doubled. It only ever MARKS — two coffees in a day is
+  // completely ordinary, and hiding one because it matched a string would be
+  // far worse than counting it twice.
+  const dups = t.duplicates || [];
+  const doubled = new Set(dups.flatMap(x => x.ids || []));
+
+  const rows = items.map(e => `<div class="wkrow${doubled.has(e.id) ? ' dup' : ''}">
+    <span class="nm">${esc(e.summary)}${doubled.has(e.id) ? ' <span class="chip">logged twice</span>' : ''}</span>
     <span class="sub dim">${esc(e.at || '')}</span>
     <b class="${e.calories == null ? 'unset' : ''}">${e.calories != null ? `${n(e.calories)} kcal` : 'counts for nothing yet'}</b>
     ${e.id && !DEMO ? `<button class="qadel" data-unlog="${esc(String(e.id))}"
       title="Take this off">Remove</button>` : ''}
   </div>`).join('');
 
+  // Summed on the SERVER, like every other total on this page — a figure drawn
+  // beside the day's total must come off the same pass, or the caveat ends up
+  // arguing with the number it is explaining.
+  const extra = t.duplicates_extra || 0;
   const uncounted = f.meals_uncounted || 0;
   return `<section class="panel">
     <h2>Food · today</h2>
@@ -5356,6 +5388,9 @@ function foodTodayPanel(d) {
     <p class="daysum">${n(f.calories)} kcal in so far
       <span class="sub dim">· ${n(f.protein_g)}g protein · ${n(f.carbs_g)}g carbs · ${n(f.fat_g)}g fat${
       f.estimated ? ' · estimated' : ''}</span></p>
+    ${dups.length ? `<p class="caveat">${dups.length === 1 ? 'One thing appears' : dups.length + ' things appear'} more than once${
+      extra ? `, which is ${n(extra)} kcal of this total` : ''}. If ${dups.length === 1 ? 'it was' : 'they were'} counted
+      twice rather than eaten twice, take the extra row off — the total only comes down when the row does.</p>` : ''}
     ${uncounted ? `<p class="caveat">${uncounted === 1 ? 'One thing has' : uncounted + ' things have'} no calories on ${uncounted === 1 ? 'it' : 'them'}, so the real total is higher — ask your AI to fill ${uncounted === 1 ? 'it' : 'them'} in.</p>` : ''}
     ${box}
   </section>`;

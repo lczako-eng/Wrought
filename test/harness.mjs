@@ -37,6 +37,7 @@ import {
   kgToLb, lbToKg, cmToIn, inToCm, sayWeight,
   windowStatus, weightTrend, trainingMatrix, summariseRange, careFlags, scoreGoals,
   eventsFromClient, fastLength, fastingSummary, needsMacros, needsDuration, matchEntries, setupNeeded,
+  duplicateItems, duplicateExtra,
 } from '../netlify/functions/lib/wrought.js';
 import { spokenBrief, spokenLog, spokenFlag, pendingVoice, plainBrief } from '../netlify/functions/lib/voice.js';
 
@@ -6926,7 +6927,12 @@ await test('the dashboard opens on today, and the range is what moves', () => {
   assert.match(src, /out\.push\(windowPanel\(d\)\);/);
   assert.match(src, /function windowPanel\(d\)/);
   // It draws the server's figures and sums nothing itself.
-  const panel = src.slice(src.indexOf('function windowPanel('), src.indexOf('function trainingTodayPanel('));
+  // Scoped to windowPanel ALONE. This used to run to trainingTodayPanel, which
+  // swept in two unrelated functions and made the assertion fire on arithmetic
+  // that was never the running total — a test that names the wrong code is one
+  // nobody can act on.
+  const wpFrom = src.indexOf('function windowPanel(');
+  const panel = src.slice(wpFrom, src.indexOf('\nfunction ', wpFrom + 10));
   assert.ok(!/reduce\(/.test(panel), 'the running total is being summed in the browser');
   assert.match(panel, /const r = d\.window;/);
   // The denominator is said out loud, exactly as the calendar says it.
@@ -8415,6 +8421,102 @@ await test('the website can log food, and says what the record holds afterwards'
   assert.match(src, /httpMethod === 'DELETE'/);
   assert.match(src, /not_removable/);
   assert.match(src, /\.eq\('user_id', user\.id\)\.eq\('id', id\)/);
+});
+
+await test('the same meal counted twice is named, never quietly removed', () => {
+  // The founder's day: three foods re-logged, and ChatGPT "fixed" it by
+  // subtracting them in prose — "your actual total today is about 1,760" while
+  // the record held 3,040. A duplicated meal is a duplicated ENTRY. The number
+  // only comes down when the row does.
+  const items = [
+    { id: 'a', type: 'food', at: '12:00', summary: 'McDouble', calories: 400 },
+    { id: 'b', type: 'food', at: '12:03', summary: 'mcdouble.', calories: 400 },
+    { id: 'c', type: 'food', at: '18:30', summary: 'chicken and rice', calories: 650 },
+  ];
+  const dups = duplicateItems(items);
+  assert.equal(dups.length, 1);
+  assert.equal(dups[0].times, 2);
+  assert.deepEqual(dups[0].ids, ['a', 'b']);
+  // The size of the mistake, stated rather than left to be inferred.
+  assert.equal(dups[0].counted_extra, 400);
+  assert.equal(duplicateExtra(dups), 400);
+  // Minutes apart is a logging accident; that is the signal worth carrying.
+  assert.equal(dups[0].minutes_apart, 3);
+  assert.equal(dups[0].likely, true);
+});
+
+await test('two coffees in a day is not a duplicate', () => {
+  // IT ONLY EVER ASKS. Deleting a second helping because it matched a string
+  // would be far worse than counting it twice, so hours apart is not flagged
+  // as likely and nothing is ever removed automatically.
+  const dups = duplicateItems([
+    { id: 'a', type: 'drink', at: '07:10', summary: 'coffee', calories: 5 },
+    { id: 'b', type: 'drink', at: '15:40', summary: 'coffee', calories: 5 },
+  ]);
+  assert.equal(dups.length, 1, 'it should still be surfaced');
+  assert.equal(dups[0].likely, false, 'hours apart is a second cup, not a double write');
+
+  // A workout logged beside a meal is not a food duplicate.
+  assert.equal(duplicateItems([
+    { id: 'a', type: 'workout', at: '09:00', summary: 'Leg day' },
+    { id: 'b', type: 'workout', at: '18:00', summary: 'Leg day' },
+  ]).length, 0);
+  assert.equal(duplicateItems([]).length, 0);
+  assert.equal(duplicateExtra([]), 0);
+});
+
+await test('a duplicate is answered with a retraction, never with prose', () => {
+  const src = readFileSync(new URL('../netlify/functions/mcp.js', import.meta.url), 'utf8');
+  const from = src.indexOf('function dayTotal(');
+  const body = src.slice(from, src.indexOf('\nfunction ', from + 10));
+  assert.match(body, /duplicateItems/);
+  assert.match(body, /duplicates_note/);
+  // The rule, in the response the model is reading at the moment it matters —
+  // an instruction sheet not every client reads is the belt, this is the braces.
+  assert.match(body, /undo_last/);
+  assert.match(body, /NEVER subtract it in prose/);
+});
+
+await test('every field the day panels read is a field the server sends', () => {
+  // THE BUG THIS EXISTS TO CATCH, which cost three rounds of "still nothing
+  // underneath it": dayFacts calls the day's entries `log`, api-progress
+  // renames it to `entries` on the way out, and foodTodayPanel read `log`. It
+  // was undefined on every load, so the panel drew its empty state forever
+  // while the hero one panel up reported thousands of calories eaten. Nothing
+  // threw. A field-name mismatch between a payload and a panel is silent by
+  // construction, and the empty state it produces is a CLAIM ABOUT THE RECORD
+  // — this one accused the assistant of losing food it had actually logged.
+  const prog = readFileSync(new URL('../netlify/functions/api-progress.js', import.meta.url), 'utf8');
+  const start = prog.indexOf('today: {');
+  assert.ok(start > 0, 'api-progress no longer sends a today block');
+  const block = prog.slice(start, prog.indexOf('\n      },', start));
+  const sent = new Set([...block.matchAll(/^\s+(\w+)[:,]/gm)].map(m => m[1]));
+
+  const src = page('app.html');
+  // Each panel binds `today` under its own name — foodTodayPanel takes the
+  // whole object, trainingTodayPanel takes a branch of it — so the alias has
+  // to be read out of the source rather than assumed, or the check invents
+  // failures on fields that were never today's.
+  for (const fn of ['foodTodayPanel', 'trainingTodayPanel']) {
+    const from = src.indexOf(`function ${fn}(`);
+    assert.ok(from > 0, `${fn} is gone`);
+    const body = src.slice(from, src.indexOf('\nfunction ', from + 10));
+    const reads = new Set([...body.matchAll(/\bd\.today\??\.(\w+)/g)].map(m => m[1]));
+    for (const [, alias] of body.matchAll(/\bconst (\w+) = d\.today;/g)) {
+      for (const m of body.matchAll(new RegExp(`\\b${alias}\\.(\\w+)`, 'g'))) reads.add(m[1]);
+    }
+    for (const key of reads) {
+      assert.ok(sent.has(key), `${fn} reads today.${key}, which api-progress never sends`);
+    }
+  }
+
+  // And the demo has to agree with the server, or it hides exactly this — a
+  // demo that draws a panel the real payload cannot fill is worse than no demo.
+  const demo = src.slice(src.indexOf('    today: {'), src.indexOf('      body: {', src.indexOf('    today: {')));
+  for (const key of ['food', 'training', 'activity', 'entries']) {
+    assert.ok(new RegExp(`\\b${key}:`).test(demo) || key === 'entries',
+      `the demo's today block has no ${key}`);
+  }
 });
 
 await test('the food box is on the page, and never in the demo', () => {

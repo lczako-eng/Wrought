@@ -2198,6 +2198,68 @@ it away: **never say "everything you have logged with me"** — the conversation
 is not the record, the two are routinely different, and that difference is the
 thing the person actually needs told.
 
+### The food list that read `log` when the server sends `entries`
+
+The worst bug in this file, because it was one word, it was mine, and it spent
+three rounds blaming somebody else.
+
+*"Still nothing underneath it why?"* — *"Ffs it worked a few days ago."* —
+*"the new food is not showing up there anymore, what did you change?"* Every
+one of those was `foodTodayPanel` reading `t.log`. `dayFacts` calls the day's
+entries `log`; **`api-progress` renames it to `entries` on the way out**; the
+panel read the server-side name. So `items` was `undefined` on every load, the
+list was empty on every load, and the panel drew its empty state from the day
+it shipped. Nothing threw. Nothing logged. And the hero **one panel above it**
+went on correctly reporting 3,040 kcal eaten, so the screen visibly
+contradicted itself and the only symptom was food that was never there.
+
+- **An empty state is a claim about the record**, and this one was false in the
+  most expensive possible way: it says the assistant *"heard you and never
+  wrote it down"*. A field-name typo therefore spent three sessions accusing
+  ChatGPT of losing meals it had actually logged — and sent the fix hunting
+  connector instructions, tool descriptions and a whole website logging door
+  before anybody read the line. **Check what the panel is reading before
+  investigating why the data is missing.**
+- **The same bug, one field along**: `today.activity` was never in the payload
+  either, so a logged shift the burn was correctly counting had nowhere to
+  appear on the page. Two panels, two silent name mismatches.
+- **The demo was hiding it**, exactly as `formWatch`'s evidence array once did.
+  Demo entries carried no `type`, and the panel filters on type — so the demo
+  drew an empty list too and it looked deliberate. Demo rows now carry `type`
+  and `id` because the server puts them there.
+- **The guard is structural, not another comment.** A test extracts every
+  `today.*` field the day panels read — resolving each panel's own alias, since
+  one binds the whole object and the other binds a branch — and asserts the
+  server actually sends it. Verified to fail on both original bugs.
+
+### The same meal, counted twice
+
+The other half of the same day. ChatGPT re-logged three foods that were already
+on the record, noticed, and then *"fixed"* it in prose: **"after removing the
+duplicate counting, your actual total today is about 1,760."** The record still
+held 3,040.
+
+That is the missing-bagel failure inverted, and it is worse. There the number
+was wrong and the record was right; here **the number quoted was right and the
+record was wrong**, so nothing looked broken and the next morning the day is
+still double-counted — in the weekly total, the calendar square and every
+average built on it.
+
+- **A duplicated meal is a duplicated ENTRY, not an inflated sum.** The row
+  comes off with `undo_last`, or nothing has been fixed. `day_total` carries
+  the doubled rows with their ids on every read, not just on the write that
+  caused them, because by the time anybody notices the write is long past.
+- **It only ever ASKS.** Two coffees in a day is completely ordinary, and
+  quietly deleting one because it matched a string would be far worse than
+  counting it twice. Minutes apart is carried as `likely` — a logging accident;
+  hours apart is lunch and dinner and is surfaced without the flag.
+- **Never a corrected total while the extra row still stands.** That leaves the
+  figure right in the conversation and wrong in the log, which is the worst of
+  both and is precisely what happened.
+- On the dashboard the doubled rows are marked where the Remove button already
+  is, and the caveat says the size of it — *"780 kcal of this total"* — because
+  the whole reason to itemise a day is that a wrong row is catchable.
+
 ### One pill, and the whole dashboard slid sideways
 
 Found while verifying the box at 390px, and it is the `.bar` lesson one class
@@ -2856,7 +2918,7 @@ self-reporting scale removes the most-abandoned manual entry), then Strava.
 
 ## Conventions
 
-- `npm test` runs `test/harness.mjs` — 587 offline tests, no network, no database.
+- `npm test` runs `test/harness.mjs` — 591 offline tests, no network, no database.
   Run it before every push. It covers the JSON-RPC envelope (which fails as an
   uninformative "could not connect" inside ChatGPT) and all the arithmetic
   (which fails as a confidently wrong number in somebody's verdict).

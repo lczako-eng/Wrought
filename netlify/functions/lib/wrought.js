@@ -1010,6 +1010,73 @@ export function setupNeeded(profile, { hasWeight = false, hasCalorieGoal = false
   };
 }
 
+// THE SAME MEAL, COUNTED TWICE.
+//
+// The founder's day: ChatGPT re-logged three foods that were already on the
+// record, noticed afterwards, and then "fixed" it by subtracting them in
+// prose — "after removing the duplicate counting, your actual total today is
+// about 1,760." The record still held 3,040. That is the mirror image of the
+// missing-bagel failure and it is worse, because the number quoted in the
+// conversation was right while the record it came from was wrong, so nothing
+// looked broken and tomorrow the day is still double-counted.
+//
+// A DUPLICATED MEAL IS A DUPLICATED ENTRY, not an inflated sum. The row comes
+// off, or nothing has been fixed.
+//
+// It only ever ASKS. Two coffees in a day is completely ordinary, and quietly
+// deleting one because it matched a string would be far worse than counting
+// it twice — so this names what looks doubled and leaves the decision with
+// the person, exactly like every other retraction in this product.
+export function duplicateItems(items = []) {
+  const norm = s => String(s || '').toLowerCase()
+    .replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
+  const mins = t => {
+    const m = /^(\d{1,2}):(\d{2})/.exec(String(t || ''));
+    return m ? Number(m[1]) * 60 + Number(m[2]) : null;
+  };
+
+  const groups = new Map();
+  for (const it of items) {
+    if (it.type && it.type !== 'food' && it.type !== 'drink') continue;
+    const k = norm(it.summary);
+    if (!k) continue;
+    if (!groups.has(k)) groups.set(k, []);
+    groups.get(k).push(it);
+  }
+
+  const out = [];
+  for (const rows of groups.values()) {
+    if (rows.length < 2) continue;
+    const stamps = rows.map(r => mins(r.at)).filter(v => v != null).sort((a, b) => a - b);
+    const gap = stamps.length > 1
+      ? Math.min(...stamps.slice(1).map((v, i) => v - stamps[i])) : null;
+    const each = rows[0].calories ?? null;
+    out.push({
+      summary: rows[0].summary,
+      times: rows.length,
+      at: rows.map(r => r.at).filter(Boolean),
+      ids: rows.map(r => r.id).filter(Boolean),
+      calories_each: each,
+      // What comes off the day if it really is one meal counted twice. Stated
+      // so the size of the mistake is visible rather than inferred.
+      counted_extra: each != null ? each * (rows.length - 1) : null,
+      minutes_apart: gap,
+      // The one signal that separates a double-write from a second helping.
+      // Minutes apart is a logging accident; hours apart is lunch and dinner.
+      likely: gap != null && gap <= 20,
+    });
+  }
+  return out;
+}
+
+// What the doubled rows are worth, added up where every other total is added
+// up. The page must not do this itself: a figure drawn beside the day's total
+// has to come off the same pass, or the two can drift and the caveat ends up
+// arguing with the number it is explaining.
+export function duplicateExtra(dups = []) {
+  return Math.round(dups.reduce((a, x) => a + (Number(x.counted_extra) || 0), 0));
+}
+
 export function matchEntries(rows = [], query = '') {
   const stop = new Set(['the', 'that', 'this', 'and', 'for', 'was', 'were', 'from',
     'with', 'take', 'off', 'out', 'remove', 'delete', 'undo', 'retract', 'scratch',
