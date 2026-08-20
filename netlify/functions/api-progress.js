@@ -14,6 +14,7 @@ import {
 } from './lib/wrought.js';
 import { orderInsight, earnedRoom, energyBalance, exerciseKey, deviceMatrix, weekdayPattern, focusCall, lastSession,
          weekSoFar, readiness, targetOptions, estimatedMax, liftTrend, readMovement, backfillDerivedSets } from './lib/training.js';
+import { weeklyVolume } from './lib/volume.js';
 import { planRead } from './lib/plan.js';
 import { intakeState } from './lib/intake.js';
 import { formWatch, cardioProgress } from './lib/form.js';
@@ -570,6 +571,12 @@ export const handler = async (event) => {
       block: blockView,
       exercise_order: orderInsight(setRows),
       focus: focusCall(range.days, { today: to }),
+      // HARD SETS PER MUSCLE PER WEEK — the dose, which focusCall cannot see.
+      // focusCall counts SESSIONS, so two sets of flyes and twelve sets of
+      // pressing are the same day to it. Read off the floored set history
+      // rather than the selected range: a window is not a memory, and a
+      // week's volume asked for on the 1d view is still a week's volume.
+      volume: weeklyVolume(histSets, { today: to }),
       nutrition: {
         totals: nutritionTotals(foodRows, { today: to }),
         composition: composition(foodRows, { since: addDays(to, -89) }),
