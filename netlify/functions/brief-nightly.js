@@ -28,7 +28,8 @@ import {
 } from './lib/wrought.js';
 import { sendPush, vapidConfigured } from './lib/push.js';
 import { plainBrief } from './lib/voice.js';
-import { energyBalance } from './lib/training.js';
+import { energyBalance, weekSoFar } from './lib/training.js';
+import { dueAlerts } from './lib/alerts.js';
 
 const SEND_HOUR = 22;
 
@@ -130,21 +131,27 @@ async function email(to, subject, text) {
 // here composes a sentence: the verdict was computed already, and a notification
 // that phrased things its own way could disagree with the brief it came from.
 async function push(userId, profile, out) {
-  if (!vapidConfigured()) return 0;
-  if (profile.push_enabled === false) return 0;
-
-  const { data: subs } = await supabase.from('wrought_push_subs')
-    .select('endpoint, p256dh, auth').eq('user_id', userId);
-  if (!subs?.length) return 0;
-
-  const message = {
+  return deliver(userId, profile, {
     title: 'WROUGHT',
     // First sentence only. A lock screen truncates anyway, and a verdict cut
     // mid-clause reads as harsher than it is.
     body: firstSentence(out.verdict),
     tag: `wrought-${out.date}`,
     url: '/app.html',
-  };
+  });
+}
+
+// One sender for every kind of notification this product has. The nightly read
+// and a rule somebody set by talking are the same act from the phone's point of
+// view, and two copies of the dead-subscription clean-up is how one of them
+// quietly stops working.
+async function deliver(userId, profile, message) {
+  if (!vapidConfigured()) return 0;
+  if (profile.push_enabled === false) return 0;
+
+  const { data: subs } = await supabase.from('wrought_push_subs')
+    .select('endpoint, p256dh, auth').eq('user_id', userId);
+  if (!subs?.length) return 0;
 
   const results = await Promise.all(subs.map(s => sendPush(s, message)));
 
@@ -167,16 +174,88 @@ function firstSentence(text) {
   return one.length > 160 ? `${one.slice(0, 157)}\u2026` : one;
 }
 
+// ── The rules somebody set by talking ─────────────────────────────────────
+//
+// This is the half that answers "can you not just tell it to push whatever I
+// want". The assistant wrote a row; this reads it every hour and sends. It is
+// deliberately separate from the nightly brief: the brief is one considered
+// read of the day, and these are short, specific and set by the person.
+//
+// EVERYTHING IT DECIDES ON IS COMPUTED ELSEWHERE. dueAlerts is pure and takes
+// the same dayFacts, energyBalance, careFlags and weekSoFar the dashboard and
+// the brief use, so a notification and the screen can never quote two
+// different numbers for the same afternoon.
+async function runAlerts(userId, profile, now) {
+  const { data: rules } = await supabase.from('wrought_alerts')
+    .select('id, kind, at_hour, threshold, text, days, active, last_sent_on')
+    .eq('user_id', userId).eq('active', true);
+  if (!rules?.length) return 0;
+
+  const date = localDateFor(profile.timezone, now);
+  const minutes = localMinutesFor(profile.timezone, now);
+  const hour = Math.floor(minutes / 60);
+
+  // Cheap exit before any of the reads below: nothing is due this hour for
+  // this person, so do not go and compute their day to find that out.
+  const maybe = rules.some(r => r.last_sent_on !== date &&
+    (r.at_hour == null || r.at_hour === hour));
+  if (!maybe) return 0;
+
+  const day = await dayFacts(userId, profile, date);
+  const recent = await rangeFacts(userId, profile, addDays(date, -29), date);
+  const goals = await getGoals(userId);
+  const calGoal = goals.find(g => g.metric === 'calories' && g.cadence === 'daily');
+
+  // A CARE FLAG OUTRANKS EVERYTHING and needs its own thirty days — read off
+  // the same window the dashboard gives it, never off today alone.
+  const flags = careFlags(recent, profile);
+
+  const week = weekSoFar(recent.days, { today: date, target: profile.train_days || null });
+
+  const lastWeigh = recent.days.filter(d => d.weight_kg != null).slice(-1)[0] || null;
+  const lastWeighDays = lastWeigh
+    ? Math.round((new Date(`${date}T00:00:00Z`) - new Date(`${lastWeigh.date}T00:00:00Z`)) / 86400000)
+    : null;
+
+  const due = dueAlerts({
+    rules, day,
+    calorieTarget: calGoal?.target_value != null ? Number(calGoal.target_value) : null,
+    week, lastWeighDays, flags,
+    hour, weekday: new Date(`${date}T12:00:00Z`).getUTCDay(), date,
+  });
+  if (!due.length) return 0;
+
+  let sent = 0;
+  for (const a of due) {
+    const n = await deliver(userId, profile, {
+      title: a.title, body: a.body, tag: `wrought-alert-${a.kind}-${date}`, url: '/app.html',
+    });
+    // STAMPED ONLY WHEN IT ACTUALLY WENT. Marking it sent on a failed delivery
+    // means the one day somebody's phone was off is the day the rule silently
+    // skips, and they never find out.
+    if (n > 0) {
+      await supabase.from('wrought_alerts').update({ last_sent_on: date }).eq('id', a.id);
+      sent += n;
+    }
+  }
+  return sent;
+}
+
 export const handler = async () => {
   if (!supabase) return { statusCode: 500, body: 'not configured' };
 
   const now = new Date();
   const users = await activeUsers();
 
-  let considered = 0, built = 0, mailed = 0, pushed = 0, skipped = 0;
+  let considered = 0, built = 0, mailed = 0, pushed = 0, skipped = 0, alerted = 0;
 
   for (const userId of users) {
     const profile = await getProfile(userId);
+
+    // Their own rules first, and independently of the brief hour — the whole
+    // point is that these fire at hours the person chose. A failure here must
+    // never cost somebody their nightly read, so it is caught on its own.
+    try { alerted += await runAlerts(userId, profile, now); } catch { /* the brief still runs */ }
     // Only the people for whom it is actually ten o'clock right now.
     // Their hour, not ours. Somebody who trains at five in the morning wants
     // the read at a different time than somebody who eats at nine at night, and
@@ -212,6 +291,6 @@ export const handler = async () => {
 
   return {
     statusCode: 200,
-    body: JSON.stringify({ users: users.length, at_send_hour: considered, built, mailed, pushed, skipped }),
+    body: JSON.stringify({ users: users.length, at_send_hour: considered, built, mailed, pushed, alerted, skipped }),
   };
 };

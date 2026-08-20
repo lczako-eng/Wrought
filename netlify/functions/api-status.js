@@ -49,6 +49,7 @@ const MIGRATIONS = [
   { file: '015_wrought_ingest_dedupe_fix.sql', probe: t('wrought_events'), gives: 'workouts from a watch actually landing', assume: true },
   { file: '016_wrought_set_source.sql',  probe: col('wrought_sets', 'event_id'),    gives: 'after-the-fact workouts counting toward lifts without doubling on re-edits' },
   { file: '017_wrought_session_aim.sql', probe: col('wrought_sessions', 'aim'),    gives: 'what each session is FOR, kept on the record rather than said once and lost' },
+  { file: '018_wrought_alerts.sql',     probe: t('wrought_alerts'),                gives: 'notifications you set by talking — the AI writes the rule, the hourly job sends it' },
 ];
 
 // A probe that treats EVERY error as "not run" lies twice over: a timeout reads

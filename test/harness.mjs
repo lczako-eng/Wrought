@@ -31,6 +31,7 @@ import { warmupFor, sessionProgress } from '../netlify/functions/lib/warmup.js';
 import { formWatch, cardioProgress } from '../netlify/functions/lib/form.js';
 import { INTAKE, intakeState } from '../netlify/functions/lib/intake.js';
 import { weeklyVolume, SET_BAND } from '../netlify/functions/lib/volume.js';
+import { dueAlerts, describeAlert, suggestAlerts, ALERT_KINDS, QUIET_BEFORE, QUIET_AFTER } from '../netlify/functions/lib/alerts.js';
 import { parseQuickAdd } from '../netlify/functions/lib/quickadd.js';
 const { goalCall, PACES, PUSH } = await import('../netlify/functions/lib/training.js');
 import {
@@ -8457,6 +8458,206 @@ await test('the log reads the way the record does — eaten, then active', () =>
   assert.match(api, /day\.activity\.push/);
   // A day with only a shift on it is not an empty day.
   assert.match(api, /!d\.activity\.length/);
+});
+
+group('Notifications — the one surface that can speak first');
+
+await test('a care flag silences every coaching notification', () => {
+  // THE ONLY WAY THIS FEATURE GENUINELY HURTS SOMEBODY. Telling a person who
+  // has eaten under 1,200 for three days that they are "at 80% of target" is
+  // encouragement pointed straight at the harm the flags exist to prevent.
+  const rules = [
+    { id: 'a', kind: 'intake_pace', active: true, threshold: 0.8 },
+    { id: 'b', kind: 'kitchen_closed', active: true, at_hour: 21 },
+    { id: 'c', kind: 'move', active: true, at_hour: 21 },
+    { id: 'd', kind: 'weigh_in', active: true, at_hour: 21 },
+  ];
+  const ctx = {
+    rules, hour: 21, date: '2026-08-20',
+    day: { food: { calories: 2000 }, training: { sessions: 0 } },
+    calorieTarget: 2400, week: { done: 0, target: 4, days_left: 4 },
+    lastWeighDays: 30,
+    flags: [{ kind: 'under_eating', detail: '4 of the last 9 days under 1,200.' }],
+  };
+  assert.deepEqual(dueAlerts(ctx), [], 'a coaching notification fired under a care flag');
+
+  // Without the flag the same setup does produce one.
+  assert.equal(dueAlerts({ ...ctx, flags: [] }).length, 1);
+
+  // But THEIR OWN words survive a flag — a reminder they set is not coaching.
+  const mine = dueAlerts({ ...ctx, rules: [{ id: 'x', kind: 'custom', active: true, at_hour: 21, text: 'fast starts now' }] });
+  assert.equal(mine.length, 1);
+  assert.equal(mine[0].body, 'fast starts now');
+});
+
+await test('a notification never tells somebody to eat less', () => {
+  // "You have 500 left" invites doing sums about what is allowed, on a lock
+  // screen, which is the worst possible place for that thought. The line
+  // states where the day stands and stops.
+  const [a] = dueAlerts({
+    rules: [{ id: 'a', kind: 'intake_pace', active: true, threshold: 0.8 }],
+    hour: 18, date: '2026-08-20',
+    day: { food: { calories: 2000 } }, calorieTarget: 2400, flags: [],
+  });
+  assert.ok(a, 'nothing fired at 83% of target');
+  assert.match(a.body, /2,000 of 2,400/);
+  assert.doesNotMatch(a.body, /left|remaining|stop|slow down|careful|under|budget/i);
+
+  // Below the threshold it stays quiet, and nothing logged is nothing to say —
+  // "you are at 0%" is a nag about not having opened the app.
+  assert.equal(dueAlerts({
+    rules: [{ id: 'a', kind: 'intake_pace', active: true, threshold: 0.8 }],
+    hour: 18, date: '2026-08-20', day: { food: { calories: 1000 } }, calorieTarget: 2400, flags: [],
+  }).length, 0);
+  assert.equal(dueAlerts({
+    rules: [{ id: 'a', kind: 'intake_pace', active: true, threshold: 0.8 }],
+    hour: 18, date: '2026-08-20', day: { food: { calories: 0 } }, calorieTarget: 2400, flags: [],
+  }).length, 0);
+});
+
+await test('the kitchen closes at the hour they chose, and only then', () => {
+  const rules = [{ id: 'k', kind: 'kitchen_closed', active: true, at_hour: 21 }];
+  const at = h => dueAlerts({ rules, hour: h, date: '2026-08-20',
+    day: { food: { calories: 1800 } }, flags: [] });
+  assert.equal(at(21).length, 1);
+  assert.equal(at(20).length, 0);
+  assert.equal(at(22).length, 0);
+  // It may mention stopping ONLY because they set the hour themselves —
+  // honouring their own timetable is not the app deciding they have had enough.
+  assert.match(at(21)[0].body, /window you set/i);
+});
+
+await test('training is never a guilt notification', () => {
+  const rules = [{ id: 'm', kind: 'move', active: true, at_hour: 17 }];
+  const base = { rules, hour: 17, date: '2026-08-20', flags: [], day: { training: { sessions: 0 } } };
+
+  // Behind with room left: fires.
+  assert.equal(dueAlerts({ ...base, week: { done: 1, target: 4, days_left: 4 } }).length, 1);
+  // Already trained today: nothing. A reminder to train on a day somebody
+  // trained is how a product proves it is not paying attention.
+  assert.equal(dueAlerts({ ...base, day: { training: { sessions: 1 } },
+    week: { done: 1, target: 4, days_left: 4 } }).length, 0);
+  // Target met: nothing.
+  assert.equal(dueAlerts({ ...base, week: { done: 4, target: 4, days_left: 2 } }).length, 0);
+  // AN IMPOSSIBLE WEEK IS NOT COUNTED DOWN TO ZERO — nothing actionable is
+  // left in it and repeating it is pure guilt.
+  assert.equal(dueAlerts({ ...base, week: { done: 0, target: 4, days_left: 1 } }).length, 0);
+
+  const [fired] = dueAlerts({ ...base, week: { done: 1, target: 4, days_left: 4 } });
+  for (const word of ['should', 'failed', 'behind schedule', 'lazy', 'excuse', 'still', 'only']) {
+    assert.ok(!new RegExp(word, 'i').test(fired.body), `the training line says "${word}"`);
+  }
+});
+
+await test('one at a time, once a day, and never in the night', () => {
+  const rules = [
+    { id: 'a', kind: 'intake_pace', active: true, threshold: 0.8 },
+    { id: 'b', kind: 'custom', active: true, at_hour: 18, text: 'fast starts now' },
+    { id: 'c', kind: 'weigh_in', active: true, at_hour: 18 },
+  ];
+  const ctx = { rules, hour: 18, date: '2026-08-20', flags: [],
+    day: { food: { calories: 2000 } }, calorieTarget: 2400, lastWeighDays: 30 };
+
+  // Two in an hour is a lecture and the second is never read. Their own words
+  // outrank anything the server worked out.
+  const due = dueAlerts(ctx);
+  assert.equal(due.length, 1);
+  assert.equal(due[0].kind, 'custom');
+
+  // Already sent today: silent.
+  assert.equal(dueAlerts({ ...ctx,
+    rules: rules.map(r => ({ ...r, last_sent_on: '2026-08-20' })) }).length, 0);
+
+  // Nothing derived from the day's numbers fires overnight. A rule with its own
+  // hour is explicit consent for that hour and is honoured exactly.
+  const night = { ...ctx, rules: [rules[0]], hour: 3 };
+  assert.equal(dueAlerts(night).length, 0);
+  assert.ok(QUIET_BEFORE > 0 && QUIET_AFTER <= 24);
+  assert.equal(dueAlerts({ ...ctx, rules: [{ id: 'n', kind: 'custom', active: true, at_hour: 5, text: 'gym' }], hour: 5 }).length, 1,
+    'an hour they explicitly chose is not overridden');
+
+  // Days of the week are honoured.
+  const monOnly = [{ id: 'd', kind: 'custom', active: true, at_hour: 18, text: 'x', days: [1] }];
+  assert.equal(dueAlerts({ ...ctx, rules: monOnly, weekday: 1 }).length, 1);
+  assert.equal(dueAlerts({ ...ctx, rules: monOnly, weekday: 2 }).length, 0);
+});
+
+await test('a custom reminder is sent verbatim, and nothing is on by default', () => {
+  // A reminder rewritten into house style is one that no longer sounds like
+  // the person who set it.
+  const [a] = dueAlerts({
+    rules: [{ id: 'x', kind: 'custom', active: true, at_hour: 20, text: "don't eat after this, fatso rules" }],
+    hour: 20, date: '2026-08-20', flags: [],
+  });
+  assert.equal(a.body, "don't eat after this, fatso rules");
+  // An empty custom rule sends nothing rather than an empty notification.
+  assert.equal(dueAlerts({ rules: [{ id: 'y', kind: 'custom', active: true, at_hour: 20, text: '  ' }],
+    hour: 20, date: '2026-08-20', flags: [] }).length, 0);
+
+  // Suggested, never switched on.
+  const s = suggestAlerts({ hasCalorieTarget: true, trainDays: 4, fasting: true });
+  assert.ok(s.options.length >= 4);
+  assert.match(s.note, /OFFER these, never switch them on/);
+  assert.match(s.note, /muted/);
+
+  // One reader for what a rule says, shared by the tool and the screen.
+  const d = describeAlert({ id: '1', kind: 'kitchen_closed', at_hour: 21, active: true });
+  assert.match(d.say, /Kitchen closes/);
+  assert.match(d.say, /21:00/);
+  assert.equal(describeAlert({ kind: 'nonsense' }), null);
+  for (const k of Object.keys(ALERT_KINDS)) assert.ok(ALERT_KINDS[k].why, `${k} has no stated reason`);
+});
+
+await test('a notification can be switched off without talking', () => {
+  // THE SAFETY VALVE on the whole channel. Somebody who cannot find the off
+  // switch mutes the app instead of the rule, and a muted app never comes
+  // back on — so the website has to be a complete door here too.
+  const api = readFileSync(new URL('../netlify/functions/api-push.js', import.meta.url), 'utf8');
+  assert.match(api, /wrought_alerts/);
+  assert.match(api, /body\.alert_id/);
+  assert.match(api, /describeAlert/, 'the screen words rules its own way');
+
+  const page = readFileSync(new URL('../public/app.html', import.meta.url), 'utf8');
+  assert.match(page, /function alertList\(alerts\)/);
+  assert.match(page, /data-alertoff=/);
+  // And the empty state teaches the sentence rather than describing a feature.
+  assert.match(page, /remind me to stop eating at nine/);
+});
+
+await test('the AI writes the rule; it never claims it will remember', () => {
+  // The founder's question: "you can tell your AI to push anything you want —
+  // can you not do that? How would that work?" It works because the assistant
+  // never pushes. MCP is request/response forever; the assistant writes a row
+  // and the hourly job sends it.
+  const tool = TOOLS.find(t => t.name === 'set_alert');
+  assert.ok(tool, 'nothing lets somebody set a notification by talking');
+  assert.match(tool.description, /never to promise to remember/);
+  assert.match(tool.description, /NEVER say you will remind them without calling this/);
+  // Hours are theirs, and the conversion trap is named.
+  assert.match(tool.inputSchema.properties.at_hour.description, /THEIR timezone/);
+  assert.match(tool.inputSchema.properties.text.description, /verbatim/);
+
+  const mcp = readFileSync(new URL('../netlify/functions/mcp.js', import.meta.url), 'utf8');
+  // A rule with nowhere to land is the quietest possible failure.
+  assert.match(mcp, /not_deliverable/);
+  // Read back off the record, like every other write in this server.
+  assert.match(mcp, /const on_file = await alertsFor\(user\.id\);/);
+  // Removing one is never a negotiation — the drop_goal doctrine.
+  assert.match(mcp, /Never ask why and never remark on commitment/);
+
+  const cron = readFileSync(new URL('../netlify/functions/brief-nightly.js', import.meta.url), 'utf8');
+  assert.match(cron, /async function runAlerts/);
+  // Stamped only when it actually went, or the one day a phone was off is the
+  // day the rule silently skips.
+  assert.match(cron, /if \(n > 0\) \{/);
+  // One sender for every kind of notification, or one of them quietly stops
+  // cleaning up dead subscriptions.
+  assert.match(cron, /async function deliver\(userId, profile, message\)/);
+  // A failure in the alerts must never cost somebody their nightly read.
+  assert.match(cron, /catch \{ \/\* the brief still runs \*\/ \}/);
+
+  const toml = readFileSync(new URL('../netlify.toml', import.meta.url), 'utf8');
+  assert.match(toml, /schedule = "0 \* \* \* \*"/, 'the hourly job is what makes any of this fire');
 });
 
 await test('the checklist can be ticked from the website, not only spoken to', () => {
