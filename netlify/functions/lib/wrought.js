@@ -1240,7 +1240,20 @@ export async function insertEvents(userId, profile, parsedEvents, { source = 'ag
   return data || [];
 }
 
-const VALID_TYPES = new Set(['food','drink','workout','weight','measurement','sleep','symptom','mood','supplement','note','fast']);
+// THE LIST HAS TO MATCH THE CHECK CONSTRAINT, and for a while it did not.
+//
+// 013 added 'activity' to the database — a shift, a garden, a house move: real
+// expenditure that is not training. This set was never updated, and anything
+// not in it is silently rewritten to 'note' rather than rejected. So every
+// logged shift went in as a note: dayFacts filters on event_type 'activity'
+// and found none, the burn from four hours at the petting zoo counted for
+// nothing, and the entry still appeared in the log — as a note — so it looked
+// saved. A tolerant writer beside a stricter reader is the most expensive
+// combination there is, because nothing anywhere errors.
+//
+// There is a test that reads the constraint out of schema/013 and asserts this
+// set is exactly equal to it.
+export const VALID_TYPES = new Set(['food','drink','workout','weight','measurement','sleep','symptom','mood','supplement','note','fast','activity']);
 
 export async function rememberFact(userId, fact, category = 'general') {
   const { error } = await supabase.from('wrought_memory')

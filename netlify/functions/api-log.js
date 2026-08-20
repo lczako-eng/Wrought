@@ -248,7 +248,7 @@ export const handler = async (event) => {
       date: d,
       weekday: new Date(`${d}T00:00:00Z`).toLocaleDateString('en-GB', { weekday: 'short', timeZone: 'UTC' }),
       days_ago: daysBetween(d, localDateFor(profile.timezone)),
-      food: [], workouts: [], body: [], other: [],
+      food: [], workouts: [], activity: [], body: [], other: [],
       totals: { calories: 0, protein_g: 0, carbs_g: 0, sugar_g: 0, fat_g: 0, estimated: false },
       device: {},
     });
@@ -299,6 +299,17 @@ export const handler = async (event) => {
         // The whole point: the session, set by set, exactly as it happened.
         exercises: groupSets(rows),
       });
+
+    } else if (e.event_type === 'activity') {
+      // A SHIFT IS NOT A SESSION. It sits with the training half of the day
+      // because it is the other way calories leave, and it carries its own
+      // hours and figure — "logged as activity" with no number is the whole
+      // feature failing quietly. Never counted toward the weekly target and
+      // never praised: it is a fact about the day.
+      day.activity.push({ ...base, kind: 'activity',
+        label: e.detail?.label || e.summary,
+        hours: num(e.detail?.hours) || null,
+        calories: num(e.detail?.kcal) || null });
 
     } else if (e.event_type === 'weight') {
       day.body.push({ ...base, kind: 'weight',
@@ -355,7 +366,10 @@ export const handler = async (event) => {
         ...d.device,
         sleep_say: d.device.sleep_minutes ? humanDuration(Math.round(d.device.sleep_minutes)) : null,
       },
-      empty: !d.food.length && !d.workouts.length && !d.body.length && !d.other.length
+      // A day with a shift on it and nothing else is not an empty day — that
+      // was eight hours of somebody's life and several hundred calories.
+      empty: !d.food.length && !d.workouts.length && !d.activity.length
+             && !d.body.length && !d.other.length
              && !Object.keys(d.device).length,
     }));
 

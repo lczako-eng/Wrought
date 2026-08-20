@@ -2198,6 +2198,44 @@ it away: **never say "everything you have logged with me"** — the conversation
 is not the record, the two are routinely different, and that difference is the
 thing the person actually needs told.
 
+### The shift that was filed as a note
+
+`insertEvents` validates `event_type` against `VALID_TYPES` and **silently
+rewrites anything missing from it to `note`** rather than rejecting it. 013
+added `activity` to the check constraint in the database; that set was never
+updated. So every shift the founder logged went in as a note — `dayFacts`
+filters on `activity` and found none, four and a half hours at the petting zoo
+burned nothing, and the entry still appeared in the log, which is exactly what
+made it invisible. Nothing errored at any layer.
+
+**A tolerant writer beside a stricter reader is the most expensive combination
+there is**, because the write succeeds, the row exists, and only the code that
+was looking for the real type notices. There is now a test that reads the
+constraint out of `schema/013` and asserts the set is exactly equal to it.
+
+### The log and the record, read the same way
+
+*"In the record put the log in there — what was eaten, and then underneath what
+was worked out, active."*
+
+Both screens already held it. The **order** was opposite: the Log led with the
+workout and put the food underneath, the Record leads with food. Same
+information, two shapes, and that is how one tab starts feeling like a
+different product from the other.
+
+- **Eaten, then trained and active**, with the two halves labelled — the day
+  reads as in-then-out on both screens now.
+- **A shift gets its own bucket** instead of dropping into the bin at the
+  bottom with notes, and it carries its **hours on task and its calories**:
+  *"logged as activity"* with no number is the feature failing quietly, since
+  the number is the entire reason to log it. Still never a session, still never
+  in the weekly count, still never praised.
+- **A day with only a shift on it is not an empty day** — the log's `empty`
+  test skipped it, so eight hours of somebody's life could vanish from the one
+  screen that exists to show them their record.
+- The demo carries a shift on the days it claims one, because a demo missing a
+  field is how the last two of these hid.
+
 ### The food list that read `log` when the server sends `entries`
 
 The worst bug in this file, because it was one word, it was mine, and it spent
@@ -2918,7 +2956,7 @@ self-reporting scale removes the most-abandoned manual entry), then Strava.
 
 ## Conventions
 
-- `npm test` runs `test/harness.mjs` — 591 offline tests, no network, no database.
+- `npm test` runs `test/harness.mjs` — 593 offline tests, no network, no database.
   Run it before every push. It covers the JSON-RPC envelope (which fails as an
   uninformative "could not connect" inside ChatGPT) and all the arithmetic
   (which fails as a confidently wrong number in somebody's verdict).

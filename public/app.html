@@ -1301,6 +1301,17 @@ a.ghost { display: inline-block; }
   color: var(--temper); font-variant-numeric: tabular-nums;
 }
 
+/* The day, in the same two halves the Record tab uses: what went IN, then what
+   went OUT. The founder asked for the log and the record to read the same way
+   — "in the record put the log in there, what was eaten, and then underneath
+   what was worked out, active." They had the same information in opposite
+   orders, which is how one screen ends up feeling like a different product. */
+.dgroup { margin-top: 12px; }
+.dgroup:first-of-type { margin-top: 4px; }
+.glab {
+  display: block; font-family: var(--mono); font-size: 10px; letter-spacing: .12em;
+  text-transform: uppercase; color: var(--ash-dim); margin-bottom: 2px;
+}
 .ent { display: grid; grid-template-columns: 46px 1fr; gap: 12px; padding-block: 7px; align-items: baseline; }
 .ent .tm { font-family: var(--mono); font-size: 11px; color: var(--ash-dim); font-variant-numeric: tabular-nums; }
 .ent .bd { min-width: 0; }
@@ -3677,6 +3688,20 @@ function dayBlock(d) {
 
   const work = d.workouts.map(w => sessionBlock(w)).join('');
 
+  // A SHIFT IS NOT A SESSION, and it belongs with the active half of the day
+  // rather than in the bin at the bottom with notes. It carries its own hours
+  // and its own figure, because "logged as activity" with no number is the
+  // feature failing quietly — the number is the entire reason to log it. Never
+  // counted toward the weekly target, and never praised.
+  const shifts = (d.activity || []).map(a => `<div class="ent">
+    <span class="tm">${esc(a.at)}</span>
+    <span class="bd">${esc(a.label || a.summary)} <span class="cat">work</span>
+      ${a.hours || a.calories ? `<div class="macros">${[
+        a.hours ? `${a.hours}h on task` : null,
+        a.calories ? `${n(a.calories)} kcal, estimated` : null,
+      ].filter(Boolean).join(' · ')}</div>` : ''}
+    </span></div>`).join('');
+
   const body = d.body.map(b => `<div class="ent">
     <span class="tm">${esc(b.at)}</span>
     <span class="bd">${esc(b.kind === 'measurement' ? `${b.site} — ${b.value}` : b.value)}</span>
@@ -3711,7 +3736,9 @@ function dayBlock(d) {
     </div>` : ''}
     ${dev.length ? `<div class="chips">${dev.map(([v, l]) =>
       `<span class="chipx"><b>${esc(String(v))}</b>${esc(l)}</span>`).join('')}</div>` : ''}
-    ${work}${food}${body}${other}
+    ${food ? `<div class="dgroup"><span class="glab">Eaten</span>${food}</div>` : ''}
+    ${work || shifts ? `<div class="dgroup"><span class="glab">Trained &amp; active</span>${work}${shifts}</div>` : ''}
+    ${body || other ? `<div class="dgroup">${body}${other}</div>` : ''}
   </div>`;
 }
 
@@ -3845,6 +3872,11 @@ function demoLog(cursor) {
         muscles: [], exercises, note: null,
       }] : [],
       body: missed ? [] : [{ at: '08:15', kind: 'weight', value: `${Math.round((82.9 - (13 - i) * 0.03 + wave(i, 3, .4)) * 10) / 10} kg` }],
+      // A shift on the days he actually worked one — its own bucket, beside the
+      // training rather than in the bin at the bottom, because the demo has to
+      // carry the shape the server sends or it hides the next bug like this.
+      activity: i % 4 === 1 ? [{ at: '17:40', kind: 'activity', summary: 'Petting zoo, animal care',
+                                 label: 'Petting zoo, animal care', hours: 4.5, calories: 980 }] : [],
       other: [],
       device: {
         sleep_minutes: Math.round(402 + wave(i, 4, 44)),
