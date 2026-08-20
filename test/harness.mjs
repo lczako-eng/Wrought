@@ -6684,7 +6684,13 @@ await test('a set reported with no workout running opens one', () => {
   // An ad-hoc session is NOT a plan and must never invent one. sets: null is
   // an open slot — nothing says how many are coming.
   assert.match(fn, /sets: null/);
-  assert.match(fn, /current\.sets == null \? true : setsDone < current\.sets/,
+  // The open-slot rule lives in recordSet now — ONE write path, shared with
+  // the rack screen's tick, so the screen and the voice cannot drift about
+  // which exercise you are on. Asserted where it lives, plus that log_set
+  // still goes through it rather than growing a second copy.
+  assert.match(fn, /await recordSet\(user\.id, \{/, 'log_set no longer shares the write path');
+  const sess = readFileSync(new URL('../netlify/functions/lib/session.js', import.meta.url), 'utf8');
+  assert.match(sess, /current\.sets == null \? true : done < current\.sets/,
     'an open slot can still run out of sets');
 
   // A different lift is appended in the order it actually happened, not
@@ -7487,7 +7493,10 @@ await test('Trainer answers what next when nothing is running', () => {
   // next. The routines are fetched by the endpoint rather than cached from
   // another tab, so opening Trainer directly still answers it.
   const api = readFileSync(new URL('../netlify/functions/api-session.js', import.meta.url), 'utf8');
-  const idle = api.slice(api.indexOf('if (!session) {'), api.indexOf('const plan ='));
+  // Anchored on the idle branch's own comment: the POST path above it also
+  // tests `!session`, and slicing from the first match silently produced an
+  // empty string — a test that passes on nothing is worse than no test.
+  const idle = api.slice(api.indexOf('// Between sessions the question is'), api.indexOf('  const sets = logged'));
   assert.match(idle, /wrought_routines/);
   assert.match(idle, /movements:/);
   assert.match(idle, /notes: r\.notes/);
@@ -8448,6 +8457,77 @@ await test('the log reads the way the record does — eaten, then active', () =>
   assert.match(api, /day\.activity\.push/);
   // A day with only a shift on it is not an empty day.
   assert.match(api, /!d\.activity\.length/);
+});
+
+await test('the checklist can be ticked from the website, not only spoken to', () => {
+  // THE HOLE: the rack screen could show exactly where you were in a session
+  // and could not move you through it — every tick had to go via the assistant.
+  // "You can put a checkmark for everything that you've done." Same shape as
+  // the food door: the website could read the record and not write to it.
+  const api = readFileSync(new URL('../netlify/functions/api-session.js', import.meta.url), 'utf8');
+  assert.match(api, /'Access-Control-Allow-Methods': 'GET, POST, OPTIONS'/);
+  assert.match(api, /httpMethod === 'POST'/);
+  // ONE WRITE PATH. A second copy of the insert-and-advance would drift, and
+  // the drift shows up as the screen and the voice disagreeing about which
+  // exercise you are on — what this endpoint exists to prevent.
+  assert.match(api, /recordSet\(user\.id/);
+  assert.doesNotMatch(api, /from\('wrought_sets'\)\.insert/, 'the rack screen grew its own insert');
+  // A jump is a move, not a set: it writes nothing.
+  assert.match(api, /action === 'goto'/);
+  assert.match(api, /cursor_index: i/);
+  // A swallowed write looks exactly like a tick that worked.
+  assert.match(api, /not_saved/);
+
+  const page = readFileSync(new URL('../public/app.html', import.meta.url), 'utf8');
+  assert.match(page, /data-tick="set"/);
+  assert.match(page, /data-tick="end"/);
+  assert.match(page, /data-goto=/);
+  // The response IS the refreshed screen, read back off the record — never a
+  // DOM patch from a guess about what the write did.
+  assert.match(page, /renderTrainer\(body\);/);
+  // And the poll's signature is updated to what was just drawn, or five
+  // seconds later it repaints the screen out from under a thumb.
+  assert.match(page, /trainerLastJson = JSON\.stringify\(body\)/);
+});
+
+await test('a typed weight is theirs; an untyped one still does not exist', () => {
+  // The screen shows the PRESCRIBED number so it can be confirmed or changed.
+  // Blank stays blank rather than being asserted on somebody's behalf — the
+  // same rule that keeps a working weight from being invented anywhere else.
+  const api = readFileSync(new URL('../netlify/functions/api-session.js', import.meta.url), 'utf8');
+  assert.match(api, /body\.weight == null \|\| body\.weight === ''/);
+  assert.match(api, /lbToKg/, 'a pound typed on an imperial account is stored as pounds');
+
+  const sess = readFileSync(new URL('../netlify/functions/lib/session.js', import.meta.url), 'utf8');
+  assert.match(sess, /weightKg != null \? Number\(weightKg\) : null/,
+    'a missing weight is being filled in from the prescription');
+});
+
+await test('every session states what it is for', () => {
+  // "For every workout you have to tell them what you're trying to achieve."
+  // preflight has always ASKED and the answer went nowhere — read once by a
+  // model in one turn, then lost.
+  const tool = TOOLS.find(t => t.name === 'start_session');
+  assert.ok(tool.inputSchema.properties.aim, 'start_session cannot take an aim');
+  assert.match(tool.inputSchema.properties.aim.description, /NEVER invent one/);
+
+  const mcp = readFileSync(new URL('../netlify/functions/mcp.js', import.meta.url), 'utf8');
+  // Null is a real answer: a session that arrives beats one still being
+  // specified, the same rule that keeps the warm-up from blocking.
+  assert.match(mcp, /aim_pending: !aim/);
+  assert.match(mcp, /never hold the session up waiting for one/);
+
+  // Kept on the RECORD at close, so the log says what was being chased and not
+  // only what was lifted.
+  const sess = readFileSync(new URL('../netlify/functions/lib/session.js', import.meta.url), 'utf8');
+  assert.match(sess, /\.\.\.\(aim \? \{ aim \} : \{\}\)/);
+
+  // THE DOOR IS CORRECT BEFORE THE SQL RUNS. Naming a column PostgREST does
+  // not know about makes it reject the whole query, so the rack screen would
+  // say "no workout is running" while one plainly was.
+  const api = readFileSync(new URL('../netlify/functions/api-session.js', import.meta.url), 'utf8');
+  assert.match(api, /await sessionsCanCarryAim\(\) \? ', aim' : ''/);
+  assert.match(readFileSync(new URL('../public/app.html', import.meta.url), 'utf8'), /aimline/);
 });
 
 await test('sets per muscle per week — the dose, counted not guessed', () => {

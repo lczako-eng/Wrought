@@ -35,7 +35,7 @@ import { planRead } from './lib/plan.js';
 import { guideRead } from './lib/guide.js';
 import { nextNudge, nudgeNote } from './lib/prompt.js';
 import { preflight } from './lib/preflight.js';
-import { finaliseSession, closeStaleSessions } from './lib/session.js';
+import { finaliseSession, closeStaleSessions, recordSet } from './lib/session.js';
 import { effortFromWords, beforeSet, afterSet, methodsFor } from './lib/coach.js';
 import { PROVIDERS, providerSummary, recommendRoute } from './lib/providers.js';
 import { nutritionTotals, composition, macroMatrix, yearOverYear } from './lib/nutrition.js';
@@ -46,7 +46,7 @@ import {
   normaliseMovement, readMovement, syncSetsFromWorkouts,
   ACTIVITY,
   targetOptions,
-  PACES, PUSH,
+  PACES, PUSH, sessionsCanCarryAim,
 } from './lib/training.js';
 import { PROGRAMMES, GOALS, MOVEMENTS, movementsFor, pickProgramme, buildProgramme, buildBlock, blockPosition, BLOCK_LENGTHS } from './lib/library.js';
 import { FOCUSES, FOCUS_NAMES, focusFrom, designSession, designQuestions, designNote } from './lib/design.js';
@@ -442,7 +442,7 @@ const TOOLS = [
   {
     name: 'start_session',
     title: 'Start a live workout and coach it set by set',
-    description: 'Begins a guided session and returns the first exercise with the exact load to use, computed from what they actually lifted last time. Use for "leg day", "let\'s train", "start chest", "I\'ve got 40 minutes". Pass a saved routine name if they said one — otherwise pass focus and minutes and one is built from what is stale in their log. After this, call log_set after EVERY set they report; the server tracks their place, so never try to remember the position yourself.',
+    description: 'Begins a guided session and returns the first exercise with the exact load to use, computed from what they actually lifted last time, plus the CHECKLIST — every exercise marked done, current or to come. Use for "leg day", "let\'s train", "start chest", "I\'ve got 40 minutes". Pass a saved routine name if they said one — otherwise pass focus and minutes and one is built from what is stale in their log. ALSO PASS `aim` — what they are chasing in THIS session — if they said it; if they did not, ask for it in one clause alongside the plan and never hold the session up for it. After this, call log_set after EVERY set they report; the server tracks their place and returns the updated checklist, so never try to remember the position yourself and never re-state the whole plan between sets.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -450,6 +450,7 @@ const TOOLS = [
         focus:     { type: 'string',  description: 'If no saved routine: what they want to train — "legs", "upper", "conditioning", "full body".' },
         minutes:   { type: 'integer', description: 'Time available. The session is cut to fit rather than being abandoned halfway.' },
         equipment: { type: 'string',  description: 'Override for today — "hotel gym", "just dumbbells", "nothing, I am in a room".' },
+        aim:       { type: 'string',  description: 'What THIS session is for, in their own words — "chase the top set on incline, it has stalled", "get through it, I slept badly", "beat 92.5 for 6". A session with a stated aim is training; one without is exercise, and the difference is whether there is anything to judge it against afterwards. NEVER invent one: if they did not say, leave it out and the session starts anyway, and the response asks for it in one clause.' },
       },
     },
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
@@ -2429,10 +2430,20 @@ async function startSession(args, user) {
   // would read as finished having never happened.
   const running = await activeBlock(user.id);
 
+  // WHAT THIS SESSION IS FOR, in their own words. Never invented: if they did
+  // not say, it stays null and the session starts anyway — a workout that
+  // arrives beats one still being specified, the same rule that keeps the
+  // warm-up from blocking. Stored only when 017 has run; without the column
+  // the session must still open, because the whole live-training half of the
+  // product going dark for a text field is far worse than a missing aim.
+  const aim = String(args.aim || '').trim().slice(0, 300) || null;
+  const canAim = await sessionsCanCarryAim();
+
   const { data: session, error } = await supabase.from('wrought_sessions').insert([{
     user_id: user.id, routine_id: routine?.id || null,
     block_id: running?.id || null,
     name, kind, plan, cursor_index: 0, local_date: today,
+    ...(canAim && aim ? { aim } : {}),
   }]).select('id').single();
   if (error) return { error: error.message };
 
@@ -2471,6 +2482,12 @@ async function startSession(args, user) {
     // it is a fact about the record, not a telling-off for forgetting.
     carried_over: carriedOver,
     name, tier,
+    // WHAT THIS SESSION IS FOR — carried on the handover so it is in front of
+    // them while they train, not just at the moment they said it. Null when
+    // they did not say, and `aim_pending` asks once rather than inventing one.
+    aim,
+    aim_pending: !aim,
+    aim_saved: canAim ? undefined : 'This session\'s aim cannot be stored until migration 017 has been run, so it will not be on the record afterwards.',
     // The write-up, when the routine carries one. A saved workout is a name, an
     // order, and the reason it is in that order — losing the third makes it a
     // list, which is the thing people already have on their phone.
@@ -2499,6 +2516,9 @@ async function startSession(args, user) {
       : '') +
       'ASK THE PREFLIGHT LINE — how they feel and what they want out of today — in the SAME message as the session, never as a separate turn and never waiting for an answer. If they answer, honour it: a stated goal for the session beats what the log says is overdue. OFFER THE WARM-UP FIRST, in one short line with the movements listed, and say in the same breath that they can skip it. Then the first exercise. Do NOT wait for an answer before giving them the session — if they say skip, just carry on. It is dynamic movement, never held stretches: holding a stretch right before a heavy set costs force for the next half hour, and static work is offered at the end instead. Never present any of it as treating an injury. ' +
       (routine?.notes ? 'The routine has a write-up on it (routine_notes) — mention the one line of it that matters today rather than reading it out. ' : '') +
+      (aim
+        ? `THIS SESSION'S AIM, in their own words: "${aim}". Say it back in half a clause at the start and judge the session against it at the end — that is what makes this training rather than exercise. `
+        : 'NO AIM WAS GIVEN for this session. Ask what they want out of THIS one in the same line as the preflight question — one clause, "anything you are chasing today?" — and pass it to end_session as `aim` if they answer. A session with a stated aim is training; one without is exercise. Never invent an aim for them, and never hold the session up waiting for one. ') +
       'Call log_set after EVERY set they report, even a bare "done". The server tracks their position and returns the percentage complete — never try to hold it yourself, and never re-state the whole plan between sets.',
     next_actions: ['log_set when they finish a set', 'end_session when they are done'],
   };
@@ -2655,41 +2675,22 @@ async function logSet(args, user) {
     ? { rpe: Number(args.rpe), rir: Math.max(0, 10 - Number(args.rpe)), basis: 'they gave a number' }
     : effortFromWords([args.felt, args.note].filter(Boolean).join('. '));
 
-  if (args.skip) {
-    setsDone = current.sets ?? setsDone;        // force the move on
-  } else {
-    const name = args.exercise || current.name;
-    const key  = args.exercise ? exerciseKey(args.exercise) : current.key;
-    const { error } = await supabase.from('wrought_sets').insert([{
-      user_id: user.id, session_id: session.id,
-      exercise: name, exercise_key: key,
-      set_number: setsDone + 1,
-      // Where this lift sat in the session. Cheap to store, and the only way
-      // to later answer "is my bench stalling, or is it just always third?"
-      position: session.cursor_index + 1,
-      reps: args.reps != null ? Math.round(Number(args.reps)) : (parseInt(String(current.reps), 10) || null),
-      weight_kg: args.weight_kg != null ? Number(args.weight_kg) : null,
-      rpe: effort.rpe,
-      muscles: current.muscles || [],
-      // Verbatim. "Left shoulder pinched on the third set" is the whole reason
-      // a number went the way it did, and it is worthless paraphrased.
-      note: args.note ? String(args.note).slice(0, 500) : null,
-      local_date: today,
-    }]);
-    if (error) return { error: error.message };
-    setsDone += 1;
-  }
+  // ONE WRITE PATH, shared with the rack screen's tick — see recordSet in
+  // lib/session.js. Two copies of this would drift, and the drift shows up as
+  // the screen and the voice disagreeing about which exercise you are on.
+  // The note stays verbatim: "left shoulder pinched on the third set" is the
+  // whole reason a number went the way it did, and it is worthless paraphrased.
+  const wrote = await recordSet(user.id, {
+    session, current, plan, today,
+    reps: args.reps, weightKg: args.weight_kg, rpe: effort.rpe,
+    note: args.note, exercise: args.exercise, skip: !!args.skip,
+    setsDone,
+  });
+  if (wrote.error) return { error: wrote.error };
 
-  // An OPEN slot never finishes on its own — an ad-hoc session ends when the
-  // person stops, not when a number nobody set is reached.
-  const moreSetsHere = current.sets == null ? true : setsDone < current.sets;
-  let cursor = session.cursor_index;
-  if (!moreSetsHere) cursor += 1;
-  if (cursor !== session.cursor_index) {
-    await supabase.from('wrought_sessions').update({ cursor_index: cursor }).eq('id', session.id);
-  }
-
-  const finished = cursor >= plan.length;
+  setsDone = wrote.sets_done;
+  const cursor = wrote.cursor;
+  const finished = wrote.finished;
   if (finished) {
     return {
       recorded: true, session_complete: true,
