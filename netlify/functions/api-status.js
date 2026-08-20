@@ -48,6 +48,7 @@ const MIGRATIONS = [
   // /ingest reports events_error and names this file when the write falls back.
   { file: '015_wrought_ingest_dedupe_fix.sql', probe: t('wrought_events'), gives: 'workouts from a watch actually landing', assume: true },
   { file: '016_wrought_set_source.sql',  probe: col('wrought_sets', 'event_id'),    gives: 'after-the-fact workouts counting toward lifts without doubling on re-edits' },
+  { file: '017_wrought_session_aim.sql', probe: col('wrought_sessions', 'aim'),    gives: 'what each session is FOR, kept on the record rather than said once and lost' },
 ];
 
 // A probe that treats EVERY error as "not run" lies twice over: a timeout reads

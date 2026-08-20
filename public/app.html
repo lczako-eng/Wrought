@@ -694,6 +694,46 @@ table.matrix td.rh.cold { color: var(--heat-3); }
 /* Never red. A line that did not parse is information, not an alarm — the
    same rule as a movement with nothing set on it. */
 .qasay.bad { color: var(--temper); }
+/* Ticking a set off at the rack. Big targets: this is used mid-set, one-handed,
+   by somebody who is out of breath. */
+.aimline {
+  font-family: var(--serif); font-style: italic; font-size: 13.5px;
+  color: var(--heat-4); margin: 0 0 6px;
+}
+.tickrow { display: flex; gap: 8px; margin-top: 12px; }
+.tf { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.tf span {
+  font-family: var(--mono); font-size: 10px; letter-spacing: .1em;
+  text-transform: uppercase; color: var(--ash-dim);
+}
+.tf input {
+  width: 100%; min-width: 0; padding: 12px 10px; font-size: 17px; text-align: center;
+  font-family: var(--mono); font-variant-numeric: tabular-nums;
+  color: var(--bright); background: var(--scale-2); border: 1px solid var(--edge);
+  border-radius: 9px;
+}
+.tf input:focus { outline: none; border-color: var(--heat-2); }
+.tickbtns { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.tkgo {
+  flex: 1 1 140px; padding: 14px 18px; font-size: 15px; font-weight: 700;
+  color: #1A0A02; background: var(--heat-3); border: 0; border-radius: 10px; cursor: pointer;
+}
+.tkalt {
+  flex: 0 1 auto; padding: 14px 14px; font-size: 13px; font-family: var(--mono);
+  color: var(--ash); background: transparent; border: 1px solid var(--edge);
+  border-radius: 10px; cursor: pointer;
+}
+.tkalt:hover { color: var(--bright); border-color: var(--edge-lit); }
+/* A checklist row you can tap to become the one you are on. Styled as a row,
+   not a button — it is a place in a list, and making it look like a control
+   would put four orange buttons in a panel that is meant to be read. */
+.ticks li.tappable .tkname {
+  background: none; border: 0; padding: 0; font: inherit; color: inherit;
+  text-align: left; cursor: pointer; width: 100%;
+}
+.ticks li.tappable .tkname:hover { color: var(--bright); }
+.ticks li.here { background: color-mix(in srgb, var(--heat-3) 9%, transparent); }
+.tkgo:disabled, .tkalt:disabled { opacity: .5; cursor: default; }
 .qadel {
   flex: 0 0 auto; padding: 3px 9px; font-size: 11px; font-family: var(--mono);
   color: var(--ash-dim); background: transparent; border: 1px solid var(--edge);
@@ -3325,6 +3365,7 @@ function renderTrainer(d) {
   $('content').innerHTML = `
     <section class="panel hero trainer">
       <h2>${esc(s.name)} · ${s.minutes}m${s.of ? ` · ${s.position} of ${s.of}` : ''}</h2>
+      ${s.aim ? `<p class="aimline">Today: ${esc(s.aim)}</p>` : ''}
       <p class="lifting">${esc(c?.name || 'Session')}</p>
       <p class="setline">Set ${c?.set_number ?? 1}${c?.sets ? ` of ${c.sets}` : ''}${c?.target_reps ? ` · target ${c.target_reps} reps` : ''}</p>
       ${load}
@@ -3333,17 +3374,91 @@ function renderTrainer(d) {
       ${restBlock}
       ${done ? `<div class="setpills">${done}</div>` : ''}
     </section>
-    ${checklistPanel(d.progress)}
+    ${checklistPanel(d.progress, { live: true, at: (s.position || 1) - 1 })}
     <div class="tiles">
       ${tile('Sets', String(d.totals.sets), 'this session')}
       ${tile('Reps', String(d.totals.reps), 'this session')}
       ${tile('Volume', `${n(d.totals.volume)}${d.unit}`, 'weight moved')}
     </div>
-    <section class="panel"><h2>Logging</h2>
-      <p class="sub">Say it to the assistant — "got 8" or "95 for 6" — and this screen follows.
-      It reads the same session, so it cannot disagree with what the coach told you.</p>
+    <section class="panel"><h2>Tick it off</h2>
+      <p class="sub">Say it to the assistant — "got 8" or "95 for 6" — or log it here. Both write
+      the same row, so the screen and the coach cannot disagree.</p>
+      <div class="tickrow">
+        <label class="tf"><span>Reps</span>
+          <input id="tk-reps" type="number" inputmode="numeric" min="0" max="200"
+            value="${c?.target_reps != null ? esc(String(c.target_reps)) : ''}"></label>
+        <label class="tf"><span>${esc(d.unit)}</span>
+          <input id="tk-wt" type="number" inputmode="decimal" min="0" step="0.5"
+            value="${c?.prescribed != null ? esc(String(c.prescribed)) : ''}"></label>
+        <label class="tf"><span>RPE</span>
+          <input id="tk-rpe" type="number" inputmode="decimal" min="1" max="10" step="0.5"
+            placeholder="—"></label>
+      </div>
+      <p class="sub dim">Prefilled with what was prescribed — change anything that was different.
+        ${c?.prescribed == null ? 'No weight is filled in because there is no history for this lift yet; put in what you actually used.' : ''}
+        Leave RPE blank if you would rather not say — an unreported effort never adds weight.</p>
+      <div class="tickbtns">
+        <button class="tkgo" data-tick="set">Log set</button>
+        <button class="tkalt" data-tick="skip">Skip exercise</button>
+        <button class="tkalt" data-tick="end">Finish workout</button>
+      </div>
+      <p class="qasay" id="tk-say" role="status"></p>
     </section>`;
+  wireTick();
   stagger();
+}
+
+// Ticking a set off from the rack screen. It posts and then RE-RENDERS FROM
+// THE RESPONSE, which is the refreshed screen read back off the record — never
+// a DOM patch from a guess about what the write did. Same rule as every other
+// write on this page.
+function wireTick() {
+  document.querySelectorAll('[data-tick]').forEach(b =>
+    b.addEventListener('click', () => tickSet(b.dataset.tick, b)));
+  document.querySelectorAll('[data-goto]').forEach(b =>
+    b.addEventListener('click', () => tickSet('goto', b, { index: Number(b.dataset.goto) })));
+}
+
+async function tickSet(action, btn, extra = {}) {
+  if (action === 'end' && !confirm('Finish and file this workout?')) return;
+  const out = $('tk-say');
+  const { data } = sb ? await sb.auth.getSession() : { data: {} };
+  if (!data?.session) { if (out) out.textContent = 'Sign in first.'; return; }
+
+  const num = id => { const v = ($(id)?.value || '').trim(); return v === '' ? null : Number(v); };
+  const payload = action === 'set'
+    ? { action: 'set', reps: num('tk-reps'), weight: num('tk-wt'), rpe: num('tk-rpe') }
+    : { action, ...extra };
+
+  document.querySelectorAll('[data-tick]').forEach(b => { b.disabled = true; });
+  if (out) { out.textContent = action === 'end' ? 'Filing…' : 'Saving…'; out.className = 'qasay'; }
+  try {
+    const res = await fetch('/.netlify/functions/api-session', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${data.session.access_token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      if (out) { out.textContent = body.say || body.error || 'That did not save.'; out.className = 'qasay bad'; }
+      document.querySelectorAll('[data-tick]').forEach(b => { b.disabled = false; });
+      return;
+    }
+    // The POST answers with the whole refreshed screen, so there is nothing to
+    // reconcile — except when the session just ended, which has no screen left.
+    if (body.ended) { trainerLastJson = ''; loadTrainer(); return; }
+    // The poll's signature has to be updated to the payload just drawn, or the
+    // next tick five seconds later sees a "change" and repaints the screen out
+    // from under a thumb. It covers the routines too — the whole of what is
+    // painted, which is the lesson that guard already cost once.
+    trainerLastJson = JSON.stringify(body) + '|' + JSON.stringify(trainerRoutinesFull);
+    renderTrainer(body);
+    const say = $('tk-say');
+    if (say) { say.textContent = 'Logged.'; say.className = 'qasay good'; }
+  } catch {
+    if (out) { out.textContent = 'Could not reach the server — nothing was saved.'; out.className = 'qasay bad'; }
+    document.querySelectorAll('[data-tick]').forEach(b => { b.disabled = false; });
+  }
 }
 
 // The workout as a list you can tick off, with how far through you are.
@@ -3592,7 +3707,10 @@ function notConnectedCallout() {
   return '';
 }
 
-function checklistPanel(p) {
+// `live` is false on the Record tab, where this panel is a READ of a finished
+// day — tappable rows there would offer to move a cursor in a session that
+// ended hours ago.
+function checklistPanel(p, { live = false, at = -1 } = {}) {
   if (!p || !p.exercises?.length) return '';
   return `<section class="panel">
     <h2>The workout</h2>
@@ -3602,12 +3720,16 @@ function checklistPanel(p) {
     </div>
     <div class="progbar"><i style="width:${p.percent}%"></i></div>
     <ul class="ticks">
-      ${p.exercises.map(e => `<li class="${e.complete ? 'ticked' : e.done ? 'part' : ''}">
+      ${p.exercises.map((e, i) => `<li class="${e.complete ? 'ticked' : e.done ? 'part' : ''}${
+        live ? ' tappable' : ''}${i === at ? ' here' : ''}">
         <i>${e.complete ? '✓' : ''}</i>
-        <span class="tkname">${esc(e.exercise)}</span>
-        <span class="tkcount">${e.done}/${e.sets}</span>
+        ${live
+          ? `<button class="tkname" data-goto="${i}">${esc(e.exercise)}</button>`
+          : `<span class="tkname">${esc(e.exercise)}</span>`}
+        <span class="tkcount">${e.done}/${e.sets || '—'}</span>
       </li>`).join('')}
     </ul>
+    ${live ? '<p class="sub dim">Tap a movement to make it the one you are on — the rack is not always free in the order you planned.</p>' : ''}
   </section>`;
 }
 

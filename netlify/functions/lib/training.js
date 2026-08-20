@@ -1808,6 +1808,24 @@ export async function setsCanBeTracked() {
 // between cases.
 export function _resetEventIdProbe(v = null) { _hasEventId = v; }
 
+// Whether wrought_sessions has aim (migration 017). Same probe shape, same
+// reason: the answer cannot change under a running process.
+//
+// THE DOOR IS CORRECT BEFORE THE SQL RUNS — the 015 lesson. Without the column
+// a session must still start; an aim that cannot be stored is a feature that
+// waits, and a session that refuses to open because a migration is pending is
+// the whole live-training half of the product going dark for a text field.
+let _hasAim = null;
+
+export async function sessionsCanCarryAim() {
+  if (_hasAim !== null) return _hasAim;
+  const { error } = await supabase.from('wrought_sessions').select('aim').limit(1);
+  _hasAim = !error;
+  return _hasAim;
+}
+
+export function _resetAimProbe(v = null) { _hasAim = v; }
+
 /**
  * Write the derived sets for workout events.
  *

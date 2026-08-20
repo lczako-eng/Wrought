@@ -34,7 +34,7 @@
 // overstated burn is the number that tells somebody they have room to eat.
 
 import { supabase, insertEvents, localDateFor } from './wrought.js';
-import { sessionTotals } from './training.js';
+import { sessionTotals, sessionsCanCarryAim, exerciseKey } from './training.js';
 import { sessionProgress } from './warmup.js';
 import { sessionEffort, splitWork, windowedActive } from './effort.js';
 
@@ -147,6 +147,18 @@ export async function finaliseSession(userId, profile, session,
   // completion would be noise — only a session with planned sets carries one.
   const completion = completionFrom(session.plan, rows);
 
+  // The aim, when the caller did not already carry it. The stale sweep selects
+  // a narrow row on purpose — adding a column that may not exist yet would
+  // make PostgREST reject the whole query and silently stop closing sessions,
+  // which is a far worse failure than a missing sentence. So it is fetched
+  // here, once, and only when 017 has actually run.
+  let aim = session.aim ?? null;
+  if (aim == null && await sessionsCanCarryAim()) {
+    const { data: row } = await supabase.from('wrought_sessions')
+      .select('aim').eq('id', session.id).maybeSingle();
+    aim = row?.aim || null;
+  }
+
   // WHAT IT COST, MEASURED — and the cardio counted apart from the lifting.
   //
   // The session already had a clock (started_at, ended_at), and heart rate
@@ -199,6 +211,12 @@ export async function finaliseSession(userId, profile, session,
       })),
       volume_kg: totals.volume_kg,
       session_id: session.id,
+      // WHAT THIS SESSION WAS FOR, in their own words, kept on the record.
+      // It was asked for at the start and, until now, read once by a model in
+      // one turn and then lost — so the log could say what was lifted and
+      // never what was being chased. Undefined rather than null when there is
+      // none: a session with no stated aim is a fact, not an empty field.
+      ...(aim ? { aim } : {}),
       note: note || null,
       ...(completion ? { completion } : {}),
       ...(effort.known ? { effort: {
@@ -231,6 +249,59 @@ export async function finaliseSession(userId, profile, session,
   };
 }
 
+// ONE WRITE PATH FOR A SET, whichever door it came through.
+//
+// log_set (the conversation) and the rack screen's tick both have to insert a
+// set, advance the cursor at exactly the same moment, and treat an open-ended
+// ad-hoc slot the same way. Two copies of that would drift, and the drift
+// shows up as the screen and the voice disagreeing about which exercise you
+// are on — the precise thing api-session.js exists to prevent.
+//
+// It records what it is GIVEN. A missing weight stays null rather than being
+// filled in from the prescription: what was on the bar is the person's claim,
+// and the screen's job is to show the prescribed number so they can confirm or
+// change it, never to assert it on their behalf.
+export async function recordSet(userId, { session, current, plan = [], today,
+                                          reps = null, weightKg = null, rpe = null,
+                                          note = null, exercise = null, skip = false,
+                                          setsDone = 0 }) {
+  let done = setsDone;
+
+  if (skip) {
+    done = current.sets ?? done;             // force the move on
+  } else {
+    const name = exercise || current.name;
+    const key  = exercise ? exerciseKey(exercise) : current.key;
+    const { error } = await supabase.from('wrought_sets').insert([{
+      user_id: userId, session_id: session.id,
+      exercise: name, exercise_key: key,
+      set_number: done + 1,
+      // Where this lift sat in the session — the only way to later answer
+      // "is my bench stalling, or is it just always third?"
+      position: (session.cursor_index || 0) + 1,
+      reps: reps != null ? Math.round(Number(reps)) : (parseInt(String(current.reps), 10) || null),
+      weight_kg: weightKg != null ? Number(weightKg) : null,
+      rpe: rpe != null ? Number(rpe) : null,
+      muscles: current.muscles || [],
+      note: note ? String(note).slice(0, 500) : null,
+      local_date: today,
+    }]);
+    if (error) return { error: error.message };
+    done += 1;
+  }
+
+  // An OPEN slot never finishes on its own — an ad-hoc session ends when the
+  // person stops, not when a number nobody set is reached.
+  const moreHere = current.sets == null ? true : done < current.sets;
+  let cursor = session.cursor_index || 0;
+  if (!moreHere) cursor += 1;
+  if (cursor !== (session.cursor_index || 0)) {
+    await supabase.from('wrought_sessions').update({ cursor_index: cursor }).eq('id', session.id);
+  }
+
+  return { sets_done: done, cursor, finished: cursor >= plan.length, more_here: moreHere };
+}
+
 /**
  * Close anything left running that plainly is not running any more.
  *
@@ -241,7 +312,10 @@ export async function finaliseSession(userId, profile, session,
  */
 export async function closeStaleSessions(userId, profile, { now = Date.now() } = {}) {
   const { data: open } = await supabase.from('wrought_sessions')
-    .select('id, name, kind, started_at')
+    // `plan` is here because completionFrom needs it: without it a session
+    // closed by walking out of the gym filed no completion at all, and the
+    // backfill had to come along afterwards to repair every one of them.
+    .select('id, name, kind, started_at, plan')
     .eq('user_id', userId).eq('status', 'active');
 
   const rows = open || [];

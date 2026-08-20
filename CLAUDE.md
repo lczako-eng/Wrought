@@ -2198,6 +2198,58 @@ it away: **never say "everything you have logged with me"** — the conversation
 is not the record, the two are routinely different, and that difference is the
 thing the person actually needs told.
 
+### The checklist you can tick, and the aim every session states
+
+`017_wrought_session_aim.sql` + POST on `api-session.js` + `recordSet()`. The
+founder: *"needs a checklist for every workout... you can put a checkmark for
+everything that you've done... and for every workout you have to tell them what
+you're trying to achieve in every workout, it's just general."*
+
+Two holes, and the first is the food door's shape one screen along. **The rack
+screen could show exactly where you were in a session and could not move you
+through it.** Every tick had to go through the assistant, so a phone in a gym
+with no signal to ChatGPT was a phone that could watch a workout and not record
+one. `api-session.js` was `GET, OPTIONS`.
+
+- **ONE write path, shared.** `recordSet()` in `lib/session.js` does the insert
+  and advances the cursor, and both `log_set` and the tick call it. Two copies
+  would drift, and the drift shows up as the screen and the voice disagreeing
+  about which exercise you are on — the precise thing this endpoint was built
+  to prevent. There is a test that the rack screen has no insert of its own.
+- **A typed weight is theirs; an untyped one does not exist.** The boxes are
+  prefilled with what was PRESCRIBED so it can be confirmed or changed, and a
+  blank stays null rather than being asserted on somebody's behalf. With no
+  history the weight box is empty and says why — the RPE refusal, on a screen.
+- **Tapping a row makes it the one you are on.** The rack is not always free in
+  the order it was planned, and a checklist that can only be worked top to
+  bottom is a checklist people abandon at the first taken bench. A jump writes
+  nothing; it is checked BEFORE the "nothing current" guard, because a cursor
+  that has run past the end is exactly when somebody needs to jump back.
+- **The response IS the refreshed screen**, read back off the record — never a
+  DOM patch from a guess. And the poll's signature is updated to what was just
+  drawn, or five seconds later it repaints out from under a thumb.
+
+**And every session now states what it is for.** The PLAN has an aim; a saved
+routine has a write-up; the session actually happening had nothing.
+`preflight` has always ASKED *"is there anything you want out of today in
+particular"* — and the answer went nowhere, read once by a model in one turn
+and then lost. Now it is stored, carried on the rack screen while they train,
+and stamped on the workout event at close, so the record says what was being
+chased rather than only what was lifted.
+
+- **Null is a real answer.** A session that arrives beats one still being
+  specified — the warm-up's rule. `aim_pending` asks in one clause and never
+  holds the session up, and the model is told never to invent one.
+- **The door is correct before the SQL runs**, the 015 lesson again and the
+  sharpest version of it yet: naming a column PostgREST does not know about
+  makes it reject the WHOLE query, so an un-run 017 would have made the rack
+  screen say *"no workout is running"* while one plainly was. A missing
+  sentence turned into a dead screen. Probed once per container, like 016.
+
+**The gate he asked for already exists** — `intakeGate` refuses to PRESCRIBE
+until all 25 intake items are answered, while capture stays open forever. That
+line was drawn on his own earlier instruction and has not moved.
+
 ### The dose — hard sets per muscle, per week
 
 `lib/volume.js` + the `training_volume` tool + the panel. The founder: *"how to
@@ -2996,7 +3048,7 @@ self-reporting scale removes the most-abandoned manual entry), then Strava.
 
 ## Conventions
 
-- `npm test` runs `test/harness.mjs` — 597 offline tests, no network, no database.
+- `npm test` runs `test/harness.mjs` — 600 offline tests, no network, no database.
   Run it before every push. It covers the JSON-RPC envelope (which fails as an
   uninformative "could not connect" inside ChatGPT) and all the arithmetic
   (which fails as a confidently wrong number in somebody's verdict).
@@ -3018,7 +3070,7 @@ self-reporting scale removes the most-abandoned manual entry), then Strava.
    `003_wrought_training.sql`, `004_wrought_fasting.sql`,
    `005_wrought_activity.sql`, `006_wrought_identity.sql`, `007_wrought_push.sql`,
    `008_wrought_blocks.sql`, `009_wrought_photos.sql` and
-   `010_wrought_profile_web.sql`, `011_wrought_membership.sql`, `012_wrought_link_codes.sql`, `013_wrought_work.sql`, `014_wrought_plan.sql` `015_wrought_ingest_dedupe_fix.sql` and `016_wrought_set_source.sql` in Supabase. Full checklist in `docs/SETUP.md`.
+   `010_wrought_profile_web.sql`, `011_wrought_membership.sql`, `012_wrought_link_codes.sql`, `013_wrought_work.sql`, `014_wrought_plan.sql` `015_wrought_ingest_dedupe_fix.sql`, `016_wrought_set_source.sql` and `017_wrought_session_aim.sql` in Supabase. Full checklist in `docs/SETUP.md`.
 3. Set env vars in Netlify: `SUPABASE_URL` (**no trailing slash** — Kong answers
    "Invalid path specified in request URL" and nothing says why),
    `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_ANON_KEY`,
