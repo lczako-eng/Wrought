@@ -8490,6 +8490,75 @@ await test('a care flag silences every coaching notification', () => {
   assert.equal(mine[0].body, 'fast starts now');
 });
 
+await test('a goal alert fires against a target they set, and only that', () => {
+  // The founder: "I want personal notifications if you're at, let's say, 80%
+  // calorie burn of the day." Doing that as a bespoke burn alert would cover
+  // one metric; doing it against the goals somebody actually SET covers steps,
+  // active calories, distance and active minutes with one rule — and it can
+  // only ever fire for a target they chose.
+  const rules = [{ id: 'g', kind: 'goal_pace', active: true, threshold: 0.8, metric: 'active_calories' }];
+  const scored = [{ scored: true, metric: 'active_calories', goal: 'burn 800 a day',
+                    target: 800, actual: 660, percent: 83, hit: false, unit: '', direction: 'at_least' }];
+
+  const [a] = dueAlerts({ rules, scored, hour: 18, date: '2026-08-20', flags: [] });
+  assert.equal(a.kind, 'goal_pace');
+  assert.match(a.body, /660/);
+  assert.match(a.body, /800/);
+  assert.match(a.body, /83%/);
+
+  // Under the threshold it stays quiet.
+  assert.deepEqual(dueAlerts({ rules, hour: 18, date: '2026-08-20', flags: [],
+    scored: [{ ...scored[0], actual: 400, percent: 50 }] }), []);
+
+  // A METRIC THEY HAVE NO GOAL FOR HAS NOTHING TO MEASURE. Inventing a target
+  // to make the rule fire would be the invented-calorie failure in a new place
+  // — a number this product chose, arriving on a lock screen as though they
+  // had agreed to it.
+  assert.deepEqual(dueAlerts({ rules, scored: [], hour: 18, date: '2026-08-20', flags: [] }), []);
+
+  // A care flag silences it like every other coaching kind.
+  assert.deepEqual(dueAlerts({ rules, scored, hour: 18, date: '2026-08-20',
+    flags: [{ kind: 'under_eating', detail: 'x' }] }), []);
+});
+
+await test('a ceiling is never cheered on', () => {
+  // An at_most goal filling up is the intake_pace case, which is deliberately
+  // worded not to tell anybody to stop. Firing a second, cheerier "80% there!"
+  // at a LIMIT would read as encouragement to spend the rest of it — on the
+  // one product that must never tell somebody to eat more or less by accident.
+  const out = dueAlerts({
+    rules: [{ id: 'g', kind: 'goal_pace', active: true, threshold: 0.8, metric: 'calories' }],
+    scored: [{ scored: true, metric: 'calories', goal: 'stay under 2,400', target: 2400,
+               actual: 2100, percent: 87, hit: true, unit: '', direction: 'at_most' }],
+    hour: 18, date: '2026-08-20', flags: [],
+  });
+  assert.deepEqual(out, []);
+});
+
+await test('the alert kinds the writer accepts are the kinds the database allows', () => {
+  // The VALID_TYPES lesson, one table along: a writer that accepts more than
+  // the check constraint fails at the database, and one that accepts less
+  // silently drops a feature. Both are invisible in review.
+  const sql = readFileSync(new URL('../schema/018_wrought_alerts.sql', import.meta.url), 'utf8');
+  const check = sql.slice(sql.lastIndexOf('wrought_alerts_kind_valid'));
+  const allowed = [...check.slice(0, check.indexOf(';')).matchAll(/'([a-z_]+)'/g)].map(m => m[1]);
+  assert.deepEqual(Object.keys(ALERT_KINDS).sort(), [...new Set(allowed)].sort(),
+    'ALERT_KINDS and the check constraint disagree');
+
+  // And the tool offers exactly those.
+  const src = readFileSync(new URL('../netlify/functions/mcp.js', import.meta.url), 'utf8');
+  // Anchored on set_alert's OWN schema, not the first "kind" enum in the file
+  // — several tools have one, and picking the wrong one made this assert about
+  // calibrate_lift while claiming to be about alerts.
+  const at = src.indexOf("name: 'set_alert'");
+  assert.ok(at > 0, 'set_alert is gone');
+  const enumAt = src.indexOf('enum: [', src.indexOf('kind:', at));
+  const enumLine = src.slice(enumAt + 'enum: ['.length);
+  const offered = [...enumLine.slice(0, enumLine.indexOf(']')).matchAll(/'([a-z_]+)'/g)].map(m => m[1]);
+  assert.deepEqual(offered.sort(), [...new Set(allowed)].sort(),
+    'set_alert offers a different set of kinds than the database allows');
+});
+
 await test('a notification never tells somebody to eat less', () => {
   // "You have 500 left" invites doing sums about what is allowed, on a lock
   // screen, which is the worst possible place for that thought. The line

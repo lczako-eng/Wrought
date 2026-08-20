@@ -63,6 +63,18 @@ export const ALERT_KINDS = {
     describe: (_t, h) => `at ${String(h).padStart(2, '0')}:00 when there has been no weigh-in for a week`,
     why: 'The weekly trend is what corrects every target. Never congratulates and never comments on the number.',
   },
+  goal_pace: {
+    label: 'A goal you set',
+    needs_hour: false,
+    default_threshold: 0.8,
+    describe: (t, _h, _x, metric) => `when you reach ${Math.round((t ?? 0.8) * 100)}% of your ${metric || 'goal'}`,
+    // The founder asked for "80% calorie burn of the day". Doing it as a bespoke
+    // burn alert would have covered one metric; doing it against the GOALS
+    // somebody actually set covers steps, active calories, distance and active
+    // minutes with the same rule — and it can only ever fire for a target they
+    // chose, which is what keeps it from being the app inventing a standard.
+    why: 'A target they set, reported as a fact. Never a target this product picked, and never an instruction.',
+  },
   custom: {
     label: 'Your own words',
     needs_hour: true,
@@ -90,7 +102,7 @@ export const ALERT_KINDS = {
  */
 export function dueAlerts({ rules = [], day = null, balance = null, calorieTarget = null,
                             week = null, lastWeighDays = null, flags = [], hour = 12,
-                            weekday = 0, date = null } = {}) {
+                            weekday = 0, date = null, scored = [] } = {}) {
   const out = [];
   // A CARE FLAG OUTRANKS EVERYTHING, including the cheerful ones. Coaching
   // stops; their own reminders are not coaching and are left alone.
@@ -113,7 +125,7 @@ export function dueAlerts({ rules = [], day = null, balance = null, calorieTarge
     }
 
     const built = build(r, {
-      day, balance, calorieTarget, week, lastWeighDays, flagged, hour,
+      day, balance, calorieTarget, week, lastWeighDays, flagged, hour, scored,
     });
     if (built) out.push({ id: r.id, kind: r.kind, ...built });
   }
@@ -121,12 +133,12 @@ export function dueAlerts({ rules = [], day = null, balance = null, calorieTarge
   // ONE AT A TIME. Two notifications in the same hour is a lecture, and the
   // second one is never read. The order is the order of harm: something the
   // person explicitly asked for beats anything the server worked out.
-  const rank = { custom: 0, kitchen_closed: 1, weigh_in: 2, intake_pace: 3, move: 4 };
+  const rank = { custom: 0, kitchen_closed: 1, goal_pace: 2, weigh_in: 3, intake_pace: 4, move: 5 };
   out.sort((a, b) => (rank[a.kind] ?? 9) - (rank[b.kind] ?? 9));
   return out.slice(0, 1);
 }
 
-function build(r, { day, balance, calorieTarget, week, lastWeighDays, flagged, hour }) {
+function build(r, { day, balance, calorieTarget, week, lastWeighDays, flagged, hour, scored = [] }) {
   switch (r.kind) {
     case 'custom': {
       const text = String(r.text || '').trim();
@@ -166,6 +178,26 @@ function build(r, { day, balance, calorieTarget, week, lastWeighDays, flagged, h
         title: 'Where the day stands',
         body: `${Math.round(eaten).toLocaleString()} of ${Math.round(target).toLocaleString()} kcal so far — about ${Math.round(at * 100)}%.`,
         why: 'they asked to be told at this point',
+      };
+    }
+
+    case 'goal_pace': {
+      if (flagged) return null;
+      // Against a goal THEY set. A rule naming a metric they have no goal for
+      // has nothing to measure and stays quiet rather than inventing a target.
+      const g = (scored || []).find(x => x.scored && x.metric === r.metric);
+      if (!g || !g.target) return null;
+      const want = num(r.threshold) ?? ALERT_KINDS.goal_pace.default_threshold;
+      if (g.percent / 100 < want) return null;
+      // AN at_most GOAL IS NEVER CHASED. A calorie ceiling filling up is the
+      // intake_pace case, which is already worded not to tell anybody to stop —
+      // firing a second, cheerier "80% there!" at a limit would read as
+      // encouragement to spend the rest of it.
+      if (g.direction === 'at_most') return null;
+      return {
+        title: g.hit ? 'Goal met' : 'Nearly there',
+        body: `${Math.round(g.actual).toLocaleString()}${g.unit} of ${Math.round(g.target).toLocaleString()}${g.unit} — ${g.percent}% of ${g.goal}.`,
+        why: 'a target they set for themselves',
       };
     }
 
@@ -224,7 +256,8 @@ export function describeAlert(r = {}) {
     at_hour: r.at_hour ?? null,
     threshold: r.threshold ?? null,
     text: r.text || null,
-    say: `${kind.label} — ${kind.describe(r.threshold, r.at_hour, r.text)}`,
+    metric: r.metric || null,
+    say: `${kind.label} — ${kind.describe(r.threshold, r.at_hour, r.text, r.metric ? String(r.metric).replace('_', ' ') : null)}`,
   };
 }
 
@@ -235,7 +268,8 @@ export function describeAlert(r = {}) {
  * because it decided it knew best is one they mute on day two, and a muted
  * product never comes back on.
  */
-export function suggestAlerts({ hasCalorieTarget = false, trainDays = null, fasting = false } = {}) {
+export function suggestAlerts({ hasCalorieTarget = false, trainDays = null, fasting = false,
+                                movementGoals = [] } = {}) {
   const out = [];
   if (hasCalorieTarget) {
     out.push({ kind: 'intake_pace', threshold: 0.8,
@@ -246,6 +280,12 @@ export function suggestAlerts({ hasCalorieTarget = false, trainDays = null, fast
   if (trainDays) {
     out.push({ kind: 'move', at_hour: 17,
       say: `A training line at 5pm on days you have not trained and the week is behind ${trainDays}.` });
+  }
+  // Only for goals that actually exist. Offering "80% of your step goal" to
+  // somebody with no step goal is offering a rule that can never fire.
+  for (const m of (movementGoals || []).slice(0, 2)) {
+    out.push({ kind: 'goal_pace', metric: m, threshold: 0.8,
+      say: `A line at 80% of your ${String(m).replace('_', ' ')} goal — close enough that finishing it is still a choice you can make.` });
   }
   out.push({ kind: 'weigh_in', at_hour: 8,
     say: 'A weigh-in line at 8am when it has been a week. The trend is what corrects every target.' });

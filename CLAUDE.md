@@ -2252,6 +2252,25 @@ and nothing happens.
   `set_alert` returns `not_deliverable` when no phone is subscribed — it looks
   exactly like a rule that works right up until the hour comes.
 
+**`goal_pace` — 80% of a target THEY set.** The founder: *"I want personal
+notifications if you're at, let's say, 80% calorie burn of the day."* Doing
+that as a bespoke burn alert would have covered one metric; doing it against
+the GOALS somebody actually set covers steps, active calories, distance and
+active minutes with one rule, scored by the same `scoreGoals` the dashboard
+rings are drawn from — so a notification and the ring it refers to can never
+quote different numbers. **A metric with no goal on file fires nothing and
+`set_alert` refuses to create it**, because inventing a target to make the rule
+work is the invented-calorie failure in a new place: a number this product
+chose, arriving on a lock screen as though they had agreed to it. **An
+`at_most` goal is never cheered on** — a ceiling filling up is `intake_pace`,
+which is deliberately worded not to tell anybody to stop, and a second cheerier
+"80% there" at a limit reads as encouragement to spend the rest of it.
+
+**A tolerant writer beside a stricter constraint, guarded a third time.** The
+harness now reads the `wrought_alerts` check constraint out of 018 and asserts
+`ALERT_KINDS` and `set_alert`'s own enum are exactly equal to it — the shift
+bug's lesson, applied before it could happen again rather than after.
+
 **Still blocked on the two VAPID environment variables.** `scripts/vapid.mjs`
 generates the pair once; regenerating later kills every existing subscription
 silently. Until they are set, `vapidConfigured()` is false and every send is a
@@ -3107,7 +3126,7 @@ self-reporting scale removes the most-abandoned manual entry), then Strava.
 
 ## Conventions
 
-- `npm test` runs `test/harness.mjs` — 608 offline tests, no network, no database.
+- `npm test` runs `test/harness.mjs` — 611 offline tests, no network, no database.
   Run it before every push. It covers the JSON-RPC envelope (which fails as an
   uninformative "could not connect" inside ChatGPT) and all the arithmetic
   (which fails as a confidently wrong number in somebody's verdict).

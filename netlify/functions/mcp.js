@@ -685,14 +685,16 @@ const TOOLS = [
   {
     name: 'set_alert',
     title: 'Set a notification',
-    description: 'Sets a STANDING notification on their phone. Call it whenever somebody says they want telling, reminding, nudging or warned about something — "remind me to stop eating at nine", "tell me when I hit 80% of my calories", "nudge me if I have not trained", "let me know when my fast starts", "ping me to weigh in". WROUGHT can never speak first inside a conversation, but a rule set here is read by a scheduled job every hour and lands on their lock screen — so the way to make the assistant "remind" somebody is ALWAYS to set a rule, never to promise to remember. NEVER say you will remind them without calling this: a promise to remember is a claim about the record, and nothing keeps it. Kinds: intake_pace (where the day stands, at a proportion of their calorie target), kitchen_closed (an hour they choose to stop eating), move (training, when the week is behind), weigh_in (when a week has passed), custom (their own words at an hour they choose — use this for anything that is not one of the others, including fasting). Hours are in THEIR timezone, 0-23; "nine at night" is 21.',
+    description: 'Sets a STANDING notification on their phone. Call it whenever somebody says they want telling, reminding, nudging or warned about something — "remind me to stop eating at nine", "tell me when I hit 80% of my calories", "nudge me if I have not trained", "let me know when my fast starts", "ping me to weigh in". WROUGHT can never speak first inside a conversation, but a rule set here is read by a scheduled job every hour and lands on their lock screen — so the way to make the assistant "remind" somebody is ALWAYS to set a rule, never to promise to remember. NEVER say you will remind them without calling this: a promise to remember is a claim about the record, and nothing keeps it. Kinds: intake_pace (where the day stands, at a proportion of their calorie target), goal_pace (a proportion of a goal they SET — steps, active_calories, distance_km, active_minutes; this is the one for "tell me at 80% of my calorie burn", and it needs a goal to already exist), kitchen_closed (an hour they choose to stop eating), move (training, when the week is behind), weigh_in (when a week has passed), custom (their own words at an hour they choose — use this for anything that is not one of the others, including fasting). Hours are in THEIR timezone, 0-23; "nine at night" is 21.',
     inputSchema: {
       type: 'object',
       properties: {
-        kind:      { type: 'string', enum: ['intake_pace','kitchen_closed','move','weigh_in','custom'],
+        kind:      { type: 'string', enum: ['intake_pace','goal_pace','kitchen_closed','move','weigh_in','custom'],
                      description: 'Which rule. Use custom for anything that is not one of the named four — a fast starting, a supplement, a stretch, anything they said.' },
         at_hour:   { type: 'integer', description: 'Hour in THEIR timezone, 0-23. Required for every kind except intake_pace. "Nine at night" is 21, "half eight in the morning" is 8 — this takes whole hours only, so round to the hour they meant.' },
-        threshold: { type: 'number',  description: 'For intake_pace only: the proportion of their calorie target to fire at. 0.8 means 80%. Defaults to 0.8.' },
+        threshold: { type: 'number',  description: 'For intake_pace and goal_pace: the proportion of the target to fire at. 0.8 means 80%. Defaults to 0.8.' },
+        metric:    { type: 'string', enum: ['steps','active_calories','distance_km','active_minutes'],
+                     description: 'For goal_pace only: which goal to watch. "80% of my calorie burn" is active_calories, "most of the way to my step goal" is steps. It only fires against a goal they have actually SET — if there is none, say so and offer set_goal rather than picking a number.' },
         text:      { type: 'string',  description: 'For custom only: what the notification should SAY, in THEIR OWN WORDS. It is sent verbatim and never rewritten — a reminder in house style is one they stop reading. Keep it short: a lock screen shows about a line.' },
         days:      { type: 'array', items: { type: 'integer' }, description: 'Optional days of the week, 0 = Sunday. Omit for every day.' },
       },
@@ -1580,12 +1582,34 @@ async function setAlert(args, user) {
       say: 'What should it say? I send it word for word, so put it how you would want to read it.' };
   }
 
+  // A RULE WITH NOTHING TO MEASURE NEVER FIRES, and looks exactly like one that
+  // works right up until the day it should have gone off. goal_pace is a
+  // proportion OF A TARGET THEY SET — so if there is no such goal, say so and
+  // offer to set one. Picking a step count or a burn for them here would be the
+  // invented-calorie failure in a new place: a number this product chose,
+  // arriving on a lock screen as though they had agreed to it.
+  if (kind === 'goal_pace') {
+    const metric = String(args.metric || '').trim();
+    if (!metric) {
+      return { error: 'needs_metric',
+        say: 'Which one — steps, calories burned, distance or active minutes?' };
+    }
+    const goals = await getGoals(user.id);
+    const has = goals.some(g => g.metric === metric && g.cadence === 'daily');
+    if (!has) {
+      return { error: 'no_goal_to_watch', metric,
+        say: `There is no daily ${metric.replace('_', ' ')} goal set, so there is nothing for this to be a percentage of. Set the goal first and this rule works from that day on.`,
+        note: 'Do NOT invent a target to make the rule work. Ask what they want to aim for, call set_goal, then set_alert again.' };
+    }
+  }
+
   const row = {
     user_id: user.id, kind,
     at_hour: spec.needs_hour ? hour : null,
-    threshold: kind === 'intake_pace'
+    threshold: spec.default_threshold != null
       ? (Number.isFinite(Number(args.threshold)) ? Number(args.threshold) : spec.default_threshold)
       : null,
+    metric: kind === 'goal_pace' ? (String(args.metric || '').trim() || null) : null,
     text,
     days: Array.isArray(args.days) && args.days.length
       ? args.days.filter(d => Number.isInteger(d) && d >= 0 && d <= 6) : null,
@@ -1657,13 +1681,22 @@ async function myAlerts(_args, user) {
     hasCalorieTarget: goals.some(g => g.metric === 'calories' && g.cadence === 'daily'),
     trainDays: profile.train_days || null,
     fasting: true,
+    // Only goals they have actually set — a rule watching a target that does
+    // not exist can never fire, and offering one is offering a dead switch.
+    movementGoals: goals
+      .filter(g => g.cadence === 'daily' &&
+        ['steps', 'active_calories', 'distance_km', 'active_minutes'].includes(g.metric))
+      .map(g => g.metric),
   });
 
   return {
     on_file,
     // Only what they do not already have, or the offer reads as the product
     // not knowing what it already does.
-    worth_having: suggested.options.filter(o => o.kind === 'custom' || !have.has(o.kind)),
+    worth_having: suggested.options.filter(o => o.kind === 'custom' ||
+      (o.kind === 'goal_pace'
+        ? !on_file.some(a => a.kind === 'goal_pace' && a.metric === o.metric)
+        : !have.has(o.kind))),
     offer_note: suggested.note,
     deliverable: await pushReady(user.id),
     say: on_file.length

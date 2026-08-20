@@ -37,6 +37,12 @@ create table if not exists public.wrought_alerts (
   -- reminder that does not sound like the person who set it.
   text          text,
 
+  -- Which goal a proportional rule watches — steps, active_calories,
+  -- distance_km, active_minutes. Only ever a metric THEY set a goal for: a
+  -- rule naming one they have no target for has nothing to measure, and
+  -- inventing a standard to measure against is the one thing this must not do.
+  metric        text,
+
   -- Days of the week it runs, 0 = Sunday. Null means every day.
   days          integer[],
 
@@ -49,13 +55,16 @@ create table if not exists public.wrought_alerts (
   created_at    timestamptz not null default now()
 );
 
-do $$
-begin
-  if not exists (select 1 from pg_constraint where conname = 'wrought_alerts_kind_valid') then
-    alter table public.wrought_alerts add constraint wrought_alerts_kind_valid
-      check (kind in ('intake_pace','kitchen_closed','move','weigh_in','custom'));
-  end if;
-end $$;
+-- Added after the table existed in this file, so the column is conditional and
+-- the constraint is REPLACED rather than skipped. A guarded "create if not
+-- exists" around a constraint that already exists silently keeps the old list,
+-- which is how a writer and a reader end up disagreeing about what is valid —
+-- the exact bug that filed every logged shift as a note.
+alter table public.wrought_alerts add column if not exists metric text;
+
+alter table public.wrought_alerts drop constraint if exists wrought_alerts_kind_valid;
+alter table public.wrought_alerts add constraint wrought_alerts_kind_valid
+  check (kind in ('intake_pace','goal_pace','kitchen_closed','move','weigh_in','custom'));
 
 create index if not exists wrought_alerts_user_idx
   on public.wrought_alerts (user_id) where active;
