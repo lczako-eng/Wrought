@@ -3329,10 +3329,12 @@ that?"* They get confused constantly and only one of them is ours to fix:
    description is in the model's context to steer it. The catch-up flush is
    the recovery, not the prevention.
 
-And a lock-screen notification like the plant app's *"Garden Check-In"* is a
-**fourth** thing again — nothing to do with the connector. That is web push
-from `brief-nightly.js`, and it is blocked on the two VAPID variables and an
-installed PWA, not on any listing.
+And a lock-screen notification is a **fourth** thing again, with nothing to do
+with the connector at all. That is web push from `brief-nightly.js`, blocked on
+the two VAPID variables and an installed PWA, and no listing anywhere changes
+it. Getting listed will not make notifications work and notifications working
+will not get it listed — the two are unrelated, and conflating them is how a
+week gets spent on the wrong one.
 
 ### Getting listed — the connector connector
 
