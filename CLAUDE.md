@@ -3310,6 +3310,30 @@ for servers anyway), or a widget.
 4. Strava webhooks, so a run lands seconds after it finishes rather than at the
    next sync.
 
+### Three different things called "connected"
+
+The founder, looking at Google Drive and Notion in his ChatGPT composer:
+*"Why are they popping up like that? Why can't I get Wrought to pop up like
+that?"* They get confused constantly and only one of them is ours to fix:
+
+1. **In the built-in list beside Drive and Notion** — a DIRECTORY LISTING,
+   granted by OpenAI on review. A custom connector never appears there however
+   correct it is. `docs/SUBMISSION.md` is the whole answer, and the hard
+   prerequisite is being deployed and used first.
+2. **Addable by pasting `https://wrought.fit/mcp`** — a custom connector. This
+   already works and is genuinely fine for early users.
+3. **Switched ON inside one conversation** — a per-chat toggle the person
+   controls every time. This is the cause of *"I don't currently have its
+   logging connection available"*, and there is **no server-side fix**: when
+   the tools are absent, nothing in `SERVER_INSTRUCTIONS` or any tool
+   description is in the model's context to steer it. The catch-up flush is
+   the recovery, not the prevention.
+
+And a lock-screen notification like the plant app's *"Garden Check-In"* is a
+**fourth** thing again — nothing to do with the connector. That is web push
+from `brief-nightly.js`, and it is blocked on the two VAPID variables and an
+installed PWA, not on any listing.
+
 ### Getting listed — the connector connector
 
 The founder: *"I can't be a back door connector. I'll have to be a connector

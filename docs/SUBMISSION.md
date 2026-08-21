@@ -39,7 +39,7 @@ Everything a directory asks for that is code or copy is done:
 | `.well-known/oauth-authorization-server` | ✅ served with correct Content-Type |
 | `.well-known/oauth-protected-resource` | ✅ |
 | Tool annotations (`readOnlyHint`, `destructiveHint`, …) | ✅ every tool |
-| Tool descriptions a model can act on | ✅ all 25 |
+| Tool descriptions a model can act on | ✅ all 46 |
 | Privacy policy | ✅ `/privacy.html` — names every subprocessor |
 | Terms of service | ✅ `/terms.html` |
 | Agent-readable overview | ✅ `/llms.txt` |
@@ -53,14 +53,42 @@ Everything a directory asks for that is code or copy is done:
 ### Still to do before submitting
 
 - [ ] **Deploy.** Everything below depends on it.
-- [ ] **An icon.** Directories want a square PNG, usually 512×512 and 1024×1024.
-      The wordmark on iron — no symbol, per the brand doctrine.
+- [x] **An icon.** Done — the slab W punched out of a hot plate, at 512/192/180/32
+      plus the SVG, wired into every page head and `.well-known/mcp.json`.
 - [ ] **Rate limiting.** Reviewers check that a connector can't be hammered.
       Per-token counting in Supabase with a short window is enough.
 - [ ] **A demo account** with a few weeks of realistic data. Reviewers need to
       see tools return something, and an empty account reviews badly.
 - [ ] **Two or three screenshots** — the connect flow, a live session, the
       dashboard.
+
+---
+
+## Why it does not appear the way Google Drive does
+
+The founder, looking at his own composer: *"You see Google Drive and Notion —
+why are they popping up like that? Why can't I get Wrought to pop up like
+that?"*
+
+Because those two are **first-party connectors in OpenAI's own directory**,
+shipped with the client. Wrought is a **custom connector**, added by pasting a
+URL, and a custom connector never appears in that built-in list no matter how
+correct it is. Nothing in this repo can change that — it is a listing decision
+on the other side, and it is exactly what this document is for.
+
+**These are three different things and they get confused constantly:**
+
+| | what it is | who controls it |
+|---|---|---|
+| In the built-in list beside Drive and Notion | directory listing | OpenAI, by review |
+| Addable by URL in Settings → Connectors | a custom connector | already works |
+| Switched ON inside one conversation | a per-chat toggle | the user, every chat |
+
+The third one is the cause of *"I don't currently have its logging connection
+available"* — the connector exists and is authorised, and it was simply not
+enabled in that thread. It is not a bug and there is no server-side fix: when
+the tools are absent, none of this server's instructions are in the model's
+context to steer anything. The catch-up flush is the recovery.
 
 ---
 
