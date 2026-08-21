@@ -7951,12 +7951,38 @@ await test('changing the plan moves the targets with it', () => {
   assert.match(fn, /pace: patch\.plan_pace/);
 });
 
+await test('a conversation the tools were absent from gets flushed, not summarised', () => {
+  // The founder's screenshot: "They're recorded in this chat, Broski, but not
+  // logged... because I don't currently have its logging connection
+  // available." Saying so is RIGHT — it is the honest answer and a large
+  // improvement on claiming a save. Stopping there is not: a day sitting in a
+  // conversation is one closed tab from being gone, on the product whose whole
+  // promise is that it remembers.
+  assert.match(SERVER_INSTRUCTIONS, /"RECORDED IN THIS CHAT" IS NOT LOGGED/);
+  assert.match(SERVER_INSTRUCTIONS, /flush the whole conversation into the log/);
+  // The times matter: a whole day filed at the catch-up minute reads as one
+  // meal to the day card, the eating window and every average built on it.
+  assert.match(SERVER_INSTRUCTIONS, /pass time_hint on each item/);
+  // A client may not date its own events, so yesterday is asked about first.
+  assert.match(SERVER_INSTRUCTIONS, /spans a previous day/);
+
+  // BELT ON THE SHEET, BRACES ON THE TOOL. Not every client reads
+  // instructions; every client reads the description of the tool it is calling.
+  const log = TOOLS.find(t => t.name === 'log');
+  assert.match(log.description, /UNAVAILABLE EARLIER IN THE CONVERSATION/);
+  assert.match(log.description, /time_hint/);
+  assert.match(log.description, /opposite of logged/);
+
+  // And "are they logged?" is a question about the record, not the chat.
+  assert.match(SERVER_INSTRUCTIONS, /"are they logged"/);
+});
+
 await test('dictation cannot spell WROUGHT, so the server is told', () => {
   // Nobody types to this product. "Wrought" comes out of voice-to-text as
   // route, rot, rout — and a connector that stops understanding its own name
   // is the hardest regression to notice, because nothing errors.
   assert.match(SERVER_INSTRUCTIONS, /DICTATION CANNOT SPELL/i);
-  for (const v of ['ROUTE', 'ROT', 'ROUT', 'WROT']) {
+  for (const v of ['ROUTE', 'ROT', 'ROZ', 'ROUT', 'WROT']) {
     assert.ok(SERVER_INSTRUCTIONS.includes(v), `${v} is not listed`);
   }
   // The subject decides, not the spelling — directions are still directions.
