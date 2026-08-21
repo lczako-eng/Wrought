@@ -3181,35 +3181,54 @@ self-reporting scale removes the most-abandoned manual entry), then Strava.
 
 ## Status & next steps
 
-**Blocked on founder:**
-1. **The push.** `lczako-eng/wrought` exists, but this session cannot reach it —
-   `add_repo` needs an approval that never rendered, and the GitHub MCP enforces
-   the same allowlist, so the API fallback is blocked too. Escape hatch already
-   sent: a git bundle with full history. `git clone wrought-full.bundle`, set the
-   remote, push. Retry `add_repo` first in any new session.
-2. Run `schema/001_wrought_core.sql`, then `002_wrought_oauth.sql`, then
-   `003_wrought_training.sql`, `004_wrought_fasting.sql`,
-   `005_wrought_activity.sql`, `006_wrought_identity.sql`, `007_wrought_push.sql`,
-   `008_wrought_blocks.sql`, `009_wrought_photos.sql` and
-   `010_wrought_profile_web.sql`, `011_wrought_membership.sql`, `012_wrought_link_codes.sql`, `013_wrought_work.sql`, `014_wrought_plan.sql` `015_wrought_ingest_dedupe_fix.sql`, `016_wrought_set_source.sql` `017_wrought_session_aim.sql` and `018_wrought_alerts.sql` in Supabase. Full checklist in `docs/SETUP.md`.
+**Blocked on founder — this list was re-checked 2026-08-21.** Before adding
+anything to it, verify the item is still true; two of them were not, and a
+stale blocker sends every future session hunting for a problem that is solved.
+
+**The one page that answers "what is actually still off": `https://wrought.fit/status`.**
+It probes for a table or column each migration creates, reports which
+environment variables are set (presence, never values), and gives ONE next
+step. Read it before this list.
+
+1. ~~**The push.**~~ **DONE — do not resurrect the git bundle.**
+   `lczako-eng/Wrought` is pushed and public, and the site is **DEPLOYED**:
+   Netlify project `wrought`, primary URL `https://wrought.fit`, last deploy
+   state `ready` (verified 2026-08-21). The old entry here said a session could
+   not reach the repo and told the next agent to clone from a bundle. That has
+   been false for some time and cost a re-diagnosis.
+2. **The migrations — ONE PASTE, not eighteen.** Open `schema/ALL.sql`, copy
+   the whole file, paste it into the Supabase SQL editor, run it. That is every
+   migration in order; every statement is idempotent, so re-running after a
+   partial failure picks up rather than doubling. `npm test` fails if the file
+   is stale. The per-file table — and what stops working without each one —
+   lives in `docs/SETUP.md`. **Listing them individually here is what made this
+   section rot**; the list is maintained in one place now.
 3. Set env vars in Netlify: `SUPABASE_URL` (**no trailing slash** — Kong answers
    "Invalid path specified in request URL" and nothing says why),
    `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_ANON_KEY`,
    `WROUGHT_SITE_URL=https://wrought.fit`,
    `WROUGHT_ADMIN_EMAILS=laszlobrianczako@gmail.com`. Nothing to inject —
    `/config.js` serves the two public values to the pages from these.
-4. **Sign-in providers** — `docs/SIGN_IN.md` has the full walkthrough. In
+4. **The VAPID keys — until they exist, every notification is a silent no-op.**
+   `node scripts/vapid.mjs` once, then `WROUGHT_VAPID_PUBLIC`,
+   `WROUGHT_VAPID_PRIVATE` and `WROUGHT_VAPID_SUBJECT` in Netlify.
+   `vapidConfigured()` is false without them, so the nightly brief, every
+   `set_alert` rule and every goal-pace notification are stored correctly and
+   delivered nowhere — which looks exactly like working software right up until
+   the hour comes and nothing arrives. **Generate the pair ONCE**: regenerating
+   later kills every existing subscription silently, with no error to anybody.
+5. **Sign-in providers** — `docs/SIGN_IN.md` has the full walkthrough. In
    Supabase: turn ON *manual linking*, add `https://wrought.fit/**` to the
    redirect URLs, set the Site URL, and configure the Google provider (free) and
    the Apple provider (needs the **US$99/year** Apple Developer Program). Until
    each is on, its button says so in as many words rather than failing oddly.
-5. **Supabase → Authentication → Providers → Email → turn OFF "Confirm email."**
+6. **Supabase → Authentication → Providers → Email → turn OFF "Confirm email."**
    Without this, `signUp` still sends a confirmation link, which is exactly what
    the password change was meant to get rid of. The pages handle it either way
    and say so rather than hanging, but the founder's ask is only actually met
    with it off.
-6. Domain bought: **wrought.fit** (renews ~C$70 Aug 2027).
-7. **The Shortcut route is RETIRED (2026-08-10)** — the founder built one end
+7. Domain bought: **wrought.fit** (renews ~C$70 Aug 2027).
+8. **The Shortcut route is RETIRED (2026-08-10)** — the founder built one end
    to end and his 2,778-step day arrived as 33,640: Shortcuts exposes raw
    per-device samples, phone+watch double, and no reachable filter or grouping
    fixes it. connect.html now leads with Health Auto Export (Apple's own

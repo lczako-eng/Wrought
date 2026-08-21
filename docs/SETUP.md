@@ -39,6 +39,9 @@ Or one at a time, top to bottom:
 | `013_wrought_work.sql` | `log_activity` — a work shift counted as its own burn, never as a session |
 | `014_wrought_plan.sql` | the plan — pace (gentle/steady/aggressive) and how hard it pushes |
 | `015_wrought_ingest_dedupe_fix.sql` | **workouts from a watch landing at all** — 001's partial index made every device workout write fail silently |
+| `016_wrought_set_source.sql` | **the bridge** — a workout logged after the fact reaching `wrought_sets`; without the column the sync refuses to run rather than double-counting |
+| `017_wrought_session_aim.sql` | the session's stated aim, and the rack screen's tick list — an un-run 017 makes PostgREST reject the whole query, so the screen says "no workout is running" while one plainly is |
+| `018_wrought_alerts.sql` | `set_alert` / `my_alerts` / `drop_alert` — notifications you set by talking |
 
 Each endpoint that needs a missing migration says which one by name rather than
 failing with something generic.
