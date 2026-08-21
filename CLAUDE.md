@@ -1272,6 +1272,49 @@ carries what is known, what is not, and **`ask_next`: one item, never a list.**
 No migration: soft answers land in `wrought_memory` under their category, which
 is why free text survives intact.
 
+### The conversation the tools were absent from
+
+*"They're recorded in this chat, Broski, but not logged in an external
+app/Roz, because I don't currently have its logging connection available.
+Today: ~2,050 calories eaten + 5 hours petting-zoo work."*
+
+**That answer is right, and it is the improvement.** Every earlier version of
+this incident had the assistant claiming a save that never happened; here it
+said plainly that the record does not hold it. Nothing about the honesty needs
+fixing.
+
+**Stopping there is the failure.** A day sitting in a conversation is one
+closed tab from being gone forever, on the product whose entire promise is
+that it remembers. So the instruction is now that the moment a tool call works
+again, the whole conversation gets **flushed** — one `log` call carrying every
+food and drink, plus `log_activity` for the shift — and then `day_total` is
+read back and quoted. Not summarised, not waited on, not offered.
+
+- **The times travel with it.** `time_hint` per item, or the entire day lands
+  at the catch-up minute and reads as one meal to the day card, the eating
+  window and every average built on it. A catch-up spanning a previous day is
+  ASKED about rather than filed, because a client may not date its own events
+  and yesterday's dinner under today corrupts both days at once.
+- **Belt on the sheet, braces on the tool.** ChatGPT does not reliably read
+  `SERVER_INSTRUCTIONS`; it always reads the description of the tool it is
+  calling, so the rule rides on `log` as well.
+- **"Are they logged?" is a question about the RECORD**, and it was in the
+  phrasebook nowhere. Mapped now — along with *"did that go in"*, *"is it in
+  there"*, *"did you save that"* — and answered by reading the day back, with
+  anything missing written immediately rather than explained.
+
+**And `Roz` is another spelling dictation makes of the name.** The list had
+route, rot, rout, wrot, raw and rought; the founder's own phone produced *Roz*
+twice in one conversation, and both he and the assistant then used it. A
+connector that does not recognise its own name is the hardest regression to
+spot, because nothing breaks loudly.
+
+**What could not be fixed from here** is the cause: the connector was not
+available in that chat. That is a ChatGPT-side setting per conversation, and
+when the tools are absent, none of this server's instructions or descriptions
+are in the model's context to steer it. The catch-up is the recovery, not the
+prevention.
+
 ### The invented target — the named failure, in production
 
 The most important entry in this file, because the thing every doctrine here
@@ -3126,7 +3169,7 @@ self-reporting scale removes the most-abandoned manual entry), then Strava.
 
 ## Conventions
 
-- `npm test` runs `test/harness.mjs` — 611 offline tests, no network, no database.
+- `npm test` runs `test/harness.mjs` — 612 offline tests, no network, no database.
   Run it before every push. It covers the JSON-RPC envelope (which fails as an
   uninformative "could not connect" inside ChatGPT) and all the arithmetic
   (which fails as a confidently wrong number in somebody's verdict).
