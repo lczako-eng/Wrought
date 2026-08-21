@@ -7097,6 +7097,55 @@ await test('no pill can push the dashboard sideways', () => {
     '.ls-sets carries sentence pills as well as set pills — nowrap there is the same bug');
 });
 
+await test('a figure is never styled as its own caption', () => {
+  // THE SAME LESSON A THIRD TIME, and this one was live on the landing page.
+  // Every count-up figure is wrapped in <span class="n">, so a caption rule
+  // written as a bare descendant — `.stat span { font-size: 14px }` — lands on
+  // the NUMBER as well. The three stats under the hero rendered at 14px in dim
+  // grey with their units set LARGER than the figures they label, on the
+  // section whose entire promise is a number you can read across a room. It
+  // had already been found and fixed for .leg, with a comment; .stat has the
+  // identical shape and was missed. Deliberately broad: a caption belongs to
+  // the direct child, and `>` costs one character.
+  const src = page('index.html').replace(/\/\*[\s\S]*?\*\//g, '');
+  const loose = [...src.matchAll(/^\.([\w-]+) span\s*\{([^}]*)\}/gm)]
+    .filter(m => /font-size|color|display/.test(m[2]))
+    .map(m => m[1]);
+  assert.deepEqual(loose, [],
+    'a bare descendant span rule also catches <span class="n"> — write it as > span');
+});
+
+group('A CDN is not allowed to take the page down');
+
+await test('the dashboard says something when the client never arrives', () => {
+  const src = page('app.html');
+  const tail = src.slice(src.indexOf('const clientReady'));
+  // It was a bare top-level await on jsdelivr. When the import rejects, every
+  // line after it never runs — boot() included — so the screen stays black:
+  // no wordmark, no message, nothing to do. Worst of all on ?demo=1, which is
+  // shown to somebody with no account and no warm render to fall back on.
+  assert.match(tail, /try \{[\s\S]*?await clientReady[\s\S]*?\} catch/,
+    'a bare top-level await on the CDN: the module rejects and boot() never runs');
+  assert.ok(/clientDown = true/.test(tail),
+    'the failure is not recorded, so nothing downstream can say what happened');
+  assert.ok(tail.lastIndexOf('boot();') > tail.indexOf('catch'),
+    'boot() has to run whether or not the client arrived — the demo and the manual need no client');
+});
+
+await test('a network failure is never answered with a password form', () => {
+  // The offline card's doctrine, one layer in: a page that answers a failed
+  // load with the sign-in screen tells somebody they have been signed out,
+  // which is the one thing a product whose promise is memory must not fake.
+  const src = page('app.html');
+  assert.match(src, /if \(!sb && clientDown\)/,
+    'the two failures are answered the same way — no client is not a missing key');
+  const card = src.slice(src.indexOf('id="down"'), src.indexOf('<div id="app"'));
+  assert.ok(card.length > 100, 'there is no honest failure card');
+  assert.ok(!/type="password"|id="pass"|Sign in/.test(card),
+    'the failure card asks somebody to sign in again');
+  assert.match(card, /not been signed out/, 'it does not say the record is untouched');
+});
+
 group('One wordmark, on every page');
 
 await test('the word is set in the same slab everywhere', () => {
