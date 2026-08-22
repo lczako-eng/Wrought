@@ -8727,6 +8727,40 @@ await test('a ceiling is never cheered on', () => {
   assert.deepEqual(out, []);
 });
 
+await test('a shift filed as a note is repaired, and a real note never is', () => {
+  // Fixing the writer only fixed the NEXT shift. The record still held weeks of
+  // them typed as notes, worth nothing to the burn, and nobody would ever find
+  // them by looking — the founder's own petting-zoo days among them. A fix that
+  // leaves the existing data wrong has fixed half the bug.
+  const src = readFileSync(new URL('../netlify/functions/lib/session.js', import.meta.url), 'utf8');
+  const from = src.indexOf('export async function refileMistypedActivity');
+  assert.ok(from > 0, 'the repair is gone');
+  const body = src.slice(from, src.indexOf('\nexport ', from + 10));
+
+  // THE FINGERPRINT IS WHAT MAKES IT SAFE. log_activity is the only thing that
+  // writes key + met + hours + kcal together; a dictated note has none of them.
+  for (const field of ['key', 'met', 'hours', 'kcal']) {
+    assert.ok(body.includes(`d.${field}`) || body.includes(`Number(d.${field})`),
+      `the matcher ignores ${field}, so it is guessing`);
+  }
+  // Matching on the SUMMARY would re-type a genuine note about a workday, and
+  // there is no undo for that.
+  assert.ok(!/summary/.test(body), 'the repair matches on prose, which is not reversible');
+  // Only ever notes → activity. Nothing else may be re-typed.
+  assert.match(body, /\.eq\('event_type', 'note'\)/);
+  assert.match(body, /event_type: 'activity'/);
+  // Scoped to the caller's own rows on BOTH the read and the write.
+  assert.equal((body.match(/\.eq\('user_id', userId\)/g) || []).length, 2,
+    'the repair is not scoped to one user on both statements');
+  // A swallowed error is a repair that silently never runs — the same class of
+  // failure as the bug it undoes.
+  assert.match(body, /if \(error\) return/);
+
+  // And it runs on the way into the dashboard, beside the other sweeps.
+  const prog = readFileSync(new URL('../netlify/functions/api-progress.js', import.meta.url), 'utf8');
+  assert.match(prog, /refileMistypedActivity\(user\.id\)/);
+});
+
 await test('every reader of wrought_alerts selects the columns the rules need', () => {
   // THE QUIETEST POSSIBLE FAILURE, caught before it shipped. `metric` was
   // added with goal_pace and goal_check, and all three readers of the table
