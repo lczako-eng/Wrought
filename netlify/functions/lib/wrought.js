@@ -1235,10 +1235,73 @@ export async function insertEvents(userId, profile, parsedEvents, { source = 'ag
     };
   });
 
-  const { data, error } = await supabase.from('wrought_events').insert(rows).select('id, event_type, summary, local_date, estimated, detail, occurred_at');
-  if (error) throw new Error(error.message);
-  return data || [];
+  const COLS = 'id, event_type, summary, local_date, estimated, detail, occurred_at';
+  const { data, error } = await supabase.from('wrought_events').insert(rows).select(COLS);
+  if (!error) return data || [];
+
+  // A MISSING MIGRATION MUST NEVER COST SOMEBODY THE WRITE.
+  //
+  // This is the 015 lesson, which was written down and then not applied here.
+  // 'activity' was added to VALID_TYPES on 19 August so a shift would stop
+  // being filed as a note — correct, and it quietly assumed 013 had been run.
+  // It had not. The database's check constraint rejects the row, insertEvents
+  // throws, and `log` does not catch it, so THE WHOLE CALL FAILS: a sentence
+  // mentioning a shift and a meal loses the meal too. That is strictly worse
+  // than the bug being fixed, and it is a regression I introduced.
+  //
+  // So: if the type is what the database refused, downgrade only the types a
+  // later migration introduced, keep what was intended on the row so the
+  // repair sweep can put it back, and retry. Nothing is lost, and the caller
+  // is told rather than left to wonder why the burn is short.
+  const plan = degradePlan(rows, error.message || error);
+  if (!plan) throw new Error(String(error.message || error));
+
+  const { data: saved, error: retryErr } = await supabase
+    .from('wrought_events').insert(plan.rows).select(COLS);
+  if (retryErr) throw new Error(retryErr.message);
+
+  const out = saved || [];
+  // Carried on the array so no caller's .map or [0] changes shape.
+  out.degraded = plan.degraded;
+  return out;
 }
+
+/**
+ * Whether a failed insert can be saved by downgrading a type the database has
+ * not been taught yet — and what to write instead.
+ *
+ * Pure, and separate from the insert, because a test that has to stub a module
+ * namespace cannot fail: ES namespaces are sealed, the stub silently does
+ * nothing, and the assertion passes against broken code. That happened here
+ * once already. This shape is testable with no database at all.
+ *
+ * @returns { rows, degraded } to retry with, or null to rethrow
+ */
+export function degradePlan(rows = [], errorMessage = '') {
+  const msg = String(errorMessage || '');
+  if (!/constraint|check|invalid input/i.test(msg)) return null;
+
+  const risky = rows.filter(r => LATE_TYPES.has(r.event_type));
+  if (!risky.length) return null;
+
+  const intended = [...new Set(risky.map(r => r.event_type))];
+  return {
+    rows: rows.map(r => (LATE_TYPES.has(r.event_type)
+      ? { ...r, event_type: 'note',
+          detail: { ...(r.detail || {}), _intended_type: r.event_type } }
+      : r)),
+    degraded: {
+      types: intended,
+      migration: intended.includes('activity') ? '013_wrought_work.sql' : '004_wrought_fasting.sql',
+      say: `Recorded, but stored as a note rather than ${intended.join(' or ')} — the database has not had that type added yet, so it will not count toward the day's totals until the migration is run. Nothing was lost.`,
+    },
+  };
+}
+
+// Event types a migration AFTER 001 introduced. These are the only ones a
+// database can legitimately refuse while everything else still works, so they
+// are the only ones that get downgraded rather than losing the write.
+const LATE_TYPES = new Set(['activity', 'fast']);
 
 // THE LIST HAS TO MATCH THE CHECK CONSTRAINT, and for a while it did not.
 //
