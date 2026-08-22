@@ -176,6 +176,20 @@ export const handler = async (event) => {
                             options: burn.options || undefined });
       }
 
+      // LOGGING WORK CAN NEVER MAKE SOMEBODY'S BURN GO DOWN.
+      //
+      // With no weigh-in on file activityBurn returns known:true and kcal:null
+      // — the hours are recorded, the calories cannot be priced. Writing that
+      // here would take the session OUT of training, where it was contributing
+      // whatever the watch measured, and put it into work contributing NOTHING.
+      // The burn would fall as a direct result of correcting the record, which
+      // is being punished for telling the truth — the one thing this path must
+      // not do. Refuse, name the gap, and leave the row exactly as it is.
+      if (burn.kcal == null) {
+        return reply(200, { ok: false, needs: 'weight',
+          say: 'Work is priced from hours on task and your bodyweight, and there is no recent weigh-in on file — so this would move off your training and count nothing at all. Log a weight first and this will work.' });
+      }
+
       // A workout event can own derived rows in wrought_sets. Leaving them
       // behind would keep a lift record standing on training the log no longer
       // holds — the same reason the food DELETE refuses to touch a workout.
