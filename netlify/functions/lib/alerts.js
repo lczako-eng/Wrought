@@ -75,6 +75,20 @@ export const ALERT_KINDS = {
     // chose, which is what keeps it from being the app inventing a standard.
     why: 'A target they set, reported as a fact. Never a target this product picked, and never an instruction.',
   },
+  goal_check: {
+    label: 'Where a goal stands',
+    needs_hour: true,
+    describe: (_t, h, _x, metric) => `at ${String(h).padStart(2, '0')}:00, a read of your ${metric || 'goal'}`,
+    // The founder: "by 4 o'clock every day there should be a notification
+    // stating you're at 80% — or what percent of your steps you are."
+    //
+    // THAT IS A DIFFERENT RULE FROM goal_pace, and the difference is the whole
+    // point. goal_pace waits for a threshold and fires when it is crossed, so
+    // on a slow day it never fires at all — which is exactly the day somebody
+    // wanted telling. This one fires AT AN HOUR THEY CHOSE and reports the
+    // number whatever it is, so there is still time in the day to act on it.
+    why: 'A scheduled read of a target they set, at an hour they picked. States the figure and stops — never what is left to do, and never an instruction.',
+  },
   custom: {
     label: 'Your own words',
     needs_hour: true,
@@ -133,7 +147,7 @@ export function dueAlerts({ rules = [], day = null, balance = null, calorieTarge
   // ONE AT A TIME. Two notifications in the same hour is a lecture, and the
   // second one is never read. The order is the order of harm: something the
   // person explicitly asked for beats anything the server worked out.
-  const rank = { custom: 0, kitchen_closed: 1, goal_pace: 2, weigh_in: 3, intake_pace: 4, move: 5 };
+  const rank = { custom: 0, kitchen_closed: 1, goal_check: 2, goal_pace: 3, weigh_in: 4, intake_pace: 5, move: 6 };
   out.sort((a, b) => (rank[a.kind] ?? 9) - (rank[b.kind] ?? 9));
   return out.slice(0, 1);
 }
@@ -198,6 +212,30 @@ function build(r, { day, balance, calorieTarget, week, lastWeighDays, flagged, h
         title: g.hit ? 'Goal met' : 'Nearly there',
         body: `${Math.round(g.actual).toLocaleString()}${g.unit} of ${Math.round(g.target).toLocaleString()}${g.unit} — ${g.percent}% of ${g.goal}.`,
         why: 'a target they set for themselves',
+      };
+    }
+
+    case 'goal_check': {
+      if (flagged) return null;
+      const g = (scored || []).find(x => x.scored && x.metric === r.metric);
+      if (!g || !g.target) return null;
+      // A ceiling is not something to be walked toward on a schedule. Same
+      // reason goal_pace refuses one: intake_pace already covers it, worded not
+      // to tell anybody to stop.
+      if (g.direction === 'at_most') return null;
+
+      // NOTHING SENT TODAY IS NOT ZERO PROGRESS. Steps arrive from a phone, and
+      // a phone that has not synced yet reads as 0 — so a scheduled 4pm report
+      // would say "0% of your steps" to somebody who had walked all morning.
+      // That is a false claim about their day arriving on a lock screen, which
+      // is worse than saying nothing. Silence until something has actually been
+      // measured; the dashboard already names the same gap as awaiting_device.
+      if (!(Number(g.actual) > 0)) return null;
+
+      return {
+        title: g.hit ? 'Goal met' : 'Where you are',
+        body: `${Math.round(g.actual).toLocaleString()}${g.unit} of ${Math.round(g.target).toLocaleString()}${g.unit} — ${g.percent}% of ${g.goal}.`,
+        why: 'a scheduled read of a target they set',
       };
     }
 
@@ -284,8 +322,14 @@ export function suggestAlerts({ hasCalorieTarget = false, trainDays = null, fast
   // Only for goals that actually exist. Offering "80% of your step goal" to
   // somebody with no step goal is offering a rule that can never fire.
   for (const m of (movementGoals || []).slice(0, 2)) {
+    const name = String(m).replace('_', ' ');
     out.push({ kind: 'goal_pace', metric: m, threshold: 0.8,
-      say: `A line at 80% of your ${String(m).replace('_', ' ')} goal — close enough that finishing it is still a choice you can make.` });
+      say: `A line at 80% of your ${name} goal — close enough that finishing it is still a choice you can make.` });
+    // The scheduled twin. It matters most on the day the threshold one never
+    // fires: at 4pm on 3,000 steps there is still an evening to do something
+    // about it, and a rule that only speaks at 80% says nothing at all.
+    out.push({ kind: 'goal_check', metric: m, at_hour: 16,
+      say: `A read of your ${name} at 4pm whatever the number is — the slow day is the one worth hearing about, and a rule that only fires at 80% is silent on exactly that day.` });
   }
   out.push({ kind: 'weigh_in', at_hour: 8,
     say: 'A weigh-in line at 8am when it has been a week. The trend is what corrects every target.' });

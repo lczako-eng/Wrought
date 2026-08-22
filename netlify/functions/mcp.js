@@ -46,7 +46,7 @@ import {
   orderPlan, orderInsight, deviceMatrix, weekdayPattern, weekSoFar, goalCall, baselineFromClaim, readiness, nextSetLoad,
   normaliseMovement, readMovement, syncSetsFromWorkouts,
   ACTIVITY,
-  targetOptions,
+  targetOptions, goalsToSet,
   PACES, PUSH, sessionsCanCarryAim,
 } from './lib/training.js';
 import { PROGRAMMES, GOALS, MOVEMENTS, movementsFor, pickProgramme, buildProgramme, buildBlock, blockPosition, BLOCK_LENGTHS } from './lib/library.js';
@@ -688,16 +688,16 @@ const TOOLS = [
   {
     name: 'set_alert',
     title: 'Set a notification',
-    description: 'Sets a STANDING notification on their phone. Call it whenever somebody says they want telling, reminding, nudging or warned about something — "remind me to stop eating at nine", "tell me when I hit 80% of my calories", "nudge me if I have not trained", "let me know when my fast starts", "ping me to weigh in". WROUGHT can never speak first inside a conversation, but a rule set here is read by a scheduled job every hour and lands on their lock screen — so the way to make the assistant "remind" somebody is ALWAYS to set a rule, never to promise to remember. NEVER say you will remind them without calling this: a promise to remember is a claim about the record, and nothing keeps it. Kinds: intake_pace (where the day stands, at a proportion of their calorie target), goal_pace (a proportion of a goal they SET — steps, active_calories, distance_km, active_minutes; this is the one for "tell me at 80% of my calorie burn", and it needs a goal to already exist), kitchen_closed (an hour they choose to stop eating), move (training, when the week is behind), weigh_in (when a week has passed), custom (their own words at an hour they choose — use this for anything that is not one of the others, including fasting). Hours are in THEIR timezone, 0-23; "nine at night" is 21.',
+    description: 'Sets a STANDING notification on their phone. Call it whenever somebody says they want telling, reminding, nudging or warned about something — "remind me to stop eating at nine", "tell me when I hit 80% of my calories", "nudge me if I have not trained", "let me know when my fast starts", "ping me to weigh in". WROUGHT can never speak first inside a conversation, but a rule set here is read by a scheduled job every hour and lands on their lock screen — so the way to make the assistant "remind" somebody is ALWAYS to set a rule, never to promise to remember. NEVER say you will remind them without calling this: a promise to remember is a claim about the record, and nothing keeps it. Kinds: intake_pace (where the day stands, at a proportion of their calorie target), goal_check (a scheduled read of a goal they SET, at an hour they choose — "by four every day tell me where my steps are"; reports the figure WHATEVER it is, which is the point: a threshold rule stays silent on the slow day somebody most wanted telling), goal_pace (a proportion of a goal they SET — steps, active_calories, distance_km, active_minutes; this is the one for "tell me at 80% of my calorie burn", and it needs a goal to already exist), kitchen_closed (an hour they choose to stop eating), move (training, when the week is behind), weigh_in (when a week has passed), custom (their own words at an hour they choose — use this for anything that is not one of the others, including fasting). Hours are in THEIR timezone, 0-23; "nine at night" is 21.',
     inputSchema: {
       type: 'object',
       properties: {
-        kind:      { type: 'string', enum: ['intake_pace','goal_pace','kitchen_closed','move','weigh_in','custom'],
+        kind:      { type: 'string', enum: ['intake_pace','goal_pace','goal_check','kitchen_closed','move','weigh_in','custom'],
                      description: 'Which rule. Use custom for anything that is not one of the named four — a fast starting, a supplement, a stretch, anything they said.' },
         at_hour:   { type: 'integer', description: 'Hour in THEIR timezone, 0-23. Required for every kind except intake_pace. "Nine at night" is 21, "half eight in the morning" is 8 — this takes whole hours only, so round to the hour they meant.' },
         threshold: { type: 'number',  description: 'For intake_pace and goal_pace: the proportion of the target to fire at. 0.8 means 80%. Defaults to 0.8.' },
         metric:    { type: 'string', enum: ['steps','active_calories','distance_km','active_minutes'],
-                     description: 'For goal_pace only: which goal to watch. "80% of my calorie burn" is active_calories, "most of the way to my step goal" is steps. It only fires against a goal they have actually SET — if there is none, say so and offer set_goal rather than picking a number.' },
+                     description: 'For goal_pace and goal_check: which goal to watch. "80% of my calorie burn" is active_calories, "most of the way to my step goal" is steps. It only fires against a goal they have actually SET — if there is none, say so and offer set_goal rather than picking a number.' },
         text:      { type: 'string',  description: 'For custom only: what the notification should SAY, in THEIR OWN WORDS. It is sent verbatim and never rewritten — a reminder in house style is one they stop reading. Keep it short: a lock screen shows about a line.' },
         days:      { type: 'array', items: { type: 'integer' }, description: 'Optional days of the week, 0 = Sunday. Omit for every day.' },
       },
@@ -1591,7 +1591,7 @@ async function setAlert(args, user) {
   // offer to set one. Picking a step count or a burn for them here would be the
   // invented-calorie failure in a new place: a number this product chose,
   // arriving on a lock screen as though they had agreed to it.
-  if (kind === 'goal_pace') {
+  if (kind === 'goal_pace' || kind === 'goal_check') {
     const metric = String(args.metric || '').trim();
     if (!metric) {
       return { error: 'needs_metric',
@@ -1612,7 +1612,7 @@ async function setAlert(args, user) {
     threshold: spec.default_threshold != null
       ? (Number.isFinite(Number(args.threshold)) ? Number(args.threshold) : spec.default_threshold)
       : null,
-    metric: kind === 'goal_pace' ? (String(args.metric || '').trim() || null) : null,
+    metric: (kind === 'goal_pace' || kind === 'goal_check') ? (String(args.metric || '').trim() || null) : null,
     text,
     days: Array.isArray(args.days) && args.days.length
       ? args.days.filter(d => Number.isInteger(d) && d >= 0 && d <= 6) : null,
@@ -1696,9 +1696,11 @@ async function myAlerts(_args, user) {
     on_file,
     // Only what they do not already have, or the offer reads as the product
     // not knowing what it already does.
+    // A metric-scoped kind is only "already had" for THAT metric — somebody
+    // watching their steps has not thereby set one up for their burn.
     worth_having: suggested.options.filter(o => o.kind === 'custom' ||
-      (o.kind === 'goal_pace'
-        ? !on_file.some(a => a.kind === 'goal_pace' && a.metric === o.metric)
+      ((o.kind === 'goal_pace' || o.kind === 'goal_check')
+        ? !on_file.some(a => a.kind === o.kind && a.metric === o.metric)
         : !have.has(o.kind))),
     offer_note: suggested.note,
     deliverable: await pushReady(user.id),
@@ -2457,6 +2459,18 @@ No preamble, no disclaimers, no warm-up boilerplate unless it matters for a name
     } catch { /* state alone is still useful */ }
   }
 
+  // THE TARGETS THAT MAKE A NOTIFICATION POSSIBLE, asked before the next
+  // session rather than whenever somebody happens to wonder. A percentage is a
+  // fraction of something: with no daily target there is nothing for "80% of
+  // your steps" to be 80% OF, and set_alert refuses to create the rule. So the
+  // goal is not a separate feature from the notifications — it is the thing
+  // that makes them possible. Carried ON the suggestion, never blocking it.
+  const needGoals = goalsToSet({
+    goals,
+    targets: await targetsFor(user.id, profile),
+    stepsAvg: summary.steps_avg,
+  });
+
   // Before the first session, the plan gets explained. The founder's ask, in
   // his words: "this should be explained right when you try your first workout
   // — what plan are you on? Let's build this thing before diving right into
@@ -2505,11 +2519,15 @@ No preamble, no disclaimers, no warm-up boilerplate unless it matters for a name
     plan: { set: plan.set, intent: plan.intent, pace: plan.pace, push: plan.push,
             train_days: plan.train_days, say: plan.say,
             ...(plan.missing ? { missing: plan.missing, options: plan.options } : {}) },
+    // The daily targets, asked before the next session for everybody. Absent
+    // once they are set, so it is a gap being filled rather than a form that
+    // follows somebody around.
+    ...(needGoals ? { goals_needed: needGoals } : {}),
     say: session || `Neglected: ${summary.matrix.neglected.join(', ') || 'nothing obvious'}. Last session was ${state.days_since_last_session ?? 'never'} days ago.`,
     note: (plan.set
       ? `Open with the plan in ONE short line before the session — "${plan.say}" — so they know what this is for, then give them the workout. Add half a clause that any of it changes by just saying so.`
       : `THEY HAVE NO PLAN YET. Before the session, say what a plan is in two lines and ask for all of it in ONE message — never a form, never one question at a time: ${(plan.missing || []).join('; ')}. Give the pace and push choices in plain words (${Object.entries(plan.options.pace).map(([k, v]) => `${k}: ${v}`).join(' / ')}). Then call set_plan and set_goal, and give them the workout in the same turn — do NOT make them ask twice.`)
-      + ' OFFER THE WARM-UP in one short line with the movements named, and say they can skip it in the same breath — then carry straight on without waiting. It is dynamic movement, never held stretches: holding a stretch right before a heavy set costs force for the next half hour, and the static work is offered at the END by end_session. ASK THE PREFLIGHT LINE in the same message — how they are feeling and whether there is anything they want out of today — and do NOT wait for an answer before giving them the session. A stated goal for the session beats what the log says is overdue. The staleness numbers come from their real log. If they train it, call log with what they actually did — not what was prescribed.',
+      + ' OFFER THE WARM-UP in one short line with the movements named, and say they can skip it in the same breath — then carry straight on without waiting. It is dynamic movement, never held stretches: holding a stretch right before a heavy set costs force for the next half hour, and the static work is offered at the END by end_session. IF goals_needed IS PRESENT, ask for those targets in the SAME message too, in one line: what they want to be eating — and offer MAINTAIN as a real choice, not a fallback — plus the step figure, which came from their own average. Quote the computed calorie numbers exactly and never invent one. If they would rather just train, drop it and give them the session. ASK THE PREFLIGHT LINE in the same message — how they are feeling and whether there is anything they want out of today — and do NOT wait for an answer before giving them the session. A stated goal for the session beats what the log says is overdue. The staleness numbers come from their real log. If they train it, call log with what they actually did — not what was prescribed.',
     next_actions: ['set_plan / set_goal if the plan is not set', 'log the session afterwards', 'progress to see the matrix fill in'],
   };
 }
@@ -2643,6 +2661,16 @@ async function startSession(args, user) {
     sessionName: name,
   });
 
+  // Same targets prompt as suggest_workout — this is the OTHER door into a
+  // session and the one somebody reaches by saying "I'm at the gym", so a
+  // block that only rode on the suggestion would miss most sessions. Carried
+  // ON the handover, never blocking it.
+  const needGoals = goalsToSet({
+    goals,
+    targets: await targetsFor(user.id, profile, dayNow),
+    stepsAvg: summariseRange(recent, profile).steps_avg,
+  });
+
   // Today's loads, computed per exercise from their own history.
   const first = plan[0];
   const opener = await loadCallFor(user.id, first, tier);
@@ -2711,6 +2739,8 @@ async function startSession(args, user) {
     // they did not say, and `aim_pending` asks once rather than inventing one.
     aim,
     aim_pending: !aim,
+    // The daily targets a notification can be a percentage of. Gone once set.
+    ...(needGoals ? { goals_needed: needGoals } : {}),
     aim_saved: canAim ? undefined : 'This session\'s aim cannot be stored until migration 017 has been run, so it will not be on the record afterwards.',
     // The write-up, when the routine carries one. A saved workout is a name, an
     // order, and the reason it is in that order — losing the third makes it a
