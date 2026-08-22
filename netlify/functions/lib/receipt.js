@@ -150,6 +150,21 @@ export function dayReceipt({ day = null, balance = null, date = null, today = nu
   if (a.capped) {
     setAside.push(`The logged work adds up to about ${money(a.raw_kcal)}; it is held at ${money(a.kcal)}, because past 1.5× your resting burn it stops being a number worth planning against.`);
   }
+  // THE CLAMP, NAMED. A session whose own figure is larger than everything the
+  // watch measured all day has almost certainly not been seen by the watch —
+  // most often because it is not a session at all but a shift filed as one.
+  // Either way the person is looking at a row that says one number and a total
+  // that moved by another, and until this line existed nothing explained the
+  // gap.
+  if (balance.training_clamped) {
+    const c = balance.training_clamped;
+    setAside.push(
+      ((t.entries || []).length === 1
+        ? `The session logged today comes to about ${money(c.own)} on its own, `
+        : `The sessions logged today come to about ${money(c.own)} between them, `) +
+      `but your watch measured ${money(c.counted)} moving for the WHOLE day — a session cannot be more than that, so ${money(c.counted)} is what is counted. ` +
+      `If that was work rather than training, log it with log_activity instead: work is priced from hours on task and is not capped by what the watch saw.`);
+  }
   const uncounted = (t.entries || []).filter(e => e.source === 'uncounted');
   if (uncounted.length) {
     setAside.push(`${uncounted.map(e => `"${e.summary}"`).join(' and ')} ${uncounted.length === 1 ? 'is' : 'are'} counting nothing — ${uncounted[0].why}.`);

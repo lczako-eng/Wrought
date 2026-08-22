@@ -2508,6 +2508,34 @@ there is**, because the write succeeds, the row exists, and only the code that
 was looking for the real type notices. There is now a test that reads the
 constraint out of `schema/013` and asserts the set is exactly equal to it.
 
+### The shift filed as a session, and the 1,902 that vanished quietly
+
+The next screenshot, and a different bug from the one above. The panel read
+**TRAINING · TODAY — "worked at the Petting Zoo... 6 hours total; estimated
+2,400 calories burned" · 1 session, 360 min — full body.** It was on the
+record. It was typed `workout`.
+
+**That is what "a shift is not a session" costs when it is broken.** Apple's
+active energy already contains workouts, so `energyBalance` clamps a session to
+what the watch measured: `train = min(2,400, 498) = 498`. Correct for training,
+catastrophic for work the wrist never saw. The same six hours are worth
+**2,971 out as a session and 4,873 as work** — a difference of **1,902 kcal**,
+and there is a test pinning both figures. It also lands in the weekly training
+count, which makes the one number the whole plan rests on meaningless.
+
+**The clamp is right and stays. What was missing was the sentence.** A cap, an
+uncounted session and a meal with no macros are all named in `set_aside`; this
+one was not, so a row said 2,400 while the total moved by 498 and nothing
+anywhere explained the gap. **An unexplained difference between a row and a
+total is how somebody stops believing both.** `training_clamped` carries it now
+and the receipt says it, naming the way out — if that was work, `log_activity`
+prices it from hours on task and is not capped by the watch.
+
+**And the rule moved onto the tool.** The doctrine lived in
+`SERVER_INSTRUCTIONS`, which not every client reads; `log`'s own `event_type`
+field now says work is never a workout, and says what it costs — a rule with no
+cost attached is one that gets reasoned around.
+
 ### The shifts already on the record, still worth nothing
 
 Fixing `VALID_TYPES` fixed the NEXT shift and did nothing for the ones already
@@ -3277,7 +3305,7 @@ self-reporting scale removes the most-abandoned manual entry), then Strava.
 
 ## Conventions
 
-- `npm test` runs `test/harness.mjs` — 622 offline tests, no network, no database.
+- `npm test` runs `test/harness.mjs` — 625 offline tests, no network, no database.
   Run it before every push. It covers the JSON-RPC envelope (which fails as an
   uninformative "could not connect" inside ChatGPT) and all the arithmetic
   (which fails as a confidently wrong number in somebody's verdict).
