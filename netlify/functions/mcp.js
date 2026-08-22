@@ -1184,6 +1184,9 @@ async function log(args, user) {
   const structuredBy = supplied ? 'client' : parsed ? 'server' : 'none';
 
   const written = await insertEvents(user.id, profile, events, { rawInput: text });
+  // A type the database has not been taught yet is stored as a note rather
+  // than losing the whole call — which used to take the food down with it.
+  const degraded = written?.degraded || null;
 
   // THE BRIDGE. A workout logged after the fact carries its exercises on the
   // event, and until now they never reached wrought_sets — the grain the lift
@@ -1208,6 +1211,7 @@ async function log(args, user) {
   const nudge = args.quiet ? null : await nudgeFor(user.id, profile, { day });
 
   return {
+    ...(degraded ? { not_counted_yet: degraded } : {}),
     // The one thing worth raising unprompted, already filtered by their push
     // setting and silenced entirely by a care flag. Null means say nothing.
     nudge: nudge || undefined,
@@ -1883,6 +1887,13 @@ async function logActivity(args, user) {
       : msg };
   }
 
+  // insertEvents no longer LOSES the write when the type is not in the
+  // database yet — it stores it as a note and says so. Relaying that matters:
+  // the hours are on the record and the burn will not show them until the
+  // migration runs, and silence there is the founder watching a shift he can
+  // see count for nothing.
+  const degraded = written?.degraded || null;
+
   const day = await dayFacts(user.id, profile, date);
   const balance = await balanceFor(user.id, profile, date, day);
 
@@ -1903,7 +1914,9 @@ async function logActivity(args, user) {
     // Logging a shift and being told only that it was "logged as activity" is
     // the whole feature failing quietly: the number is the reason to log it.
     receipt: dayReceipt({ day, balance, date, today: localDateFor(profile.timezone) }),
-    say: `${burn.say}${balance.known ? ` Day so far: about ${balance.calories_out} out.` : ''}`,
+    ...(degraded ? { not_counted_yet: degraded } : {}),
+    say: (degraded ? `${degraded.say} ` : '') +
+         `${burn.say}${balance.known ? ` Day so far: about ${balance.calories_out} out.` : ''}`,
     note: 'SAY WHAT IT WAS WORTH — the kcal figure, out loud, in the same message. Being told a shift was "logged as activity" with no number is the feature failing: the number is the entire reason to log it. Then read the receipt so they can see it against the day. Say the figure as an estimate, because it is one — read off a standard effort table, not measured. It does NOT count as a workout and must not be mentioned as one; their weekly training target is untouched. No praise for having gone to work.',
     next_actions: ['energy_balance for the full subtraction', 'brief for the day\'s read'],
   };

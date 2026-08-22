@@ -39,7 +39,7 @@ import {
   kgToLb, lbToKg, cmToIn, inToCm, sayWeight,
   windowStatus, weightTrend, trainingMatrix, summariseRange, careFlags, scoreGoals,
   eventsFromClient, fastLength, fastingSummary, needsMacros, needsDuration, matchEntries, setupNeeded,
-  duplicateItems, duplicateExtra, VALID_TYPES,
+  duplicateItems, duplicateExtra, VALID_TYPES, degradePlan,
 } from '../netlify/functions/lib/wrought.js';
 import { spokenBrief, spokenLog, spokenFlag, pendingVoice, plainBrief } from '../netlify/functions/lib/voice.js';
 
@@ -4117,7 +4117,15 @@ await test('every door a workout enters through feeds the bridge', () => {
   assert.match(amendFn, /syncSetsFromWorkouts/, 'an amended workout does not re-derive its sets');
   // And insertEvents hands back the detail the bridge needs.
   const w = readFileSync(new URL('../netlify/functions/lib/wrought.js', import.meta.url), 'utf8');
-  assert.match(w, /select\('id, event_type, summary, local_date, estimated, detail, occurred_at'\)/);
+  // The column list is a constant now, because the insert happens twice — once
+  // normally, once on the degrade path when a migration is missing. The bridge
+  // still needs every one of these fields back.
+  const cols = w.slice(w.indexOf('const COLS ='), w.indexOf('\n', w.indexOf('const COLS =')));
+  for (const c of ['id', 'event_type', 'summary', 'local_date', 'estimated', 'detail', 'occurred_at']) {
+    assert.ok(cols.includes(c), `insertEvents no longer returns ${c}, which the bridge reads`);
+  }
+  assert.equal((w.match(/\.select\(COLS\)/g) || []).length, 2,
+    'both the insert and its retry must return the same columns');
 });
 
 await test('a barbell row is not cardio, and neither is a crunch', () => {
@@ -8851,6 +8859,51 @@ await test('the same hours are worth far more as work than as a session', () => 
   // And work never lands in the training figure — a shift is not a session.
   assert.equal(asWork.training_burn, 0);
   assert.equal(asWork.active_source, 'logged_over_device');
+});
+
+await test('a missing migration never costs somebody the write', () => {
+  // THE REGRESSION I INTRODUCED. 'activity' was added to VALID_TYPES on 19
+  // August so a shift would stop being filed as a note. Correct — and it
+  // quietly assumed migration 013 had been run. Where it has not, the check
+  // constraint rejects the row, insertEvents throws, and `log` does not catch
+  // it: THE WHOLE CALL FAILS, so a sentence mentioning a shift and a meal
+  // loses the meal too. Strictly worse than the bug it was fixing.
+  //
+  // The 015 lesson was already written down — a door must be correct before
+  // the SQL runs. This is it applied where it should have been.
+  //
+  // Tested through the PURE decision rather than a stubbed client: an ES
+  // module namespace is sealed, so a stub silently does nothing and the
+  // assertion passes against broken code. The first version of this test did
+  // exactly that and passed with the fix removed.
+  const rows = [
+    { event_type: 'food', summary: 'a jumbo corndog', detail: { calories: 450 } },
+    { event_type: 'activity', summary: 'petting zoo, 6h',
+      detail: { key: 'animal_care', met: 4.3, hours: 6, kcal: 3112 } },
+  ];
+  const plan = degradePlan(rows, 'new row violates check constraint "wrought_events_type_valid"');
+  assert.ok(plan, 'the write is still being lost');
+
+  // Only the late type is downgraded. The meal is untouched — that is the
+  // whole point, because it is what used to go down with the shift.
+  assert.deepEqual(plan.rows.map(r => r.event_type), ['food', 'note']);
+  assert.equal(plan.rows[0].detail.calories, 450);
+
+  // What was intended is kept, and the shift's own fingerprint survives —
+  // which is what refileMistypedActivity matches on once 013 is run.
+  assert.equal(plan.rows[1].detail._intended_type, 'activity');
+  assert.equal(plan.rows[1].detail.kcal, 3112);
+
+  // IT IS SAID, NOT SWALLOWED. Silence is somebody watching a shift they can
+  // see count for nothing.
+  assert.equal(plan.degraded.migration, '013_wrought_work.sql');
+  assert.match(plan.degraded.say, /Nothing was lost/);
+
+  // A failure that is NOT the type constraint still throws — this must not
+  // become a catch-all that hides real write errors.
+  assert.equal(degradePlan(rows, 'connection terminated unexpectedly'), null);
+  // And a batch with no late type has nothing to downgrade.
+  assert.equal(degradePlan([rows[0]], 'violates check constraint'), null);
 });
 
 await test('a shift filed as a note is repaired, and a real note never is', () => {

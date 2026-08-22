@@ -2567,6 +2567,40 @@ prices it from hours on task and is not capped by the watch.
 field now says work is never a workout, and says what it costs — a rule with no
 cost attached is one that gets reasoned around.
 
+### The regression: a fix that assumed a migration had been run
+
+The worst entry in this file, because the rule it breaks was already written
+down two sections above it, and I read this file at the start of every session.
+
+Adding `activity` to `VALID_TYPES` (19 Aug) stopped a shift being silently
+filed as a note. Correct — and it **quietly assumed 013 had been run.** Where
+it has not, the database's check constraint rejects the row, `insertEvents`
+throws, and **`log` does not catch it**: the whole call fails, so a sentence
+mentioning a shift and a meal **loses the meal too**.
+
+That is strictly worse than the bug being fixed. The old behaviour lost the
+CATEGORY; the new one loses the WRITE.
+
+**The 015 lesson says exactly this and was not applied** — *a door must be
+correct before the SQL runs*, which is why `setsCanBeTracked()` makes the
+bridge refuse rather than corrupt. A schema change and the code that depends on
+it do not ship together, so **every write that needs a migration must degrade,
+never throw.**
+
+`degradePlan()` now does it: on a check-constraint rejection, only the types a
+LATER migration introduced are downgraded to `note`, the intended type is kept
+on the row as `_intended_type`, everything else in the batch is untouched, and
+the retry saves the lot. It is **said, not swallowed** — `not_counted_yet`
+rides on `log` and `log_activity` — and `refileMistypedActivity` puts them back
+the moment 013 runs.
+
+**And the first test for it was vacuous.** It stubbed `supabase` by
+`Object.defineProperty` on the module namespace; ES namespaces are sealed, the
+stub silently did nothing, and the test passed with the fix removed. The
+decision is a pure function now, tested with no database, and verified to fail
+two ways: not degrading at all, and degrading rows it should not touch. **A
+test that passes against broken code is worse than no test.**
+
 ### The shifts already on the record, still worth nothing
 
 Fixing `VALID_TYPES` fixed the NEXT shift and did nothing for the ones already
@@ -3336,7 +3370,7 @@ self-reporting scale removes the most-abandoned manual entry), then Strava.
 
 ## Conventions
 
-- `npm test` runs `test/harness.mjs` — 626 offline tests, no network, no database.
+- `npm test` runs `test/harness.mjs` — 627 offline tests, no network, no database.
   Run it before every push. It covers the JSON-RPC envelope (which fails as an
   uninformative "could not connect" inside ChatGPT) and all the arithmetic
   (which fails as a confidently wrong number in somebody's verdict).
