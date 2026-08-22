@@ -1243,6 +1243,70 @@ export function goalCall({ profile = {}, weightKg = null, intent = 'maintain', p
  * Nothing here is SET. They are options, and set_goal is still what commits
  * one — offering a number and imposing one are different acts.
  */
+// THE GOALS THAT HAVE TO EXIST BEFORE A NOTIFICATION CAN MEAN ANYTHING.
+//
+// The founder: "it should be prompted to set your goals right away, before the
+// next workout, for everybody — how many calories you want to be at, or if you
+// just want to maintain. Then a notification pops at 80%. Same with steps."
+//
+// The order in that sentence is the important part and it is the right way
+// round. A percentage is a fraction OF something: with no daily target there
+// is nothing for "80%" to be 80% of, so goal_pace and goal_check both refuse
+// to be created. Asking for the goal is therefore not a separate feature from
+// the notifications — it is the thing that makes them possible at all.
+//
+// WHAT THIS NEVER DOES. It does not pick a calorie figure. Every number here
+// comes from targetOptions, which is computed from their real height, weight,
+// age, sex and activity level, floored at 1,200 and held under the rate the
+// care flags warn about. And MAINTAIN IS A FIRST-CLASS ANSWER, not a fallback
+// for somebody who would not commit — it is a real target, it is the
+// maintenance figure, and it scores exactly like the others.
+//
+// The step figure is their OWN average nudged up, never a round number off a
+// poster: 10,000 is a 1960s Japanese pedometer advertisement, and offering it
+// to somebody averaging 3,000 sets a target they will miss every day until
+// they stop reading the screen. With no step history it offers nothing rather
+// than inventing a number — the same refusal as a working weight.
+export function goalsToSet({ goals = [], targets = null, stepsAvg = null } = {}) {
+  const has = (metric) => (goals || []).some(g =>
+    g.metric === metric && g.cadence === 'daily' && g.status !== 'retired');
+
+  const needCalories = !has('calories');
+  const needSteps    = !has('steps');
+  if (!needCalories && !needSteps) return null;
+
+  // Their own average, rounded to something a person would actually say. Held
+  // to a 10% nudge: a target you can hit this week is one you keep reading.
+  let steps = null;
+  if (needSteps && Number(stepsAvg) > 0) {
+    const avg = Math.round(Number(stepsAvg));
+    steps = {
+      current_avg: avg,
+      suggested: Math.max(1000, Math.round((avg * 1.1) / 500) * 500),
+      basis: 'their own 30-day average, nudged about 10% — not a round number off a poster',
+    };
+  }
+
+  const missing = [
+    needCalories ? 'a daily calorie target' : null,
+    needSteps ? 'a daily step target' : null,
+  ].filter(Boolean);
+
+  return {
+    missing,
+    // Null when the five facts are not on file yet: the honest answer there is
+    // to ask for those, which targetOptions already says.
+    calories: needCalories ? (targets || null) : null,
+    steps,
+    say: `Nothing is set for ${missing.join(' or ')} yet, so there is nothing for a percentage to be a percentage of.`,
+    note: 'ASK ONCE, in the SAME message as the workout — never as a form and never before the session. ' +
+      'Offer MAINTAIN as a real choice alongside losing and gaining: plenty of people want to hold where they are, and treating it as the option nobody picks is how somebody ends up agreeing to a deficit they never wanted. ' +
+      'Quote the computed calorie figures EXACTLY and never invent one or round it into a range. ' +
+      'For steps offer the suggested figure and say it came from their own average; with no step history, say a phone or watch has to be connected before that one can mean anything rather than picking a number. ' +
+      'Then call set_goal. If they would rather just train, drop it and give them the session — a setup interview between somebody and their workout is how the workout stops happening.',
+  };
+}
+
 export function targetOptions({ profile = {}, weightKg = null } = {}) {
   const rest = restingBurn(profile, weightKg);
   if (rest.kcal == null) {

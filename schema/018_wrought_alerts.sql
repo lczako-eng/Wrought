@@ -64,7 +64,7 @@ alter table public.wrought_alerts add column if not exists metric text;
 
 alter table public.wrought_alerts drop constraint if exists wrought_alerts_kind_valid;
 alter table public.wrought_alerts add constraint wrought_alerts_kind_valid
-  check (kind in ('intake_pace','goal_pace','kitchen_closed','move','weigh_in','custom'));
+  check (kind in ('intake_pace','goal_pace','goal_check','kitchen_closed','move','weigh_in','custom'));
 
 create index if not exists wrought_alerts_user_idx
   on public.wrought_alerts (user_id) where active;

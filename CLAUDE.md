@@ -2324,6 +2324,45 @@ and nothing happens.
   `set_alert` returns `not_deliverable` when no phone is subscribed — it looks
   exactly like a rule that works right up until the hour comes.
 
+**`goal_check` — the scheduled read, which is a different rule.** *"By four
+o'clock every day there should be a notification stating what percent of your
+steps you are."* `goal_pace` waits for a threshold and fires when it is
+crossed, so **on a slow day it never fires at all** — which is exactly the day
+somebody wanted telling, and while there is still an evening left to act on it.
+`goal_check` fires at an hour they chose and reports the figure whatever it is.
+**A phone that has not synced is not a day with no steps**: steps arrive from a
+device, so an unsynced morning reads as zero, and a scheduled 4pm "0% of your
+steps" is a false claim about somebody's own day arriving on a lock screen —
+worse than silence. It stays quiet until something has actually been measured,
+the same refusal `awaiting_device` already makes on the dashboard.
+
+**The targets are asked for before the next session, and MAINTAIN is a real
+answer.** *"It should be prompted to set your goals right away, before the next
+workout, for everybody — how many calories you want to be at, or if you just
+want to maintain."* The order in that sentence is the right one and it is why
+`goalsToSet()` is not a separate feature from the notifications: **a percentage
+is a fraction OF something**, so with no daily target there is nothing for
+"80% of your steps" to be 80% of, and `set_alert` refuses to create the rule.
+Carried on BOTH doors into a session — `suggest_workout` is *"what should I
+train"* and `start_session` is *"I'm at the gym"*, and a block riding on only
+one would miss most sessions. It never blocks the session and disappears once
+the goals exist, so it is a gap being filled rather than a form that follows
+somebody around. Every calorie figure comes from `targetOptions`; **maintain is
+offered as a first-class choice rather than the option for somebody who would
+not commit**, because treating it as a fallback is how a person ends up
+agreeing to a deficit they never asked for. The step figure is **their own
+average nudged about 10%**, never 10,000 — that number is a 1960s pedometer
+advertisement, and offering it to somebody averaging 3,000 sets a target they
+miss every day until they stop reading the screen. With no step history it
+offers nothing rather than inventing one, the same refusal as a working weight.
+
+**Steps are RECEIVED, never calculated here.** They arrive at `/ingest` from
+Apple Health, Health Connect, Samsung or the iOS courier under a dozen aliases,
+are summed per local day, and are scoreable as a daily or weekly goal like any
+other metric. Nothing in this product counts a step; it stores the number the
+phone already counted, which is why a device that has not synced has to be
+answered with silence rather than a zero.
+
 **`goal_pace` — 80% of a target THEY set.** The founder: *"I want personal
 notifications if you're at, let's say, 80% calorie burn of the day."* Doing
 that as a bespoke burn alert would have covered one metric; doing it against
@@ -3198,7 +3237,7 @@ self-reporting scale removes the most-abandoned manual entry), then Strava.
 
 ## Conventions
 
-- `npm test` runs `test/harness.mjs` — 616 offline tests, no network, no database.
+- `npm test` runs `test/harness.mjs` — 620 offline tests, no network, no database.
   Run it before every push. It covers the JSON-RPC envelope (which fails as an
   uninformative "could not connect" inside ChatGPT) and all the arithmetic
   (which fails as a confidently wrong number in somebody's verdict).

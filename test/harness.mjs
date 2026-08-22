@@ -23,7 +23,7 @@ import {
   normaliseMovement, readMovement, setRowsFromWorkout, TIMED_MOVEMENT, _resetEventIdProbe,
   restingBurn, energyBalance, planFromRoutine, sessionTotals, earnedRoom,
   orderPlan, orderInsight, deviceMatrix, weekdayPattern, ACTIVITY, focusCall,
-  trainingBurn, targetOptions, liftTrend,
+  trainingBurn, targetOptions, liftTrend, goalsToSet,
 } from '../netlify/functions/lib/training.js';
 import { activityBurn, activityTotal, matchActivity, ACTIVITIES, EFFORTS } from '../netlify/functions/lib/activity.js';
 import { eventTimestamp } from '../netlify/functions/lib/wrought.js';
@@ -8621,6 +8621,96 @@ await test('a goal alert fires against a target they set, and only that', () => 
   // A care flag silences it like every other coaching kind.
   assert.deepEqual(dueAlerts({ rules, scored, hour: 18, date: '2026-08-20',
     flags: [{ kind: 'under_eating', detail: 'x' }] }), []);
+});
+
+await test('a scheduled read fires at the hour whatever the number is', () => {
+  // The founder: "by four every day there should be a notification stating
+  // what percent of your steps you are." That is NOT goal_pace: a threshold
+  // rule waits to be crossed, so on a slow day it never fires at all — which
+  // is exactly the day somebody wanted telling, and while there is still an
+  // evening left to do something about it.
+  const rules = [{ id: 'c', kind: 'goal_check', active: true, at_hour: 16, metric: 'steps' }];
+  const scored = [{ scored: true, metric: 'steps', goal: '10,000 steps a day', target: 10000,
+                    actual: 6200, percent: 62, hit: false, unit: '', direction: 'at_least' }];
+
+  const [a] = dueAlerts({ rules, scored, hour: 16, date: '2026-08-22', flags: [] });
+  assert.equal(a.kind, 'goal_check');
+  assert.match(a.body, /6,200/);
+  assert.match(a.body, /62%/);
+  // Well under the threshold and it still speaks — that is the whole point.
+  const [low] = dueAlerts({ rules, hour: 16, date: '2026-08-22', flags: [],
+    scored: [{ ...scored[0], actual: 1800, percent: 18 }] });
+  assert.match(low.body, /18%/);
+
+  // Only at their hour.
+  assert.deepEqual(dueAlerts({ rules, scored, hour: 11, date: '2026-08-22', flags: [] }), []);
+  // A care flag silences it like every other coaching kind.
+  assert.deepEqual(dueAlerts({ rules, scored, hour: 16, date: '2026-08-22',
+    flags: [{ kind: 'under_eating', detail: 'x' }] }), []);
+  // And it never tells anybody what is left to do.
+  assert.ok(!/left|remaining|need|should|only/i.test(a.body), a.body);
+});
+
+await test('a phone that has not synced is not a day with no steps', () => {
+  // THE FAILURE THIS EXISTS TO STOP. Steps arrive from a phone. A scheduled
+  // 4pm report would read an unsynced day as zero and put "0% of your steps"
+  // on the lock screen of somebody who had walked all morning — a false claim
+  // about their own day, which is worse than saying nothing at all.
+  const rules = [{ id: 'c', kind: 'goal_check', active: true, at_hour: 16, metric: 'steps' }];
+  const nothing = [{ scored: true, metric: 'steps', goal: '10,000 steps a day', target: 10000,
+                     actual: 0, percent: 0, hit: false, unit: '', direction: 'at_least' }];
+  assert.deepEqual(dueAlerts({ rules, scored: nothing, hour: 16, date: '2026-08-22', flags: [] }), []);
+  // And a metric with no goal at all still has nothing to be a percentage of.
+  assert.deepEqual(dueAlerts({ rules, scored: [], hour: 16, date: '2026-08-22', flags: [] }), []);
+});
+
+await test('the targets are asked for before the next session, and maintain is a real answer', () => {
+  // "It should be prompted to set your goals right away, before the next
+  // workout, for everybody — how many calories you want to be at, or if you
+  // just want to maintain." The order in that sentence is right: a percentage
+  // is a fraction OF something, so the goal is what makes the notification
+  // possible rather than a separate feature beside it.
+  const need = goalsToSet({ goals: [], targets: { known: true, maintenance: 3833 }, stepsAvg: 5292 });
+  assert.deepEqual(need.missing, ['a daily calorie target', 'a daily step target']);
+  assert.equal(need.calories.maintenance, 3833);
+  // MAINTAIN IS A FIRST-CLASS CHOICE, not the option for somebody who would
+  // not commit — treating it as a fallback is how people agree to a deficit
+  // they never asked for.
+  assert.match(need.note, /MAINTAIN as a real choice/);
+  // It never picks a calorie figure; every number comes from targetOptions.
+  assert.match(need.note, /never invent one/);
+
+  // The step figure is THEIR average nudged, never a poster number.
+  assert.equal(need.steps.current_avg, 5292);
+  assert.equal(need.steps.suggested, 6000);
+  assert.ok(need.steps.suggested < 10000, '10,000 is an advertisement, not a target');
+
+  // With no step history it offers nothing rather than inventing one — the
+  // same refusal as a working weight with no history.
+  assert.equal(goalsToSet({ goals: [], targets: null, stepsAvg: null }).steps, null);
+
+  // And it disappears once they are set, so it is a gap being filled rather
+  // than a form that follows somebody around.
+  assert.equal(goalsToSet({ goals: [
+    { metric: 'calories', cadence: 'daily' }, { metric: 'steps', cadence: 'daily' },
+  ] }), null);
+
+  // It must never block the session — the warm-up's lesson, applied again.
+  assert.match(need.note, /SAME message as the workout/);
+  assert.match(need.note, /rather just train/);
+});
+
+await test('both doors into a session carry the targets prompt', () => {
+  // suggest_workout is "what should I train"; start_session is "I'm at the
+  // gym". A block that rode on only one of them would miss most sessions.
+  const src = readFileSync(new URL('../netlify/functions/mcp.js', import.meta.url), 'utf8');
+  for (const fn of ['async function suggestWorkout', 'async function startSession']) {
+    const from = src.indexOf(fn);
+    assert.ok(from > 0, `${fn} is gone`);
+    const body = src.slice(from, src.indexOf('\n}\n', from));
+    assert.match(body, /goalsToSet\(/, `${fn} does not ask for the targets`);
+    assert.match(body, /goals_needed/, `${fn} does not carry the block`);
+  }
 });
 
 await test('a ceiling is never cheered on', () => {
