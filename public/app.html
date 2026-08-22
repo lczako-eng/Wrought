@@ -1551,6 +1551,35 @@ a.ghost { display: inline-block; }
   </div>
 </div>
 
+<!-- WHEN THE PAGE ITSELF COULD NOT FINISH LOADING.
+     Deliberately NOT the sign-in gate. A page that answers a network failure
+     with a password form tells somebody they have been signed out, which is
+     the one thing a product whose whole promise is memory must never fake —
+     the same reason the service worker stopped falling back to the homepage.
+     It says what happened, that nothing has changed, and offers the only
+     thing that helps. -->
+<div id="down" class="wrap" hidden>
+  <div class="gate">
+    <img class="gate-mark" src="/icon.svg" alt="" width="72" height="72">
+    <h1 class="gate-h">WROUGHT</h1>
+    <p class="gate-sub">
+      This page could not finish loading — the sign-in library did not arrive.
+      You have not been signed out and nothing in your record has changed.
+    </p>
+    <button id="downgo">Try again</button>
+    <p class="gate-note">
+      Usually a bad minute on the network. Your assistant is unaffected: it holds
+      its own connection and is still writing to your record.
+    </p>
+    <!-- THE ONE DOOR THAT NEEDS NOTHING TO LOAD. The manual is static markup and
+         makes no request, so it works perfectly while the client is missing —
+         but its only entrance was the link on the sign-in gate, and this card
+         REPLACES that gate. So the screen that claimed the manual still worked
+         was the exact screen that made it unreachable. Same door, second wall. -->
+    <p class="gate-alt gate-peek"><a href="#" id="downpeek">What do I say to it?</a></p>
+  </div>
+</div>
+
 <div id="app" hidden>
   <header>
     <div class="wrap bar">
@@ -1711,6 +1740,10 @@ async function boot() {
     refresh();
     return;
   }
+  // Two different failures, and answering them the same way sends somebody
+  // hunting for a password when the network is the problem. No client because
+  // the CDN never answered is not a deploy that is missing its keys.
+  if (!sb && clientDown) { $('down').hidden = false; return; }
   if (!sb) { $('gate').hidden = false; $('msg').textContent = 'This deploy is missing its Supabase keys.'; return; }
 
   // Back from proving the other account with Apple or Google. This has to run
@@ -1824,17 +1857,22 @@ async function submitAuth() {
 // tab row comes along because every other view says "sign in to see this"
 // rather than doing nothing, so wandering is answered honestly.
 let peeking = false;
-$('peek')?.addEventListener('click', (e) => {
-  e.preventDefault();
+// ONE opener, reachable from the sign-in gate AND from the could-not-load card.
+// Two copies is how the second one quietly stops matching the first.
+function openManual(e) {
+  e?.preventDefault();
   peeking = true;
   $('gate').hidden = true;
+  $('down').hidden = true;
   $('app').hidden = false;
   document.querySelectorAll('.range.view').forEach(x =>
     x.setAttribute('aria-pressed', String(x.dataset.view === 'guide')));
   view = 'guide';
   $('rangebtns').style.display = 'none';
   refresh();
-});
+}
+$('peek')?.addEventListener('click', openManual);
+$('downpeek')?.addEventListener('click', openManual);
 
 $('send')?.addEventListener('click', submitAuth);
 $('pass')?.addEventListener('keydown', e => { if (e.key === 'Enter') submitAuth(); });
@@ -7431,8 +7469,26 @@ let earlyHit = prefetchProgress();
 
 paintLastVisit();
 
-const { createClient } = await clientReady;
-if (SUPABASE_URL) sb = createClient(SUPABASE_URL, SUPABASE_ANON);
+// A THIRD-PARTY CDN IS NOT ALLOWED TO TAKE THE PAGE DOWN.
+//
+// This was a bare top-level await. When jsdelivr does not answer — a flaky
+// connection, a proxy that blocks it, a bad minute at the CDN — the module
+// rejects and EVERY LINE AFTER IT NEVER RUNS. boot() is never called, so the
+// screen stays black: no wordmark, no message, nothing to do and nothing to
+// tell anybody why. That is the offline card's own lesson one layer in, and
+// it was worst on ?demo=1, which is shown to somebody with no account and no
+// warm render to fall back on.
+//
+// Caught, the two screens that genuinely need no client still work: the demo
+// and the manual. Everybody else gets a sentence instead of a black rectangle.
+let clientDown = false;
+try {
+  const { createClient } = await clientReady;
+  if (SUPABASE_URL) sb = createClient(SUPABASE_URL, SUPABASE_ANON);
+} catch {
+  clientDown = true;
+}
+$('downgo').onclick = () => location.reload();
 boot();
 </script>
 </body>

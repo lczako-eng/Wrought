@@ -194,6 +194,35 @@ The wordmark is a link on every page, but on the dashboard it goes to the
 dashboard, not to `/`. Being thrown out to a sales pitch from inside your own
 record was the complaint, not the fix.
 
+**And a CDN is not allowed to take the page down.** The Supabase client is
+imported late on purpose, but it was a bare top-level `await`: when jsdelivr
+did not answer, the module rejected and **every line after it never ran**,
+`boot()` included. No wordmark, no message, nothing to do and nothing to say
+why — worst on `?demo=1`, which is shown to somebody with no account and no
+warm render to fall back on. Caught now, with the failure card deliberately
+**not** the sign-in gate, for the same reason the worker stopped falling back
+to the homepage: answering a network failure with a password form tells
+somebody they have been signed out.
+
+**The half-truth in that fix is the more useful entry.** The card claimed the
+demo and the manual both still worked. The demo genuinely does. The manual is
+static markup that makes no request, so it renders perfectly with no client —
+but **its only entrance was the peek link on the sign-in gate, and the card
+replaces that gate.** The screen claiming the manual still worked was the exact
+screen making it unreachable. One `openManual()` now, wired to both doors,
+because two copies is how the second stops matching the first. Tested in a
+browser rather than asserted: the card appears, the link renders the guide.
+
+**`.stat` was the third time.** `.stat span` was written for the caption, and
+every count-up figure is wrapped in `<span class="n">` — so 126, 7,340 and
+6h 42m each rendered at 14px in dim grey with their units set LARGER than the
+figures they label, on the section whose whole promise is a number readable
+across a room. `.leg` had the identical shape, was found earlier, and was fixed
+with a comment explaining it. After `.bar` and `.setpill`, the rule is now
+flat: **a descendant selector that styles "the text in this card" will find the
+number too.** There is a test that flags any bare descendant `span` rule
+setting font-size, colour or display.
+
 ### Capture in passing — the most important doctrine in the server
 
 The founder's words: *"if I accidentally say I just did 10 push-ups I'll
@@ -3169,7 +3198,7 @@ self-reporting scale removes the most-abandoned manual entry), then Strava.
 
 ## Conventions
 
-- `npm test` runs `test/harness.mjs` — 612 offline tests, no network, no database.
+- `npm test` runs `test/harness.mjs` — 616 offline tests, no network, no database.
   Run it before every push. It covers the JSON-RPC envelope (which fails as an
   uninformative "could not connect" inside ChatGPT) and all the arithmetic
   (which fails as a confidently wrong number in somebody's verdict).
@@ -3182,11 +3211,29 @@ self-reporting scale removes the most-abandoned manual entry), then Strava.
 ## Status & next steps
 
 **Blocked on founder:**
-1. **The push.** `lczako-eng/wrought` exists, but this session cannot reach it —
-   `add_repo` needs an approval that never rendered, and the GitHub MCP enforces
-   the same allowlist, so the API fallback is blocked too. Escape hatch already
-   sent: a git bundle with full history. `git clone wrought-full.bundle`, set the
-   remote, push. Retry `add_repo` first in any new session.
+1. **The push works — this item is CLOSED, and the history is kept because the
+   wrong lesson was nearly drawn from it.** It once read that the repo could not
+   be reached and that a git bundle had to be carried out by hand. That was true
+   of one early session and has not been true since: the repository attaches to
+   the session and `git push` goes through GitHub's own proxy, which is
+   **independent of the environment's network access level**. Every PR in this
+   file since was pushed and merged that way.
+
+   The distinction is the useful part, because it recurs. A session can be
+   completely walled off from the internet — `wrought.fit`, `cdn.jsdelivr.net`
+   and `example.com` all answering 403 at the CONNECT — while GitHub and npm
+   answer 200, because those two ride separate paths. MCP connector traffic is a
+   third path again, travelling through Anthropic's servers rather than the
+   session's network, which is why the Netlify and Supabase tools can work in a
+   session that cannot load a web page.
+
+   So **"I cannot reach the site" never implies "I cannot ship the fix"**, and
+   the two must be reported separately. Confusing them is how an afternoon gets
+   spent building an escape hatch nobody needed. To let a session actually SEE
+   the live site, the environment's network access must be set to Custom with
+   `wrought.fit`, `*.wrought.fit`, `cdn.jsdelivr.net`, `*.supabase.co` and
+   `app.netlify.com` listed — account UI at claude.ai/code, and it applies to
+   new sessions only.
 2. Run `schema/001_wrought_core.sql`, then `002_wrought_oauth.sql`, then
    `003_wrought_training.sql`, `004_wrought_fasting.sql`,
    `005_wrought_activity.sql`, `006_wrought_identity.sql`, `007_wrought_push.sql`,

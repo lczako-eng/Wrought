@@ -237,7 +237,12 @@ section > p { margin: 0; color: var(--ash); max-width: 34ch; }
 }
 .stat b { display: block; font-size: clamp(30px, 8vw, 38px); font-weight: 700; letter-spacing: -.03em; line-height: 1; }
 .stat b small { font-size: .5em; font-weight: 600; color: var(--ash-dim); }
-.stat span { display: block; margin-top: 8px; color: var(--ash-dim); font-size: 14px; }
+/* Direct child only, the same trap as .leg above and missed here: as a
+   descendant selector this also caught the <span class="n"> holding the
+   figure, so 126, 7,340 and 6h42m all rendered at 14px in dim grey with
+   their own units set LARGER than the number — on the section whose whole
+   promise is a number you can read across a room. */
+.stat > span { display: block; margin-top: 8px; color: var(--ash-dim); font-size: 14px; }
 
 /* ── Chat — big and friendly, not a terminal ───────────────────────────── */
 .chat { display: flex; flex-direction: column; gap: 12px; margin-top: 26px; }
