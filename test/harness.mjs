@@ -40,6 +40,7 @@ import {
   windowStatus, weightTrend, trainingMatrix, summariseRange, careFlags, scoreGoals,
   eventsFromClient, fastLength, fastingSummary, needsMacros, needsDuration, matchEntries, setupNeeded,
   duplicateItems, duplicateExtra, VALID_TYPES, degradePlan,
+  effectiveType, withEffectiveTypes,
 } from '../netlify/functions/lib/wrought.js';
 import { spokenBrief, spokenLog, spokenFlag, pendingVoice, plainBrief } from '../netlify/functions/lib/voice.js';
 
@@ -9335,6 +9336,63 @@ await test('the writer accepts exactly what the database allows', () => {
   assert.ok(allowed.includes('activity'), 'the migration no longer allows activity');
   assert.deepEqual([...VALID_TYPES].sort(), [...new Set(allowed)].sort(),
     'insertEvents and the check constraint disagree about the event types');
+});
+
+await test('a shift the database refused to type still counts in the burn', () => {
+  // DEGRADING WAS ONLY HALF THE JOB. `degradePlan` stops a missing migration
+  // costing somebody the write — the shift lands as a `note` carrying
+  // `_intended_type: 'activity'` and nothing is lost. But every reader filtered
+  // on event_type === 'activity', so the row was on the record, visible in the
+  // log, and worth ZERO in calories out: the exact bug degrading was meant to
+  // end, surviving one layer further in.
+  //
+  // And `refileMistypedActivity` cannot rescue it, because it repairs by
+  // WRITING event_type = 'activity' and the same constraint refuses that too.
+  // Until the SQL is run — which needs a laptop somebody standing in a gym does
+  // not have — the readers are the only way those hours can ever count.
+  const degraded = { event_type: 'note', summary: '4h at the petting zoo',
+    detail: { _intended_type: 'activity', key: 'animal_care', met: 4.3, hours: 4, kcal: 780 } };
+  assert.equal(effectiveType(degraded), 'activity',
+    'a row the writer downgraded is not read back up');
+
+  // The shifts logged BEFORE degradePlan existed carry no _intended_type at
+  // all — only the shape log_activity gave them. They are the founder's own
+  // petting-zoo days, and they have to count too.
+  const older = { event_type: 'note', summary: '6 hours at the Petting Zoo',
+    detail: { key: 'animal_care', met: 4.3, hours: 6, kcal: 1170 } };
+  assert.equal(effectiveType(older), 'activity', 'the shifts already on the record stay invisible');
+
+  // AND IT COUNTS. Not merely relabelled — the burn actually moves, which is
+  // the only thing the founder can see.
+  const counted = activityTotal([degraded, older], 2473);
+  assert.equal(counted.count, 2, 'promoted shifts are still not being summed');
+  assert.equal(counted.raw_kcal, 1950, 'the calories did not reach the total');
+
+  // THE FINGERPRINT IS EXACT, and that is what makes reading it safe. It is the
+  // same predicate refileMistypedActivity already trusts to do an IRREVERSIBLE
+  // update, so a genuine dictated note must survive it untouched — matching on
+  // prose would re-type somebody's diary entry about a workday, and there is no
+  // undo for that.
+  const realNote = { event_type: 'note', summary: 'long day at work, knees ache', detail: {} };
+  assert.equal(effectiveType(realNote), 'note', 'a real note was reclassified as work');
+  assert.equal(activityTotal([realNote], 2473).count, 0, 'a dictated note is being billed as a shift');
+  const partial = { event_type: 'note', summary: 'gardening', detail: { key: 'gardening', met: 3.8 } };
+  assert.equal(effectiveType(partial), 'note', 'a partial detail matched the fingerprint');
+
+  // It ONLY ever promotes `note` — the one type the writer downgrades TO.
+  // Anything already carrying a real type is returned untouched, so this can
+  // never reclassify a meal, a workout or a weigh-in.
+  for (const t of ['food', 'workout', 'weight', 'fast', 'activity']) {
+    assert.equal(effectiveType({ event_type: t, detail: { key: 'x', met: 4, hours: 1, kcal: 100 } }), t,
+      `${t} was rewritten by the promoter`);
+  }
+
+  // And it READS without writing: the stored row is untouched, so running 013
+  // later still repairs it properly and nothing here has to be unwound.
+  const rows = [degraded];
+  const out = withEffectiveTypes(rows);
+  assert.equal(rows[0].event_type, 'note', 'the stored row was mutated');
+  assert.equal(out[0].stored_type, 'note', 'what it was actually stored as is lost');
 });
 
 await test('the same meal counted twice is named, never quietly removed', () => {

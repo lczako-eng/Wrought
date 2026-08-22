@@ -1,6 +1,8 @@
 // netlify/functions/lib/activity.js
 // The third burn — work, and everything else that is not training.
 //
+// (wrought.js does not import this file, so the dependency runs one way only.)
+//
 // The founder's ask, after a shift: "today I worked at the Petting Zoo. It's
 // very hard work so I wanna make sure that captures it."
 //
@@ -27,6 +29,8 @@
 //      shift is where the steps and the heart rate came from. When a device
 //      reported, a logged activity is kept as a record and adds nothing — the
 //      measurement wins, exactly as it does everywhere else in this codebase.
+
+import { withEffectiveTypes } from './wrought.js';
 
 // Occupational and daily-life METs. Curated rather than exhaustive, on the same
 // principle as the movement library: a list you can ask a question of beats a
@@ -147,7 +151,10 @@ export function activityBurn({ text = '', hours = null, effort = null, weightKg 
  * arithmetic sane.
  */
 export function activityTotal(events = [], restingKcal = null) {
-  const rows = events
+  // Promoted first: a shift stored as a note because the database has not been
+  // taught 'activity' yet is still a shift, and counting it zero is exactly the
+  // failure this whole file exists to end.
+  const rows = withEffectiveTypes(events)
     .filter(e => e.event_type === 'activity')
     .map(e => ({
       summary: e.summary,
