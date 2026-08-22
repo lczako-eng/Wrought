@@ -2377,6 +2377,20 @@ chose, arriving on a lock screen as though they had agreed to it. **An
 which is deliberately worded not to tell anybody to stop, and a second cheerier
 "80% there" at a limit reads as encouragement to spend the rest of it.
 
+**The column three readers forgot, caught before it shipped.** `metric` was
+added to `wrought_alerts` with `goal_pace` and `goal_check`, and all three
+readers of the table still listed the old columns — `api-push` (the dashboard),
+`alertsFor` (what the assistant says back), and **`brief-nightly`, which is the
+thing that actually sends**. Without it `dueAlerts` cannot match the goal, so
+both kinds would have been stored, shown on the website, described correctly by
+the assistant, and **never fired once**. Nothing errors; the hour simply comes
+and nothing happens, which from the outside is indistinguishable from
+notifications being switched off. Same shape as the day panels reading a field
+the server never sent: a column list and the code consuming it, drifting in
+silence. The test walks every `select` on the table, ignores the ones that are
+plainly id-only lookups, and asserts the rest carry everything `describeAlert`
+and `dueAlerts` read.
+
 **A tolerant writer beside a stricter constraint, guarded a third time.** The
 harness now reads the `wrought_alerts` check constraint out of 018 and asserts
 `ALERT_KINDS` and `set_alert`'s own enum are exactly equal to it — the shift
@@ -3237,7 +3251,7 @@ self-reporting scale removes the most-abandoned manual entry), then Strava.
 
 ## Conventions
 
-- `npm test` runs `test/harness.mjs` — 620 offline tests, no network, no database.
+- `npm test` runs `test/harness.mjs` — 621 offline tests, no network, no database.
   Run it before every push. It covers the JSON-RPC envelope (which fails as an
   uninformative "could not connect" inside ChatGPT) and all the arithmetic
   (which fails as a confidently wrong number in somebody's verdict).

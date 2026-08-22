@@ -187,7 +187,7 @@ function firstSentence(text) {
 // different numbers for the same afternoon.
 async function runAlerts(userId, profile, now) {
   const { data: rules } = await supabase.from('wrought_alerts')
-    .select('id, kind, at_hour, threshold, text, days, active, last_sent_on')
+    .select('id, kind, at_hour, threshold, text, days, active, last_sent_on, metric')
     .eq('user_id', userId).eq('active', true);
   if (!rules?.length) return 0;
 

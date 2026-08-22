@@ -8727,6 +8727,40 @@ await test('a ceiling is never cheered on', () => {
   assert.deepEqual(out, []);
 });
 
+await test('every reader of wrought_alerts selects the columns the rules need', () => {
+  // THE QUIETEST POSSIBLE FAILURE, caught before it shipped. `metric` was
+  // added with goal_pace and goal_check, and all three readers of the table
+  // still listed the old columns — so the sender could not match the goal and
+  // those rules would have been stored, shown on the dashboard, described
+  // correctly by the assistant, and NEVER FIRED. Nothing errors; the hour just
+  // comes and nothing happens, which is indistinguishable from a phone with
+  // notifications turned off.
+  //
+  // Same shape as the day panels reading a field the server never sends: a
+  // column list and the code that consumes it, drifting in silence.
+  const FILES = ['brief-nightly.js', 'api-push.js', 'mcp.js'];
+  // Everything dueAlerts and describeAlert actually read off a rule row.
+  const NEEDED = ['id', 'kind', 'at_hour', 'threshold', 'text', 'days', 'active', 'metric'];
+
+  // A select carrying `kind` is building rules; one selecting bare `id` is a
+  // dedupe lookup and needs nothing else. Scoping on that rather than on
+  // position, so adding a lookup above the reader cannot silently move the
+  // assertion onto the wrong query.
+  let checked = 0;
+  for (const f of FILES) {
+    const src = readFileSync(new URL(`../netlify/functions/${f}`, import.meta.url), 'utf8');
+    for (const m of src.matchAll(/from\('wrought_alerts'\)[\s\S]{0,200}?\.select\('([^']+)'\)/g)) {
+      const cols = m[1].split(',').map(c => c.trim());
+      if (!cols.includes('kind')) continue;          // a lookup, not a rule read
+      checked += 1;
+      for (const c of NEEDED) {
+        assert.ok(cols.includes(c), `${f} reads rules from wrought_alerts without ${c}`);
+      }
+    }
+  }
+  assert.ok(checked >= 3, `only ${checked} rule readers found — one is not being checked`);
+});
+
 await test('the alert kinds the writer accepts are the kinds the database allows', () => {
   // The VALID_TYPES lesson, one table along: a writer that accepts more than
   // the check constraint fails at the database, and one that accepts less
