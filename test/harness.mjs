@@ -2252,6 +2252,50 @@ await test('a check that could not run is not reported as a missing migration', 
   assert.match(src, /li\.q::before/);
 });
 
+await test('a migration that was never checked is not drawn as a tick', () => {
+  // THE MOST EXPENSIVE ROW ON THE PAGE. 004, 013 and 015 widen a constraint or
+  // rebuild an index, neither visible through PostgREST — so they were marked
+  // `assume: true` and rendered with the SAME GREEN TICK as a real probe, and
+  // the summary line then said "Everything is set up."
+  //
+  // It cost days. 013 decides whether a work shift can be stored at all; the
+  // founder read a tick beside it, so every hunt for why his petting-zoo hours
+  // were worth nothing went somewhere else — while the one screen built to
+  // answer "is this set up" was the thing asserting it was. This file's own
+  // header promises it "cannot drift from reality". An assumption is drift with
+  // a tick on it.
+  const src = readFileSync(new URL('../netlify/functions/api-status.js', import.meta.url), 'utf8');
+  // COMMENTS STRIPPED FIRST. The explanation above names the very thing it
+  // forbids, so grepping the raw file catches the warning rather than the
+  // breach — a trap this harness has now fallen into four times.
+  const code = src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+  assert.ok(!/assume:\s*true/.test(code), 'a migration is still assumed run and drawn as checked');
+  assert.ok(!/m\.assume\s*\?/.test(code), 'the probe is still bypassed for assumed migrations');
+
+  // A constraint cannot be read, but its CONSEQUENCE can: one stored row of a
+  // type proves the constraint permits it. That is proof, not inference.
+  assert.match(src, /function typeIsAccepted/, 'the constraint migrations have no real probe');
+  assert.match(src, /typeIsAccepted\('activity'\)/, '013 is still not actually checked');
+  assert.match(src, /typeIsAccepted\('fast'\)/, '004 is still not actually checked');
+  // And the absence of such a row proves NOTHING — it must not read as a fault.
+  const probe = src.slice(src.indexOf('function typeIsAccepted'), src.indexOf('function cannotProbe'));
+  assert.match(probe, /count > 0 \? true : 'assumed'/, 'no rows of a type is being read as a verdict');
+
+  // Where there is genuinely nothing to read, it says it did not look.
+  assert.match(src, /cannotProbe\(\)/, '015 claims a check it cannot perform');
+  assert.match(src, /not checked — cannot be seen through the API/, 'an unchecked row renders silently');
+
+  // The summary may not claim everything is set up when things were assumed,
+  // and 'assumed' is kept apart from 'stale' — reloading resolves one and will
+  // never touch the other, so offering a reload for it is a permanent small lie.
+  assert.match(src, /Everything that can be checked is set up/, 'the summary still overclaims');
+  assert.match(src, /const assumed = migrations\.filter\(m => m\.run === 'assumed'\)/);
+  const nxt = src.slice(src.indexOf('function nextStep'), src.indexOf('function page('));
+  assert.ok(nxt.indexOf('unsure.length') < nxt.indexOf('assumed.length'),
+    'an unresolvable assumption is answered with "reload in a moment"');
+  assert.match(nxt, /safe and settles it/, 'the way to settle an assumption is not named');
+});
+
 await test('the trailing slash is caught by name', async () => {
   // It answers "Invalid path specified in request URL" and nothing anywhere
   // explains why. It has already cost this project an evening.
