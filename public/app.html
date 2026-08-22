@@ -1571,6 +1571,12 @@ a.ghost { display: inline-block; }
       Usually a bad minute on the network. Your assistant is unaffected: it holds
       its own connection and is still writing to your record.
     </p>
+    <!-- THE ONE DOOR THAT NEEDS NOTHING TO LOAD. The manual is static markup and
+         makes no request, so it works perfectly while the client is missing —
+         but its only entrance was the link on the sign-in gate, and this card
+         REPLACES that gate. So the screen that claimed the manual still worked
+         was the exact screen that made it unreachable. Same door, second wall. -->
+    <p class="gate-alt gate-peek"><a href="#" id="downpeek">What do I say to it?</a></p>
   </div>
 </div>
 
@@ -1851,17 +1857,22 @@ async function submitAuth() {
 // tab row comes along because every other view says "sign in to see this"
 // rather than doing nothing, so wandering is answered honestly.
 let peeking = false;
-$('peek')?.addEventListener('click', (e) => {
-  e.preventDefault();
+// ONE opener, reachable from the sign-in gate AND from the could-not-load card.
+// Two copies is how the second one quietly stops matching the first.
+function openManual(e) {
+  e?.preventDefault();
   peeking = true;
   $('gate').hidden = true;
+  $('down').hidden = true;
   $('app').hidden = false;
   document.querySelectorAll('.range.view').forEach(x =>
     x.setAttribute('aria-pressed', String(x.dataset.view === 'guide')));
   view = 'guide';
   $('rangebtns').style.display = 'none';
   refresh();
-});
+}
+$('peek')?.addEventListener('click', openManual);
+$('downpeek')?.addEventListener('click', openManual);
 
 $('send')?.addEventListener('click', submitAuth);
 $('pass')?.addEventListener('keydown', e => { if (e.key === 'Enter') submitAuth(); });

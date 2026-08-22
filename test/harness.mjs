@@ -7146,6 +7146,33 @@ await test('a network failure is never answered with a password form', () => {
   assert.match(card, /not been signed out/, 'it does not say the record is untouched');
 });
 
+await test('the manual is reachable from the card that replaces the gate', () => {
+  // The claim was that a CDN outage still leaves the demo and the manual
+  // working. Half true: the manual is static markup and makes no request, so
+  // it renders perfectly with no client — but its ONLY entrance was the peek
+  // link on the sign-in gate, and the failure card REPLACES that gate. The
+  // screen claiming the manual still worked was the screen making it
+  // unreachable. Verified in a browser: tapping it renders the guide.
+  const src = page('app.html');
+  const card = src.slice(src.indexOf('id="down"'), src.indexOf('<div id="app"'));
+  assert.match(card, /id="downpeek"/, 'no way out of the failure card but a reload');
+
+  // ONE opener for both doors. Two copies is how the second quietly stops
+  // matching the first — the lesson this repo has now learned from .bar,
+  // .setpill and .stat.
+  assert.match(src, /function openManual\(/);
+  assert.match(src, /\$\('peek'\)\?\.addEventListener\('click', openManual\)/);
+  assert.match(src, /\$\('downpeek'\)\?\.addEventListener\('click', openManual\)/);
+  assert.match(src, /\$\('down'\)\.hidden = true;/, 'the card stays over the manual');
+
+  // And the guide view still needs no session and makes no request, or none of
+  // the above buys anything.
+  const refresh = src.slice(src.indexOf('async function refresh()'));
+  const guideLine = refresh.slice(0, refresh.indexOf('\n  if (view === \'log\')'));
+  assert.match(guideLine, /view === 'guide'/, 'the guide is no longer the first branch');
+  assert.ok(!/await |fetch\(/.test(guideLine), 'the manual now waits on a request');
+});
+
 group('One wordmark, on every page');
 
 await test('the word is set in the same slab everywhere', () => {
