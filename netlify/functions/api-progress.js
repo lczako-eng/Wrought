@@ -20,7 +20,7 @@ import { intakeState } from './lib/intake.js';
 import { formWatch, cardioProgress } from './lib/form.js';
 import { nextNudge } from './lib/prompt.js';
 import { blockPosition } from './lib/library.js';
-import { closeStaleSessions, workoutList, backfillCompletion, refileMisdated } from './lib/session.js';
+import { closeStaleSessions, workoutList, backfillCompletion, refileMisdated, refileMistypedActivity } from './lib/session.js';
 import { allowed } from './lib/membership.js';
 import { nutritionTotals, composition, macroMatrix, yearOverYear } from './lib/nutrition.js';
 import { calendarDays, calendarRollups, calendarMissing, rangeRollup } from './lib/calendar.js';
@@ -107,7 +107,15 @@ export const handler = async (event) => {
   ]);
   // AFTER the stale sweep, because the sweep is what files the event a
   // completion gets stamped onto. One read per call once the backlog is done.
-  await Promise.all([backfillCompletion(user.id), refileMisdated(user.id, profile)]);
+  // Plus the shifts that went in as notes before the writer knew 'activity'
+  // was a real type. They are still on the record, still worth nothing, and
+  // nobody would find them by looking — so the repair runs on the way in,
+  // beside the other two sweeps. One cheap read once the backlog is done.
+  await Promise.all([
+    backfillCompletion(user.id),
+    refileMisdated(user.id, profile),
+    refileMistypedActivity(user.id),
+  ]);
 
   const to   = params.to || localDateFor(profile.timezone);
   const from = addDays(to, -(span - 1));

@@ -2508,6 +2508,32 @@ there is**, because the write succeeds, the row exists, and only the code that
 was looking for the real type notices. There is now a test that reads the
 constraint out of `schema/013` and asserts the set is exactly equal to it.
 
+### The shifts already on the record, still worth nothing
+
+Fixing `VALID_TYPES` fixed the NEXT shift and did nothing for the ones already
+filed. The founder saw it immediately: ChatGPT said *"6 hours at the Petting
+Zoo, ~2,400 calories burned"* while the dashboard's burn read
+**2,473 at rest + 498 training** and no work line at all. Both numbers were
+honestly reported; only one of them was on the record.
+
+The read path was never the problem — `dayFacts` filters `event_type ===
+'activity'`, `api-progress` hands those entries to `energyBalance`, and
+`activityTotal` counts them. **If the burn shows no work, the row is not typed
+`activity`**, and before the writer fix every one of them was a `note`.
+
+`refileMistypedActivity()` repairs them, beside the other sweeps on the way
+into the dashboard. **The fingerprint is what makes it safe**: `log_activity`
+is the only thing in this product that writes `key`, `met`, `hours` and `kcal`
+together, and it matches on all four rather than on the summary — matching
+prose would re-type a genuine note about a workday, and there is no undo for
+that. Only `note` → `activity`, never anything else, scoped to one user on both
+statements, and the error is returned rather than swallowed because a silent
+repair is the same class of failure as the bug it undoes.
+
+**A fix that leaves the existing data wrong has fixed half the bug** — the half
+nobody can see. Weeks of somebody's work sitting in the log, visible, and
+counting for nothing.
+
 ### The log and the record, read the same way
 
 *"In the record put the log in there — what was eaten, and then underneath what
@@ -3251,7 +3277,7 @@ self-reporting scale removes the most-abandoned manual entry), then Strava.
 
 ## Conventions
 
-- `npm test` runs `test/harness.mjs` — 621 offline tests, no network, no database.
+- `npm test` runs `test/harness.mjs` — 622 offline tests, no network, no database.
   Run it before every push. It covers the JSON-RPC envelope (which fails as an
   uninformative "could not connect" inside ChatGPT) and all the arithmetic
   (which fails as a confidently wrong number in somebody's verdict).

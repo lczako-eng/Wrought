@@ -482,6 +482,56 @@ export async function backfillCompletion(userId, { days = 21 } = {}) {
 // end within the tolerance, it is never touched again. The tolerance is six
 // hours because end_session legitimately stamps "now" a little after the last
 // set — the target is events filed the better part of a day late, not minutes.
+// THE SHIFTS ALREADY FILED AS NOTES.
+//
+// insertEvents validated event_type against a set that did not contain
+// 'activity', and anything missing from that set is SILENTLY REWRITTEN to
+// 'note' rather than rejected. 013 added the type to the database months
+// earlier; the writer was never updated. So every shift logged before that fix
+// went in as a note — dayFacts filters on 'activity' and found none, so hours
+// of physical work burned nothing, and the entry still appeared in the log,
+// which is exactly what made it invisible.
+//
+// Fixing the writer only fixes the NEXT one. The record still holds weeks of
+// shifts typed as notes, worth nothing, and nobody would ever find them by
+// looking — the founder's own petting-zoo days are in there. A fix that leaves
+// the existing data wrong has fixed half the bug.
+//
+// THE FINGERPRINT IS EXACT, and that is what makes this safe. log_activity is
+// the only thing in this product that writes a detail carrying key, met, hours
+// and kcal together. A note somebody actually dictated has none of them. It
+// matches on all four rather than on the summary text, because matching prose
+// would re-type a genuine note about a workday and there is no undo for that.
+export async function refileMistypedActivity(userId, { days = 120 } = {}) {
+  const since = new Date(Date.now() - days * 86400000).toISOString().slice(0, 10);
+
+  const { data: rows, error } = await supabase.from('wrought_events')
+    .select('id, detail')
+    .eq('user_id', userId).eq('event_type', 'note')
+    .gte('local_date', since).limit(500);
+  // A swallowed error here is a repair that silently never runs, which is the
+  // same class of failure as the bug it exists to undo.
+  if (error) return { checked: 0, refiled: 0, error: error.message };
+  if (!rows?.length) return { checked: 0, refiled: 0 };
+
+  const isShift = d => d && typeof d === 'object' &&
+    d.key != null && d.met != null &&
+    Number.isFinite(Number(d.hours)) && Number.isFinite(Number(d.kcal));
+
+  const mine = rows.filter(r => isShift(r.detail));
+  if (!mine.length) return { checked: rows.length, refiled: 0 };
+
+  // One statement rather than a loop: every row here is the same correction,
+  // and a partial repair that stops halfway is worse than one that does not
+  // start — the day would then be half counted.
+  const { error: upErr } = await supabase.from('wrought_events')
+    .update({ event_type: 'activity' })
+    .eq('user_id', userId).in('id', mine.map(r => r.id));
+  if (upErr) return { checked: rows.length, refiled: 0, error: upErr.message };
+
+  return { checked: rows.length, refiled: mine.length };
+}
+
 export async function refileMisdated(userId, profile, { days = 21 } = {}) {
   const since = new Date(Date.now() - days * 86400000).toISOString().slice(0, 10);
 
