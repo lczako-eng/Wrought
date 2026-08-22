@@ -353,7 +353,10 @@ export async function dayFacts(userId, profile, date) {
       .eq('user_id', userId).eq('local_date', date),
   ]);
 
-  const evs = events || [];
+  // A shift the database refused to type is still a shift. Promoted here, at
+  // the boundary, so every filter below sees what the row MEANS rather than
+  // what a missing migration forced it to be stored as.
+  const evs = withEffectiveTypes(events || []);
   const mets = metrics || [];
   const units = profile.units;
 
@@ -541,7 +544,7 @@ export async function rangeFacts(userId, profile, fromDate, toDate) {
       .eq('user_id', userId).gte('local_date', fromDate).lte('local_date', toDate),
   ]);
 
-  const evs = events || [], mets = metrics || [];
+  const evs = withEffectiveTypes(events || []), mets = metrics || [];
   const byDay = new Map();
   const dayOf = d => {
     if (!byDay.has(d)) byDay.set(d, {
@@ -1317,6 +1320,68 @@ const LATE_TYPES = new Set(['activity', 'fast']);
 // There is a test that reads the constraint out of schema/013 and asserts this
 // set is exactly equal to it.
 export const VALID_TYPES = new Set(['food','drink','workout','weight','measurement','sleep','symptom','mood','supplement','note','fast','activity']);
+
+// THE OTHER HALF OF DEGRADING — a row that was written down must be READ back up.
+//
+// `degradePlan` stops a missing migration costing somebody the write: a shift
+// lands as a `note` carrying `_intended_type: 'activity'`, and nothing is lost.
+// That was only ever half the job, and the missing half is the half the person
+// can see. Every reader still filters on `event_type === 'activity'`, so the
+// shift is on the record, visible in the log, and worth ZERO in the burn —
+// which is precisely the bug degrading was meant to end, surviving one layer
+// further in.
+//
+// `refileMistypedActivity` cannot rescue it either: it repairs by writing
+// event_type = 'activity', and on a database without 013 the same constraint
+// refuses that too. So until the SQL is run, the readers are the ONLY way those
+// hours can count — and the SQL needs a laptop, which is not a thing somebody
+// standing in a gym has.
+//
+// THE FINGERPRINT IS THE SAME ONE, DELIBERATELY. `log_activity` is the only
+// thing in this product that writes key, met, hours and kcal onto one detail
+// object; a note somebody actually dictated carries none of them. This is the
+// exact predicate `refileMistypedActivity` already trusts to perform an
+// IRREVERSIBLE update, so reading with it is strictly safer than what ships.
+// Matching on the summary text would re-type a genuine note about a workday and
+// there is no undo for that, which is why neither of them ever looks at prose.
+//
+// It reads, and never writes. The stored row stays exactly as it is, so running
+// 013 later still repairs it properly and nothing here has to be unwound.
+const shiftDetail = d => d && typeof d === 'object' &&
+  d.key != null && d.met != null &&
+  Number.isFinite(Number(d.hours)) && Number.isFinite(Number(d.kcal));
+
+/**
+ * The type an event MEANS, which is not always the type it is stored under.
+ *
+ * Only ever promotes `note` — the one type the writer downgrades TO. Anything
+ * already carrying a real type is returned untouched, so this can never
+ * reclassify a meal, a workout or a weigh-in.
+ */
+export function effectiveType(event) {
+  const stored = event?.event_type;
+  if (stored !== 'note') return stored;
+  const d = event.detail;
+  // What the writer recorded it as before the database refused it.
+  if (d && typeof d === 'object' && LATE_TYPES.has(d._intended_type)) return d._intended_type;
+  // And the shifts that predate the writer knowing 'activity' at all — they
+  // carry no _intended_type, only the shape log_activity gave them.
+  if (shiftDetail(d)) return 'activity';
+  return 'note';
+}
+
+/**
+ * Events with their meant type on them, for every reader that filters by type.
+ *
+ * Applied at the boundary rather than at each comparison: there are three
+ * filters today and the next one added would not know to ask.
+ */
+export function withEffectiveTypes(events = []) {
+  return (events || []).map(e => {
+    const t = effectiveType(e);
+    return t === e?.event_type ? e : { ...e, event_type: t, stored_type: e.event_type };
+  });
+}
 
 export async function rememberFact(userId, fact, category = 'general') {
   const { error } = await supabase.from('wrought_memory')

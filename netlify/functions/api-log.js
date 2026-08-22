@@ -18,7 +18,7 @@
 import {
   getAuthUser, getProfile, localDateFor, localMinutesFor, clockString,
   addDays, daysBetween, sayWeight, sayLength, kgToLb, humanDuration, supabase,
-  insertEvents,
+  insertEvents, withEffectiveTypes,
 } from './lib/wrought.js';
 import { parseQuickAdd } from './lib/quickadd.js';
 import { activityBurn } from './lib/activity.js';
@@ -371,7 +371,11 @@ export const handler = async (event) => {
   };
   for (let d = from; d <= before; d = addDays(d, 1)) dayOf(d);
 
-  for (const e of events) {
+  // Promoted before the sort into buckets, or a shift the database refused to
+  // type drops into `other` with the notes — visible, unlabelled, and carrying
+  // neither its hours nor its calories, which is the same entry looking like it
+  // saved and counting for nothing.
+  for (const e of withEffectiveTypes(events)) {
     const day = dayOf(e.local_date);
     const base = { id: e.id, at: at(e.occurred_at), summary: e.summary, estimated: e.estimated, source: e.source };
 
