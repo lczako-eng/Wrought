@@ -8764,6 +8764,10 @@ await test('a shift filed as a session can be put back in one tap', () => {
   // is the one thing this path must not do.
   assert.match(act, /burn\.kcal == null/);
   assert.match(act, /needs: 'weight'/);
+  // A constraint rejection is named as the migration it is, not relayed as a
+  // Postgres sentence nobody can act on — the same message log_activity gives
+  // for the same cause.
+  assert.match(act, /013_wrought_work\.sql/);
   // A workout can own derived sets; leaving them would keep a lift record
   // standing on training the log no longer holds.
   assert.match(act, /from\('wrought_sets'\)\s*\.delete\(\)/);

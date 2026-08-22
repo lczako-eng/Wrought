@@ -207,7 +207,20 @@ export const handler = async (event) => {
         },
         estimated: true,
       }).eq('user_id', user.id).eq('id', id);
-      if (upErr) return reply(500, { error: 'not_refiled', say: `That did not change: ${upErr.message}` });
+      if (upErr) {
+        // NAME THE MIGRATION WHEN THAT IS WHAT IT IS. The database's own check
+        // constraint is what rejects event_type 'activity' when 013 has never
+        // been run, and Postgres says so in a sentence nobody can act on. This
+        // is the same message log_activity gives for the same cause — and it
+        // is the likeliest reason this button fails, because a record whose
+        // shifts were being silently filed as notes is a record where nothing
+        // ever needed the constraint until now.
+        const msg = String(upErr.message || upErr);
+        return reply(500, { error: 'not_refiled',
+          say: /constraint|check|invalid input/i.test(msg)
+            ? 'The activity event type is not in the database yet — run schema/013_wrought_work.sql in Supabase and this will work. Nothing was changed.'
+            : `That did not change: ${msg}` });
+      }
 
       return reply(200, {
         ok: true, refiled: true,
