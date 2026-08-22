@@ -5153,9 +5153,17 @@ await test('the page says which build it is, so stale and broken are tellable ap
   const src = page('app.html');
   assert.match(src, /function buildLine\(\)/);
   assert.match(src, /\$\{buildLine\(\)\}/, 'the build line is never rendered');
-  // Absent on a deploy that does not set it, rather than printing an empty box.
+  // AND IT NEVER GOES SILENT. It used to return '' when the stamp was missing —
+  // the exact failure it exists to prevent, committed by the fix itself. Asked
+  // to read the build off his phone the founder found no line at all, which is
+  // indistinguishable from a deploy that never happened. A diagnostic that
+  // disappears when it has no answer is worse than none, because its absence
+  // reads as a verdict.
   const fn = src.slice(src.indexOf('function buildLine()'), src.indexOf('// A view that needs a live session'));
-  assert.match(fn, /if \(!b\) return ''/);
+  assert.ok(!/if \(!b\) return ''/.test(fn), 'the build line goes silent when it cannot tell');
+  assert.match(fn, /not stamped with a build/, 'a missing stamp is not said out loud');
+  // And it names the cause, so the absence is not read as the page being old.
+  assert.match(fn, /COMMIT_REF/, 'the missing-stamp line does not say what is missing');
 });
 
 group('A claimed save that never happened');
@@ -7601,13 +7609,35 @@ await test('the screen says whether the phone is even talking', () => {
   // Each branch names ONE next thing; a diagnostic offering three options is
   // one nobody acts on.
   assert.match(fn, /Open the Wrought app/);
-  assert.match(fn, /015_wrought_ingest_dedupe_fix/);
-  assert.match(fn, /Everything is arriving/);
+  assert.match(fn, /arriving/);
   assert.match(fn, /connections\?\.length/);
+
+  // AND IT MAY NOT DIAGNOSE FROM AN EMPTY WINDOW. The accusation branch used to
+  // fire on zero device workouts counted over the SELECTED RANGE — and the
+  // dashboard opens on 1d, where no workout from a watch means nobody went for
+  // a run today. A healthy account was told flatly that the server was refusing
+  // its workouts and sent to a laptop to run SQL against a database that was
+  // never broken. It reads the history now, and says how far back it looked.
+  assert.match(fn, /history_days/, 'the verdict still cannot say how much it looked at');
+  assert.match(fn, /device_workouts_history/, 'the verdict is still counted off the window');
+  assert.ok(!/dv\.workouts_from_device === 0/.test(fn),
+    'the fault is still being diagnosed from the selected range');
+  const accuse = fn.slice(fn.indexOf('days >= 14'), fn.indexOf('} else {', fn.indexOf('days >= 14')));
+  assert.ok(/days >= 14/.test(fn), 'the accusation is not gated on a meaningful span');
+  assert.ok(!/That is the server refusing them/.test(fn),
+    'a likelihood is still being stated as a finding');
+  assert.match(accuse, /\/status/, 'the one branch that sends somebody hunting names no real check');
 
   const api = readFileSync(new URL('../netlify/functions/api-progress.js', import.meta.url), 'utf8');
   assert.match(api, /wrought_connections/);
   assert.match(api, /workouts_from_device/);
+  // The counts on screen still describe the window somebody chose; only the
+  // evidence the verdict reasons from is floored.
+  const q = api.slice(api.indexOf("eq('event_type', 'workout')"));
+  assert.match(q.slice(0, 200), /gte\('local_date', histFrom\)/,
+    'the device workouts query is still bounded by the selected range');
+  assert.match(api, /workouts_total: inWindow\.length/,
+    'the caption stopped describing the range it names');
 });
 
 await test('a saved workout can be opened and read on the website', () => {

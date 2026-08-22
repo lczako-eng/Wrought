@@ -2107,9 +2107,21 @@ document.querySelectorAll('#gate .oauth').forEach(b => b.addEventListener('click
 // One line, at the bottom of Account where a version belongs. It is not
 // decoration: it is the difference between "this is broken" and "this is
 // stale", and those two sentences lead to completely different afternoons.
+// AND IT RETURNED NOTHING WHEN IT DID NOT KNOW, which is the failure it was
+// built to prevent, committed by the fix itself. Asked to read the build line
+// off his phone, the founder found no line at all — indistinguishable from a
+// deploy that never happened, on the one control that exists to tell those
+// apart. A diagnostic that goes silent exactly when it has no answer is worse
+// than no diagnostic, because its absence reads as a verdict.
+//
+// It always renders now, and when the stamp is missing it says so and names the
+// cause. COMMIT_REF is set by Netlify on a build; an empty one means the
+// variable is not reaching the function, not that the site is old.
 function buildLine() {
   const b = window.WROUGHT_BUILD || '';
-  if (!b) return '';
+  if (!b) return `<p class="sub dim">This deploy is not stamped with a build.
+    That is a missing <code>COMMIT_REF</code> on the Netlify function, not a sign the page is old —
+    but it does mean nothing here can tell a fix that has not worked from a fix that has not arrived.</p>`;
   return `<p class="sub dim">Running build <code>${esc(b)}</code>.
     If something was just fixed and still looks wrong here, close this page fully and reopen it,
     then check whether this changed.</p>`;
@@ -7320,14 +7332,40 @@ function devicePanel2(d) {
   // The decision tree, stated rather than left to be inferred. Each branch
   // names the ONE next thing, because a diagnostic offering three options is
   // one nobody acts on.
+  // A DIAGNOSIS DRAWN FROM AN EMPTY WINDOW IS A GUESS WEARING A MIGRATION
+  // NUMBER. This branch used to fire on `workouts_from_device === 0` counted
+  // over the SELECTED RANGE — and the dashboard now opens on 1d, where no
+  // workout from a watch is the ordinary case: it means nobody went for a run
+  // today. So a perfectly healthy account was told flatly that "the server is
+  // refusing them" and sent to a laptop to run SQL against a database that was
+  // never broken. Absence is not evidence until you have looked at enough of
+  // it, and the panel now says how far back it looked.
   const recent = dv.connections.some(c => c.hours_ago != null && c.hours_ago <= 24);
+  const days = dv.history_days || 0;
+  const seen = dv.device_workouts_history;
+  const ago = dv.device_workout_days_ago;
   let verdict;
   if (!recent) {
     verdict = 'Nothing has arrived from a device in the last day. Open the Wrought app on your phone — it sends on launch, and the courier re-sends the last 7 days, so nothing is lost.';
-  } else if (dv.workouts_from_device === 0) {
-    verdict = 'Your phone is sending, but no workouts from it have landed. That is the server refusing them — run schema/015_wrought_ingest_dedupe_fix.sql in the Supabase SQL editor and open the app again.';
+  } else if (seen > 0) {
+    // Something from a device HAS landed, so the door works. Where it landed is
+    // a different question from whether it landed, and conflating them is what
+    // made an empty Tuesday look like a broken server.
+    verdict = ago === 0 ? 'Workouts from your phone are arriving — the most recent one landed today.'
+      : `Workouts from your phone are arriving. The most recent one was ${ago} day${ago === 1 ? '' : 's'} ago.`;
+  } else if (days >= 14) {
+    // Now it is worth saying, and it is still said as the LIKELIEST cause
+    // rather than a finding. /status probes the database for real; this panel
+    // only ever counted rows, and the difference matters when the answer sends
+    // somebody looking for a computer.
+    verdict = `Your phone is sending, but nothing it has sent in ${days} days has landed as a workout. ` +
+      'The usual cause is the server refusing them — open /status to have the database checked properly, ' +
+      'and it will name the migration if that is what it is.';
   } else {
-    verdict = `${dv.workouts_from_device} workout${dv.workouts_from_device === 1 ? '' : 's'} from a device in this range. Everything is arriving.`;
+    // Not enough looked at to say anything. Saying so is the honest answer and
+    // costs nothing; inventing a fault costs an evening.
+    verdict = `No workouts from a device in the last ${days} day${days === 1 ? '' : 's'} — ` +
+      'which on a short range usually just means none were recorded. Widen to 30d to see whether they are arriving at all.';
   }
 
   return `<section class="panel"><h2>Devices · is it arriving</h2>

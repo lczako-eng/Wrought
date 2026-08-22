@@ -186,10 +186,20 @@ export const handler = async (event) => {
     // Workouts that came from a DEVICE rather than being typed or dictated.
     // The one number that separates "the server refused them" from "the phone
     // never sent them", and it cost nothing to surface.
+    //
+    // ON THE HISTORY, NOT THE WINDOW — a window is not a memory, and this is the
+    // fifth place that rule has been needed. The dashboard now opens on 1d, and
+    // over one day "no workouts from a device" is the ORDINARY case: it means
+    // nobody went for a run today. Read off the range, that silence was being
+    // reported as `workouts_from_device === 0` and the panel turned it into a
+    // flat accusation — "the server is refusing them, run 015 in the SQL
+    // editor" — which sends somebody to a laptop to fix a database that was
+    // never broken. A diagnosis drawn from an empty window is a guess wearing a
+    // migration number.
     supabase.from('wrought_events')
       .select('source, local_date, summary')
       .eq('user_id', user.id).eq('event_type', 'workout')
-      .gte('local_date', from).lte('local_date', to).limit(500)
+      .gte('local_date', histFrom).lte('local_date', to).limit(500)
       .then(r => r.data || []),
 
     // The thirty-day run-up care flags, the week, recovery and earned room all
@@ -267,6 +277,12 @@ export const handler = async (event) => {
       say: pos.say,
     };
   }
+
+  // Workouts are fetched over the history so the device verdict has something
+  // to reason from; the counts on screen still describe the window somebody
+  // chose. Two readings of one query rather than two round trips.
+  const inWindow  = workoutRows.filter(w => w.local_date >= from && w.local_date <= to);
+  const fromDevice = workoutRows.filter(w => w.source && w.source !== 'agent');
 
   const summary  = summariseRange(range, profile);
 
@@ -610,9 +626,13 @@ export const handler = async (event) => {
           ? Math.max(1, Math.round((new Date(s.ended_at) - new Date(s.started_at)) / 60000)) : null,
         days_ago: daysBetween(s.local_date, to),
       })),
-      // What has actually reached the server from a device, and when. Counted
-      // over the loaded range so the answer moves with the window rather than
-      // quoting all time and looking healthy on a dead week.
+      // What has actually reached the server from a device, and when.
+      //
+      // The COUNTS people read stay on the loaded window, so the caption moves
+      // with the range rather than quoting all time and looking healthy on a
+      // dead week. The DIAGNOSIS reads the history, because absence over one
+      // day means nothing at all and a verdict built on it is a false alarm
+      // that costs somebody a trip to a laptop.
       devices: {
         connections: connections.map(c => ({
           provider: c.provider, mode: c.mode, status: c.status,
@@ -621,9 +641,16 @@ export const handler = async (event) => {
             ? Math.round((Date.now() - new Date(c.last_sync_at).getTime()) / 3600000) : null,
         })),
         // 'agent' is the assistant; anything else came off a device.
-        workouts_total: workoutRows.length,
-        workouts_from_device: workoutRows.filter(w => w.source && w.source !== 'agent').length,
-        sources: [...new Set(workoutRows.map(w => w.source).filter(Boolean))],
+        workouts_total: inWindow.length,
+        workouts_from_device: inWindow.filter(w => w.source && w.source !== 'agent').length,
+        sources: [...new Set(inWindow.map(w => w.source).filter(Boolean))],
+        // The evidence the verdict is allowed to use, and how much of it there
+        // is. Naming the span is what stops the panel saying "never" when it
+        // has only looked at today.
+        history_days: daysBetween(histFrom, to) + 1,
+        device_workouts_history: fromDevice.length,
+        device_workout_days_ago: fromDevice.length
+          ? Math.min(...fromDevice.map(w => daysBetween(w.local_date, to))) : null,
       },
       routines: routines.map(r => ({
         name: r.name, kind: r.kind, tier: r.tier,
