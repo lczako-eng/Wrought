@@ -5668,6 +5668,48 @@ function wireQuickAdd() {
   $('qaform')?.addEventListener('submit', quickAddFood);
   document.querySelectorAll('[data-unlog]').forEach(b =>
     b.addEventListener('click', () => removeFood(b.dataset.unlog, b)));
+  document.querySelectorAll('[data-refile]').forEach(b =>
+    b.addEventListener('click', () => refileAsWork(b.dataset.refile, b)));
+}
+
+// A session that was really a shift, put back. The calories are RECOMPUTED
+// server-side from the MET table against hours on task and bodyweight — never
+// carried across from the row, because the figure on a mis-filed workout is
+// whatever the assistant estimated, and work is one of the places this product
+// refuses to relay a guessed number.
+async function refileAsWork(id, btn) {
+  if (!confirm('File this as work rather than a workout?\n\nIt will be priced from hours on task, and it will not count toward your training week.')) return;
+  const { data } = sb ? await sb.auth.getSession() : { data: {} };
+  if (!data?.session) return;
+  const was = btn ? btn.textContent : '';
+  if (btn) { btn.disabled = true; btn.textContent = '…'; }
+  const go = async (effort) => {
+    const res = await fetch('/.netlify/functions/api-log', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${data.session.access_token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'refile_as_work', id, ...(effort ? { effort } : {}) }),
+    });
+    return [res, await res.json().catch(() => ({}))];
+  };
+  try {
+    let [res, body] = await go(null);
+    // AN UNKNOWN JOB ASKS RATHER THAN GUESSING. Their read on their own day
+    // beats anything inferred from a job title, and nothing has been written.
+    if (res.ok && body.ok === false && body.needs === 'effort') {
+      const pick = prompt(`${body.say}\n\nType one: ${(body.options || []).join(', ')}`);
+      if (!pick) { if (btn) { btn.disabled = false; btn.textContent = was; } return; }
+      [res, body] = await go(String(pick).trim().toLowerCase());
+    }
+    if (!res.ok || body.ok === false) {
+      alert(body.say || body.error || 'That did not change.');
+      if (btn) { btn.disabled = false; btn.textContent = was; }
+      return;
+    }
+    await load();
+  } catch {
+    alert('Could not reach the server — nothing was changed.');
+    if (btn) { btn.disabled = false; btn.textContent = was; }
+  }
 }
 
 async function quickAddFood(ev) {
@@ -5739,6 +5781,20 @@ function trainingTodayPanel(d) {
     ${extra}
   </div>`;
 
+  // A SHIFT FILED AS A SESSION, PUT BACK IN ONE TAP.
+  //
+  // Six hours at a petting zoo went in as a workout. A session is clamped to
+  // what the watch measured for the whole day — because a watch already counts
+  // workouts — so 2,400 became 498 and 1,902 calories disappeared with the row
+  // still sitting there showing its own figure.
+  //
+  // The server does not decide this by reading the words in the summary: that
+  // is not reversible and a long hike is a real workout. The offer is shown
+  // where the confusion actually lives — a long session, or a day whose
+  // training was clamped — and the person taps it, because the person knows.
+  const clamped = d.today?.balance?.training_clamped || null;
+  const looksLikeWork = x => clamped || Number(x.minutes) >= 120;
+
   const rows = workouts.map(w => {
     const x = w.detail || {};
     // A device summary is already "run · 5.6 km · 34 min", so repeating the
@@ -5765,7 +5821,10 @@ function trainingTodayPanel(d) {
       // The training spike, on the day it happened rather than three months on.
       (x.avg_hr ?? x.effort?.avg_hr) ? `${x.avg_hr ?? x.effort.avg_hr} bpm avg` : null,
       (x.max_hr ?? x.effort?.max_hr) ? `${x.max_hr ?? x.effort.max_hr} bpm peak` : null,
-    ]) + ticks;
+    ], w.id && !DEMO && looksLikeWork(x)
+      ? `<button class="qadel" data-refile="${esc(String(w.id))}"
+           title="Price it from hours on task instead, and keep it out of your training week">Log as work</button>`
+      : '') + ticks;
   }).concat(shifts.map(s => {
     const x = s.detail || {};
     // A SHIFT IS NOT A SESSION. It is listed here because it burned calories
@@ -5783,6 +5842,11 @@ function trainingTodayPanel(d) {
     ${workouts.length ? `<p class="sub">${esc(t.say)}</p>` : ''}
     ${workouts.some(w => !w.detail?.minutes) ? `<p class="caveat">A session logged with no minutes on it
       contributes nothing to calories out — say roughly how long it was and the day's burn corrects itself.</p>` : ''}
+    ${clamped ? `<p class="caveat">This ${clamped.own ? `comes to ${n(clamped.own)} kcal on its own, but your watch measured
+      only ${n(clamped.counted)} moving all day` : 'is larger than your watch measured all day'} — a session cannot be more
+      than that, so ${n(clamped.counted)} is what counts. <b>${n(clamped.dropped)} kcal is not in your total.</b>
+      If it was work rather than training, tap <em>Log as work</em>: work is priced from hours on task and is not capped
+      by what the watch saw.</p>` : ''}
   </section>`;
 }
 

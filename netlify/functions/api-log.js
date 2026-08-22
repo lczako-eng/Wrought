@@ -21,6 +21,7 @@ import {
   insertEvents,
 } from './lib/wrought.js';
 import { parseQuickAdd } from './lib/quickadd.js';
+import { activityBurn } from './lib/activity.js';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -113,6 +114,93 @@ export const handler = async (event) => {
   if (event.httpMethod === 'POST') {
     let payload = {};
     try { payload = JSON.parse(event.body || '{}'); } catch { payload = {}; }
+
+    // ── A SHIFT FILED AS A SESSION, PUT BACK ───────────────────────────────
+    //
+    // Six hours at a petting zoo went in as a workout. It is not a labelling
+    // nicety: a session is clamped to what the watch measured for the whole
+    // day, because a watch already counts workouts — so 2,400 became 498 and
+    // 1,902 calories vanished. It also lands in the weekly training count,
+    // which makes the one number the plan rests on meaningless.
+    //
+    // The server does NOT decide this on its own. Re-typing an event by
+    // reading the words in it is not reversible, and a long hike is a real
+    // workout. The person taps it, because the person knows.
+    //
+    // AND THE CALORIES ARE RECOMPUTED, never carried across. The figure on the
+    // mis-filed row is whatever the assistant estimated; work is priced from
+    // the MET table against hours on task and bodyweight, which is the whole
+    // reason log_activity exists. Trusting the old number here would smuggle a
+    // guessed figure into the one place that is supposed to be computed.
+    if (payload.action === 'refile_as_work') {
+      const id = String(payload.id || '').trim();
+      if (!id) return reply(400, { error: 'no_id' });
+
+      const { data: row } = await supabase.from('wrought_events')
+        .select('id, event_type, summary, detail, occurred_at')
+        .eq('user_id', user.id).eq('id', id).maybeSingle();
+      if (!row) return reply(404, { error: 'not_found', say: 'That entry is not on your record.' });
+      if (row.event_type !== 'workout') {
+        return reply(400, { error: 'not_a_workout',
+          say: 'Only a workout can be re-filed as work.' });
+      }
+
+      const mins = Number(row.detail?.minutes);
+      if (!Number.isFinite(mins) || mins <= 0) {
+        return reply(400, { error: 'no_duration',
+          say: 'That entry has no duration on it, so there are no hours to price. Tell your AI how long you were at it.' });
+      }
+
+      // Bodyweight for the MET arithmetic — today's if there is one, else the
+      // most recent. Same fallback as every other burn: a window is not a
+      // memory.
+      let weightKg = null;
+      {
+        const { data: w } = await supabase.from('wrought_events')
+          .select('detail').eq('user_id', user.id).eq('event_type', 'weight')
+          .order('occurred_at', { ascending: false }).limit(1);
+        weightKg = w?.[0]?.detail?.value_kg ?? null;
+      }
+
+      const burn = activityBurn({
+        text: String(payload.text || row.summary || ''),
+        hours: mins / 60,
+        effort: payload.effort || null,
+        weightKg,
+      });
+
+      // AN UNKNOWN JOB ASKS RATHER THAN GUESSING — their read on their own day
+      // beats anything inferred from a job title. Nothing is written yet.
+      if (!burn.known) {
+        return reply(200, { ok: false, needs: burn.why, say: burn.say,
+                            options: burn.options || undefined });
+      }
+
+      // A workout event can own derived rows in wrought_sets. Leaving them
+      // behind would keep a lift record standing on training the log no longer
+      // holds — the same reason the food DELETE refuses to touch a workout.
+      await supabase.from('wrought_sets').delete()
+        .eq('user_id', user.id).eq('event_id', id).then(() => null, () => null);
+
+      const { error: upErr } = await supabase.from('wrought_events').update({
+        event_type: 'activity',
+        summary: `${burn.label}, ${burn.hours}h`,
+        detail: {
+          label: burn.label, key: burn.key, met: burn.met,
+          hours: burn.hours, kcal: burn.kcal, matched: burn.matched,
+          said: String(row.summary || '').slice(0, 200),
+          refiled_from: 'workout',
+        },
+        estimated: true,
+      }).eq('user_id', user.id).eq('id', id);
+      if (upErr) return reply(500, { error: 'not_refiled', say: `That did not change: ${upErr.message}` });
+
+      return reply(200, {
+        ok: true, refiled: true,
+        entry: { id, summary: `${burn.label}, ${burn.hours}h`, hours: burn.hours, kcal: burn.kcal },
+        say: `${burn.say} It is filed as work now, not a session — so it is not capped by what your watch saw, and it does not count toward your training week.`,
+      });
+    }
 
     const parsed = parseQuickAdd(payload.text);
     if (!parsed.ok) return reply(400, { error: 'unparseable', say: parsed.why });

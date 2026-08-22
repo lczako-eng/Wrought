@@ -8727,6 +8727,46 @@ await test('a ceiling is never cheered on', () => {
   assert.deepEqual(out, []);
 });
 
+await test('a shift filed as a session can be put back in one tap', () => {
+  // The founder was looking at a row that said 2,400 while his total had moved
+  // by 498, and the only way out was to negotiate a retraction with ChatGPT.
+  // The website is meant to be a complete second door.
+  const src = page('app.html');
+
+  // The panel offers it where the confusion lives — a long session, or a day
+  // whose training was clamped — and never on an ordinary one.
+  const from = src.indexOf('function trainingTodayPanel(');
+  const body = src.slice(from, src.indexOf('\nfunction ', from + 10));
+  assert.match(body, /looksLikeWork/);
+  assert.match(body, /data-refile=/);
+  assert.match(body, /Number\(x\.minutes\) >= 120/);
+  assert.match(body, /!DEMO/, 'the demo offers a write that goes nowhere');
+  // The clamp is stated on the page, not only in the receipt.
+  assert.match(body, /not in your total/);
+
+  // The server RECOMPUTES the calories rather than carrying the old figure —
+  // the number on a mis-filed workout is whatever the assistant estimated, and
+  // work is one of the places this product refuses to relay a guess.
+  const api = readFileSync(new URL('../netlify/functions/api-log.js', import.meta.url), 'utf8');
+  const act = api.slice(api.indexOf("action === 'refile_as_work'"), api.indexOf('const parsed = parseQuickAdd'));
+  assert.match(act, /activityBurn\(/);
+  assert.ok(!/detail\?\.calories/.test(act), 'it is carrying the old estimate across');
+  // Only a workout, only the caller's own row.
+  assert.match(act, /not_a_workout/);
+  assert.equal((act.match(/\.eq\('user_id', user\.id\)/g) || []).length >= 3, true,
+    'a statement is not scoped to the caller');
+  // An unknown job ASKS rather than guessing, and writes nothing first.
+  assert.match(act, /needs: burn\.why/);
+  // A workout can own derived sets; leaving them would keep a lift record
+  // standing on training the log no longer holds.
+  assert.match(act, /from\('wrought_sets'\)\s*\.delete\(\)/);
+
+  // And the panel can only act on a row it can identify.
+  const facts = readFileSync(new URL('../netlify/functions/lib/wrought.js', import.meta.url), 'utf8');
+  assert.match(facts, /entries: workouts\.map\(w => \(\{ id: w\.id/);
+  assert.match(facts, /entries: activities\.map\(a => \(\{ id: a\.id/);
+});
+
 await test('the log tool says work is never a workout', () => {
   // Belt on the sheet, braces on the tool — and this is the failure the braces
   // exist for: ChatGPT filed six hours at a petting zoo through `log` as a
