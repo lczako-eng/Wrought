@@ -39,7 +39,7 @@ export const handler = async (event) => {
     // Tolerated rather than required: without migration 018 there are simply
     // no rules to show, and the notifications screen must not break for it.
     const { data: alertRows } = await supabase.from('wrought_alerts')
-      .select('id, kind, at_hour, threshold, text, days, active')
+      .select('id, kind, at_hour, threshold, text, days, active, metric')
       .eq('user_id', user.id).eq('active', true)
       .order('created_at', { ascending: true });
 

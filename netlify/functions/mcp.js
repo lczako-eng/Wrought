@@ -1664,7 +1664,7 @@ function alertError(error) {
 
 async function alertsFor(userId) {
   const { data } = await supabase.from('wrought_alerts')
-    .select('id, kind, at_hour, threshold, text, days, active, last_sent_on')
+    .select('id, kind, at_hour, threshold, text, days, active, last_sent_on, metric')
     .eq('user_id', userId).eq('active', true).order('created_at', { ascending: true });
   return (data || []).map(describeAlert).filter(Boolean);
 }
