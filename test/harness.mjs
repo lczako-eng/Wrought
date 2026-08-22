@@ -8757,6 +8757,13 @@ await test('a shift filed as a session can be put back in one tap', () => {
     'a statement is not scoped to the caller');
   // An unknown job ASKS rather than guessing, and writes nothing first.
   assert.match(act, /needs: burn\.why/);
+  // AND IT NEVER MAKES THE BURN GO DOWN. With no weigh-in, activityBurn hands
+  // back known:true and kcal:null — writing that would take the session out of
+  // training, where it was contributing what the watch measured, and put it
+  // into work contributing nothing. Being punished for correcting the record
+  // is the one thing this path must not do.
+  assert.match(act, /burn\.kcal == null/);
+  assert.match(act, /needs: 'weight'/);
   // A workout can own derived sets; leaving them would keep a lift record
   // standing on training the log no longer holds.
   assert.match(act, /from\('wrought_sets'\)\s*\.delete\(\)/);
