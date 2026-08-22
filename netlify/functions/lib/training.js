@@ -398,6 +398,23 @@ export function energyBalance({
     activeSource = level ? 'activity_level' : train > 0 ? 'training_only' : 'none';
   }
 
+  // WHAT THE CLAMP THREW AWAY, kept so it can be said out loud.
+  //
+  // min(session, watch) is right for a real workout: Apple's active energy
+  // already contains it, so adding both bills the hour twice. It is silently
+  // catastrophic for anything the watch did NOT see — six hours of physical
+  // work filed as a session came to 2,400, the watch had measured 498 for the
+  // whole day, and 1,900 vanished with nothing anywhere saying so. The entry
+  // sat on the screen showing its own figure while the total ignored it.
+  //
+  // The clamp stays; it is correct. What was missing is the sentence. A cap,
+  // an uncounted session and a meal with no macros are all named — this is the
+  // one that was not, and an unexplained gap between a row and a total is how
+  // somebody stops believing both.
+  const trainingClamped = training.kcal > train
+    ? { own: training.kcal, counted: train, dropped: training.kcal - train }
+    : null;
+
   const active = train + other;
   const out = restKcal + active;
   const inn = Number(caloriesIn) || 0;
@@ -439,6 +456,7 @@ export function energyBalance({
     // without recomputing anything — recomputation is how a screen and a
     // total end up quoting two different figures for the same session.
     training_detail: training,
+    ...(trainingClamped ? { training_clamped: trainingClamped } : {}),
     ...(activity.count ? { logged_activity: activity } : {}),
     say: `Roughly ${inn} in, about ${out} out (${parts.join(' · ')}) — ` +
          (net < -150 ? `around ${Math.abs(net)} down on the day.`

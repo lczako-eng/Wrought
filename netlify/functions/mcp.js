@@ -369,7 +369,8 @@ const TOOLS = [
           items: {
             type: 'object',
             properties: {
-              event_type: { type: 'string', enum: ['food','drink','workout','weight','measurement','sleep','symptom','mood','supplement','note','fast'] },
+              event_type: { type: 'string', enum: ['food','drink','workout','weight','measurement','sleep','symptom','mood','supplement','note','fast'],
+                            description: 'WORK IS NEVER A workout. A shift, a job, a day on site, a house move, hours in a garden — those go to log_activity instead, NOT through here. Filing a shift as a session is not a labelling nicety: a session is capped by what the watch measured for the whole day, because a watch already counts workouts, so six hours of physical work filed as training came back worth 498 kcal instead of 2,400. It also lands in the weekly training count, which makes the one number the whole plan rests on meaningless.' },
               summary:    { type: 'string', description: 'A short natural sentence in the user\'s own register — "two eggs and black coffee". This is what gets read back to them.' },
               detail: {
                 type: 'object',

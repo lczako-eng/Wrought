@@ -8727,6 +8727,81 @@ await test('a ceiling is never cheered on', () => {
   assert.deepEqual(out, []);
 });
 
+await test('the log tool says work is never a workout', () => {
+  // Belt on the sheet, braces on the tool — and this is the failure the braces
+  // exist for: ChatGPT filed six hours at a petting zoo through `log` as a
+  // workout, and the doctrine that a shift is not a session lived only in the
+  // instruction sheet, which not every client reads.
+  const log = TOOLS.find(t => t.name === 'log');
+  const ev = log.inputSchema.properties.events.items.properties.event_type;
+  assert.match(ev.description, /WORK IS NEVER A workout/i);
+  assert.match(ev.description, /log_activity/);
+  // It says WHY, because a rule with no cost attached gets reasoned around.
+  assert.match(ev.description, /capped/i);
+  assert.match(ev.description, /weekly training count/i);
+});
+
+await test('a session bigger than the whole day of movement says so', () => {
+  // THE SILENT SUBTRACTION. min(session, watch) is right for a real workout —
+  // Apple's active energy already contains it, so adding both bills the hour
+  // twice. It is catastrophic for anything the watch did not see: six hours of
+  // physical work filed as a session came to 2,400, the watch had measured 498
+  // for the WHOLE day, and 1,902 vanished with nothing anywhere saying so. The
+  // row sat on screen showing its own figure while the total ignored it.
+  const profile = { height_cm: 190, birth_year: 1982, sex: 'male', activity_level: 'moderate' };
+  const b = energyBalance({
+    profile, weightKg: 150, caloriesIn: 450, activeCalories: 498, foodEstimated: true,
+    workouts: [{ summary: 'Petting Zoo 6h', detail: { minutes: 360, calories: 2400, kind: 'strength' } }],
+    activities: [],
+  });
+  // The clamp itself stays — it is correct.
+  assert.equal(b.training_burn, 498);
+  // What was missing is the sentence.
+  assert.deepEqual(b.training_clamped, { own: 2400, counted: 498, dropped: 1902 });
+
+  const r = dayReceipt({ day: { date: '2026-08-22', food: { calories: 450, meals: 1 }, log: [] },
+                         balance: b, date: '2026-08-22', today: '2026-08-22' });
+  const line = (r.set_aside || []).find(x => /whole day/i.test(x));
+  assert.ok(line, 'the clamp is still silent');
+  assert.match(line, /2,400/);
+  assert.match(line, /498/);
+  // And it names the way out, because this is almost always work filed as
+  // training rather than a genuinely enormous session.
+  assert.match(line, /log_activity/);
+
+  // A session the watch comfortably covers is NOT flagged — no noise on an
+  // ordinary day.
+  const ok = energyBalance({
+    profile, weightKg: 150, caloriesIn: 450, activeCalories: 900, foodEstimated: true,
+    workouts: [{ summary: 'Leg day', detail: { minutes: 45, calories: 400, kind: 'strength' } }],
+    activities: [],
+  });
+  assert.equal(ok.training_clamped, undefined);
+  assert.ok(!(dayReceipt({ day: { date: '2026-08-22', food: { calories: 450, meals: 1 }, log: [] },
+    balance: ok, date: '2026-08-22', today: '2026-08-22' }).set_aside || [])
+    .some(x => /whole day/i.test(x)), 'an ordinary session was flagged');
+});
+
+await test('the same hours are worth far more as work than as a session', () => {
+  // Why the classification matters, in one number. A shift is priced from
+  // hours on task and is NOT capped by what the wrist saw; a session is,
+  // because Apple already counted it.
+  const profile = { height_cm: 190, birth_year: 1982, sex: 'male', activity_level: 'moderate' };
+  const args = { profile, weightKg: 150, caloriesIn: 450, activeCalories: 498, foodEstimated: true };
+  const asSession = energyBalance({ ...args, activities: [],
+    workouts: [{ summary: 'Petting Zoo 6h', detail: { minutes: 360, calories: 2400, kind: 'strength' } }] });
+  const asWork = energyBalance({ ...args, workouts: [],
+    activities: [{ event_type: 'activity', summary: 'animal care, 6h',
+                   detail: { label: 'animal care', key: 'animal_care', met: 4, hours: 6, kcal: 2400 } }] });
+
+  assert.equal(asSession.calories_out, 2971);
+  assert.equal(asWork.calories_out, 4873);
+  assert.equal(asWork.calories_out - asSession.calories_out, 1902);
+  // And work never lands in the training figure — a shift is not a session.
+  assert.equal(asWork.training_burn, 0);
+  assert.equal(asWork.active_source, 'logged_over_device');
+});
+
 await test('a shift filed as a note is repaired, and a real note never is', () => {
   // Fixing the writer only fixed the NEXT shift. The record still held weeks of
   // them typed as notes, worth nothing to the burn, and nobody would ever find
