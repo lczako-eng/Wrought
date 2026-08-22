@@ -2508,6 +2508,37 @@ there is**, because the write succeeds, the row exists, and only the code that
 was looking for the real type notices. There is now a test that reads the
 constraint out of `schema/013` and asserts the set is exactly equal to it.
 
+### Putting it back in one tap
+
+Explaining the loss is not fixing it. The founder was looking at a row saying
+2,400 beside a total that had moved by 498, and the only way out was to
+negotiate a retraction with ChatGPT — on the product whose settled doctrine is
+that the website and the connector are each a complete door.
+
+**Log as work**, on the training row itself. `api-log.js` takes
+`action: 'refile_as_work'`.
+
+- **The server never decides this by reading the words.** Re-typing an event
+  from its summary is not reversible, and a five-hour hike is a real workout.
+  The offer appears where the confusion actually lives — a session over two
+  hours, or a day whose training was clamped — and the person taps it, because
+  the person knows. Same doctrine as the duplicate detector: it only ever asks.
+- **The calories are RECOMPUTED, never carried across.** The figure on a
+  mis-filed workout is whatever the assistant estimated; work is priced from
+  the MET table against hours on task and bodyweight, which is the entire
+  reason `log_activity` exists. Carrying the old number would smuggle a guessed
+  figure into the one place that is supposed to be computed — six hours of
+  animal care at 150kg comes to **3,119**, not the 2,400 that was asserted.
+- **An unknown job asks rather than guessing**, exactly as `log_activity` does,
+  and nothing is written until it is answered.
+- **The derived sets go with it.** A workout event can own rows in
+  `wrought_sets`; leaving them would keep a lift record standing on training
+  the log no longer holds — the same reason the food DELETE refuses to touch a
+  workout.
+- **The panel had no `id` to act on.** `dayFacts` sent training and activity
+  entries without one, so the screen could display a row and never act on it.
+  Third time a panel and a payload have disagreed about a field.
+
 ### The shift filed as a session, and the 1,902 that vanished quietly
 
 The next screenshot, and a different bug from the one above. The panel read
@@ -3305,7 +3336,7 @@ self-reporting scale removes the most-abandoned manual entry), then Strava.
 
 ## Conventions
 
-- `npm test` runs `test/harness.mjs` — 625 offline tests, no network, no database.
+- `npm test` runs `test/harness.mjs` — 626 offline tests, no network, no database.
   Run it before every push. It covers the JSON-RPC envelope (which fails as an
   uninformative "could not connect" inside ChatGPT) and all the arithmetic
   (which fails as a confidently wrong number in somebody's verdict).

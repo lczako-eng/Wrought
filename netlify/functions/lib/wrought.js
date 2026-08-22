@@ -439,7 +439,7 @@ export async function dayFacts(userId, profile, date) {
       summaries: workouts.map(w => w.summary),
       // The rows themselves, so the burn can be worked out from a watch's own
       // figure where there is one and from the minutes where there is not.
-      entries: workouts.map(w => ({ event_type: 'workout', summary: w.summary, detail: w.detail || {} })),
+      entries: workouts.map(w => ({ id: w.id, event_type: 'workout', summary: w.summary, detail: w.detail || {} })),
       say: workouts.length
         ? `${workouts.length} session${workouts.length === 1 ? '' : 's'}, ${trainedMinutes} min` +
           (muscles.length ? ` — ${muscles.join(', ')}` : '')
@@ -452,7 +452,7 @@ export async function dayFacts(userId, profile, date) {
       count: activities.length,
       minutes: Math.round(activities.reduce((a, e) => a + num(e.detail?.hours) * 60, 0)),
       summaries: activities.map(a => a.summary),
-      entries: activities.map(a => ({ event_type: 'activity', summary: a.summary, detail: a.detail || {} })),
+      entries: activities.map(a => ({ id: a.id, event_type: 'activity', summary: a.summary, detail: a.detail || {} })),
       say: activities.length
         ? activities.map(a => a.summary).join('; ')
         : 'Nothing logged.',
