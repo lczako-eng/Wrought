@@ -2834,6 +2834,29 @@ function urlB64(s) {
   return Uint8Array.from([...raw].map(c => c.charCodeAt(0)));
 }
 
+// `navigator.serviceWorker.ready` HAS NO TIMEOUT AND NEVER REJECTS. With no
+// registration it simply waits, silently, for the rest of the page's life — so
+// the button that turns notifications on granted permission and then sat on
+// "Asking your browser…" with nothing to say and nothing to do.
+//
+// It registers first (the page may have been opened straight from the home
+// screen, having never touched the homepage), and it refuses to wait forever:
+// a failure somebody can see is worth far more than a promise that is still
+// technically pending. Ten seconds is generous — installing a worker off a
+// cached script is near-instant, and on a cold connection this is still less
+// than somebody will hold a phone waiting for a button to do something.
+async function workerReady(ms = 10000) {
+  if (!('serviceWorker' in navigator)) throw new Error('This browser has no service worker support.');
+  await navigator.serviceWorker.register('/sw.js').catch(() => {});
+  return Promise.race([
+    navigator.serviceWorker.ready,
+    new Promise((_, reject) => setTimeout(() => reject(new Error(
+      'The background worker did not start, so notifications cannot be switched on. ' +
+      'On an iPhone this usually means the page is open in Safari rather than from the home screen — ' +
+      'Share, then Add to Home Screen, and open it from the icon.')), ms)),
+  ]);
+}
+
 async function subscribePush(vapidKey) {
   $('pushmsg').textContent = 'Asking your browser…';
   try {
@@ -2844,7 +2867,7 @@ async function subscribePush(vapidKey) {
         : 'No answer given — nothing changed.';
       return;
     }
-    const reg = await navigator.serviceWorker.ready;
+    const reg = await workerReady();
     // userVisibleOnly is not optional anywhere: a push that shows nothing is a
     // background wake-up, and browsers refuse to hand one out.
     const sub = await reg.pushManager.subscribe({
@@ -2867,7 +2890,10 @@ async function subscribePush(vapidKey) {
 }
 
 async function unsubscribePush() {
-  const reg = await navigator.serviceWorker.ready;
+  // Same guard on the way out. Turning something OFF must never be the thing
+  // that hangs — somebody who cannot switch it off mutes the whole app instead,
+  // and a muted app never comes back on.
+  const reg = await workerReady();
   const sub = await reg.pushManager.getSubscription();
   const endpoint = sub?.endpoint;
   // Off the browser AND off the server. Leaving the row behind means a phone
@@ -7591,6 +7617,25 @@ try {
   clientDown = true;
 }
 $('downgo').onclick = () => location.reload();
+
+// THE WORKER WAS REGISTERED ON THE HOMEPAGE AND NOWHERE ELSE.
+//
+// `site.webmanifest` sets `start_url` to /app.html, so the installed app opens
+// THIS page — the one page that never ran a registration. Nothing here is
+// cosmetic: without an active worker `navigator.serviceWorker.ready` never
+// resolves, so "Turn on notifications" granted permission and then hung on
+// "Asking your browser…" forever, with no error and no timeout. The offline
+// card never worked for the dashboard either, for the same reason.
+//
+// Registered here as well as on the homepage rather than instead of it: a
+// person who lands on the marketing page first must still get one, and the
+// browser treats a second register of the same script and scope as a no-op.
+// It is deliberately not awaited — a worker that fails to install must never
+// hold up the dashboard drawing.
+if ('serviceWorker' in navigator) {
+  addEventListener('load', () => navigator.serviceWorker.register('/sw.js').catch(() => {}));
+}
+
 boot();
 </script>
 </body>
