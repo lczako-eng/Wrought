@@ -2959,6 +2959,14 @@ async function logSet(args, user) {
   setsDone = wrote.sets_done;
   const cursor = wrote.cursor;
   const finished = wrote.finished;
+  // ARE WE STILL ON THE SAME LIFT. recordSet owns this decision now and returns
+  // it as `more_here`; the six reads below still used the local name it had
+  // before that refactor, and nothing declared it any more. In an ES module a
+  // read of an undeclared identifier is a ReferenceError, and this one is thrown
+  // AFTER the set has already been written — so the row landed, the model was
+  // told the call failed, and the obvious response to that is to log the set
+  // again. Every log_set except the last of a fully planned session hit it.
+  const moreSetsHere = wrote.more_here;
   if (finished) {
     return {
       recorded: true, session_complete: true,
@@ -3235,8 +3243,17 @@ async function endSession(args, user) {
   // start_session, and offered at the one moment they are wrong. This is the
   // moment they are right, and it is named for what actually worked rather
   // than a generic "stretch out", which reads as filler and gets skipped.
+  // WHAT THIS SESSION ACTUALLY WORKED. Declared here because the return below
+  // hands it back as a shorthand property, and its declaration was lost when
+  // the finaliser moved into lib/session.js — leaving `muscles,` on the return
+  // reading an identifier that no longer existed. Same shape as the log_set
+  // bug and the same cost: the workout is filed, THEN the call throws, so the
+  // record is right and the person is told their session did not save.
+  const muscles = [...new Set(rows.flatMap(r => r.muscles || []))];
   const cool = cooldownFor({
-    muscles: [...new Set(rows.flatMap(r => r.muscles || []))].concat(rows.map(r => r.exercise)),
+    // The cool-down matcher also wants the movement names, which are not
+    // muscles and must not leak into what the session reports it trained.
+    muscles: muscles.concat(rows.map(r => r.exercise)),
     limitations: (await getMemory(user.id, 'health')).map(m => m.fact),
   });
 

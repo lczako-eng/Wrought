@@ -5,11 +5,14 @@
   "type": "module",
   "description": "WROUGHT — the honest personal trainer that lives inside your AI. MCP server, Supabase memory, wearable ingest.",
   "scripts": {
-    "test": "node scripts/build-all-sql.mjs && node test/harness.mjs",
+    "test": "node scripts/build-all-sql.mjs && node scripts/undeclared.mjs netlify/functions/*.js netlify/functions/lib/*.js public/*.html && node test/harness.mjs",
     "sql": "node scripts/build-all-sql.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.49.4",
     "openai": "^4.96.2"
+  },
+  "devDependencies": {
+    "acorn": "^8.12.0"
   }
 }
