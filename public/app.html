@@ -1913,11 +1913,23 @@ async function refresh() {
   // No session needed and no request made — it is the manual, and somebody
   // who cannot get signed in is exactly who needs to read it.
   if (view === 'guide') { $('content').innerHTML = guideView(); wireGuide(); playGuideDemo(); stagger(); return; }
-  if (view === 'log') return loadLog(true);
-  if (view === 'trainer') return startTrainer();
-  if (view === 'photos') return loadPhotos();
-  if (view === 'account') return loadAccount();
-  if (view === 'admin') return loadAdmin();
+  // A VIEW THAT THROWS LEAVES THE PREVIOUS VIEW ON SCREEN, and the tab still
+  // lights up as selected. That is the worst shape a failure can take here:
+  // the founder tapped Account, got the Record view's panels, and concluded the
+  // notifications panel did not exist — so the one feature he had been asking
+  // for was unreachable and nothing anywhere said why. An unhandled rejection
+  // in a loader is silent by construction; nothing is logged where anybody can
+  // see it, and from the outside it is indistinguishable from a screen that was
+  // never built.
+  //
+  // Every loader is wrapped. The message is deliberately not a sign-in prompt —
+  // answering a failure with a password form tells somebody they were signed
+  // out, which is the one thing this product must never fake.
+  if (view === 'log') return guardView(() => loadLog(true), 'Log');
+  if (view === 'trainer') return guardView(startTrainer, 'Trainer');
+  if (view === 'photos') return guardView(loadPhotos, 'Photos');
+  if (view === 'account') return guardView(loadAccount, 'Account');
+  if (view === 'admin') return guardView(loadAdmin, 'Admin');
   if (DEMO) { render(demoData()); return; }
   const { data } = await sb.auth.getSession();
   if (data.session) load(data.session.access_token);
@@ -2135,6 +2147,29 @@ function buildLine() {
 // three of seven tabs doing nothing at all when tapped, on the screen somebody
 // is using to decide whether this product is worth a fortnight. A tab that
 // does nothing reads as broken software; a tab that says why reads as a tab.
+// A loader that throws must say so on the screen it failed to draw.
+//
+// It reports the error rather than a tidy apology: "something went wrong" sends
+// somebody back here tomorrow with nothing more to tell me than they had today,
+// and the whole cost of this class of bug is that nobody can describe it. The
+// tab is named so a screenshot identifies which loader died.
+async function guardView(fn, title) {
+  try {
+    return await fn();
+  } catch (e) {
+    $('content').innerHTML = `<section class="panel">
+      <h2>${esc(title)}</h2>
+      <p class="sub">This screen did not finish drawing, so what you can see is the
+      previous one. Nothing is wrong with your record — this is the page failing, not the log.</p>
+      <p class="sub dim">${esc(e?.message || String(e))}</p>
+      <div class="btnrow"><button class="ghost" id="viewretry">Try again</button></div>
+    </section>`;
+    $('viewretry')?.addEventListener('click', refresh);
+    stagger();
+    return null;
+  }
+}
+
 async function needsSession(title, what) {
   const { data } = sb ? await sb.auth.getSession() : { data: {} };
   if (data?.session) return data.session;
