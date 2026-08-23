@@ -31,7 +31,7 @@ import { warmupFor, sessionProgress } from '../netlify/functions/lib/warmup.js';
 import { formWatch, cardioProgress } from '../netlify/functions/lib/form.js';
 import { INTAKE, intakeState } from '../netlify/functions/lib/intake.js';
 import { weeklyVolume, SET_BAND } from '../netlify/functions/lib/volume.js';
-import { dueAlerts, describeAlert, suggestAlerts, ALERT_KINDS, QUIET_BEFORE, QUIET_AFTER } from '../netlify/functions/lib/alerts.js';
+import { dueAlerts, describeAlert, suggestAlerts, ALERT_KINDS, QUIET_BEFORE, QUIET_AFTER, CARRY_HOURS } from '../netlify/functions/lib/alerts.js';
 import { parseQuickAdd } from '../netlify/functions/lib/quickadd.js';
 const { goalCall, PACES, PUSH } = await import('../netlify/functions/lib/training.js');
 import {
@@ -9210,6 +9210,51 @@ await test('one at a time, once a day, and never in the night', () => {
   const monOnly = [{ id: 'd', kind: 'custom', active: true, at_hour: 18, text: 'x', days: [1] }];
   assert.equal(dueAlerts({ ...ctx, rules: monOnly, weekday: 1 }).length, 1);
   assert.equal(dueAlerts({ ...ctx, rules: monOnly, weekday: 2 }).length, 0);
+});
+
+await test('a missed hour is a delay, never a cancelled day', () => {
+  // "I want multiple noti not just one." He can have them — each rule sends
+  // once a day and the cap is one per HOUR, not one per day. But matching the
+  // hour EXACTLY meant a pinned rule had a single chance and lost it silently
+  // in two completely ordinary cases: two rules set to the same hour, where the
+  // lower ranked one was simply gone until tomorrow; and an hourly run that was
+  // late or failed, which took the whole notification with it.
+  //
+  // Neither errors. From the outside both look exactly like a rule that does
+  // not work, which is how somebody decides notifications are broken and stops
+  // setting them.
+  const rules = [
+    { id: 'b', kind: 'custom', active: true, at_hour: 18, text: 'fast starts now' },
+    { id: 'c', kind: 'weigh_in', active: true, at_hour: 18 },
+  ];
+  const ctx = { rules, date: '2026-08-20', flags: [], lastWeighDays: 30 };
+
+  // At the hour: the higher ranked one, as before. Their own words win.
+  const at18 = dueAlerts({ ...ctx, hour: 18 });
+  assert.equal(at18.length, 1);
+  assert.equal(at18[0].kind, 'custom');
+
+  // AND THE OTHER ONE IS NOT LOST. It arrives on a later pass rather than
+  // vanishing — one notification an hour, both of them delivered.
+  const at19 = dueAlerts({ ...ctx, hour: 19, rules: rules.map(r => r.id === 'b' ? { ...r, last_sent_on: '2026-08-20' } : r) });
+  assert.equal(at19.length, 1, 'the second rule was dropped for the day rather than delayed');
+  assert.equal(at19[0].kind, 'weigh_in');
+
+  // The carry is SHORT. They chose that hour, and a reminder to stop eating
+  // arriving hours late is not the reminder they asked for.
+  assert.equal(dueAlerts({ ...ctx, hour: 18 + CARRY_HOURS }).length, 1, 'the carry window is shorter than stated');
+  assert.equal(dueAlerts({ ...ctx, hour: 18 + CARRY_HOURS + 1 }).length, 0, 'a stale reminder is still being sent');
+
+  // It never runs BACKWARDS — an hour that has not arrived yet is not late.
+  assert.equal(dueAlerts({ ...ctx, hour: 17 }).length, 0, 'a rule fired before its own hour');
+
+  // QUIET HOURS BIND ABSOLUTELY. A carry may never push anything into the
+  // night; that is the one rule here that must not bend. 21:00 + 2 would reach
+  // 23:00, and nothing may arrive then.
+  const late = [{ id: 'k', kind: 'custom', active: true, at_hour: QUIET_AFTER - 1, text: 'kitchen closed' }];
+  assert.equal(dueAlerts({ ...ctx, rules: late, hour: QUIET_AFTER - 1 }).length, 1, 'the chosen hour itself was refused');
+  assert.equal(dueAlerts({ ...ctx, rules: late, hour: QUIET_AFTER }).length, 0, 'a carry pushed a notification into the night');
+  assert.equal(dueAlerts({ ...ctx, rules: late, hour: QUIET_AFTER + 1 }).length, 0, 'a carry pushed a notification into the night');
 });
 
 await test('a custom reminder is sent verbatim, and nothing is on by default', () => {

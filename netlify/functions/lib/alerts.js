@@ -36,6 +36,12 @@ const round = v => (v == null ? null : Math.round(v));
 export const QUIET_BEFORE = 8;
 export const QUIET_AFTER  = 22;
 
+// How long a rule pinned to an hour stays eligible after that hour passes, so a
+// collision or a late hourly run costs a delay rather than the whole day. Two
+// hours: long enough to survive both, short enough that what arrives is still
+// recognisably the reminder they asked for.
+export const CARRY_HOURS = 2;
+
 export const ALERT_KINDS = {
   intake_pace: {
     label: 'Where the day stands',
@@ -132,8 +138,27 @@ export function dueAlerts({ rules = [], day = null, balance = null, calorieTarge
 
     // A stated hour is explicit consent for that hour. Anything without one is
     // held inside waking hours.
+    //
+    // AND AN HOUR THAT WAS MISSED IS NOT A DAY THAT WAS CANCELLED. Matching the
+    // hour EXACTLY meant a rule had one chance a day and lost it silently in two
+    // ordinary cases: two rules pinned to the same hour, where only the higher
+    // ranked one is sent and the other was simply gone until tomorrow; and an
+    // hourly run that was late or failed, which took the whole notification with
+    // it. Neither errors, and from the outside both look exactly like a rule
+    // that does not work — which is how somebody decides notifications are
+    // broken and stops setting them.
+    //
+    // So a pinned rule stays eligible for a short while after its hour. Short on
+    // purpose: they chose that hour, and a reminder to stop eating arriving
+    // three hours late is not the reminder they asked for. Quiet hours still
+    // bind absolutely — a carry may never push anything into the night, which is
+    // the one rule here that must not bend.
     if (kind.needs_hour) {
-      if (!Number.isInteger(r.at_hour) || r.at_hour !== hour) continue;
+      if (!Number.isInteger(r.at_hour)) continue;
+      const late = hour - r.at_hour;
+      const carried = late > 0 && late <= CARRY_HOURS
+        && hour >= QUIET_BEFORE && hour < QUIET_AFTER;
+      if (hour !== r.at_hour && !carried) continue;
     } else if (hour < QUIET_BEFORE || hour >= QUIET_AFTER) {
       continue;
     }
