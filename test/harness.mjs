@@ -9212,6 +9212,68 @@ await test('one at a time, once a day, and never in the night', () => {
   assert.equal(dueAlerts({ ...ctx, rules: monOnly, weekday: 2 }).length, 0);
 });
 
+await test('the dashboard is the same product as the page that sold it', () => {
+  // The founder: "when you go to wrought.fit where it says the sign up, the
+  // graphics and everything is so much better than the rest of the program."
+  // He was right and it was not vague — the landing page ran brighter text on
+  // richer cards, so SIGNING IN STEPPED DOWN into a duller palette. A product
+  // that changes appearance the moment somebody logs in reads as two products,
+  // and the one they just trusted with their health record is the dimmer one.
+  const grab = (src, name) => (src.match(new RegExp(`${name}:\\s*(#[0-9A-Fa-f]{6})`)) || [])[1];
+  const home = page('index.html'), app = page('app.html');
+  for (const token of ['--bright', '--ash', '--ash-dim']) {
+    assert.equal(grab(app, token), grab(home, token),
+      `${token} differs between the landing page and the dashboard`);
+  }
+});
+
+await test('every panel folds, remembers, and the hero never does', () => {
+  // "I should have a drop-down for each one — you don't need all that
+  // information, you can customize a little." Record carried twenty panels of
+  // arithmetic, of which four get read.
+  const src = page('app.html');
+  const code = src.replace(/^\s*\/\/.*$/gm, '');
+
+  assert.match(code, /function makeFoldable/, 'there is no folding at all');
+  // Applied at the boundary rather than inside thirty panel builders — the
+  // movement-normaliser rule: one implementation cannot drift from itself, and
+  // the next panel written gets it without having to remember.
+  assert.match(code, /makeFoldable\(root\)/, 'folding is not applied after render');
+
+  // KEYED ON THE HEADING, never position. Panels appear and disappear with the
+  // data — a range change alone adds and removes several — so an index would
+  // silently reassign somebody's choices to different panels.
+  assert.match(code, /const foldKey = \(name\)/, 'the fold preference is not keyed by name');
+  assert.ok(!/foldKey\(\s*(i|idx|index)\s*\)/.test(code), 'fold state is keyed on position');
+
+  // A stored choice always wins. The default is a starting position for
+  // somebody who has never touched it, not a preference that reasserts itself
+  // every morning over the top of theirs.
+  assert.match(code, /stored !== null[\s\S]{0,120}OPEN_BY_DEFAULT/,
+    'the default overrides what the person actually chose');
+
+  // The hero is the answer to the question the screen exists to answer.
+  assert.match(code, /classList\.contains\('hero'\)\) continue/, 'the hero can be folded away');
+
+  // Not firstElementChild: two panels keep their heading inside a header row,
+  // and requiring it to be the panel's own first child silently skipped them.
+  assert.ok(!/const h2 = panel\.firstElementChild/.test(code),
+    'a panel whose heading sits inside a header row will not fold');
+
+  // Operable from a keyboard and announced as expandable — it is a control.
+  assert.match(code, /aria-expanded/, 'the fold control is not announced as expandable');
+  assert.match(code, /e\.key === 'Enter' \|\| e\.key === ' '/, 'the fold control is mouse-only');
+
+  // Record opens on the day, not on a month of averages.
+  const open = code.slice(code.indexOf('OPEN_BY_DEFAULT = new Set'), code.indexOf('const foldKey'));
+  for (const p of ['food · today', 'training · today', 'targets · today']) {
+    assert.ok(open.includes(p), `${p} is not open when Record loads`);
+  }
+  // And the CSS hides everything except the control itself.
+  assert.match(src, /\.panel\.folded > \*:not\(h2\.fold\) \{ display: none/,
+    'a folded panel still shows its contents');
+});
+
 group('The morning briefing');
 
 const { morningBrief, morningDue } = await import('../netlify/functions/lib/morning.js');
