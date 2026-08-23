@@ -9212,6 +9212,115 @@ await test('one at a time, once a day, and never in the night', () => {
   assert.equal(dueAlerts({ ...ctx, rules: monOnly, weekday: 2 }).length, 0);
 });
 
+group('The morning briefing');
+
+const { morningBrief, morningDue } = await import('../netlify/functions/lib/morning.js');
+
+await test('the morning is a briefing, not last night\'s verdict moved', () => {
+  // "Every day at 7:30 morning brief, that is the start, as a pop-up as well."
+  // The evening read is a VERDICT on a finished day; delivered at breakfast
+  // that is a worse message, because nothing in it can be acted on. Every line
+  // here has to be something the next sixteen hours can still change.
+  const week = { say: 'One session in, three to go this week.', target: 4, met: false, impossible: false };
+  const out = morningBrief({ week, facts: {}, flags: [] });
+  assert.ok(out && /three to go/.test(out.text), 'the week is the one thing a morning can still act on');
+
+  // A target that does not exist outranks any figure — without one, every
+  // percentage, ring and pace alert has nothing to be a fraction OF.
+  const noGoals = morningBrief({
+    facts: {}, flags: [],
+    goalsToSet: { missing: ['a daily calorie target'] },
+  });
+  assert.match(noGoals.text, /Nothing set for a daily calorie target/);
+  // AND IT QUOTES NO NUMBER. A calorie figure arriving unasked on a lock screen
+  // reads as a decision already taken — the invented-2,600 failure with a
+  // notification wrapped round it.
+  assert.ok(!/\d{3,}/.test(noGoals.text), 'the morning invented a calorie figure');
+
+  // Silence is a real answer. A morning nag is how a product gets muted, and
+  // muted never comes back on.
+  assert.equal(morningBrief({ facts: {}, flags: [] }), null);
+});
+
+await test('a care flag is the entire morning message', () => {
+  // On a lock screen "outranks everything" has to mean the sentence STOPS
+  // there. A cheerful line above it is encouragement pointed straight at the
+  // harm the flags exist to prevent.
+  const out = morningBrief({
+    flags: [{ kind: 'low_intake', severity: 'high' }],
+    week: { say: 'One session in, three to go.', target: 4, met: false, impossible: false },
+    goalsToSet: { missing: ['a daily calorie target'] },
+    balance: { known: true, calories_out: 3800 },
+  });
+  assert.ok(out.only, 'the flag is not marked as the whole message');
+  assert.ok(!/three to go/.test(out.text), 'coaching survived a care flag');
+  assert.ok(!/target/.test(out.text), 'a setup prompt survived a care flag');
+  assert.ok(!/3800|3,800/.test(out.text), 'a figure survived a care flag');
+});
+
+await test('the morning never tells anybody to eat less', () => {
+  // A phone at 7:30am is the worst possible place to start doing arithmetic
+  // about what is allowed — and the burn is a WHOLE DAY's figure, so against
+  // no food it would read as an enormous deficit that is an artifact of the
+  // day being two hours old.
+  const out = morningBrief({
+    facts: {}, flags: [],
+    balance: { known: true, calories_out: 3833, calories_in: 0, net: -3833 },
+  });
+  assert.ok(out, 'nothing at all was said on a day with a known burn');
+  for (const word of ['left', 'deficit', 'under', 'remaining', 'allowed', 'stop eating']) {
+    assert.ok(!new RegExp(word, 'i').test(out.text), `the morning said "${word}"`);
+  }
+  assert.match(out.text, /to burn today/, 'the burn is not stated as a burn');
+
+  // An empty yesterday is a fact about whether they told anybody, never about
+  // their eating, and must not be reported as the latter.
+  const quiet = morningBrief({ facts: {}, flags: [], yesterday: { food: { meals: 0, calories: 0 } } });
+  assert.equal(quiet, null, 'a day nobody logged was reported as a day of no food');
+});
+
+await test('the half hour is honoured exactly, and off means off', () => {
+  const base = { morningHour: 7, today: '2026-08-24' };
+  // Off by default. Nothing here starts notifying somebody because the product
+  // decided it knew best.
+  assert.equal(morningDue({ hour: 7, minute: 0, morningHour: null }), false);
+  assert.equal(morningDue({ hour: 7, minute: 0, morningHour: undefined }), false);
+
+  // :30 must NOT be answered at :00 — that is half an hour before somebody
+  // asked to be woken, which is the wrong direction to be wrong in.
+  assert.equal(morningDue({ ...base, hour: 7, minute: 0,  morningMinute: 30 }), false);
+  assert.equal(morningDue({ ...base, hour: 7, minute: 30, morningMinute: 30 }), true);
+  assert.equal(morningDue({ ...base, hour: 7, minute: 45, morningMinute: 30 }), true);
+  // and :00 is not answered at :30
+  assert.equal(morningDue({ ...base, hour: 7, minute: 30, morningMinute: 0 }), false);
+  assert.equal(morningDue({ ...base, hour: 7, minute: 0,  morningMinute: 0 }), true);
+  // wrong hour entirely
+  assert.equal(morningDue({ ...base, hour: 8, minute: 0,  morningMinute: 0 }), false);
+
+  // Once a day, and the stamp is what enforces it.
+  assert.equal(morningDue({ ...base, hour: 7, minute: 0, morningMinute: 0, sentOn: '2026-08-24' }), false);
+  assert.equal(morningDue({ ...base, hour: 7, minute: 0, morningMinute: 0, sentOn: '2026-08-23' }), true);
+});
+
+await test('the morning brief degrades rather than breaking a database without 019', () => {
+  // A DOOR MUST BE CORRECT BEFORE THE SQL RUNS — naming a column PostgREST does
+  // not know about makes it reject the WHOLE query. Without this, set_profile
+  // would refuse to save a TIMEZONE because the same call mentioned a morning
+  // hour, and the sender would take the evening read down with it.
+  const mcp = readFileSync(new URL('../netlify/functions/mcp.js', import.meta.url), 'utf8');
+  assert.match(mcp, /not_saved: morningKeys/, 'set_profile does not degrade on a missing 019');
+  assert.match(mcp, /019_wrought_morning\.sql/, 'the failure does not name the migration');
+
+  const cron = readFileSync(new URL('../netlify/functions/brief-nightly.js', import.meta.url), 'utf8');
+  assert.match(cron, /morningColumnsExist/, 'the sender assumes the migration has run');
+  assert.match(cron, /catch \{ \/\* the evening still runs \*\/ \}/,
+    'a failure in the morning can still cost somebody their evening read');
+  // The morning is stamped only on SUCCESS — marking it sent when nothing was
+  // delivered means the one morning a phone was off is the morning it skips.
+  assert.match(cron, /if \(sent\) \{[\s\S]{0,200}morning_sent_on: date/,
+    'the morning is marked sent even when delivery failed');
+});
+
 await test('a missed hour is a delay, never a cancelled day', () => {
   // "I want multiple noti not just one." He can have them — each rule sends
   // once a day and the cap is one per HOUR, not one per day. But matching the
@@ -9332,7 +9441,13 @@ await test('the AI writes the rule; it never claims it will remember', () => {
   assert.match(cron, /catch \{ \/\* the brief still runs \*\/ \}/);
 
   const toml = readFileSync(new URL('../netlify.toml', import.meta.url), 'utf8');
-  assert.match(toml, /schedule = "0 \* \* \* \*"/, 'the hourly job is what makes any of this fire');
+  // The job is what makes any of this fire, and it must cover BOTH the hour and
+  // the half hour: the morning brief accepts 7:30, and a schedule that only
+  // wakes on the hour would store that time and deliver at 7:00 — half an hour
+  // before somebody asked to be woken, which is the wrong direction to be wrong
+  // in and would be silent about it.
+  assert.match(toml, /schedule = "0,30 \* \* \* \*"/,
+    'the job no longer covers the half hour, so a 7:30 brief cannot be honoured');
 });
 
 await test('the checklist can be ticked from the website, not only spoken to', () => {

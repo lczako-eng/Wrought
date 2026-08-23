@@ -53,6 +53,7 @@ const MIGRATIONS = [
   { file: '016_wrought_set_source.sql',  probe: col('wrought_sets', 'event_id'),    gives: 'after-the-fact workouts counting toward lifts without doubling on re-edits' },
   { file: '017_wrought_session_aim.sql', probe: col('wrought_sessions', 'aim'),    gives: 'what each session is FOR, kept on the record rather than said once and lost' },
   { file: '018_wrought_alerts.sql',     probe: t('wrought_alerts'),                gives: 'notifications you set by talking — the AI writes the rule, the hourly job sends it' },
+  { file: '019_wrought_morning.sql',    probe: col('wrought_profile', 'morning_hour'), gives: 'the morning briefing — where you stand before the day, not a verdict on one that is over' },
 ];
 
 // A probe that treats EVERY error as "not run" lies twice over: a timeout reads
