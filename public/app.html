@@ -28,9 +28,16 @@
   --edge:      #332B27;
   --edge-lit:  #4A3E37;
 
-  --bright:    #F4EFE9;
-  --ash:       #9A8D84;
-  --ash-dim:   #6B615A;
+  /* MATCHED TO THE LANDING PAGE, not approximately. The founder: "when you go
+     to wrought.fit where it says the sign up, the graphics and everything is so
+     much better than the rest of the program." He is right, and it was not a
+     vague impression — index.html runs brighter text on richer cards, and
+     signing in stepped DOWN into a duller palette. A product that changes
+     appearance the moment somebody logs in reads as two different products, and
+     the one they just trusted with their health record is the dimmer one. */
+  --bright:    #F7F3EE;
+  --ash:       #A79A90;
+  --ash-dim:   #7A6E67;
 
   --heat-0:    #2A2220;
   --heat-1:    #7A1F0A;
@@ -384,16 +391,58 @@ svg.ser .cursor { transition: opacity var(--quick) var(--ease); }
 .panel {
   /* Layered rather than outlined: depth carries the separation, so the page
      stops looking like a spreadsheet with borders drawn round each cell. */
+  /* The landing page's card, one step tighter. 26px and 34px of padding is
+     right for four cards on a sales page and wrong for twenty on a dashboard —
+     but 14px and a flat shadow was the other extreme, and it is why the app
+     looked cramped beside the page that sold it. The shadow is the landing
+     page's, because depth is most of what separates the two. */
   background: linear-gradient(180deg, var(--scale-2), var(--scale));
-  border: 1px solid transparent; border-radius: 14px;
-  box-shadow: 0 1px 0 rgba(255,255,255,.03) inset, 0 8px 24px -12px rgba(0,0,0,.7);
-  padding: 22px; display: flex; flex-direction: column; gap: 14px;
+  border: 1px solid transparent; border-radius: 20px;
+  box-shadow: 0 1px 0 rgba(255,255,255,.05) inset, 0 22px 44px -30px rgba(0,0,0,.95);
+  padding: clamp(20px, 4.5vw, 28px); display: flex; flex-direction: column; gap: 14px;
   animation: rise var(--settle) var(--ease) both;
 }
 .panel > h2 {
   margin: 0; font-size: 11px; font-family: var(--mono); font-weight: 500;
   letter-spacing: .18em; text-transform: uppercase; color: var(--ash-dim);
 }
+
+/* ── Folding a panel away ─────────────────────────────────────────────────
+   The founder: "I should have a drop-down for each one — you don't need all
+   that information, you can customize a little."
+
+   Right, and the Record view is the case for it: twenty panels of arithmetic,
+   of which somebody reads four. The rest are not junk — they are the reason to
+   keep a record for a year — but they should not be between him and today.
+
+   The heading becomes the control, because it is already the thing that names
+   what is underneath and there is no room on a phone for a separate affordance.
+   A button element rather than a div with a click handler: it must be
+   focusable, operable from a keyboard, and announced as expandable. */
+.panel > h2.fold {
+  display: flex; align-items: center; gap: 8px; width: 100%;
+  background: none; border: 0; padding: 0; cursor: pointer;
+  font: inherit; letter-spacing: .18em; text-transform: uppercase;
+  color: var(--ash-dim); text-align: left;
+}
+.panel > h2.fold:hover, .panel > h2.fold:focus-visible { color: var(--ash); }
+.panel > h2.fold::after {
+  content: ''; margin-left: auto; width: 7px; height: 7px; flex: none;
+  border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor;
+  transform: rotate(45deg) translate(-2px, -2px);
+  transition: transform var(--settle) var(--ease);
+}
+.panel.folded > h2.fold::after { transform: rotate(-45deg) translate(-1px, -1px); }
+/* Everything except the heading. Hidden rather than height-animated: a panel
+   holding a chart cannot be measured reliably before it draws, and a collapse
+   that jumps is worse than one that does not animate. */
+.panel.folded > *:not(h2.fold) { display: none; }
+.panel.folded { gap: 0; padding-bottom: clamp(20px, 4.5vw, 28px); }
+/* A folded panel is a heading and a chevron and nothing else. A summary line
+   was drafted here and cut: the panels whose value is a single figure are the
+   ones already open by default, and on the rest a one-line preview is either
+   the least interesting number in the panel or a second thing to read before
+   deciding whether to read the panel. */
 
 /* ── Today, as one graphic ────────────────────────────────────────────────
    The screen opens on the only question that matters at a glance: in versus
@@ -6490,7 +6539,103 @@ function render(d) {
 function stagger(root = $('content')) {
   const bits = root.querySelectorAll('.panel, .tile');
   bits.forEach((el, i) => { el.style.animationDelay = `${Math.min(i * 45, 450)}ms`; });
+  makeFoldable(root);
   wireCharts(root);
+}
+
+// ── Every panel folds, and it remembers ───────────────────────────────────
+// The founder: "I should have a drop-down for each one — you don't need all
+// that information, you can customize a little."
+//
+// Applied HERE rather than inside thirty panel builders, for the reason the
+// movement normaliser exists: one implementation cannot drift from itself, and
+// the next panel somebody writes gets this for free instead of having to
+// remember. Every panel is `<section class="panel"><h2>Name</h2>…`, which is
+// already the whole contract this needs.
+//
+// KEYED ON THE HEADING TEXT, not on position. Panels appear and disappear with
+// the data — a range change alone adds and removes several — so an index would
+// silently reassign somebody's choices to different panels, which is a worse
+// failure than not remembering at all.
+
+// What the Record view opens with. The founder: "let's go Record — you don't
+// need all that information." Twenty panels of arithmetic, of which four get
+// read: what the day was, what went in, what was trained, and what is being
+// aimed at. Everything else is the reason to keep a record for a year and is
+// still one tap away — this is a starting position, never a deletion.
+const OPEN_BY_DEFAULT = new Set([
+  'food · today', 'training · today', 'targets · today', 'targets',
+  // Setup states are not arithmetic — they are the thing standing between
+  // somebody and the product working, and folding one away by default is how
+  // it never gets finished.
+  'getting to know you', 'set up',
+]);
+
+const foldKey = (name) => `wrought_fold_${name.toLowerCase().replace(/[^a-z0-9]+/g, '_').slice(0, 40)}`;
+
+function foldPref(name) {
+  try { return localStorage.getItem(foldKey(name)); } catch { return null; }
+}
+
+function makeFoldable(root = $('content')) {
+  for (const panel of root.querySelectorAll('section.panel')) {
+    if (panel.querySelector(':scope > h2.fold')) continue;      // already wired
+
+    // The hero is the one thing that must never fold: it is the answer to the
+    // question the screen exists to answer.
+    if (panel.classList.contains('hero')) continue;
+
+    // NOT firstElementChild. Two panels keep their heading inside a header row
+    // — `.ls-head` holds an h2 next to a chip — and requiring the h2 to be the
+    // panel's own first child silently skipped them, so they were the only two
+    // on the page that would not fold. Any heading anywhere in the panel names
+    // it; the control is INSERTED above rather than replacing what it found,
+    // which works for both shapes and leaves a nested heading where its own
+    // layout expects it.
+    const h2 = panel.querySelector('h2');
+    const name = h2?.textContent.trim();
+    if (!name) continue;
+    const ownHeading = h2.parentElement === panel;
+
+    // A stored choice always wins. The default is a starting position for
+    // somebody who has never touched it, not a preference that reasserts
+    // itself every morning over the top of theirs.
+    const stored = foldPref(name);
+    const folded = stored !== null
+      ? stored === '1'
+      : (view === 'record' && !OPEN_BY_DEFAULT.has(name.toLowerCase()));
+
+    const label = document.createElement('h2');
+    label.className = 'fold';
+    label.setAttribute('role', 'button');
+    label.setAttribute('tabindex', '0');
+    label.setAttribute('aria-expanded', String(!folded));
+    label.textContent = name;
+
+    // A heading the panel owns is replaced, so there is only ever one. A nested
+    // one stays where its own layout put it and is simply hidden when folded.
+    if (ownHeading) panel.replaceChild(label, h2);
+    else panel.prepend(label);
+    panel.classList.toggle('folded', folded);
+
+    const toggle = () => {
+      const nowFolded = !panel.classList.contains('folded');
+      panel.classList.toggle('folded', nowFolded);
+      label.setAttribute('aria-expanded', String(!nowFolded));
+      // Written on every toggle, so the first deliberate choice replaces the
+      // default permanently for that panel.
+      try { localStorage.setItem(foldKey(name), nowFolded ? '1' : '0'); } catch { /* private window */ }
+      // A chart inside a panel that was folded at render time has never been
+      // measured, so it draws at zero width. Wiring on open costs nothing and
+      // is idempotent.
+      if (!nowFolded) wireCharts(panel);
+    };
+
+    label.addEventListener('click', toggle);
+    label.addEventListener('keydown', e => {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); }
+    });
+  }
 }
 
 const tile = (k, v, s, cls = '') =>
