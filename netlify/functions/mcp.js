@@ -848,6 +848,9 @@ const TOOLS = [
                           description: 'How much they move OUTSIDE deliberate training — the job and the day, not the gym. sedentary = desk, little walking. light = on their feet some of the day. moderate = moving most of it. active = on their feet all day. very_active = physical work. Without this and without a watch, calories out is the resting figure alone, which counts a working day as nothing and overstates every deficit.' },
         bluntness:    { type: 'string',  enum: ['gentle', 'honest', 'brutal'], description: 'How hard the verdict hits. Their choice, honoured exactly.' },
         brief_hour:   { type: 'integer', description: 'The hour, 0-23 in THEIR timezone, when the nightly read lands as a notification and an email. Defaults to 22. "Send it at nine" is 21. A notification at the wrong hour is how somebody mutes an app for good, so change it the moment they mention a time.' },
+        morning_hour: { type: 'integer', description: 'The hour, 0-23 in THEIR timezone, for the MORNING briefing — a different message from the nightly read, not the same one moved. The evening one is a verdict on a finished day; this one is where they stand now, what the week still needs, and what has no target yet, so every line is something the day can still change. Off by default; pass null to switch it off. "Morning brief at half seven" is morning_hour 7 with morning_minute 30.' },
+        morning_minute: { type: 'integer', description: 'Minute for the morning brief: 0 or 30 only, because the job runs on the hour and the half hour. Anything else is refused rather than silently rounded.' },
+        brief_minute: { type: 'integer', description: 'Minute for the nightly read: 0 or 30 only. Defaults to 0.' },
         notes:        { type: 'string' },
       },
     },
@@ -3842,7 +3845,7 @@ async function guide() {
 }
 
 async function setProfile(args, user) {
-  const fields = ['timezone','units','height_cm','birth_year','sex','training_age','equipment','train_days','dietary','bluntness','notes','activity_level','brief_hour'];
+  const fields = ['timezone','units','height_cm','birth_year','sex','training_age','equipment','train_days','dietary','bluntness','notes','activity_level','brief_hour','morning_hour','morning_minute','brief_minute'];
   const patch = {};
   for (const f of fields) if (args[f] !== undefined) patch[f] = args[f];
   if (!Object.keys(patch).length) return { error: 'Nothing to save.' };
@@ -3859,11 +3862,61 @@ async function setProfile(args, user) {
     patch.brief_hour = h;
   }
 
+  // THE MORNING BRIEFING, which is a different message from the evening verdict
+  // rather than the same one moved — so it gets its own hour and setting one
+  // never silently takes the other away.
+  //
+  // `null` is how somebody turns it off, and it has to be distinguishable from
+  // "not mentioned": undefined leaves the setting alone, null clears it. A
+  // setting that cannot be switched off is one people mute the whole app to
+  // escape.
+  if (patch.morning_hour !== undefined) {
+    if (patch.morning_hour === null || patch.morning_hour === '') {
+      patch.morning_hour = null;
+    } else {
+      const h = parseInt(patch.morning_hour, 10);
+      if (!Number.isInteger(h) || h < 0 || h > 23) {
+        return { error: 'The morning brief needs an hour between 0 and 23 — 7 for half past seven in the morning, with morning_minute 30.' };
+      }
+      patch.morning_hour = h;
+    }
+  }
+  // Half hours only. The cron fires at :00 and :30, and accepting a minute it
+  // cannot honour would store 7:20 and deliver 7:00 — a setting that silently
+  // means something else is worse than one that refuses.
+  for (const k of ['morning_minute', 'brief_minute']) {
+    if (patch[k] === undefined) continue;
+    const m = parseInt(patch[k], 10);
+    if (m !== 0 && m !== 30) {
+      return { error: 'Briefs land on the hour or the half hour, so the minute has to be 0 or 30.' };
+    }
+    patch[k] = m;
+  }
+
   patch.user_id = user.id;
   patch.updated_at = new Date().toISOString();
 
   const { error } = await supabase.from('wrought_profile').upsert(patch, { onConflict: 'user_id' });
-  if (error) return { error: error.message };
+  // A DOOR MUST BE CORRECT BEFORE THE SQL RUNS. Naming a column PostgREST does
+  // not know about makes it reject the whole query, so on a database without
+  // 019 this would refuse to save a TIMEZONE because the same call mentioned a
+  // morning hour. The morning fields are dropped and the rest is saved, and it
+  // says which part did not land rather than reporting a clean success.
+  if (error) {
+    const morningKeys = ['morning_hour', 'morning_minute', 'brief_minute'].filter(k => k in patch);
+    if (morningKeys.length && /morning_hour|morning_minute|brief_minute|schema cache|could not find/i.test(error.message || '')) {
+      for (const k of morningKeys) delete patch[k];
+      const { error: retry } = await supabase.from('wrought_profile').upsert(patch, { onConflict: 'user_id' });
+      if (retry) return { error: retry.message };
+      return {
+        saved: Object.keys(patch).filter(k => !['user_id', 'updated_at'].includes(k)),
+        not_saved: morningKeys,
+        say: 'Saved — but the morning brief time could not be stored yet.',
+        note: 'Everything else went in. The morning brief needs schema/019_wrought_morning.sql run in Supabase; say so plainly rather than reporting a clean save.',
+      };
+    }
+    return { error: error.message };
+  }
 
   return {
     saved: Object.keys(patch).filter(k => !['user_id','updated_at'].includes(k)),

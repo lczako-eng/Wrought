@@ -28,8 +28,9 @@ import {
 } from './lib/wrought.js';
 import { sendPush, vapidConfigured } from './lib/push.js';
 import { plainBrief } from './lib/voice.js';
-import { energyBalance, weekSoFar } from './lib/training.js';
+import { energyBalance, weekSoFar, goalsToSet } from './lib/training.js';
 import { dueAlerts } from './lib/alerts.js';
+import { morningBrief, morningDue } from './lib/morning.js';
 
 const SEND_HOUR = 22;
 
@@ -185,6 +186,97 @@ function firstSentence(text) {
 // the same dayFacts, energyBalance, careFlags and weekSoFar the dashboard and
 // the brief use, so a notification and the screen can never quote two
 // different numbers for the same afternoon.
+// THE MORNING BRIEFING.
+//
+// A door must be correct before the SQL runs — the 015 lesson, and the sharpest
+// version of it is that naming a column PostgREST does not know about makes it
+// reject the WHOLE query. So 019 is probed once per container rather than
+// assumed, and until it exists the morning brief is simply off. Off is also the
+// default WITH the migration, so an un-migrated database behaves exactly like
+// an account that has not asked for one: nothing breaks, nothing lies, and the
+// evening read is untouched either way.
+let morningReady = null;
+async function morningColumnsExist() {
+  if (morningReady !== null) return morningReady;
+  const { error } = await supabase.from('wrought_profile')
+    .select('morning_hour', { head: true }).limit(1);
+  morningReady = !error;
+  return morningReady;
+}
+
+async function runMorning(userId, profile, now) {
+  if (!(await morningColumnsExist())) return 0;
+
+  const date = localDateFor(profile.timezone, now);
+  const minutes = localMinutesFor(profile.timezone, now);
+
+  // Read the three morning columns on their own. profile came from getProfile,
+  // which does not select them — and adding them there would put every caller
+  // in the product behind this migration for no benefit.
+  const { data: m } = await supabase.from('wrought_profile')
+    .select('morning_hour, morning_minute, morning_sent_on')
+    .eq('user_id', userId).maybeSingle();
+
+  if (!morningDue({
+    hour: Math.floor(minutes / 60), minute: minutes % 60,
+    morningHour: m?.morning_hour, morningMinute: m?.morning_minute ?? 0,
+    sentOn: m?.morning_sent_on, today: date,
+  })) return 0;
+
+  // Everything here comes from the same computed facts the dashboard and the
+  // connector read. Nothing in this file does arithmetic — a third mouth
+  // relaying numbers computed once, which is the doctrine everywhere else.
+  const [day, recent, goals] = await Promise.all([
+    dayFacts(userId, profile, date),
+    rangeFacts(userId, profile, addDays(date, -29), date),
+    getGoals(userId),
+  ]);
+  const yesterday = recent.days.find(d => d.date === addDays(date, -1)) || null;
+
+  const flags = careFlags(recent, profile);
+  const week = weekSoFar(recent.days, { today: date, target: profile.train_days || null });
+
+  // The same call buildBriefFor makes, so the morning and the evening cannot
+  // quote two different burns for the same day.
+  const balance = energyBalance({
+    profile, weightKg: day.body.weight_kg,
+    caloriesIn: day.food.calories,
+    activeCalories: day.device.active_calories,
+    foodEstimated: day.food.estimated,
+    workouts: day.training.entries,
+    activities: day.activity.entries,
+    deviceResting: day.device.resting_calories,
+  });
+
+  // targets stays null on purpose: the morning states the GAP and never a
+  // figure. A calorie number arriving unasked on a lock screen reads as a
+  // decision already taken, which is the invented-2,600 failure with a
+  // notification wrapped around it. set_goal is where a number gets committed.
+  const out = morningBrief({
+    facts: day, flags, balance, week, yesterday,
+    goalsToSet: goalsToSet({ goals, targets: null, stepsAvg: null }),
+  });
+  // Nothing worth saying sends nothing. A morning nag is how a product gets
+  // muted permanently, and muted never comes back on.
+  if (!out) return 0;
+
+  const sent = await deliver(userId, profile, {
+    title: 'WROUGHT',
+    body: out.text,
+    tag: `wrought-morning-${date}`,
+    url: '/app.html',
+  });
+
+  // STAMPED ONLY ON SUCCESS, exactly like an alert's last_sent_on. Marking it
+  // sent when nothing was delivered means the one morning a phone was off is
+  // the morning the brief silently skips for good.
+  if (sent) {
+    await supabase.from('wrought_profile')
+      .update({ morning_sent_on: date }).eq('user_id', userId);
+  }
+  return sent ? 1 : 0;
+}
+
 async function runAlerts(userId, profile, now) {
   const { data: rules } = await supabase.from('wrought_alerts')
     .select('id, kind, at_hour, threshold, text, days, active, last_sent_on, metric')
@@ -251,7 +343,7 @@ export const handler = async () => {
   const now = new Date();
   const users = await activeUsers();
 
-  let considered = 0, built = 0, mailed = 0, pushed = 0, skipped = 0, alerted = 0;
+  let considered = 0, built = 0, mailed = 0, pushed = 0, skipped = 0, alerted = 0, morninged = 0;
 
   for (const userId of users) {
     const profile = await getProfile(userId);
@@ -260,6 +352,13 @@ export const handler = async () => {
     // point is that these fire at hours the person chose. A failure here must
     // never cost somebody their nightly read, so it is caught on its own.
     try { alerted += await runAlerts(userId, profile, now); } catch { /* the brief still runs */ }
+
+    // THE MORNING BRIEFING, which is a different message from the evening
+    // verdict rather than the same one moved. It is checked first and on its
+    // own: a failure composing the morning must not cost somebody the evening,
+    // and vice versa — the same reason the alert pass above is caught alone.
+    try { morninged += await runMorning(userId, profile, now); } catch { /* the evening still runs */ }
+
     // Only the people for whom it is actually ten o'clock right now.
     // Their hour, not ours. Somebody who trains at five in the morning wants
     // the read at a different time than somebody who eats at nine at night, and
@@ -295,6 +394,6 @@ export const handler = async () => {
 
   return {
     statusCode: 200,
-    body: JSON.stringify({ users: users.length, at_send_hour: considered, built, mailed, pushed, alerted, skipped }),
+    body: JSON.stringify({ users: users.length, at_send_hour: considered, built, mailed, pushed, alerted, morninged, skipped }),
   };
 };

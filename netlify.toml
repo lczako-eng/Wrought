@@ -10,7 +10,7 @@
 # different instant for every user; the function serves only the people for
 # whom it is currently 22:00 where they are standing.
 [functions."brief-nightly"]
-  schedule = "0 * * * *"
+  schedule = "0,30 * * * *"
 
 # The MCP endpoint — the whole product, as far as an AI client is concerned.
 [[redirects]]
