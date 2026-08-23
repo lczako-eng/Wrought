@@ -1783,6 +1783,53 @@ await test('the installed app opens the app, not the sales page', () => {
   assert.equal(manifest.start_url, '/app.html');
 });
 
+await test('every page the app can START on registers the worker', () => {
+  // THE WORKER WAS REGISTERED ON THE HOMEPAGE AND NOWHERE ELSE, and the
+  // manifest's start_url is /app.html — so the INSTALLED app opened the one
+  // page that never ran a registration.
+  //
+  // Nothing about that is cosmetic. `navigator.serviceWorker.ready` has no
+  // timeout and never rejects: with no registration it waits silently for the
+  // life of the page. So "Turn on notifications" asked for permission, got it,
+  // and then sat on "Asking your browser…" forever with no error to read and
+  // nothing to do — on the one feature the founder has asked for most. The
+  // offline card never worked on the dashboard either, for the same reason.
+  const manifest = JSON.parse(readFileSync(new URL('../public/site.webmanifest', import.meta.url), 'utf8'));
+  // ON LOAD, specifically. A bare search for `register('/sw.js')` passes on the
+  // broken file, because the push guard below contains one too — so deleting
+  // the load-time registration left this assertion green while the offline card
+  // stayed dead and nothing warmed the worker until somebody pressed a button.
+  // Verified to fail when the registration is removed.
+  const entry = manifest.start_url.replace(/^\//, '');
+  for (const f of new Set([entry, 'index.html'])) {
+    assert.match(page(f), /addEventListener\('load',[^\n]*serviceWorker\.register\('\/sw\.js'\)/,
+      `${f} can be the first page loaded and never registers the worker on load`);
+  }
+
+  // AND IT MAY NEVER WAIT FOREVER. A bare `serviceWorker.ready` is the hang
+  // itself; every use has to go through the guard that registers first and
+  // gives up out loud.
+  // LINE COMMENTS ONLY. Stripping /* */ as well removed 118KB of this 394KB
+  // page — an unbalanced marker somewhere in the CSS or a string swallows
+  // everything to the next one, and the assertion then passes or fails for
+  // reasons that have nothing to do with the code. The comments this needs to
+  // ignore are the // ones directly above, which name the very call they forbid.
+  const src = page('app.html');
+  const code = src.replace(/^\s*\/\/.*$/gm, '');
+  assert.match(code, /async function workerReady/, 'there is no guarded wait');
+  assert.ok(!/await navigator\.serviceWorker\.ready/.test(code),
+    'something still awaits serviceWorker.ready directly, which can hang with no message');
+  const guard = code.slice(code.indexOf('async function workerReady'));
+  assert.match(guard.slice(0, 900), /Promise\.race/, 'the wait has no timeout');
+  assert.match(guard.slice(0, 900), /Add to Home Screen/,
+    'the timeout does not name the usual cause on an iPhone');
+
+  // Turning it OFF must be guarded too — somebody who cannot switch a
+  // notification off mutes the entire app, and a muted app never comes back.
+  const off = code.slice(code.indexOf('async function unsubscribePush'));
+  assert.match(off.slice(0, 400), /await workerReady\(\)/, 'switching off can still hang');
+});
+
 await test('the wordmark is clickable, and does not throw you out of your record', () => {
   // From inside the dashboard it goes to the dashboard. Being dumped on a sales
   // pitch from your own log is the complaint, not the fix.
