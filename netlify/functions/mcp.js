@@ -851,6 +851,7 @@ const TOOLS = [
         morning_hour: { type: 'integer', description: 'The hour, 0-23 in THEIR timezone, for the MORNING briefing — a different message from the nightly read, not the same one moved. The evening one is a verdict on a finished day; this one is where they stand now, what the week still needs, and what has no target yet, so every line is something the day can still change. Off by default; pass null to switch it off. "Morning brief at half seven" is morning_hour 7 with morning_minute 30.' },
         morning_minute: { type: 'integer', description: 'Minute for the morning brief: 0 or 30 only, because the job runs on the hour and the half hour. Anything else is refused rather than silently rounded.' },
         brief_minute: { type: 'integer', description: 'Minute for the nightly read: 0 or 30 only. Defaults to 0.' },
+        morning_opens: { type: 'string', enum: ['app', 'chatgpt', 'claude'], description: "Where tapping the morning notification lands: their assistant with the day's opener pre-filled ('chatgpt' or 'claude'), or the dashboard ('app', the default). \"The morning brief should open my GPT\" is 'chatgpt'." },
         notes:        { type: 'string' },
       },
     },
@@ -3845,7 +3846,7 @@ async function guide() {
 }
 
 async function setProfile(args, user) {
-  const fields = ['timezone','units','height_cm','birth_year','sex','training_age','equipment','train_days','dietary','bluntness','notes','activity_level','brief_hour','morning_hour','morning_minute','brief_minute'];
+  const fields = ['timezone','units','height_cm','birth_year','sex','training_age','equipment','train_days','dietary','bluntness','notes','activity_level','brief_hour','morning_hour','morning_minute','brief_minute','morning_opens'];
   const patch = {};
   for (const f of fields) if (args[f] !== undefined) patch[f] = args[f];
   if (!Object.keys(patch).length) return { error: 'Nothing to save.' };
@@ -3884,6 +3885,9 @@ async function setProfile(args, user) {
   // Half hours only. The cron fires at :00 and :30, and accepting a minute it
   // cannot honour would store 7:20 and deliver 7:00 — a setting that silently
   // means something else is worse than one that refuses.
+  if (patch.morning_opens !== undefined && !['app', 'chatgpt', 'claude'].includes(patch.morning_opens)) {
+    return { error: "morning_opens is 'app', 'chatgpt' or 'claude' — where tapping the morning brief lands." };
+  }
   for (const k of ['morning_minute', 'brief_minute']) {
     if (patch[k] === undefined) continue;
     const m = parseInt(patch[k], 10);
@@ -3903,8 +3907,8 @@ async function setProfile(args, user) {
   // morning hour. The morning fields are dropped and the rest is saved, and it
   // says which part did not land rather than reporting a clean success.
   if (error) {
-    const morningKeys = ['morning_hour', 'morning_minute', 'brief_minute'].filter(k => k in patch);
-    if (morningKeys.length && /morning_hour|morning_minute|brief_minute|schema cache|could not find/i.test(error.message || '')) {
+    const morningKeys = ['morning_hour', 'morning_minute', 'brief_minute', 'morning_opens'].filter(k => k in patch);
+    if (morningKeys.length && /morning_hour|morning_minute|brief_minute|morning_opens|schema cache|could not find/i.test(error.message || '')) {
       for (const k of morningKeys) delete patch[k];
       const { error: retry } = await supabase.from('wrought_profile').upsert(patch, { onConflict: 'user_id' });
       if (retry) return { error: retry.message };

@@ -43,10 +43,11 @@ const MAX_LINES = 3;
  * @param goalsToSet   what has no target yet, from goalsToSet()
  * @param yesterday    yesterday's dayFacts, for the one backward-looking line
  * @param readiness    readiness() output, or null
+ * @param planned      { name, est_minutes } — the workout most due today, or null
  */
 export function morningBrief({
   facts = {}, flags = [], balance = null, week = null,
-  goalsToSet = null, yesterday = null, readiness = null,
+  goalsToSet = null, yesterday = null, readiness = null, planned = null,
 } = {}) {
   // THE FLAG IS THE WHOLE MESSAGE. Same rule as the spoken answer and the
   // nightly read, and it is the one line in this file that must never grow a
@@ -63,7 +64,21 @@ export function morningBrief({
     lines.push(readiness.say);
   }
 
-  // 2. WHERE THE WEEK STANDS, which is the number the whole plan rests on and
+  // 2. WHAT IS PLANNED, said before where the week stands — "what workouts do
+  //    you have planned, if any, today?" is the founder's own definition of
+  //    preemptive, and a named session is a plan where a count is a debt. It is
+  //    the longest-rested saved workout, the same answer end_session gives,
+  //    because two functions answering "what's next" differently is how the
+  //    morning and the evening contradict each other. Silent when the week is
+  //    already met — a met target silences the push, and being offered another
+  //    session past it is nagging wearing a plan's clothes. Silent too when
+  //    readiness flagged: the veto above already said train lighter, and
+  //    naming a session right after reads as overriding it.
+  if (planned?.name && !week?.met && !(readiness && readiness.state && readiness.state !== 'ready')) {
+    lines.push(`Today's plan: ${planned.name}${planned.est_minutes ? `, about ${planned.est_minutes} min` : ''}.`);
+  }
+
+  // 3. WHERE THE WEEK STANDS, which is the number the whole plan rests on and
   //    the one thing a morning can still act on. Never a countdown to zero on
   //    an impossible week and never a scolding: sessions do not roll over, and
   //    guilt is how training logs die.
@@ -116,6 +131,42 @@ export function morningBrief({
     kind: 'morning',
     only: false,
   };
+}
+
+/**
+ * Where tapping the morning notification lands, and what it says when it gets
+ * there.
+ *
+ * THE ONE LEGAL BRIDGE ACROSS MCP'S HARD LIMIT. The server can never make an
+ * assistant speak first — request/response, permanently. But a push is allowed
+ * to speak first, and a human tap on it is allowed to open anything. So the
+ * notification carries a pre-written opener into the assistant, the tap
+ * delivers it, and the assistant's first act of the day is calling the brief.
+ * The person is in the loop by construction: nothing reaches the AI until they
+ * choose to tap.
+ *
+ * THE OPENER IS ADDRESSED TO THE CONNECTOR BY NAME. "Gym bro" and "morning"
+ * are both phrasebook triggers, so a model that reads nothing else still maps
+ * the message onto `brief`; naming Wrought outright is the belt on top. It asks
+ * for the day's PLAN as well as the read, because "what workouts do you have
+ * planned, if any, today" is the founder's definition of preemptive.
+ *
+ * HONEST LIMIT, stated here because nothing can fix it server-side: the opener
+ * lands in a NEW conversation, and whether the Wrought connector is switched on
+ * there is a per-chat setting inside the assistant — the third of the "three
+ * things called connected", the one with no server-side fix. When it is off,
+ * the assistant gets the words and has no tools; the opener names Wrought so
+ * the failure at least reads as "turn the connector on" rather than nonsense.
+ */
+export function morningLink(opens) {
+  const opener =
+    'Gym bro — morning. Using the Wrought connector, read me my morning brief and ' +
+    "today's plan: where I stand, what workout is planned if any, and what the day needs.";
+  const q = encodeURIComponent(opener);
+  if (opens === 'chatgpt') return `https://chatgpt.com/?q=${q}`;
+  if (opens === 'claude') return `https://claude.ai/new?q=${q}`;
+  // The dashboard is the one destination every account verifiably has.
+  return '/app.html';
 }
 
 /**
