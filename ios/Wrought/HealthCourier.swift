@@ -291,7 +291,16 @@ final class HealthCourier: ObservableObject {
             metrics.append(["metric": "weight_kg", "value": (kg * 100).rounded() / 100, "unit": "kg", "measured_at": iso.string(from: at)])
         }
         if let sleep = await lastNightSleepMinutes() {
-            metrics.append(["metric": "sleep_minutes", "value": sleep.rounded(), "unit": "min", "measured_at": now])
+            // Stamped at the START OF TODAY, never `now`. A night's sleep is one
+            // fact, and this courier re-sends it on every hourly delivery — with
+            // `now` each re-send is a new timestamp, a new row past the dedupe
+            // index, and every reader that sums a day's rows then multiplies the
+            // night by the number of syncs. Sleep stays OUT of the server's
+            // daily-total collapse on purpose (Health Auto Export sends real
+            // per-segment rows there, and collapsing would delete most of a
+            // night), so the dedupe has to come from a stable stamp here.
+            let midnight = iso.string(from: Calendar.current.startOfDay(for: Date()))
+            metrics.append(["metric": "sleep_minutes", "value": sleep.rounded(), "unit": "min", "measured_at": midnight])
         }
         // Ground covered on foot. Cycling and swimming go separately now — a
         // walking figure quietly containing 40km of riding is a number that

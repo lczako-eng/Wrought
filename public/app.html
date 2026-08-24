@@ -4374,6 +4374,10 @@ function demoData() {
       duplicates: [], duplicates_extra: 0,
       body: { weight_kg: series[Math.max(0, N - 1)].weight },
       device: { steps: 9840, active_calories: 740, sleep_minutes: 402,
+        // Carried because the server sends it — a demo missing a field is how
+        // the last two panel bugs stayed hidden. Twenty minutes ago, so the
+        // demo shows the fresh line rather than accusing a watch it invented.
+        as_of: new Date(Date.now() - 20 * 60000).toISOString(),
         // The wide door, shown full. Somebody deciding whether this is worth a
         // fortnight should see what a watch actually fills in.
         readings: [
@@ -4805,8 +4809,62 @@ async function load(token) {
 // a successful fresh load — an error never refreshes the cache. One function,
 // because the head-start path and the ordinary path must store the same thing.
 function keepPayload(d) {
-  try { localStorage.setItem(`wrought_last_${days}`, JSON.stringify(d)); }
+  // Seeds the live-poll guard too, so the first poll after a full load never
+  // repaints an identical screen.
+  liveLastJson = JSON.stringify(d);
+  try { localStorage.setItem(`wrought_last_${days}`, liveLastJson); }
   catch { /* full or blocked: cold loads still work */ }
+}
+
+// ── The Record view stays current while it is open ─────────────────────────
+// The founder: "when I eat something it's gonna show up there, when I say I'm
+// doing a workout it should show up there as well, and live with my watch
+// steps." The page fetched once, on load — so a phone left open on the Record
+// tab drifted further from the truth every minute, and a meal said to the
+// assistant appeared only after a manual reload. On the product whose promise
+// is memory, a stale screen reads as a lost entry.
+//
+// Two triggers, no spinner:
+//   - Coming BACK to the tab (visibilitychange) refetches immediately. That is
+//     the moment somebody has just told their assistant something and switched
+//     over to check it landed — the founder's exact test.
+//   - While the tab stays visible, a quiet poll. Ninety seconds, not five: the
+//     watch syncs on the phone's schedule, the assistant writes within a turn,
+//     and hammering a cold function for a screen nobody is touching is the
+//     Trainer tab's old mistake.
+//
+// AN UNCHANGED ANSWER NEVER REPAINTS, and the guard is keyed on the WHOLE
+// payload — the Trainer tab's lesson, learned there the hard way: a guard that
+// can only see part of what is painted blocks real updates. And a repaint must
+// never move the page under a thumb, so scroll is put back where it was.
+let liveTimer = null;
+let liveLastJson = '';
+
+async function refreshRecord() {
+  if (view !== 'record' || DEMO || document.hidden || !sb) return;
+  const { data } = await sb.auth.getSession();
+  if (!data?.session) return;
+  try {
+    const res = await fetch(`/.netlify/functions/api-progress?days=${days}`,
+      { headers: { Authorization: `Bearer ${data.session.access_token}` } });
+    if (!res.ok) return;                      // a poll never replaces a good screen with an error
+    const text = await res.text();
+    if (text === liveLastJson) return;        // nothing changed — nothing repaints
+    liveLastJson = text;
+    lastPayload = JSON.parse(text);
+    const y = window.scrollY;
+    render(lastPayload);
+    keepPayload(lastPayload);
+    window.scrollTo(0, y);
+  } catch { /* a failed poll is silence, not an error card — the screen is still true, just older */ }
+}
+
+function startLive() {
+  if (liveTimer) return;
+  liveTimer = setInterval(refreshRecord, 90000);
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) refreshRecord();
+  });
 }
 
 // The day as one graphic. A ring reads as a proportion before it reads as a
@@ -6317,9 +6375,29 @@ function readingsPanel(d) {
 
   const anyClinical = rows.some(r => CLINICAL.has(r.metric));
 
+  // WHEN THE WATCH LAST SPOKE — said every time, and loudly when it is stale.
+  // The founder's wrist read 1,173 steps beside a dashboard saying 381. Both
+  // were true; the dashboard's was three hours old and nothing said so. A stale
+  // figure presented without its time is indistinguishable from a wrong one,
+  // and "the shit ain't adding up" is the correct reading of that screen. The
+  // phone pushes on its own schedule and iOS throttles background sends, so the
+  // honest fix is not pretending to be live — it is stamping the moment and
+  // naming the one action that forces a sync.
+  const asOf = d.today?.device?.as_of ? new Date(d.today.device.as_of) : null;
+  const ageMin = asOf ? Math.round((Date.now() - asOf.getTime()) / 60000) : null;
+  const asOfSay = asOf ? asOf.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : null;
+  const stale = ageMin != null && ageMin > 45;
+  const asOfLine = !asOf ? ''
+    : stale
+      ? `<p class="sub" style="color:var(--heat-4)">Your watch last reported at ${esc(asOfSay)} —
+         ${ageMin >= 120 ? `${Math.round(ageMin / 60)} hours` : `${ageMin} minutes`} ago, so these
+         numbers are behind your wrist. Open the Wrought app on your phone and it sends fresh ones.</p>`
+      : `<p class="sub dim">As of ${esc(asOfSay)}, straight from the watch — nothing here is estimated.</p>`;
+
   return `<section class="panel">
     <h2>What your watch saw · today</h2>
     <div class="rdgrid">${cells}</div>
+    ${asOfLine}
     ${anyClinical ? `<p class="caveat">Marked readings are recorded, not interpreted.
       WROUGHT does not read them as medical signs and neither should this screen —
       anything that worries you is a doctor\'s question.</p>` : ''}
@@ -6565,6 +6643,10 @@ function stagger(root = $('content')) {
 // still one tap away — this is a starting position, never a deletion.
 const OPEN_BY_DEFAULT = new Set([
   'food · today', 'training · today', 'targets · today', 'targets',
+  // The watch numbers are the day's live half, and folding them proved the
+  // point the hard way: steps were landing correctly and the founder read the
+  // page as not counting them, because the panel that held them was shut.
+  'what your watch saw · today',
   // Setup states are not arithmetic — they are the thing standing between
   // somebody and the product working, and folding one away by default is how
   // it never gets finished.
@@ -7817,6 +7899,7 @@ if ('serviceWorker' in navigator) {
 }
 
 boot();
+startLive();
 </script>
 </body>
 </html>
