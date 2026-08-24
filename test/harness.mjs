@@ -9465,6 +9465,76 @@ await test('the morning brief degrades rather than breaking a database without 0
     'the morning is marked sent even when delivery failed');
 });
 
+await test('tapping the morning brief opens the assistant with the day already asked for', async () => {
+  // "From the morning notification it should bring you directly to your GTP —
+  // and that should trigger the AI knowing this is for Wrought and how we're
+  // gonna start our day." The one legal bridge across MCP's no-push rule: the
+  // server pushes words it computed, and the PERSON'S TAP is what carries them
+  // into the assistant. Nothing reaches the AI until they choose to tap.
+  const { morningLink } = await import('../netlify/functions/lib/morning.js');
+
+  const gpt = morningLink('chatgpt');
+  assert.match(gpt, /^https:\/\/chatgpt\.com\/\?q=/);
+  const opener = decodeURIComponent(gpt.split('?q=')[1]);
+  // The opener has to work for a model that reads nothing else: "gym bro" and
+  // "morning" are phrasebook triggers for `brief`, and Wrought is named
+  // outright so a chat without the connector fails as "turn it on", not
+  // nonsense. And it asks for the PLAN — the founder's definition of
+  // preemptive — never just the numbers.
+  for (const word of ['Gym bro', 'morning', 'Wrought', 'brief', 'plan']) {
+    assert.ok(opener.includes(word), `the opener does not carry "${word}"`);
+  }
+  // No figures. A number in a pre-written prompt is a number the server chose
+  // arriving as though the person asked for it.
+  assert.ok(!/\d/.test(opener), 'the opener carries a number');
+
+  assert.match(morningLink('claude'), /^https:\/\/claude\.ai\/new\?q=/);
+  // The dashboard is the one destination every account verifiably has.
+  assert.equal(morningLink('app'), '/app.html');
+  assert.equal(morningLink(undefined), '/app.html');
+  assert.equal(morningLink(null), '/app.html');
+
+  // A CARE FLAG NEVER RIDES INTO A CHAT OPENER. The flag is the whole message
+  // and the dashboard is where it is explained — handing it to an assistant as
+  // a cheery "start my day" prompt is the persona outranking the flag.
+  const cron = readFileSync(new URL('../netlify/functions/brief-nightly.js', import.meta.url), 'utf8');
+  assert.match(cron, /out\.only \? '\/app\.html' : morningLink/,
+    'a care-flag morning still opens the assistant with a start-my-day opener');
+
+  // And the sw click handler must be able to open a cross-origin URL — a
+  // same-origin filter here would silently turn the whole feature into a
+  // dashboard link.
+  const sw = readFileSync(new URL('../public/sw.js', import.meta.url), 'utf8');
+  assert.match(sw, /clients\.openWindow\(target\)/, 'the click handler cannot open the payload url');
+  assert.ok(!/startsWith\('\/'\)|same-origin/.test(sw.slice(sw.indexOf('notificationclick'))),
+    'the click handler filters to same-origin and the assistant link dies silently');
+});
+
+await test('the morning says what is planned, and only when it should', async () => {
+  // "What workouts do you have planned, if any, today?" A named session is a
+  // plan where a count is a debt.
+  const { morningBrief } = await import('../netlify/functions/lib/morning.js');
+  const planned = { name: 'S-Tier Training List', est_minutes: 50 };
+
+  const out = morningBrief({ planned, week: { say: 'One in, two to go.', target: 3, met: false, impossible: false } });
+  assert.match(out.text, /Today's plan: S-Tier Training List, about 50 min/);
+
+  // A met week silences it — being offered another session past the target is
+  // nagging wearing a plan's clothes.
+  const met = morningBrief({ planned, week: { say: 'Done.', target: 3, met: true } });
+  assert.ok(!met || !/Today's plan/.test(met.text), 'a met week is still being offered a session');
+
+  // Readiness flagged: the veto said train lighter, and naming a session right
+  // after reads as overriding it.
+  const strained = morningBrief({ planned, readiness: { state: 'strained', say: 'Down on your baseline — train lighter today.' } });
+  assert.ok(!/Today's plan/.test(strained.text), 'the plan overrides the body\'s veto');
+  assert.match(strained.text, /lighter/);
+
+  // And a care flag is still the entire message.
+  const flagged = morningBrief({ planned, flags: [{ kind: 'low_intake' }] });
+  assert.ok(flagged.only && !/Today's plan/.test(flagged.text), 'a plan line survived a care flag');
+});
+
 await test('a missed hour is a delay, never a cancelled day', () => {
   // "I want multiple noti not just one." He can have them — each rule sends
   // once a day and the cap is one per HOUR, not one per day. But matching the

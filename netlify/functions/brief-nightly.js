@@ -30,7 +30,7 @@ import { sendPush, vapidConfigured } from './lib/push.js';
 import { plainBrief } from './lib/voice.js';
 import { energyBalance, weekSoFar, goalsToSet } from './lib/training.js';
 import { dueAlerts } from './lib/alerts.js';
-import { morningBrief, morningDue } from './lib/morning.js';
+import { morningBrief, morningDue, morningLink } from './lib/morning.js';
 
 const SEND_HOUR = 22;
 
@@ -213,9 +213,17 @@ async function runMorning(userId, profile, now) {
   // Read the three morning columns on their own. profile came from getProfile,
   // which does not select them — and adding them there would put every caller
   // in the product behind this migration for no benefit.
+  // morning_opens is selected DEFENSIVELY, apart from the scheduling columns:
+  // it arrived one migration later (020), and naming a column PostgREST does
+  // not know about rejects the whole query — so a database holding 019 but not
+  // 020 would lose the entire morning brief for the sake of a link preference.
+  // The fallback is the dashboard, which every account verifiably has.
   const { data: m } = await supabase.from('wrought_profile')
     .select('morning_hour, morning_minute, morning_sent_on')
     .eq('user_id', userId).maybeSingle();
+  const { data: mo } = await supabase.from('wrought_profile')
+    .select('morning_opens').eq('user_id', userId).maybeSingle()
+    .then(r => (r.error ? { data: null } : r), () => ({ data: null }));
 
   if (!morningDue({
     hour: Math.floor(minutes / 60), minute: minutes % 60,
@@ -226,10 +234,19 @@ async function runMorning(userId, profile, now) {
   // Everything here comes from the same computed facts the dashboard and the
   // connector read. Nothing in this file does arithmetic — a third mouth
   // relaying numbers computed once, which is the doctrine everywhere else.
-  const [day, recent, goals] = await Promise.all([
+  const [day, recent, goals, dueRoutine] = await Promise.all([
     dayFacts(userId, profile, date),
     rangeFacts(userId, profile, addDays(date, -29), date),
     getGoals(userId),
+    // The workout most due — the longest-rested active routine, which is the
+    // same answer end_session gives for "what's next". Blocks are not consulted
+    // here yet; when they are, the block's own next session must win, and the
+    // note in morningBrief's line stays true either way.
+    supabase.from('wrought_routines')
+      .select('name, est_minutes')
+      .eq('user_id', userId).eq('active', true)
+      .order('last_used_on', { ascending: true, nullsFirst: true })
+      .limit(1).maybeSingle().then(r => r.data || null),
   ]);
   const yesterday = recent.days.find(d => d.date === addDays(date, -1)) || null;
 
@@ -253,7 +270,7 @@ async function runMorning(userId, profile, now) {
   // decision already taken, which is the invented-2,600 failure with a
   // notification wrapped around it. set_goal is where a number gets committed.
   const out = morningBrief({
-    facts: day, flags, balance, week, yesterday,
+    facts: day, flags, balance, week, yesterday, planned: dueRoutine,
     goalsToSet: goalsToSet({ goals, targets: null, stepsAvg: null }),
   });
   // Nothing worth saying sends nothing. A morning nag is how a product gets
@@ -264,7 +281,11 @@ async function runMorning(userId, profile, now) {
     title: 'WROUGHT',
     body: out.text,
     tag: `wrought-morning-${date}`,
-    url: '/app.html',
+    // Tapping it opens the assistant with the day's opener pre-filled — the
+    // one legal bridge across MCP's no-push rule, because the person's tap is
+    // what carries the words. A care flag never rides it into a chat opener:
+    // the flag IS the message, and the dashboard is where it is explained.
+    url: out.only ? '/app.html' : morningLink(mo?.morning_opens),
   });
 
   // STAMPED ONLY ON SUCCESS, exactly like an alert's last_sent_on. Marking it
