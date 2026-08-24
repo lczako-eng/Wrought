@@ -9261,7 +9261,8 @@ await test('every panel folds, remembers, and the hero never does', () => {
     'the default overrides what the person actually chose');
 
   // The hero is the answer to the question the screen exists to answer.
-  assert.match(code, /classList\.contains\('hero'\)\) continue/, 'the hero can be folded away');
+  assert.match(code, /classList\.contains\('hero'\) \|\| panel\.classList\.contains\('nofold'\)\) continue/,
+    'the hero or a nofold setup panel can be folded away');
 
   // Not firstElementChild: two panels keep their heading inside a header row,
   // and requiring it to be the panel's own first child silently skipped them.
@@ -9425,6 +9426,58 @@ await test('the assistant can hand over a link that lands on the unfolded panel'
   assert.match(src, /honourTargetsAnchor\(root\)/, 'the anchor handler is never called after render');
   // The setup-state panel opens by default for the same reason.
   assert.match(src, /'no calorie target set'/, 'the no-target panel is folded by default');
+});
+
+await test('the coach setup is in your face until it is done', () => {
+  // The founder, inventor of the product: "honestly, I do not know how to use
+  // it." Push, targets, assessment and the check-ins all existed, scattered
+  // across tabs — and every notification he asked for was silently waiting on
+  // a setup step nobody had named. One panel, directly under the hero, that
+  // says what is on and what is not.
+  const src = page('app.html');
+  const code = src.replace(/^\s*\/\/.*$/gm, '');
+  assert.match(code, /function coachSetupPanel/, 'there is no setup panel');
+  assert.match(code, /out\.push\(coachSetupPanel\(d\)\)/, 'the panel is never rendered');
+  // Directly under the hero — before the food panel, not buried at the bottom.
+  const render = code.slice(code.indexOf('out.push(hero(d));'));
+  assert.ok(render.indexOf('coachSetupPanel') < render.indexOf('foodTodayPanel'),
+    'the setup panel is not directly under the hero');
+  // It cannot be folded away, and it disappears entirely once done — a
+  // checklist that lingers after completion is clutter wearing a medal.
+  assert.match(code, /section class="panel nofold" id="coach-setup"/);
+  assert.match(code, /if \(doneCount === 3\) return ''/, 'the finished checklist never leaves');
+  // Never in the demo, and each open item carries its own tap.
+  assert.match(code, /function coachSetupPanel\(d\) \{\n  if \(DEMO\) return ''/);
+  for (const b of ['data-go="account"', 'id="go-targets"', 'id="go-intake"']) {
+    assert.ok(code.includes(b), `the ${b} fix button is missing`);
+  }
+  // The server sends the facts it draws — push devices and the check-in hours.
+  const api = readFileSync(new URL('../netlify/functions/api-progress.js', import.meta.url), 'utf8');
+  assert.match(api, /push_devices: pushSubs/);
+  assert.match(api, /morning_hour, morning_minute, midday_hour/);
+});
+
+await test('the midday check-in exists, with the same guards as the morning', async () => {
+  // "It should have a midday assessment to push you towards achieving your
+  // goals." Where the day stands while an afternoon can still act on it.
+  const cron = readFileSync(new URL('../netlify/functions/brief-nightly.js', import.meta.url), 'utf8');
+  assert.match(cron, /middayColumnsExist/, 'midday assumes its migration ran');
+  assert.match(cron, /runMidday/, 'nothing sends the midday check-in');
+  assert.match(cron, /midday_sent_on: date/, 'midday is not stamped once a day');
+  const { middayBrief } = await import('../netlify/functions/lib/morning.js');
+  // A care flag is the entire message, everywhere, always.
+  const flagged = middayBrief({ flags: [{ kind: 'low_intake' }], facts: { food: { meals: 3, calories: 900 } } });
+  assert.ok(flagged.only, 'a care flag does not silence the midday check-in');
+  // An at_most goal is never cheered toward its ceiling.
+  const out = middayBrief({ facts: { food: { meals: 2, calories: 1200 } },
+    scored: [{ goal: 'Calories', metric: 'calories', scored: true, target: 3083, direction: 'at_most', percent: 40, hit: false },
+             { goal: '8,500 steps', metric: 'steps', scored: true, target: 8500, direction: 'at_least', percent: 45, hit: false }] });
+  assert.ok(!/Calories: 40%/.test(out.text), 'a calorie ceiling is being cheered toward');
+  assert.match(out.text, /8,500 steps: 45%/);
+  // A quiet half-day is named as unlogged, never as uneaten.
+  const quiet = middayBrief({ facts: { food: { meals: 0 } } });
+  assert.match(quiet.text, /Nothing logged yet today/);
+  assert.ok(!/you haven'?t eaten|no food/i.test(quiet.text));
 });
 
 group('The morning briefing');

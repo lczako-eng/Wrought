@@ -30,7 +30,7 @@ import { sendPush, vapidConfigured } from './lib/push.js';
 import { plainBrief } from './lib/voice.js';
 import { energyBalance, weekSoFar, goalsToSet } from './lib/training.js';
 import { dueAlerts } from './lib/alerts.js';
-import { morningBrief, morningDue, morningLink } from './lib/morning.js';
+import { morningBrief, middayBrief, morningDue, morningLink } from './lib/morning.js';
 
 const SEND_HOUR = 22;
 
@@ -202,6 +202,62 @@ async function morningColumnsExist() {
     .select('morning_hour', { head: true }).limit(1);
   morningReady = !error;
   return morningReady;
+}
+
+let middayReady = null;
+async function middayColumnsExist() {
+  if (middayReady !== null) return middayReady;
+  const { error } = await supabase.from('wrought_profile')
+    .select('midday_hour', { head: true }).limit(1);
+  middayReady = !error;
+  return middayReady;
+}
+
+// The founder's second check-in: where the day stands while there is still an
+// afternoon to act on it. Same guards as the morning — probed columns, once a
+// day, stamped only on success, a failure here never costs the evening read.
+async function runMidday(userId, profile, now) {
+  if (!(await middayColumnsExist())) return 0;
+
+  const date = localDateFor(profile.timezone, now);
+  const minutes = localMinutesFor(profile.timezone, now);
+
+  const { data: m } = await supabase.from('wrought_profile')
+    .select('midday_hour, midday_minute, midday_sent_on')
+    .eq('user_id', userId).maybeSingle();
+
+  if (!morningDue({
+    hour: Math.floor(minutes / 60), minute: minutes % 60,
+    morningHour: m?.midday_hour, morningMinute: m?.midday_minute ?? 0,
+    sentOn: m?.midday_sent_on, today: date,
+  })) return 0;
+
+  const { data: mo } = await supabase.from('wrought_profile')
+    .select('morning_opens').eq('user_id', userId).maybeSingle()
+    .then(r => (r.error ? { data: null } : r), () => ({ data: null }));
+
+  const [day, recent, goals] = await Promise.all([
+    dayFacts(userId, profile, date),
+    rangeFacts(userId, profile, addDays(date, -29), date),
+    getGoals(userId),
+  ]);
+  const flags = careFlags(recent, profile);
+  const scored = scoreGoals(goals, day, summariseRange(recent, profile), profile);
+
+  const out = middayBrief({ facts: day, flags, scored });
+  if (!out?.text) return 0;
+
+  const sent = await deliver(userId, profile, {
+    title: 'WROUGHT',
+    body: out.text,
+    tag: `wrought-midday-${date}`,
+    url: out.only ? '/app.html' : morningLink(mo?.morning_opens, 'midday'),
+  });
+  if (sent) {
+    await supabase.from('wrought_profile')
+      .update({ midday_sent_on: date }).eq('user_id', userId);
+  }
+  return sent ? 1 : 0;
 }
 
 async function runMorning(userId, profile, now) {
@@ -379,6 +435,7 @@ export const handler = async () => {
     // own: a failure composing the morning must not cost somebody the evening,
     // and vice versa — the same reason the alert pass above is caught alone.
     try { morninged += await runMorning(userId, profile, now); } catch { /* the evening still runs */ }
+    try { morninged += await runMidday(userId, profile, now); } catch { /* the evening still runs */ }
 
     // Only the people for whom it is actually ten o'clock right now.
     // Their hour, not ours. Somebody who trains at five in the morning wants

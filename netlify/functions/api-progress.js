@@ -461,6 +461,22 @@ export const handler = async (event) => {
   // SEE is indistinguishable from a product that never asks. This is the same
   // intakeState the training tools now stop on.
   const memory = await getMemory(user.id);
+
+  // THE COACH SETUP, as facts the page can draw. The founder, inventor of the
+  // product: "honestly, I do not know how to use it." Every piece — push,
+  // targets, the assessment, the check-ins — existed and was scattered across
+  // tabs, each discoverable only by already knowing it was there. These few
+  // fields let one panel say what is on and what is not. Selected defensively:
+  // the checkin columns arrived across three migrations, and a database
+  // missing one must lose the field, never the payload.
+  const [pushSubs, checkins] = await Promise.all([
+    supabase.from('wrought_push_subs').select('id', { count: 'exact', head: true })
+      .eq('user_id', user.id).then(r => r.count || 0, () => 0),
+    supabase.from('wrought_profile')
+      .select('morning_hour, morning_minute, midday_hour, midday_minute, brief_hour')
+      .eq('user_id', user.id).maybeSingle()
+      .then(r => (r.error ? null : r.data), () => null),
+  ]);
   const setup = intakeState({ profile, goals, memory, weightKg, intent: plan.intent });
 
   // The expectation, on the table rather than in a notification. Sessions never
@@ -675,6 +691,12 @@ export const handler = async (event) => {
       // What is already on file, so a form that fills a gap can show only the
       // gap. Asking again for a height it is holding is how a product looks
       // amnesiac when it is merely narrow.
+      coach: {
+        push_devices: pushSubs,
+        morning: checkins?.morning_hour != null ? `${checkins.morning_hour}:${String(checkins.morning_minute || 0).padStart(2, '0')}` : null,
+        midday:  checkins?.midday_hour != null ? `${checkins.midday_hour}:${String(checkins.midday_minute || 0).padStart(2, '0')}` : null,
+        evening: `${checkins?.brief_hour ?? 22}:00`,
+      },
       profile_known: {
         height_cm: profile.height_cm ?? null,
         birth_year: profile.birth_year ?? null,

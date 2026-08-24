@@ -5448,7 +5448,7 @@ function setupPanel(d) {
   const su = d.setup;
   if (!su || su.complete) return '';
   const pct = Math.round((su.answered / su.of) * 100);
-  return `<section class="panel">
+  return `<section class="panel" id="intake-panel">
     <h2>Getting to know you · ${su.answered} of ${su.of}</h2>
     <div class="progbar"><i style="width:${pct}%"></i></div>
     <p class="sub">Workouts unlock when this is finished — WROUGHT will not build a plan for a
@@ -5530,6 +5530,60 @@ function planPanel(d) {
 // more forbidding; it was removing the vacuum. The Targets panel used to say
 // "tell your assistant" in exactly that vacuum, so the same computed options
 // now sit on the screen. Showing them sets nothing.
+// ── The coach setup, in your face ─────────────────────────────────────────
+// The founder, inventor of this product: "honestly, I do not know how to use
+// it." Every piece existed — push, targets, the assessment, three check-ins —
+// scattered across tabs, each discoverable only by already knowing it was
+// there. This panel sits directly under the hero, says what is on and what is
+// not, and does not fold or leave until all of it is done. A setup a person
+// has to hunt for is a setup that never happens, and every notification he
+// asked for was silently waiting on a step nobody had named.
+function coachSetupPanel(d) {
+  if (DEMO) return '';
+  const c = d.coach || {};
+  const su = d.setup || {};
+  const targetsSet = (d.goals || []).some(g => g.scored && g.target != null &&
+    (g.metric === 'calories' || g.metric === 'steps'));
+  const pushOn = (c.push_devices || 0) > 0;
+  const assessed = !!su.complete;
+  const checkins = [c.morning && 'morning ' + c.morning, c.midday && 'midday ' + c.midday,
+    'evening ' + (c.evening || '22:00')].filter(Boolean).join(' · ');
+
+  const doneCount = [pushOn, targetsSet, assessed].filter(Boolean).length;
+  if (doneCount === 3) return '';          // set up — the panel has done its job
+
+  const row = (ok, label, fix) => `<div class="planrow">
+    <span class="lbl">${ok ? '✓' : '✗'} ${esc(label)}</span>${ok ? '' : fix}
+  </div>`;
+
+  return `<section class="panel nofold" id="coach-setup">
+    <h2>Your coach setup · ${doneCount} of 3</h2>
+    <p class="sub">Until these are done, WROUGHT is a log. After them it is a trainer —
+    it knows you, it has a number to hold you to, and it speaks first.</p>
+    <div class="planrows">
+      ${row(pushOn, pushOn ? `Notifications on (${c.push_devices} device${c.push_devices === 1 ? '' : 's'})` : 'Notifications — nothing can reach your phone yet',
+        `<button class="ghost small" data-go="account">Turn on</button>`)}
+      ${row(targetsSet, targetsSet ? 'Targets set' : 'No targets — nothing to hold you to',
+        `<button class="ghost small" id="go-targets">Pick one</button>`)}
+      ${row(assessed, assessed ? 'Assessment done' : `Assessment · ${su.answered ?? 0} of ${su.of ?? 25}`,
+        `<button class="ghost small" id="go-intake">See what's left</button>`)}
+    </div>
+    <p class="sub dim">Check-ins: ${esc(checkins)}${c.midday ? '' : ' — no midday yet; say \u201cmidday check-in at 12:30\u201d to your assistant'}.
+    ${pushOn ? '' : 'Notifications need WROUGHT on your Home Screen, opened from the icon, then Account \u2192 Turn on notifications.'}</p>
+  </section>`;
+}
+
+function wireCoachSetup() {
+  $('go-targets')?.addEventListener('click', () => {
+    targetsAnchorPending = true;
+    honourTargetsAnchor($('content'));
+  });
+  $('go-intake')?.addEventListener('click', () => {
+    const el = document.getElementById('intake-panel');
+    if (el) { el.classList.remove('folded'); el.scrollIntoView({ behavior: 'smooth', block: 'start' }); }
+  });
+}
+
 function targetOptionsPanel(d) {
   const o = d.no_target_set;
   if (!o) return '';
@@ -6508,6 +6562,7 @@ function render(d) {
   // The graphic opens the page — care flags above it and nothing else, because
   // a flag is the one thing that outranks the day's arithmetic.
   out.push(hero(d));
+  out.push(coachSetupPanel(d));
 
   // THE DAY IN PLAIN WORDS, before any more arithmetic — what was eaten and
   // what was trained, each with its own number. The founder's ask, verbatim:
@@ -6648,6 +6703,7 @@ function render(d) {
   wireGoTabs();
   wireGuide();          // the setup panel's questions copy on tap, same as the manual
   wireQuickAdd();       // the website's own door onto the food log
+  wireCoachSetup();     // the panel that says what is on and what is not
   stagger();
 }
 
@@ -6722,8 +6778,10 @@ function makeFoldable(root = $('content')) {
     if (panel.querySelector(':scope > h2.fold')) continue;      // already wired
 
     // The hero is the one thing that must never fold: it is the answer to the
-    // question the screen exists to answer.
-    if (panel.classList.contains('hero')) continue;
+    // question the screen exists to answer. `nofold` is the same claim made by
+    // a panel that IS the instructions — folding the setup checklist away is
+    // how it never gets finished.
+    if (panel.classList.contains('hero') || panel.classList.contains('nofold')) continue;
 
     // NOT firstElementChild. Two panels keep their heading inside a header row
     // — `.ls-head` holds an h2 next to a chip — and requiring the h2 to be the

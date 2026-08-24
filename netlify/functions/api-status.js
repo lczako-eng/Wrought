@@ -55,6 +55,7 @@ const MIGRATIONS = [
   { file: '018_wrought_alerts.sql',     probe: t('wrought_alerts'),                gives: 'notifications you set by talking — the AI writes the rule, the hourly job sends it' },
   { file: '019_wrought_morning.sql',    probe: col('wrought_profile', 'morning_hour'), gives: 'the morning briefing — where you stand before the day, not a verdict on one that is over' },
   { file: '020_wrought_morning_opens.sql', probe: col('wrought_profile', 'morning_opens'), gives: 'tapping the morning brief opening your assistant with the day already asked for' },
+  { file: '021_wrought_midday.sql',       probe: col('wrought_profile', 'midday_hour'), gives: 'the midday check-in — where the day stands while an afternoon can still act on it' },
 ];
 
 // A probe that treats EVERY error as "not run" lies twice over: a timeout reads
