@@ -158,15 +158,61 @@ export function morningBrief({
  * the assistant gets the words and has no tools; the opener names Wrought so
  * the failure at least reads as "turn the connector on" rather than nonsense.
  */
-export function morningLink(opens) {
-  const opener =
+const OPENERS = {
+  morning:
     'Gym bro — morning. Using the Wrought connector, read me my morning brief and ' +
-    "today's plan: where I stand, what workout is planned if any, and what the day needs.";
-  const q = encodeURIComponent(opener);
+    "today's plan: where I stand, what workout is planned if any, and what the day needs.",
+  // The midday opener ASKS, because the founder's midday is an assessment the
+  // AI takes, not a report it reads out: it exists to collect the half-day —
+  // what has been eaten, how the day feels — and the assistant's first act is
+  // logging what comes back. Pushing toward the goals comes from the tools it
+  // then calls, with real numbers, never from words pre-written here.
+  midday:
+    'Gym bro — midday check-in. Using the Wrought connector: I\'ll tell you what ' +
+    "I've eaten so far and how the day is going — log it, then tell me where I " +
+    'stand against my targets and what the afternoon needs.',
+};
+
+export function morningLink(opens, which = 'morning') {
+  const q = encodeURIComponent(OPENERS[which] || OPENERS.morning);
   if (opens === 'chatgpt') return `https://chatgpt.com/?q=${q}`;
   if (opens === 'claude') return `https://claude.ai/new?q=${q}`;
   // The dashboard is the one destination every account verifiably has.
   return '/app.html';
+}
+
+/**
+ * The midday line — where the day stands while an afternoon can still act on
+ * it. Same silences as the morning: a care flag is the whole message (the
+ * caller handles that before composing), nothing ever says "eat less" or
+ * quotes what is "left", and a day with nothing to say sends nothing.
+ */
+export function middayBrief({ facts = {}, flags = [], scored = [] } = {}) {
+  if (flags.length) return { text: spokenFlag(flags[0]), kind: 'care_flag', only: true };
+
+  const lines = [];
+  const food = facts.food || {};
+
+  // What has landed so far — the fact that makes everything else checkable.
+  // A quiet half-day is named as unlogged, never as uneaten: the difference
+  // between those two is the whole product.
+  if (food.meals) {
+    lines.push(`Roughly ${Math.round(food.calories)} in so far.`);
+  } else {
+    lines.push('Nothing logged yet today — tell your AI what you\'ve had and it goes on the record.');
+  }
+
+  // Goals with numbers, scored by the same function the rings draw from. An
+  // at_most goal is never cheered toward its ceiling — that is intake_pace's
+  // deliberately flat wording, and a "nearly there!" on a calorie limit reads
+  // as encouragement to spend the rest of it.
+  const chase = scored.filter(g => g.scored && g.target != null && g.direction !== 'at_most' && !g.hit);
+  if (chase.length) {
+    const g = chase[0];
+    lines.push(`${g.goal}: ${Math.round(g.percent || 0)}% with the afternoon to go.`);
+  }
+
+  return { text: lines.slice(0, 2).join(' '), kind: 'midday', only: false };
 }
 
 /**
