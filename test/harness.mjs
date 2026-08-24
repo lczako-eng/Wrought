@@ -9480,6 +9480,51 @@ await test('the midday check-in exists, with the same guards as the morning', as
   assert.ok(!/you haven'?t eaten|no food/i.test(quiet.text));
 });
 
+await test('a step target is offered from their own average, never a poster', () => {
+  // "One would be I wanna have 10,000 steps a day" — and 10,000 is a 1960s
+  // pedometer advertisement. The offer is their 30-day average nudged ~10%;
+  // with no step history it offers NOTHING rather than inventing a figure —
+  // the same refusal as a working weight.
+  const api = readFileSync(new URL('../netlify/functions/api-progress.js', import.meta.url), 'utf8');
+  assert.match(api, /steps_offer/, 'the payload never offers a step target');
+  assert.match(api, /stepsAvg: summary\.steps_avg/, 'the offer is not computed from their own average');
+
+  const src = page('app.html');
+  const code = src.replace(/^\s*\/\/.*$/gm, '');
+  assert.match(code, /function stepsOfferRow/, 'the panel has no steps row');
+  assert.match(code, /data-setsteps/, 'the steps offer has no tap');
+  // The tap goes through the same bounded endpoint as everything else, and the
+  // demo never shows a button that discards a real choice.
+  const rowFn = code.slice(code.indexOf('function stepsOfferRow'), code.indexOf('function targetOptionsPanel'));
+  assert.match(rowFn, /DEMO \? '' :/, 'the demo collects a steps choice it will discard');
+  // The number on the row is the SERVER's suggestion, and no figure is baked
+  // into the page — a hardcoded 10,000 here is exactly the poster number the
+  // whole offer exists to avoid.
+  assert.match(rowFn, /so\.suggested/, 'the row does not draw the server\'s suggestion');
+  assert.ok(!/10\s*,?\s*000/.test(rowFn), 'the page bakes in a poster number');
+  assert.ok(!/const sugg|= 10000|= 8000/.test(rowFn), 'the page invents its own steps figure');
+  assert.match(code, /metric: 'steps', target/, 'the steps tap bypasses the goals endpoint');
+  // Only-steps-missing still has somewhere to live — a target that can only be
+  // set while ANOTHER target is also missing is a door that locks itself.
+  assert.match(code, /No step target set/, 'steps cannot be set once calories are');
+  // And the pre-session goals ask carries the same link the calorie path does.
+  const training = readFileSync(new URL('../netlify/functions/lib/training.js', import.meta.url), 'utf8');
+  const gts = training.slice(training.indexOf('export function goalsToSet'), training.indexOf('export function targetOptions'));
+  assert.match(gts, /set_link: SET_TARGETS_URL/, 'the pre-session ask offers no hyperlink');
+});
+
+await test('signing in does not drop half the brand', () => {
+  // The landing page says WROUGHT and "Crush it." in two voices — slab and
+  // grotesk. The sign-in gate said only WROUGHT, so the identity halved at the
+  // exact moment somebody handed over a password.
+  const src = page('app.html');
+  assert.match(src, /class="gate-tag">Crush it\./, 'the gate has no slogan');
+  const css = src.slice(src.indexOf('.gate-tag'), src.indexOf('.gate-sub'));
+  assert.match(css, /var\(--grotesk\)/, 'the slogan is not in the grotesk — one voice where there should be two');
+  // The landing page still says it too, so the two cannot drift apart.
+  assert.match(page('index.html'), /class="tag">Crush it\./);
+});
+
 group('The morning briefing');
 
 const { morningBrief, morningDue } = await import('../netlify/functions/lib/morning.js');

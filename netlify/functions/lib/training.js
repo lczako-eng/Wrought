@@ -1312,6 +1312,9 @@ export function goalsToSet({ goals = [], targets = null, stepsAvg = null } = {})
 
   return {
     missing,
+    // The tap-to-set door, for the model to offer as a plain hyperlink beside
+    // the spoken options — the same one targetOptions carries.
+    set_link: SET_TARGETS_URL,
     // Null when the five facts are not on file yet: the honest answer there is
     // to ask for those, which targetOptions already says.
     calories: needCalories ? (targets || null) : null,
