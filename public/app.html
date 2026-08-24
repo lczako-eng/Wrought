@@ -5534,28 +5534,66 @@ function targetOptionsPanel(d) {
   const o = d.no_target_set;
   if (!o) return '';
   if (!o.known) {
-    return `<section class="panel"><h2>No calorie target set</h2>
+    return `<section class="panel" id="set-targets"><h2>No calorie target set</h2>
       <p class="sub">${esc(o.say)}</p></section>`;
   }
-  const row = (label, kcal, rate) => `<div class="planrow">
+  // ONE TAP SETS IT — the door this panel never had. It computed every
+  // defensible option and then said "say which you want to your assistant",
+  // which is a corridor, not a door: a screen that can show the answer must
+  // be able to accept it. The tap sends an INTENT and a PACE, never a calorie
+  // figure — the server recomputes through the same goalCall the assistant
+  // uses, so a number the page displayed stale can never be what gets stored.
+  // Hidden in the demo, like every write: a button there would collect a real
+  // choice into a screen that discards it.
+  const row = (label, kcal, rate, intent, pace) => `<div class="planrow">
     <span class="lbl">${esc(label)}</span>
     <b>${n(kcal)}${rate ? ` <span class="sub dim">· about ${Math.abs(rate)}kg a week</span>` : ''}</b>
+    ${!DEMO && intent ? `<button class="ghost small" data-settarget="${esc(intent)}" data-setpace="${esc(pace || '')}">Set</button>` : ''}
   </div>`;
   const L = o.to_lose || {};
-  return `<section class="panel">
+  return `<section class="panel" id="set-targets">
     <h2>No calorie target set</h2>
     <p class="sub">Nothing is set. These are worked out from your own height, weight, age, sex and
     activity level — not picked off a chart — and none of them applies until you choose one.</p>
     <div class="planrows">
-      ${row('Maintenance', o.maintenance, null)}
-      ${L.gentle ? row('Gentle cut', L.gentle.calories, L.gentle.kg_per_week) : ''}
-      ${L.steady ? row('Steady cut', L.steady.calories, L.steady.kg_per_week) : ''}
-      ${L.aggressive ? row('Aggressive cut', L.aggressive.calories, L.aggressive.kg_per_week) : ''}
-      ${o.to_gain ? row('To gain', o.to_gain, null) : ''}
+      ${row('Maintenance', o.maintenance, null, 'maintain', null)}
+      ${L.gentle ? row('Gentle cut', L.gentle.calories, L.gentle.kg_per_week, 'lose', 'gentle') : ''}
+      ${L.steady ? row('Steady cut', L.steady.calories, L.steady.kg_per_week, 'lose', 'steady') : ''}
+      ${L.aggressive ? row('Aggressive cut', L.aggressive.calories, L.aggressive.kg_per_week, 'lose', 'aggressive') : ''}
+      ${o.to_gain ? row('To gain', o.to_gain, null, 'gain', null) : ''}
     </div>
     <p class="caveat">Every one of these floors at 1,200 and stays under the rate WROUGHT would warn
-    you about. Say which you want to your assistant and it gets set — and scored here from that day on.</p>
+    you about. Tap one to set it, or say it to your assistant — either way it is scored here from that day on.</p>
+    <p class="msg" id="tgtmsg"></p>
   </section>`;
+}
+
+// The tap itself. The protein target rides along server-side, the old goals
+// are retired not deleted, and the screen refetches so the rings draw from
+// the same load that confirmed the write — never from a DOM patch.
+async function setTargetTap(intent, pace) {
+  const el = $('tgtmsg');
+  if (el) el.textContent = 'Setting…';
+  const { data: s } = await sb.auth.getSession();
+  if (!s?.session) { if (el) el.textContent = 'Sign in first.'; return; }
+  try {
+    const res = await fetch('/api/goals', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${s.session.access_token}` },
+      body: JSON.stringify({ intent, ...(pace ? { pace } : {}) }),
+    });
+    const body = await res.json();
+    if (!res.ok) {
+      // setup_needed points at the five-facts form on the hero, which is the
+      // screen already built for exactly this refusal.
+      if (el) el.textContent = body.say || body.error || 'Could not set it.';
+      return;
+    }
+    if (el) el.textContent = `Set: about ${n(body.calories_per_day)} kcal and ${n(body.protein_g_per_day)}g protein a day.`;
+    refreshRecord();
+  } catch (e) {
+    if (el) el.textContent = `Did not save: ${e?.message || e}`;
+  }
 }
 
 // The week, against what was agreed. Sessions never roll over and a missed
@@ -5850,6 +5888,8 @@ function wireQuickAdd() {
     b.addEventListener('click', () => removeFood(b.dataset.unlog, b)));
   document.querySelectorAll('[data-refile]').forEach(b =>
     b.addEventListener('click', () => refileAsWork(b.dataset.refile, b)));
+  document.querySelectorAll('[data-settarget]').forEach(b =>
+    b.addEventListener('click', () => setTargetTap(b.dataset.settarget, b.dataset.setpace || null)));
 }
 
 // A session that was really a shift, put back. The calories are RECOMPUTED
@@ -6618,6 +6658,7 @@ function stagger(root = $('content')) {
   const bits = root.querySelectorAll('.panel, .tile');
   bits.forEach((el, i) => { el.style.animationDelay = `${Math.min(i * 45, 450)}ms`; });
   makeFoldable(root);
+  honourTargetsAnchor(root);
   wireCharts(root);
 }
 
@@ -6649,9 +6690,26 @@ const OPEN_BY_DEFAULT = new Set([
   'what your watch saw · today',
   // Setup states are not arithmetic — they are the thing standing between
   // somebody and the product working, and folding one away by default is how
-  // it never gets finished.
-  'getting to know you', 'set up',
+  // it never gets finished. "No calorie target set" is also where the
+  // assistant's set-it-with-one-tap link lands, and a link that lands on a
+  // folded panel is a door that opens onto a wall.
+  'getting to know you', 'set up', 'no calorie target set',
 ]);
+
+// The assistant offers wrought.fit/app.html#targets as the tap-to-set door.
+// Honoured once, after the first real render: switch to Record if needed,
+// unfold the panel whatever the stored preference says (they followed a link
+// TO it — that is the preference, for today), and scroll it into view.
+let targetsAnchorPending = location.hash === '#targets';
+function honourTargetsAnchor(root) {
+  if (!targetsAnchorPending) return;
+  const panel = root.querySelector('#set-targets') || root.querySelector('.targets')?.closest('.panel');
+  if (!panel) return;                     // targets already set — nothing to land on
+  targetsAnchorPending = false;
+  panel.classList.remove('folded');
+  panel.querySelector('h2.fold')?.setAttribute('aria-expanded', 'true');
+  panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
 
 const foldKey = (name) => `wrought_fold_${name.toLowerCase().replace(/[^a-z0-9]+/g, '_').slice(0, 40)}`;
 

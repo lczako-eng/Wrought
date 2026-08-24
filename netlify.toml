@@ -37,6 +37,12 @@
   to = "/.netlify/functions/api-status"
   status = 200
 
+# One tap on a computed target — the website's goal-setting door.
+[[redirects]]
+  from = "/api/goals"
+  to = "/.netlify/functions/api-goals"
+  status = 200
+
 # The record itself, readable. Everything else is arithmetic about the log;
 # this is the log.
 [[redirects]]

@@ -3384,14 +3384,18 @@ await test('a new number replaces the old one instead of stacking a second ring'
   // "Switch my goal to 12,000 steps" must not leave 10,000 standing beside it:
   // two rings for one intention is a dashboard that lies, and a brief that
   // scores the same walk twice.
+  // The write path moved to lib/goals.js so the website's tap and the tool
+  // share ONE implementation — the recordSet lesson. The replacement rules are
+  // asserted where they now live, and mcp.js is asserted to have NO copy left.
   const src = readFileSync(new URL('../netlify/functions/mcp.js', import.meta.url), 'utf8');
-  assert.match(src, /async function retireGoalsFor/);
-  const fn = src.slice(src.indexOf('async function setGoal('), src.indexOf('async function retireGoalsFor'));
+  const lib = readFileSync(new URL('../netlify/functions/lib/goals.js', import.meta.url), 'utf8');
+  assert.ok(!/async function retireGoalsFor/.test(src), 'mcp.js grew its own retireGoalsFor back');
+  const fn = src.slice(src.indexOf('async function setGoal('), src.indexOf('async function dropGoal'));
   assert.match(fn, /const superseded = await retireGoalsFor\(user\.id, row\.metric, row\.cadence\)/);
   // A body goal replaces its three too, or a second cut stacks three more.
-  assert.match(fn, /for \(const m of \['weight_kg', 'calories', 'protein_g'\]\)/);
+  assert.match(lib, /for \(const m of \['weight_kg', 'calories', 'protein_g'\]\)/);
   // Retired, not deleted — what somebody used to aim at is part of the record.
-  const retire = src.slice(src.indexOf('async function retireGoalsFor'), src.indexOf('async function dropGoal'));
+  const retire = lib.slice(lib.indexOf('export async function retireGoalsFor'), lib.indexOf('export async function setBodyGoal'));
   assert.match(retire, /update\(\{ active: false \}\)/);
   assert.ok(!/\.delete\(\)/.test(retire), 'the old goal is being destroyed rather than retired');
   // And it says "changed", because somebody who moved a target wants to hear
@@ -3626,11 +3630,15 @@ await test('without the five facts it refuses, and everything is an estimate', (
 await test('set_goal computes body-goal numbers server-side, in one call', () => {
   const src = readFileSync(new URL('../netlify/functions/mcp.js', import.meta.url), 'utf8');
   const fn = src.slice(src.indexOf('async function setGoal('), src.indexOf('async function setEatingWindow('));
-  assert.match(fn, /goalCall\(\{ profile, weightKg, intent: args\.intent, pace \}\)/);
+  // The computation moved into the ONE shared write path; the tool must call
+  // it rather than growing its own goalCall back beside it.
+  assert.match(fn, /await setBodyGoal\(user\.id/, 'set_goal no longer uses the shared write path');
+  const lib = readFileSync(new URL('../netlify/functions/lib/goals.js', import.meta.url), 'utf8');
+  assert.match(lib, /goalCall\(\{ profile, weightKg, intent, pace: usePace \}\)/);
   // The calorie and protein daily goals are set in the same call, so the brief
   // scores the plan the moment it exists.
-  assert.match(fn, /metric: 'calories'/);
-  assert.match(fn, /metric: 'protein_g'/);
+  assert.match(lib, /metric: 'calories'/);
+  assert.match(lib, /metric: 'protein_g'/);
   // And the schema tells the model outright never to invent those numbers.
   const tool = TOOLS.find(t => t.name === 'set_goal');
   assert.match(tool.inputSchema.properties.intent.description, /NEVER invent those numbers/);
@@ -9354,6 +9362,69 @@ await test('the Record view stays current while it is open', () => {
   assert.match(fn, /window\.scrollY/, 'a repaint loses the scroll position');
   assert.match(fn, /document\.hidden/, 'the poll runs for a tab nobody is looking at');
   assert.match(fn, /DEMO/, 'the demo polls a server it has no account on');
+});
+
+group('Targets — one tap on a computed option');
+
+await test('the website can set a target, through the same path as the tool', () => {
+  // The Targets panel computed every defensible option and then said "say
+  // which you want to your assistant" — a screen that shows the answer and
+  // cannot accept it is a corridor, not a door. Same hole the food log had
+  // before api-log grew its POST, same doctrine closing it.
+  const api = readFileSync(new URL('../netlify/functions/api-goals.js', import.meta.url), 'utf8');
+  // ONE write path. The endpoint may not grow its own goal insert — the
+  // recordSet lesson, and there is a test just like this one for the rack.
+  assert.match(api, /setBodyGoal|setMetricGoal/, 'the endpoint does not use the shared path');
+  assert.ok(!/from\('wrought_goals'\)/.test(api), 'api-goals writes goals directly instead of through lib/goals');
+  // A TAP CARRIES AN INTENT, NEVER A CALORIE FIGURE. The server recomputes
+  // through the same goalCall the assistant uses, so a stale number the page
+  // displayed can never be what gets stored.
+  assert.ok(!/calorie/i.test(api.match(/setBodyGoal\(user\.id, \{[^}]*\}/)?.[0] || 'calorie'),
+    'the tap sends a calorie figure to the server');
+  // Steps are THEIR number — accepted, but bounded, because 900,000 is a typo.
+  const lib = readFileSync(new URL('../netlify/functions/lib/goals.js', import.meta.url), 'utf8');
+  assert.match(lib, /BOUNDS/, 'a metric target has no sanity bounds');
+
+  // The routing exists — an endpoint with no route is a door with no handle.
+  const toml = readFileSync(new URL('../netlify.toml', import.meta.url), 'utf8');
+  assert.match(toml, /from = "\/api\/goals"/);
+
+  // The page's buttons: intent+pace only, wired, never in the demo.
+  const src = page('app.html');
+  assert.match(src, /data-settarget/, 'the panel has no Set buttons');
+  assert.match(src, /!DEMO && intent \?/, 'the demo shows a Set button that discards the choice');
+  assert.match(src, /data-settarget\]'\)\.forEach/, 'the Set buttons are never wired');
+  // And the confirmation is the SERVER's numbers, then a refetch — never a
+  // DOM patch from what the page hoped it wrote.
+  const fn = src.slice(src.indexOf('async function setTargetTap'), src.indexOf('function wireQuickAdd'));
+  assert.match(fn, /body\.calories_per_day/, 'the confirmation echoes the page instead of the server');
+  assert.match(fn, /refreshRecord\(\)/, 'the rings are patched rather than redrawn from the record');
+});
+
+await test('the assistant can hand over a link that lands on the unfolded panel', () => {
+  // "It will bring you to your app through GPT like a pop-up hyperlink."
+  // The link rides on targetOptions so every tool result that says "no target
+  // set" carries the door with it — and the note tells the model to offer it
+  // as a tappable link, because some people would rather press than say.
+  const training = readFileSync(new URL('../netlify/functions/lib/training.js', import.meta.url), 'utf8');
+  const block = training.slice(training.indexOf('export function targetOptions'), training.indexOf('export function baselineFromClaim'));
+  assert.match(block, /set_link: SET_TARGETS_URL/, 'no_target_set carries no link');
+  assert.match(block, /tappable hyperlink/, 'the note never tells the model to offer the link');
+  // One constant, one door — the endpoint and the tool results must never
+  // name two different URLs.
+  const wr = readFileSync(new URL('../netlify/functions/lib/wrought.js', import.meta.url), 'utf8');
+  assert.match(wr, /export const SET_TARGETS_URL = 'https:\/\/wrought\.fit\/app\.html#targets'/);
+
+  // And the landing works: the anchor unfolds the panel and scrolls to it —
+  // a link that lands on a folded panel is a door that opens onto a wall.
+  const src = page('app.html');
+  assert.match(src, /location\.hash === '#targets'/, 'the page never honours the anchor');
+  const fn = src.slice(src.indexOf('function honourTargetsAnchor'), src.indexOf('const foldKey'));
+  assert.match(fn, /classList\.remove\('folded'\)/, 'the anchor lands on a folded panel');
+  assert.match(fn, /scrollIntoView/, 'the anchor lands off-screen');
+  assert.match(src, /honourTargetsAnchor\(root\)/, 'the anchor handler is never called after render');
+  // The setup-state panel opens by default for the same reason.
+  assert.match(src, /'no calorie target set'/, 'the no-target panel is folded by default');
 });
 
 group('The morning briefing');
