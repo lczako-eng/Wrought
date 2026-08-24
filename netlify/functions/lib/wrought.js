@@ -1328,6 +1328,11 @@ const LATE_TYPES = new Set(['activity', 'fast']);
 //
 // There is a test that reads the constraint out of schema/013 and asserts this
 // set is exactly equal to it.
+// Where a person goes to set a target with their thumbs. One constant, because
+// the tool results that offer it and the endpoint that serves it must never
+// name two different doors.
+export const SET_TARGETS_URL = 'https://wrought.fit/app.html#targets';
+
 export const VALID_TYPES = new Set(['food','drink','workout','weight','measurement','sleep','symptom','mood','supplement','note','fast','activity']);
 
 // THE OTHER HALF OF DEGRADING — a row that was written down must be READ back up.

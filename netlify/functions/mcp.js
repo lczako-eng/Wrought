@@ -35,6 +35,7 @@ import { ALERT_KINDS, describeAlert, suggestAlerts } from './lib/alerts.js';
 import { planRead } from './lib/plan.js';
 import { guideRead } from './lib/guide.js';
 import { nextNudge, nudgeNote } from './lib/prompt.js';
+import { setBodyGoal, setMetricGoal, retireGoalsFor, SET_TARGETS_URL } from './lib/goals.js';
 import { preflight } from './lib/preflight.js';
 import { finaliseSession, closeStaleSessions, recordSet } from './lib/session.js';
 import { effortFromWords, beforeSet, afterSet, methodsFor } from './lib/coach.js';
@@ -3940,41 +3941,22 @@ async function setGoal(args, user) {
   // and the calorie and protein daily goals are set in the same call, so the
   // brief starts scoring the plan the moment it exists.
   if (args.intent) {
-    const profile = await getProfile(user.id);
-    const { data: recent } = await supabase.from('wrought_events')
-      .select('detail').eq('user_id', user.id).eq('event_type', 'weight')
-      .order('occurred_at', { ascending: false }).limit(1);
-    const weightKg = recent?.[0]?.detail?.value_kg ?? null;
-
-    // The pace is part of the plan, not part of this one goal — stored on the
-    // profile so "what plan am I on" has something to read, and so a later
-    // change re-paces everything instead of leaving two answers standing.
-    const pace = PACES[args.pace] ? args.pace : (profile.plan_pace || 'steady');
-    const call = goalCall({ profile, weightKg, intent: args.intent, pace });
-    if (!call.known) {
-      return { error: 'setup_needed', missing: call.missing, say: call.say,
+    // ONE WRITE PATH, SHARED WITH THE WEBSITE'S TAP — the recordSet lesson.
+    // Two copies of goal-writing would drift, and the drift shows up as the
+    // dashboard and the conversation disagreeing about what somebody is
+    // aiming at. The computing, the retiring and the writes live in
+    // lib/goals.js; this keeps only the phrasing.
+    const done = await setBodyGoal(user.id, {
+      intent: args.intent, pace: args.pace || null, goalText: goal,
+      target: args.target, targetDate: args.target_date,
+    });
+    if (done.error === 'setup_needed') {
+      return { error: 'setup_needed', missing: done.missing, say: done.say,
                note: 'Ask for what is missing in ONE message (the five facts rule), set_profile / log_weight, then call this again.' };
     }
-
-    for (const m of ['weight_kg', 'calories', 'protein_g']) {
-      await retireGoalsFor(user.id, m, m === 'weight_kg' ? 'once' : 'daily');
-    }
-
-    const rows = [
-      { user_id: user.id, goal, metric: 'weight_kg', direction: args.intent === 'gain' ? 'at_least' : 'reach',
-        target_value: args.target != null ? Number(args.target) : null,
-        target_unit: 'kg', cadence: 'once', target_date: args.target_date || null },
-      { user_id: user.id, goal: `Calories: about ${call.calorie_target} a day (computed, ${args.intent})`,
-        metric: 'calories', direction: args.intent === 'gain' ? 'at_least' : 'at_most',
-        target_value: call.calorie_target, target_unit: ' kcal', cadence: 'daily' },
-      { user_id: user.id, goal: `Protein: about ${call.protein_target_g}g a day (computed)`,
-        metric: 'protein_g', direction: 'at_least',
-        target_value: call.protein_target_g, target_unit: 'g', cadence: 'daily' },
-    ];
-    const { error } = await supabase.from('wrought_goals').insert(rows);
-    if (error) return { error: error.message };
-
-    await savePlan(user.id, { plan_pace: pace });
+    if (done.error) return { error: done.error };
+    const call = done.call;
+    const pace = done.pace;
 
     return {
       goal, intent: args.intent, pace,
@@ -4031,16 +4013,6 @@ async function setGoal(args, user) {
 /// Retire every active goal aiming at the same thing. Returns what it replaced
 /// so the answer can say "changed" rather than "set" — somebody who just moved
 /// their target wants to hear that it moved, not that a new one appeared.
-async function retireGoalsFor(userId, metric, cadence) {
-  if (!metric) return null;
-  const { data } = await supabase.from('wrought_goals')
-    .select('id, goal, target_value, target_unit')
-    .eq('user_id', userId).eq('active', true).eq('metric', metric).eq('cadence', cadence || 'daily');
-  if (!data?.length) return null;
-  await supabase.from('wrought_goals').update({ active: false })
-    .in('id', data.map(g => g.id));
-  return data.map(g => `${g.goal}${g.target_value != null ? ` (${g.target_value}${g.target_unit || ''})` : ''}`).join('; ');
-}
 
 // Dropping a target is normal maintenance, not a confession. A goal nobody is
 // chasing any more clutters every brief and every ring on the dashboard, and

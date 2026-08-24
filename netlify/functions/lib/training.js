@@ -7,7 +7,7 @@
 // the loading, it will cheerfully add 20kg to someone's squat one day and the
 // product will have hurt them.
 
-import { supabase, daysBetween, kgToLb } from './wrought.js';
+import { supabase, daysBetween, kgToLb, SET_TARGETS_URL } from './wrought.js';
 import { activityTotal } from './activity.js';
 
 // ── Matching an exercise across time ────────────────────────────────────────
@@ -1348,9 +1348,17 @@ export function targetOptions({ profile = {}, weightKg = null } = {}) {
     to_lose: opts,
     to_gain: gain.known ? gain.calorie_target : null,
     resting_basis: rest.basis || null,
+    // The other door, offered as a tappable link. The founder: "it will bring
+    // you to your app through GPT like a pop-up hyperlink." The anchor opens
+    // the dashboard with the Targets panel unfolded, where the same computed
+    // options can be set with one tap — for somebody who would rather tap
+    // than talk, and for the moment a model has said the numbers twice and
+    // the person still has not answered.
+    set_link: SET_TARGETS_URL,
     say: `Nothing is set yet. From ${rest.basis?.say || 'their own numbers'} maintenance is about ${maintain.calorie_target}. ` +
          `A steady cut is about ${opts.steady?.calories}, gentle about ${opts.gentle?.calories}, aggressive about ${opts.aggressive?.calories}.`,
-    note: 'These are COMPUTED from their height, weight, age, sex and activity level — quote them exactly and never round them into a range of your own. None of them is set: offer, let them pick, then call set_goal with the intent and pace so the brief can score it. If they do not choose, leave it unset rather than assuming one.',
+    note: 'These are COMPUTED from their height, weight, age, sex and activity level — quote them exactly and never round them into a range of your own. None of them is set: offer, let them pick, then call set_goal with the intent and pace so the brief can score it. ' +
+      'ALSO offer set_link as a plain tappable hyperlink ("or set it with one tap: <link>") — some people would rather press than say, and the link lands on the same computed options. If they do not choose, leave it unset rather than assuming one.',
   };
 }
 
