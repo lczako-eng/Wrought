@@ -466,6 +466,15 @@ export async function dayFacts(userId, profile, date) {
       body_fat_pct: metricAvg('body_fat_pct'),
     },
     device: {
+      // WHEN THE WATCH LAST SPOKE. The founder, wrist at 1,173 steps beside a
+      // dashboard saying 381: "the shit ain't adding up." Both numbers were
+      // true — the dashboard's was three hours old, and nothing on the screen
+      // said so, which turns an ordinary sync gap into the product looking
+      // broken. A stale figure presented without its time is indistinguishable
+      // from a wrong one, and the difference is the whole argument.
+      as_of: mets.length
+        ? mets.map(m => m.measured_at).filter(Boolean).sort().slice(-1)[0] || null
+        : null,
       steps: metricSum('steps'),
       active_calories: metricSum('active_calories'),
       // Apple's own basal figure, when the watch sent one. Used as the resting

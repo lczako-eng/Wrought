@@ -624,8 +624,28 @@ export const handler = async (event) => {
   // Point-in-time readings — weight, heart rate, glucose, sleep — are NOT in
   // this list. Three weigh-ins in a day are three real facts, and collapsing
   // them would throw away the record rather than repair it.
+  // EVERY running total the couriers actually send, not the five this set
+  // happened to start with. The iOS courier stamps its totals `measured_at:
+  // now` on every sync, so each sync is a new row under the unique index —
+  // and every reader that sums a day's rows then multiplies the figure by the
+  // number of times the phone synced. For resting_calories that inflated
+  // basal would be used as `deviceResting` and become calories out, the net,
+  // and the brief, labelled as measured. The courier's own comment ("the
+  // server keeps one total per day however often it hears") states the
+  // assumption this set is supposed to keep true.
+  //
+  // Point-in-time readings — weight, heart rate, glucose — stay out: three
+  // weigh-ins in a day are three real facts. Sleep stays out too, for a
+  // sharper reason: Health Auto Export sends a night as real per-segment rows,
+  // and collapsing those to the newest would delete most of the night. The
+  // iOS courier's re-send problem is fixed at ITS end instead — it stamps the
+  // nightly total at the start of the day, so the dedupe index absorbs every
+  // repeat without this set having to know which shape a sleep row is.
   const DAILY_TOTALS = new Set([
     'steps', 'active_calories', 'total_calories', 'distance_km', 'active_minutes',
+    'resting_calories', 'stand_minutes', 'stand_hours',
+    'flights', 'water_ml', 'mindful_minutes',
+    'distance_cycling_km', 'distance_swimming_km',
   ]);
   // ONE daily total per metric per day — across sources, not per source. The
   // founder's Shortcut and Health Auto Export both describe THE SAME day, and

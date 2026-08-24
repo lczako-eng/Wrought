@@ -9274,6 +9274,88 @@ await test('every panel folds, remembers, and the hero never does', () => {
     'a folded panel still shows its contents');
 });
 
+await test('every running total the phone sends collapses to one row a day', () => {
+  // THE CONTRACT BETWEEN THE TWO HALVES, pinned. The iOS courier stamps its
+  // daily totals `measured_at: now` on every sync, so each sync is a new row
+  // under the unique index — and every reader that sums a day's rows then
+  // multiplies the figure by however many times the phone synced. The server's
+  // replace-set named five metrics; the courier sends fourteen. For
+  // resting_calories the inflated figure would be used as deviceResting and
+  // become calories out, the net and the brief, labelled as measured. The
+  // courier's own comment — "the server keeps one total per day however often
+  // it hears" — states the assumption this test keeps true.
+  const swift = readFileSync(new URL('../ios/Wrought/HealthCourier.swift', import.meta.url), 'utf8');
+  const fromTable = [...swift.matchAll(/name: "([a-z_]+)"/g)].map(m => m[1]);
+  // Only the DAILY_TOTALS table's names, not LATEST_READINGS — a resting heart
+  // rate is a point-in-time fact and must NOT be collapsed.
+  const tableBlock = swift.slice(swift.indexOf('DAILY_TOTALS'), swift.indexOf('LATEST_READINGS'));
+  const totalsFromTable = [...tableBlock.matchAll(/name: "([a-z_]+)"/g)].map(m => m[1]);
+  // Plus the totals sent outside the table, each stamped `"measured_at": now`.
+  const nowStamped = [...swift.matchAll(/"metric": "([a-z_]+)"[^\n]*"measured_at": now/g)].map(m => m[1]);
+
+  const ingest = readFileSync(new URL('../netlify/functions/ingest.js', import.meta.url), 'utf8');
+  const setBlock = ingest.slice(ingest.indexOf('const DAILY_TOTALS'), ingest.indexOf(']);', ingest.indexOf('const DAILY_TOTALS')));
+  for (const name of new Set([...totalsFromTable, ...nowStamped])) {
+    assert.ok(setBlock.includes(`'${name}'`),
+      `the courier sends ${name} as a now-stamped daily total and the server sums every sync of it`);
+  }
+  // Sleep is the deliberate exception, handled at the COURIER: HAE sends a
+  // night as real segments (collapsing would delete most of it), so the
+  // courier stamps its nightly total at the start of the day and the dedupe
+  // index absorbs re-sends. This asserts the courier actually does that — if
+  // sleep ever goes back to a `now` stamp, the nowStamped scan above will
+  // catch it and demand it join the collapse set, which would be wrong.
+  assert.ok(!nowStamped.includes('sleep_minutes'),
+    'the courier stamps sleep at `now` again — every hourly re-send is a new row and the night multiplies');
+  assert.match(swift, /"metric": "sleep_minutes"[^\n]*"measured_at": midnight/,
+    'the sleep row is not stamped with the day-anchored time');
+  assert.match(swift, /let midnight = iso\.string\(from: Calendar\.current\.startOfDay/,
+    'the sleep stamp is no longer anchored to the start of the day');
+  // And the point-in-time facts stay out: three weigh-ins are three real facts.
+  for (const name of ['weight_kg', 'resting_hr', 'hrv', 'glucose_mmol']) {
+    assert.ok(!setBlock.includes(`'${name}'`), `${name} is point-in-time and is being collapsed`);
+  }
+  assert.ok(fromTable.length > 0, 'the courier table could not be read at all');
+});
+
+await test('a watch number carries the time it was true', () => {
+  // The founder's wrist read 1,173 steps beside a dashboard saying 381. Both
+  // were true — the dashboard's was three hours old and nothing said so. A
+  // stale figure presented without its time is indistinguishable from a wrong
+  // one, and "the shit ain't adding up" is the correct reading of that screen.
+  const lib = readFileSync(new URL('../netlify/functions/lib/wrought.js', import.meta.url), 'utf8');
+  assert.match(lib, /as_of: mets\.length/, 'dayFacts does not say when the watch last spoke');
+
+  const src = page('app.html');
+  assert.match(src, /d\.today\?\.device\?\.as_of/, 'the panel never reads the stamp');
+  // Stale is said in as many words, with the one action that forces a sync —
+  // never an apology and never a projection filling the gap.
+  assert.match(src, /Your watch last reported at/, 'a stale watch is not named as stale');
+  assert.match(src, /Open the Wrought app on your phone/, 'the fix for a stale watch is not named');
+  // And the fresh line says the thing the founder actually asked for.
+  assert.match(src, /nothing here is estimated/, 'a fresh reading is not called measured');
+});
+
+await test('the Record view stays current while it is open', () => {
+  // "When I eat something it's gonna show up there... and live with my watch
+  // steps." The page fetched once, on load, so a phone left open drifted from
+  // the truth — and on a memory product a stale screen reads as a lost entry.
+  const src = page('app.html');
+  const code = src.replace(/^\s*\/\/.*$/gm, '');
+  assert.match(code, /function startLive/, 'there is no live refresh at all');
+  assert.match(code, /visibilitychange/, 'coming back to the tab does not refetch');
+  // The guard is the WHOLE payload — the Trainer tab's lesson: a guard that
+  // sees only part of what is painted blocks real updates.
+  assert.match(code, /if \(text === liveLastJson\) return/, 'an unchanged answer repaints anyway');
+  // A poll must never replace a good screen with an error, and never move the
+  // page under a thumb.
+  const fn = code.slice(code.indexOf('async function refreshRecord'), code.indexOf('function startLive'));
+  assert.match(fn, /if \(!res\.ok\) return/, 'a failed poll replaces the screen with an error');
+  assert.match(fn, /window\.scrollY/, 'a repaint loses the scroll position');
+  assert.match(fn, /document\.hidden/, 'the poll runs for a tab nobody is looking at');
+  assert.match(fn, /DEMO/, 'the demo polls a server it has no account on');
+});
+
 group('The morning briefing');
 
 const { morningBrief, morningDue } = await import('../netlify/functions/lib/morning.js');
