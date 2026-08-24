@@ -13,7 +13,7 @@ import {
   rangeFacts, summariseRange, dayFacts, careFlags, scoreGoals, duplicateItems, duplicateExtra, supabase,
 } from './lib/wrought.js';
 import { orderInsight, earnedRoom, energyBalance, exerciseKey, deviceMatrix, weekdayPattern, focusCall, lastSession,
-         weekSoFar, readiness, targetOptions, estimatedMax, liftTrend, readMovement, backfillDerivedSets } from './lib/training.js';
+         weekSoFar, readiness, targetOptions, estimatedMax, liftTrend, readMovement, backfillDerivedSets, goalsToSet } from './lib/training.js';
 import { weeklyVolume } from './lib/volume.js';
 import { planRead } from './lib/plan.js';
 import { intakeState } from './lib/intake.js';
@@ -691,6 +691,17 @@ export const handler = async (event) => {
       // What is already on file, so a form that fills a gap can show only the
       // gap. Asking again for a height it is holding is how a product looks
       // amnesiac when it is merely narrow.
+      // A STEPS TARGET, OFFERED FROM THEIR OWN AVERAGE. "One would be I wanna
+      // have 10,000 steps a day" — but 10,000 is a 1960s pedometer advert, and
+      // offering it to somebody averaging 3,000 sets a target they miss daily
+      // until they stop reading the screen. The suggestion is their 30-day
+      // average nudged about 10% (goalsToSet's rule); with no step history it
+      // offers nothing rather than inventing a figure — the same refusal as a
+      // working weight. Absent once a steps goal exists.
+      steps_offer: (() => {
+        const offer = goalsToSet({ goals, targets: null, stepsAvg: summary.steps_avg });
+        return offer?.steps || null;
+      })(),
       coach: {
         push_devices: pushSubs,
         morning: checkins?.morning_hour != null ? `${checkins.morning_hour}:${String(checkins.morning_minute || 0).padStart(2, '0')}` : null,

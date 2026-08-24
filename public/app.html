@@ -1478,6 +1478,14 @@ a.ghost { display: inline-block; }
   margin: 0; font-family: var(--stamp); font-weight: 700;
   font-size: 40px; letter-spacing: .02em;
 }
+.gate-tag {
+  /* The landing page's slogan, in the landing page's voice: the compressed
+     grotesk beside the slab wordmark — two roles, two fonts, one brand. The
+     gate said only WROUGHT, so signing in dropped half the identity at the
+     exact moment somebody handed over a password. */
+  margin: 2px 0 0; font-family: var(--grotesk); font-weight: 600;
+  font-size: 19px; letter-spacing: -.015em; color: var(--bright);
+}
 .gate-sub { margin: 2px 0 14px; color: var(--ash); font-size: 15px; }
 .gate input, .gate button {
   font: inherit; width: 100%; padding: 15px 16px; border-radius: 12px;
@@ -1533,6 +1541,7 @@ a.ghost { display: inline-block; }
   <div class="gate">
     <img class="gate-mark" src="/icon.svg" alt="" width="72" height="72">
     <h1 class="gate-h">WROUGHT</h1>
+    <p class="gate-tag">Crush it.</p>
     <p class="gate-sub">Your record — the same account your AI writes to.</p>
 
     <!-- Apple first, because on an iPhone it is a glance at the screen and you
@@ -5584,8 +5593,33 @@ function wireCoachSetup() {
   });
 }
 
+// The steps offer, drawn wherever a target is still missing. THEIR average,
+// nudged — never 10,000 off a poster — and the tap sends the number to the
+// same bounded metric-goal path the assistant uses.
+function stepsOfferRow(d) {
+  const so = d.steps_offer;
+  if (!so?.suggested) return '';
+  return `<div class="planrow">
+    <span class="lbl">Steps a day</span>
+    <b>${n(so.suggested)} <span class="sub dim">· you average ${n(so.current_avg)}</span></b>
+    ${DEMO ? '' : `<button class="ghost small" data-setsteps="${so.suggested}">Set</button>`}
+  </div>`;
+}
+
 function targetOptionsPanel(d) {
   const o = d.no_target_set;
+  // Only steps missing: the offer still needs somewhere to live — a target
+  // that can only be set while ANOTHER target is also missing is a door that
+  // locks itself.
+  if (!o && d.steps_offer?.suggested) {
+    return `<section class="panel" id="set-targets">
+      <h2>No step target set</h2>
+      <div class="planrows">${stepsOfferRow(d)}</div>
+      <p class="sub dim">From your own 30-day average, nudged about 10% — a target you can hit
+      this week is one you keep reading.</p>
+      <p class="msg" id="tgtmsg"></p>
+    </section>`;
+  }
   if (!o) return '';
   if (!o.known) {
     return `<section class="panel" id="set-targets"><h2>No calorie target set</h2>
@@ -5615,6 +5649,7 @@ function targetOptionsPanel(d) {
       ${L.steady ? row('Steady cut', L.steady.calories, L.steady.kg_per_week, 'lose', 'steady') : ''}
       ${L.aggressive ? row('Aggressive cut', L.aggressive.calories, L.aggressive.kg_per_week, 'lose', 'aggressive') : ''}
       ${o.to_gain ? row('To gain', o.to_gain, null, 'gain', null) : ''}
+      ${stepsOfferRow(d)}
     </div>
     <p class="caveat">Every one of these floors at 1,200 and stays under the rate WROUGHT would warn
     you about. Tap one to set it, or say it to your assistant — either way it is scored here from that day on.</p>
@@ -5625,6 +5660,26 @@ function targetOptionsPanel(d) {
 // The tap itself. The protein target rides along server-side, the old goals
 // are retired not deleted, and the screen refetches so the rings draw from
 // the same load that confirmed the write — never from a DOM patch.
+async function setStepsTap(target) {
+  const el = $('tgtmsg');
+  if (el) el.textContent = 'Setting…';
+  const { data: s } = await sb.auth.getSession();
+  if (!s?.session) { if (el) el.textContent = 'Sign in first.'; return; }
+  try {
+    const res = await fetch('/api/goals', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${s.session.access_token}` },
+      body: JSON.stringify({ metric: 'steps', target }),
+    });
+    const body = await res.json();
+    if (!res.ok) { if (el) el.textContent = body.error || 'Could not set it.'; return; }
+    if (el) el.textContent = `Set: ${body.goal}.`;
+    refreshRecord();
+  } catch (e) {
+    if (el) el.textContent = `Did not save: ${e?.message || e}`;
+  }
+}
+
 async function setTargetTap(intent, pace) {
   const el = $('tgtmsg');
   if (el) el.textContent = 'Setting…';
@@ -5944,6 +5999,8 @@ function wireQuickAdd() {
     b.addEventListener('click', () => refileAsWork(b.dataset.refile, b)));
   document.querySelectorAll('[data-settarget]').forEach(b =>
     b.addEventListener('click', () => setTargetTap(b.dataset.settarget, b.dataset.setpace || null)));
+  document.querySelectorAll('[data-setsteps]').forEach(b =>
+    b.addEventListener('click', () => setStepsTap(parseInt(b.dataset.setsteps, 10))));
 }
 
 // A session that was really a shift, put back. The calories are RECOMPUTED
