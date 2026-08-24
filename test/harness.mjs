@@ -5593,7 +5593,7 @@ await test('every session is itemised from the same pass that totals them', () =
 
 group('Building a workout WITH somebody, to a name they chose');
 
-const { FOCUSES, FOCUS_NAMES, focusFrom, designSession, designQuestions, movementCount, designNote } =
+const { FOCUSES, FOCUS_NAMES, focusFrom, designSession, designQuestions, movementCount, designNote, STYLES, styleFrom } =
   await import('../netlify/functions/lib/design.js');
 
 await test('not one weight comes out of a designed session', () => {
@@ -5605,12 +5605,16 @@ await test('not one weight comes out of a designed session', () => {
   for (const focus of FOCUS_NAMES) {
     for (const tier of ['beginner', 'intermediate', 'advanced']) {
       for (const minutes of [20, 45, 90]) {
-        const s = designSession({ focus, minutes, tier, equipment: ['full gym'] });
-        if (!s) continue;
-        for (const e of s) {
-          assert.equal(e.load_kg, null, `${focus}/${tier} prescribed a load`);
-          assert.ok(!('weight' in e) && !('weight_kg' in e), `${focus}/${tier} carries a weight field`);
-          assert.ok(!/\d+\s*(kg|lb|pound)/i.test(JSON.stringify(e)), `${focus}/${tier} names a weight in text`);
+        // Every style too — a famous name is exactly where a plausible load
+        // would slip through, because it would read as pedigree.
+        for (const style of [null, ...Object.keys(STYLES)]) {
+          const s = designSession({ focus, minutes, tier, equipment: ['full gym'], style });
+          if (!s) continue;
+          for (const e of s) {
+            assert.equal(e.load_kg, null, `${focus}/${tier}/${style} prescribed a load`);
+            assert.ok(!('weight' in e) && !('weight_kg' in e), `${focus}/${tier}/${style} carries a weight field`);
+            assert.ok(!/\d+\s*(kg|lb|pound)/i.test(JSON.stringify(e)), `${focus}/${tier}/${style} names a weight in text`);
+          }
         }
       }
     }
@@ -9523,6 +9527,55 @@ await test('signing in does not drop half the brand', () => {
   assert.match(css, /var\(--grotesk\)/, 'the slogan is not in the grotesk — one voice where there should be two');
   // The landing page still says it too, so the two cannot drift apart.
   assert.match(page('index.html'), /class="tag">Crush it\./);
+});
+
+await test('a famous name builds the style and says the provenance', () => {
+  // "Let's use some famous names, wink wink." The wink is the problem: the
+  // method is real and published, the name is an era, and claiming a famous
+  // coach's programme is a small lie that makes every honest number harder to
+  // believe — plus a name used as a feature implies an endorsement nobody has.
+  assert.equal(styleFrom('a Schwarzenegger workout'), 'golden_era');
+  assert.equal(styleFrom('arnold style'), 'golden_era');
+  assert.equal(styleFrom('boxing workout'), 'boxing_camp');
+  assert.equal(styleFrom('powerlifting'), 'powerlifting');
+  assert.equal(styleFrom('make me faster for sport'), null, 'a vague ask was forced into a style');
+
+  // EVERY style's provenance names its real source — published methodology —
+  // and any style recognised FROM a person's name must disclaim that name in
+  // its own data, not in a note somebody has to remember to add.
+  for (const [key, st] of Object.entries(STYLES)) {
+    assert.ok(/published|standard/i.test(st.provenance),
+      `${key}'s provenance never says where it actually comes from`);
+  }
+  for (const key of ['golden_era', 'boxing_camp']) {
+    assert.ok(/not (his|any|an)|no named/i.test(STYLES[key].provenance),
+      `${key} is recognised from a name and its provenance never disclaims it`);
+  }
+
+  // A style changes the scheme, never past a beginner's cap — golden-era set
+  // counts on a first month is how somebody never comes back.
+  const b = designSession({ focus: 'chest', minutes: 60, tier: 'beginner', equipment: ['full gym'], style: 'golden_era' });
+  assert.ok(b.every(e => e.sets === null || e.sets <= 3), 'a style overrode the beginner volume cap');
+  const a = designSession({ focus: 'chest', minutes: 60, tier: 'advanced', equipment: ['full gym'], style: 'golden_era' });
+  assert.ok(a.some(e => e.sets === 5), 'the style changed nothing for the lifter it fits');
+
+  // And the tool says it out loud, every time.
+  const src = readFileSync(new URL('../netlify/functions/mcp.js', import.meta.url), 'utf8');
+  assert.match(src, /provenance: STYLES\[style\]\.provenance/, 'the response carries no provenance');
+  assert.match(src, /Never call it the named person/, 'the model is never told the endorsement rule');
+});
+
+await test('the door people actually use asks which gym', () => {
+  // "Next time I go to my gym it's gonna ask me which gym am I going to, or a
+  // new one." design_workout asked; suggest_workout — where "I'm going to the
+  // gym" lands — silently built for the main gym's equipment.
+  const src = readFileSync(new URL('../netlify/functions/mcp.js', import.meta.url), 'utf8');
+  const fn = src.slice(src.indexOf('async function suggestWorkout'), src.indexOf('async function startSession'));
+  assert.match(fn, /gyms_on_file/, 'suggest_workout never mentions the other gyms');
+  assert.match(fn, /Never hold the session hostage/, 'the gym question is allowed to block the session');
+  // Only when nothing was passed — somebody who already said where they are
+  // must not be asked again.
+  assert.match(fn, /gymsOnFile\.length && !args\.equipment/, 'the gym question re-asks what was just said');
 });
 
 group('The morning briefing');
