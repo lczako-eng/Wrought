@@ -68,6 +68,70 @@ export const FOCUSES = {
 
 export const FOCUS_NAMES = Object.keys(FOCUSES);
 
+// ── Styles — the famous-name ask, done the honest way ─────────────────────
+// The founder: "let's use some famous names — like a Schwarzenegger-type
+// workout, or famous boxing coaches, wink wink."
+//
+// The wink is the problem, and the settled doctrine already names it: THE
+// PROVENANCE IS STATED HONESTLY — this is established, published methodology,
+// not a live survey of any particular coach, and presenting textbook as
+// insider knowledge is a small lie that makes the honest numbers harder to
+// believe. There is also a legal edge: a person's name used as a product
+// feature implies their endorsement, which nobody here has.
+//
+// So a style is named for its METHOD, recognised from the famous name people
+// actually say, and delivered with one honest line about where it comes from.
+// "Schwarzenegger workout" builds golden-era volume bodybuilding and SAYS
+// "the style he trained in, from that era's published methodology" — which is
+// true — never "his workout" — which is not.
+//
+// A style changes structure only: emphasis, sets, reps, rest. NEVER a weight —
+// a famous name is exactly where a plausible-looking load would slip through,
+// because it would read as pedigree rather than invention.
+export const STYLES = {
+  golden_era: {
+    say: 'Golden-era volume bodybuilding',
+    provenance: 'the high-volume style of 1970s bodybuilding — the era Arnold Schwarzenegger trained in. Published era methodology, not his programme and not an endorsement.',
+    match: /golden\s*era|arnold|schwarzen|old.?school\s*bodybuild|venice\s*beach|bodybuild/i,
+    sets: { beginner: 3, other: 5 }, reps: 10, rest_s: 90,
+  },
+  boxing_camp: {
+    say: 'Boxing-camp conditioning',
+    provenance: 'the conditioning shape of a traditional boxing camp — rounds, footwork, engine and core. The published structure of fight conditioning, not any named coach\u2019s corner.',
+    match: /box(ing|er)?|fight\s*camp|combat/i,
+    focus_default: 'conditioning',
+    sets: { beginner: 3, other: 4 }, reps: 15, rest_s: 60,
+  },
+  powerlifting: {
+    say: 'Powerlifting strength',
+    provenance: 'competition-lift strength work — low reps, long rests, the big three first. Standard published strength methodology.',
+    match: /power\s*lift|strength\s*first|heavy\s*(triples|singles)/i,
+    sets: { beginner: 3, other: 5 }, reps: 5, rest_s: 210,
+  },
+  strongman: {
+    say: 'Strongman-style',
+    provenance: 'carries, hinges and overhead work in the strongman shape. Published event-training structure, no named athlete\u2019s programme.',
+    match: /strong\s*man|carries|farmer/i,
+    focus_default: 'full body',
+    sets: { beginner: 3, other: 4 }, reps: 8, rest_s: 150,
+  },
+  athletic: {
+    say: 'Athletic conditioning',
+    provenance: 'field-sport conditioning — explosive lower work, pulling, engine. Standard published athletic-prep structure.',
+    match: /athlet|explosive|sport\s*perform/i,
+    focus_default: 'full body',
+    sets: { beginner: 3, other: 4 }, reps: 6, rest_s: 120,
+  },
+};
+
+export function styleFrom(text) {
+  const t = String(text || '').trim();
+  if (!t) return null;
+  if (STYLES[t.toLowerCase().replace(/[\s-]+/g, '_')]) return t.toLowerCase().replace(/[\s-]+/g, '_');
+  for (const [key, st] of Object.entries(STYLES)) if (st.match.test(t)) return key;
+  return null;
+}
+
 // What somebody says, mapped onto a shape. Deliberately generous: "chest and
 // tris", "arms day", "leg day", "cardio" all land somewhere sensible, because
 // making somebody pick from a list is the form again.
@@ -116,8 +180,9 @@ export function movementCount(minutes) {
  * @param avoid      areas to work around, in their words
  */
 export function designSession({ focus, minutes = 45, tier = 'intermediate',
-                                equipment = null, avoid = [] } = {}) {
-  const shape = FOCUSES[focus];
+                                equipment = null, avoid = [], style = null } = {}) {
+  const st = style ? STYLES[style] : null;
+  const shape = FOCUSES[focus || st?.focus_default];
   if (!shape) return null;
 
   const beginner = tier === 'beginner';
@@ -148,11 +213,19 @@ export function designSession({ focus, minutes = 45, tier = 'intermediate',
       pattern,
       // Fewer, cleaner sets while a movement is still being learned; more once
       // it is not. Nothing here is a load.
-      sets: conditioning ? null : (beginner ? 3 : 4),
-      reps: conditioning ? null : (pattern === 'core' || pattern === 'carry' ? 12 : beginner ? 8 : 6),
+      // A style changes the scheme, never the load. Beginner volume is capped
+      // whatever the style says — golden-era set counts on a first month is
+      // how somebody cannot lift their arms on day three and never comes back.
+      sets: conditioning ? null
+        : st ? (beginner ? st.sets.beginner : st.sets.other)
+        : (beginner ? 3 : 4),
+      reps: conditioning ? null
+        : (pattern === 'core' || pattern === 'carry') ? 12
+        : st ? st.reps
+        : beginner ? 8 : 6,
       minutes: conditioning ? Math.max(8, Math.round((Number(minutes) || 45) / 5)) : null,
       load_kg: null,
-      rest_s: conditioning ? 60 : beginner ? 120 : 150,
+      rest_s: conditioning ? 60 : st ? st.rest_s : beginner ? 120 : 150,
       muscles: pick.muscles,
       // A beginner gets told why. An advanced lifter gets left alone.
       cue: tier === 'advanced' ? null : pick.cue,

@@ -51,7 +51,7 @@ import {
   PACES, PUSH, sessionsCanCarryAim,
 } from './lib/training.js';
 import { PROGRAMMES, GOALS, MOVEMENTS, movementsFor, pickProgramme, buildProgramme, buildBlock, blockPosition, BLOCK_LENGTHS } from './lib/library.js';
-import { FOCUSES, FOCUS_NAMES, focusFrom, designSession, designQuestions, designNote } from './lib/design.js';
+import { FOCUSES, FOCUS_NAMES, focusFrom, designSession, designQuestions, designNote, STYLES, styleFrom } from './lib/design.js';
 import { dayReceipt } from './lib/receipt.js';
 
 // Newest first. The icons on serverInfo are only honoured by clients speaking
@@ -939,6 +939,7 @@ const TOOLS = [
         name:    { type: 'string', description: 'What THEY called it — "S Tier", "Leg day", "Tuesday session". Their words, not a tidied version.' },
         focus:   { type: 'string', description: 'What the session is for, in their words: legs, push, pull, upper, full body, chest, back, shoulders, core, conditioning. Pass whatever they said and the server maps it — "arms day", "chest and tris", "cardio" all land somewhere sensible.' },
         minutes: { type: 'integer', description: 'How long they actually have. A hard ceiling on how much is programmed, never ambition — designing seventy minutes for somebody who said forty is how a plan gets abandoned.' },
+        style: { type: 'string', description: 'A training STYLE when they name one — including by famous name: "a Schwarzenegger workout" is golden_era (high-volume 70s bodybuilding), "boxing workout" is boxing_camp, plus powerlifting, strongman, athletic. Pass whatever they said; the server maps it. The response carries a provenance line — say it in your own words: these are published training METHODS named for their era or discipline, never the named person\u2019s own programme and never an endorsement. Do not claim otherwise even if asked to.' },
         avoid:   { type: 'array', items: { type: 'string' },
                    description: 'Areas to work around, in their words — "left shoulder", "lower back". Movements loading them are DROPPED, never made lighter: how much a sore joint can take today is a claim nothing here is entitled to make. Anything already recorded as a limitation is applied automatically and must not be asked for again.' },
         equipment: { type: 'array', items: { type: 'string' },
@@ -2529,9 +2530,22 @@ No preamble, no disclaimers, no warm-up boilerplate unless it matters for a name
     calorieTarget: plan.calorie_target ?? null,
   });
 
+  // MORE THAN ONE GYM IS NORMAL, and this is the door where nobody was asked.
+  // design_workout asks "which one?"; "I'm going to the gym" lands HERE and
+  // silently built for the main gym's equipment — so the person with a home
+  // gym on file was handed a plan around machines that are somewhere else.
+  // It never blocks: the session is built for the MAIN gym and the question
+  // rides in one clause, because a session that arrives beats one still being
+  // specified.
+  const gymsOnFile = memory.filter(m => m.category === 'gym').map(m => m.fact);
+
   return {
     state,
     session,
+    ...(gymsOnFile.length && !args.equipment ? {
+      gyms_on_file: gymsOnFile,
+      gym_note: 'This is built for their MAIN gym\u2019s equipment. More than one gym is on file — ask in ONE clause which they are at (or somewhere new), and if it is not the main one, call suggest_workout again passing that gym\u2019s inventory as equipment. Never hold the session hostage to the answer.',
+    } : {}),
     // How they feel, what they want out of it, and where the day stands.
     preflight: check,
     // Dynamic movement, skippable in one word, built from the patterns in THIS
@@ -4296,7 +4310,11 @@ async function designWorkout(args, user) {
              : profile.training_age === 'advanced' ? 'advanced' : 'intermediate';
   const limitations = memory.filter(m => m.category === 'health').map(m => m.fact);
   const gyms = memory.filter(m => m.category === 'gym').map(m => m.fact);
-  const focus = focusFrom(args.focus);
+  // A famous name is a STYLE ask. "Schwarzenegger workout" is golden-era
+  // volume; "boxing workout" is a camp's conditioning shape. Recognised from
+  // either field, because people put it wherever it comes out.
+  const style = styleFrom(args.style) || styleFrom(args.focus) || null;
+  const focus = focusFrom(args.focus) || (style ? STYLES[style].focus_default || null : null);
   const minutes = Number(args.minutes) > 0 ? Math.round(Number(args.minutes)) : null;
 
   const ask = designQuestions({ focus, minutes, profile, limitations, gyms });
@@ -4325,7 +4343,7 @@ async function designWorkout(args, user) {
 
   const avoid = [...(Array.isArray(args.avoid) ? args.avoid : []), ...limitations];
   const equipment = args.equipment?.length ? args.equipment : profile.equipment;
-  const exercises = designSession({ focus, minutes, tier, equipment, avoid });
+  const exercises = designSession({ focus, minutes, tier, equipment, avoid, style });
 
   if (!exercises) {
     return {
@@ -4338,6 +4356,16 @@ async function designWorkout(args, user) {
 
   const dropped = avoid.length ? avoid : null;
   return {
+    ...(style ? {
+      style: STYLES[style].say,
+      // SAID EVERY TIME A STYLE IS USED, and never softened: the method is
+      // real and published; the name is an era, not an endorsement. Claiming
+      // a famous coach's programme is a small lie that makes every honest
+      // number in this product harder to believe — and legally, a name used
+      // as a feature implies an endorsement nobody here has.
+      provenance: STYLES[style].provenance,
+      style_note: 'Say the provenance line in your own words when presenting this. Never call it the named person\u2019s workout or programme, never imply endorsement, and never invent loads because a style sounds authoritative — loads still come from their history or an RPE like every other session.',
+    } : {}),
     name, focus, minutes, tier,
     focus_say: FOCUSES[focus].say,
     exercises,
