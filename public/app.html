@@ -2326,6 +2326,9 @@ function renderAccount(user, ids, factors, linkNote) {
 
     <section class="panel">
       <h2>Connected assistants</h2>
+      <p class="sub dim">${gptLink(ROUTING_HABIT, 'Teach your GPT the habit')} — one tap opens ChatGPT
+      asking it to remember, permanently, that food, training, weight and goals go through WROUGHT.
+      Say yes once and the playbook survives every new chat.</p>
       <div id="conn-body"><p class="empty">Checking…</p></div>
       <p class="msg" id="connmsg"></p>
     </section>
@@ -5555,6 +5558,16 @@ function planPanel(d) {
 // ChatGPT instead of asking somebody to remember and retype it. The gap
 // between reading an example and using it should be nothing at all — the
 // manual's copy-on-tap rule, taken the rest of the way.
+// The identical sentence the connector offers to remember — one habit, two
+// installers, and a test pins this text to the server's ROUTING_HABIT so the
+// two can never teach different rules.
+const ROUTING_HABIT =
+  'Please remember this permanently, for all our future chats: anything I say about food, drink, ' +
+  'training, weight, sleep, my gym, or my goals goes through the Wrought connector\u2019s tools \u2014 ' +
+  'log it or look it up there, never answer it from memory or the conversation. If I say I\u2019m going ' +
+  'to the gym or name a workout, call Wrought\u2019s suggest_workout or start_session immediately. ' +
+  'Numbers about my calories, targets, or weights only ever come from Wrought\u2019s tools.';
+
 function gptLink(prompt, label) {
   return `<a class="linky" target="_blank" rel="noopener" href="https://chatgpt.com/?q=${encodeURIComponent(prompt)}">${esc(label)} \u2197</a>`;
 }
@@ -5608,6 +5621,8 @@ function coachSetupPanel(d) {
       ${row(assessed, assessed ? 'Assessment done' : `Assessment · ${su.answered ?? 0} of ${su.of ?? 25}`,
         `<button class="ghost small" id="go-intake">See what's left</button>`)}
     </div>
+    <p class="sub dim">${gptLink(ROUTING_HABIT, 'Teach your GPT the habit')} — one tap, say yes once,
+    and it remembers to route food and training here in every chat.</p>
     <p class="sub dim">Check-ins: ${esc(checkins)}${c.midday ? '' : ' — no midday yet; say \u201cmidday check-in at 12:30\u201d to your assistant'}.
     ${pushOn ? '' : 'Notifications need WROUGHT on your Home Screen, opened from the icon, then Account \u2192 Turn on notifications.'}</p>
   </section>`;

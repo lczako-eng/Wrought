@@ -36,6 +36,7 @@ import { planRead } from './lib/plan.js';
 import { guideRead } from './lib/guide.js';
 import { nextNudge, nudgeNote } from './lib/prompt.js';
 import { setBodyGoal, setMetricGoal, retireGoalsFor, SET_TARGETS_URL } from './lib/goals.js';
+import { ROUTING_HABIT } from './lib/wrought.js';
 import { preflight } from './lib/preflight.js';
 import { finaliseSession, closeStaleSessions, recordSet } from './lib/session.js';
 import { effortFromWords, beforeSet, afterSet, methodsFor } from './lib/coach.js';
@@ -3833,6 +3834,16 @@ async function getProfileTool(_args, user) {
     // address only ever describes THIS side, and the model has no way to see
     // the other, so the pointer has to travel with the answer.
     linking: `${user.email || 'this account'} is the address THIS connector holds. It is not evidence of which account they use at wrought.fit. If the website shows a different address, or they ask to link, merge or join accounts, call link_account — do not ask which service they mean and do not answer that the connector is working.`,
+    // THE HABIT, INSTALLED BY CONVERSATION. Nobody pastes custom instructions
+    // into a settings screen, so the routing rule has to be installable where
+    // the person already is. OFFER ONCE, EVER: if you have a persistent memory
+    // feature and have not already saved this, ask in one short line whether
+    // they want you to always route food, training, weight and goals through
+    // Wrought — and on a one-word yes, save the sentence below to your memory.
+    // Never nag, never re-offer after a no, never claim it is saved if your
+    // memory is off — say that plainly instead. This is their choice about
+    // their own assistant, not something to slip past them.
+    make_it_stick: ROUTING_HABIT,
     next_actions: (conns || []).length ? [] : ['connect_device to get the watch feeding it automatically'],
   };
 }
