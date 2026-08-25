@@ -9578,6 +9578,41 @@ await test('the door people actually use asks which gym', () => {
   assert.match(fn, /gymsOnFile\.length && !args\.equipment/, 'the gym question re-asks what was just said');
 });
 
+await test('a thin log is not accused of starving, and a real flag never softens', () => {
+  // The flag fired on the founder's own lock screen from days that each held a
+  // single logged item — partial logging reading as under-eating. It still
+  // fires at FULL STRENGTH either way, because the record cannot tell a thin
+  // log from a thin day and a missed real flag is the worst failure in the
+  // product. But the sentence carries both readings when the days are
+  // single-entry, because a wrong accusation gets a care flag dismissed — and
+  // a dismissed flag is as dangerous as a missing one.
+  const day = (calories, meals) => ({ calories, meals, date: 'x' });
+  const range = (days) => ({ days });
+
+  // Single-entry thin days: flagged, AND named as ambiguous.
+  const thin = careFlags(range([day(400, 1), day(600, 1), day(500, 1), day(2400, 3)]), {});
+  const f1 = thin.find(f => f.flag === 'very_low_intake');
+  assert.ok(f1, 'the flag stopped firing on thin logs — it must fire either way');
+  assert.equal(f1.partial, true);
+  assert.match(f1.detail, /single entry/, 'the ambiguity is not named');
+  assert.match(f1.guidance, /ask plainly whether meals went unlogged/, 'the model is never told to ask first');
+  assert.match(f1.guidance, /Do not skip the question and do not soften the second half/);
+
+  // Multi-meal low days: the unambiguous flag, unsoftened.
+  const real = careFlags(range([day(900, 3), day(1000, 4), day(800, 3), day(1100, 3)]), {});
+  const f2 = real.find(f => f.flag === 'very_low_intake');
+  assert.ok(f2 && !f2.partial);
+  assert.ok(!/single entry/.test(f2.detail), 'a fully-logged low fortnight is being excused as thin logging');
+  assert.match(f2.guidance, /under what a body needs to run on/);
+
+  // The spoken forms carry the same split, and both still end at the doctor.
+  const s1 = spokenFlag(f1), s2 = spokenFlag(f2);
+  assert.match(s1, /Log those days fully and this clears/);
+  assert.match(s1, /worth a doctor/i, 'the ambiguous form dropped the doctor');
+  assert.match(s2, /under what a body runs on/);
+  assert.match(s2, /worth a doctor/i);
+});
+
 group('The morning briefing');
 
 const { morningBrief, morningDue } = await import('../netlify/functions/lib/morning.js');
