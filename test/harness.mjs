@@ -9656,6 +9656,21 @@ await test('finishing the treadmill moves the checklist to the next exercise', (
   assert.match(decision, /current\.sets == null \? true/, 'the ad-hoc open slot now runs out');
 });
 
+await test('the playbook rides out on the answers a model cannot skip', () => {
+  // "Is there a way our playbook cannot be skipped?" Not absolutely — when the
+  // model calls no tool at all, nothing of ours is in its context to skip. The
+  // strongest surface we own is the RESULT of the call it just made, so the
+  // going-to-the-gym rule rides out on log and brief, one turn ahead of the
+  // moment it failed on the founder's phone: food logged, "Going to the gym
+  // now", and "Hell yeah, go crush it" with no tool call — no readiness, no
+  // plan, no checklist.
+  const src = readFileSync(new URL('../netlify/functions/mcp.js', import.meta.url), 'utf8');
+  const order = /STANDING ORDER: if they now say they are going to, at, or heading to the gym/g;
+  const hits = src.match(order) || [];
+  assert.ok(hits.length >= 2, 'the standing order rides fewer than the two high-traffic answers (log, brief)');
+  assert.match(src, /Encouragement without the tool call loses the session/);
+});
+
 group('The morning briefing');
 
 const { morningBrief, morningDue } = await import('../netlify/functions/lib/morning.js');
