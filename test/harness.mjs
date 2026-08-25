@@ -3566,7 +3566,11 @@ await test('the dashboard draws the rings and never computes them', () => {
   // No targets is an invitation, not an empty box.
   const panel = src.slice(src.indexOf('function targetsPanel('), src.indexOf('function targetsPanel(') + 1400);
   assert.match(panel, /Nothing to aim at yet/);
-  assert.match(panel, /10,000 steps a day/);
+  // The invitation is a TAP now, not a phrase to retype — and the 10,000-steps
+  // example is gone from it deliberately: that is the poster number the steps
+  // offer exists to refuse, and the empty state was advertising it.
+  assert.match(panel, /gptLink\(/, 'the empty state lost its one-tap door');
+  assert.match(panel, /set my goals/);
 });
 
 await test('the baseline is asked for once, and changing it is never a lecture', () => {
@@ -9669,6 +9673,35 @@ await test('the playbook rides out on the answers a model cannot skip', () => {
   const hits = src.match(order) || [];
   assert.ok(hits.length >= 2, 'the standing order rides fewer than the two high-traffic answers (log, brief)');
   assert.match(src, /Encouragement without the tool call loses the session/);
+});
+
+await test('everywhere the app said tell-your-assistant is now one tap', () => {
+  // "Hyperlinks — for the twentieth time." Everywhere a panel used to hand
+  // somebody a sentence to remember and retype, the telling is now one tap:
+  // the same ?q= bridge the morning notification uses. The gap between
+  // reading an example and using it should be nothing at all.
+  const src = page('app.html');
+  const code = src.replace(/^\s*\/\/.*$/gm, '');
+  assert.match(code, /function gptLink/, 'there is no one-tap bridge at all');
+  // Opens a NEW context safely, and the prompt is URL-encoded.
+  const fn = code.slice(code.indexOf('function gptLink'), code.indexOf('function stylesPanel'));
+  assert.match(fn, /encodeURIComponent\(prompt\)/);
+  assert.match(fn, /rel="noopener"/);
+
+  // The three places that were words: the assessment, the goals invitation,
+  // and the styles.
+  assert.match(code, /gptLink\('Gym bro \\u2014 set me up properly/, 'the assessment is still a phrase to retype');
+  assert.match(code, /gptLink\('Gym bro \\u2014 I want to set my goals/, 'the goals invitation is still a phrase to retype');
+  assert.match(code, /function stylesPanel/, 'the styles have no panel');
+  assert.match(code, /stylesPanel\(\{ styles: lastPayload\?\.styles \}\)/, 'the styles panel is never rendered on Trainer');
+
+  // THE LIST COMES FROM THE SERVER, so the page cannot drift from what
+  // design_workout actually recognises — and the provenance travels with it,
+  // because a style shown without its honest line is the wink the doctrine
+  // forbids.
+  const api = readFileSync(new URL('../netlify/functions/api-progress.js', import.meta.url), 'utf8');
+  assert.match(api, /styles: Object\.entries\(STYLES\)/, 'the page invents its own style list');
+  assert.match(api, /provenance: v\.provenance/, 'the styles travel without their honest line');
 });
 
 group('The morning briefing');

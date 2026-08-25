@@ -3543,7 +3543,8 @@ function renderTrainer(d) {
       <h2>Trainer</h2>
       <p class="caveat">${esc(d.say)}</p></section>
       ${notConnectedCallout()}
-      ${routinesPanel({ routines: trainerRoutinesFull.length ? trainerRoutinesFull : (d.routines?.length ? d.routines : trainerRoutines) }, { editable: true })}`;
+      ${routinesPanel({ routines: trainerRoutinesFull.length ? trainerRoutinesFull : (d.routines?.length ? d.routines : trainerRoutines) }, { editable: true })}
+      ${stylesPanel({ styles: lastPayload?.styles })}`;
     wireRoutines();
     stagger();
     return;
@@ -5461,8 +5462,8 @@ function setupPanel(d) {
     <h2>Getting to know you · ${su.answered} of ${su.of}</h2>
     <div class="progbar"><i style="width:${pct}%"></i></div>
     <p class="sub">Workouts unlock when this is finished — WROUGHT will not build a plan for a
-    stranger. Answer in one conversation: say <em>"set me up properly"</em> to your assistant and it
-    walks the list, a few at a time. Loose answers are fine, and "none" counts.</p>
+    stranger. ${gptLink('Gym bro \u2014 set me up properly. Run the full assessment, a few questions at a time; loose answers are fine and \u201cnone\u201d counts.', 'Finish it now')}
+    — one tap, and it walks the list a few questions at a time. Loose answers are fine, and "none" counts.</p>
     <div class="says">${(su.remaining || []).slice(0, 8).map(q =>
       `<button class="say" type="button" data-say="${esc(q)}">${esc(q)}</button>`).join('')}</div>
     ${(su.remaining || []).length > 8 ? `<p class="sub dim">…and ${su.remaining.length - 8} more once those are in.</p>` : ''}
@@ -5547,6 +5548,36 @@ function planPanel(d) {
 // not, and does not fold or leave until all of it is done. A setup a person
 // has to hunt for is a setup that never happens, and every notification he
 // asked for was silently waiting on a step nobody had named.
+// ── One tap opens the assistant already asking ─────────────────────────────
+// The founder, for the twentieth time: hyperlinks. Everywhere this app used to
+// say "tell your assistant", the telling is now one tap — the same ?q= bridge
+// the morning notification uses, so a screen can hand the exact sentence to
+// ChatGPT instead of asking somebody to remember and retype it. The gap
+// between reading an example and using it should be nothing at all — the
+// manual's copy-on-tap rule, taken the rest of the way.
+function gptLink(prompt, label) {
+  return `<a class="linky" target="_blank" rel="noopener" href="https://chatgpt.com/?q=${encodeURIComponent(prompt)}">${esc(label)} \u2197</a>`;
+}
+
+// The trainer styles, each a tap that opens the assistant mid-ask. The list
+// comes from the SERVER so it cannot drift from what design_workout actually
+// recognises, and the provenance rides every card — a style shown without its
+// honest line is the wink the doctrine forbids.
+function stylesPanel(d) {
+  const list = d?.styles || [];
+  if (!list.length) return '';
+  return `<section class="panel">
+    <h2>Trainer styles</h2>
+    <p class="sub">Real published methods, built to your gym and your tier — never a named
+    coach\u2019s programme, and never a weight it invented.</p>
+    <div class="planrows">${list.map(st => `<div class="planrow">
+      <span class="lbl">${esc(st.say)}</span>
+      ${gptLink(`Gym bro \u2014 design me a ${st.say} workout for my gym, about 45 minutes, and offer to save it.`, 'Build it')}
+    </div>`).join('')}</div>
+    <p class="sub dim">${esc(list[0] ? 'Named for the method, not the man \u2014 each one says where it actually comes from.' : '')}</p>
+  </section>`;
+}
+
 function coachSetupPanel(d) {
   if (DEMO) return '';
   const c = d.coach || {};
@@ -6565,9 +6596,9 @@ function targetsPanel(d) {
   if (!scored.length) {
     return `<section class="panel">
       <h2>Targets</h2>
-      <p class="sub">Nothing to aim at yet. Tell your assistant what you're going for —
-      <em>"I want to lose weight"</em>, <em>"10,000 steps a day"</em>, <em>"train 3 times a week"</em> —
-      and it works out the numbers from your own body and scores them here every day.</p>
+      <p class="sub">Nothing to aim at yet. One tap and your assistant works out the numbers
+      from your own body — ${gptLink('Gym bro \u2014 I want to set my goals. Show me the computed options and set what I pick.', 'set my goals')} —
+      or say it in your own words: <em>"I want to lose weight"</em>, <em>"train 3 times a week"</em>.</p>
       ${all.length ? `<p class="sub dim">${all.map(g => esc(g.goal)).join(' · ')} — no number attached yet.</p>` : ''}
     </section>`;
   }

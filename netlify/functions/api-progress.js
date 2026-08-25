@@ -17,6 +17,7 @@ import { orderInsight, earnedRoom, energyBalance, exerciseKey, deviceMatrix, wee
 import { weeklyVolume } from './lib/volume.js';
 import { planRead } from './lib/plan.js';
 import { intakeState } from './lib/intake.js';
+import { STYLES } from './lib/design.js';
 import { formWatch, cardioProgress } from './lib/form.js';
 import { nextNudge } from './lib/prompt.js';
 import { blockPosition } from './lib/library.js';
@@ -702,6 +703,11 @@ export const handler = async (event) => {
         const offer = goalsToSet({ goals, targets: null, stepsAvg: summary.steps_avg });
         return offer?.steps || null;
       })(),
+      // The trainer styles, sent so the page's links cannot drift from the
+      // server's own list — the say and the honest provenance travel together,
+      // because a style shown without its provenance is the wink the doctrine
+      // forbids.
+      styles: Object.entries(STYLES).map(([key, v]) => ({ key, say: v.say, provenance: v.provenance })),
       coach: {
         push_devices: pushSubs,
         morning: checkins?.morning_hour != null ? `${checkins.morning_hour}:${String(checkins.morning_minute || 0).padStart(2, '0')}` : null,
