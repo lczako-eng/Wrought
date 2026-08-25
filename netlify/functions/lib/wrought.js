@@ -1348,6 +1348,21 @@ const LATE_TYPES = new Set(['activity', 'fast']);
 // name two different doors.
 export const SET_TARGETS_URL = 'https://wrought.fit/app.html#targets';
 
+// The routing habit, as one sentence a person can install in their assistant's
+// own persistent memory. Commercially decisive: nobody pastes custom
+// instructions into settings — the founder's words, "people buy shit so it's
+// easy" — but every major assistant can REMEMBER a preference it is asked to
+// keep, across every future chat. So the product asks, once, with the person's
+// one-word consent, and the playbook stops depending on a settings screen
+// nobody opens. One constant, because the app's one-tap link and the
+// connector's offer must install the identical habit.
+export const ROUTING_HABIT =
+  'Please remember this permanently, for all our future chats: anything I say about food, drink, ' +
+  'training, weight, sleep, my gym, or my goals goes through the Wrought connector\u2019s tools \u2014 ' +
+  'log it or look it up there, never answer it from memory or the conversation. If I say I\u2019m going ' +
+  'to the gym or name a workout, call Wrought\u2019s suggest_workout or start_session immediately. ' +
+  'Numbers about my calories, targets, or weights only ever come from Wrought\u2019s tools.';
+
 export const VALID_TYPES = new Set(['food','drink','workout','weight','measurement','sleep','symptom','mood','supplement','note','fast','activity']);
 
 // THE OTHER HALF OF DEGRADING — a row that was written down must be READ back up.

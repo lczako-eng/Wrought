@@ -9704,6 +9704,45 @@ await test('everywhere the app said tell-your-assistant is now one tap', () => {
   assert.match(api, /provenance: v\.provenance/, 'the styles travel without their honest line');
 });
 
+await test('the routing habit installs itself, with consent, identically everywhere', async () => {
+  // "This is commercially made for other people — nobody's gonna do that." He
+  // is right: nobody pastes custom instructions into a settings screen. But
+  // every major assistant can REMEMBER a preference it is asked to keep, so
+  // the product installs its own playbook: one tap (or the connector's
+  // one-time offer), one word of consent, and the routing rule survives every
+  // future chat.
+  const { ROUTING_HABIT } = await import('../netlify/functions/lib/wrought.js');
+  // The habit itself carries the three load-bearing rules.
+  for (const phrase of ['goes through the Wrought connector', 'never answer it from memory',
+                        'suggest_workout or start_session immediately', 'only ever come from Wrought']) {
+    assert.ok(ROUTING_HABIT.includes(phrase), `the habit lost "${phrase}"`);
+  }
+
+  // ONE HABIT, TWO INSTALLERS, IDENTICAL WORDS. The page hardcodes the same
+  // sentence (it cannot import server code), so this is the pin that stops
+  // the two teaching different rules.
+  const src = page('app.html');
+  const m = src.match(/const ROUTING_HABIT =\n([\s\S]*?);/);
+  assert.ok(m, 'the page lost its copy of the habit');
+  const pageHabit = m[1].match(/'([^']*)'/g).map(x => x.slice(1, -1)).join('')
+    .replace(/\\u2019/g, '\u2019').replace(/\\u2014/g, '\u2014');
+  assert.equal(pageHabit, ROUTING_HABIT, 'the page and the connector teach different habits');
+
+  // Both app surfaces carry the tap — the setup panel and the durable home on
+  // Account, so it survives the checklist disappearing.
+  const taps = src.match(/gptLink\(ROUTING_HABIT/g) || [];
+  assert.ok(taps.length >= 2, 'the installer lives on fewer than two surfaces');
+
+  // The connector offers it ONCE, with consent, and never lies about saving.
+  const mcp = readFileSync(new URL('../netlify/functions/mcp.js', import.meta.url), 'utf8');
+  assert.match(mcp, /make_it_stick: ROUTING_HABIT/, 'get_profile never offers the habit');
+  const offer = mcp.slice(mcp.indexOf('// THE HABIT, INSTALLED BY CONVERSATION'), mcp.indexOf('make_it_stick'));
+  assert.match(offer, /OFFER ONCE, EVER/, 'the offer can nag');
+  assert.match(offer, /never re-offer after a no/, 'a no is not final');
+  assert.match(offer, /never claim it is saved if your[\s\S]{0,12}memory is off/, 'a failed save can read as success');
+  assert.match(offer, /their choice about\n    \/\/ their own assistant/, 'consent is not named as the point');
+});
+
 group('The morning briefing');
 
 const { morningBrief, morningDue } = await import('../netlify/functions/lib/morning.js');
