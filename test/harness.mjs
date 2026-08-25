@@ -9752,12 +9752,21 @@ await test('every standing choice has a home where it pops up again', () => {
   const src = page('app.html');
   assert.match(src, /Your setup \\u00b7 change any of it on the fly/, 'the re-pop panel does not exist');
   const panel = src.slice(src.indexOf('Your setup'), src.indexOf('Connected assistants'));
-  for (const row of ['The habit', 'Assessment', 'Goals &amp; targets', 'Check-ins', 'My gyms']) {
+  for (const row of ['The habit', 'Assessment', 'Goals &amp; targets', 'Check-ins', 'My gyms',
+                     'My weight', 'workout', 'My basal rate', 'Trainer types']) {
     assert.ok(panel.includes(row), `the "${row}" choice has no re-pop row`);
   }
   // Every row is a TAP into the conversation, not a form on the page.
   const taps = panel.match(/gptLink\(/g) || [];
-  assert.ok(taps.length >= 5, 'a setup row lost its tap');
+  assert.ok(taps.length >= 9, 'a setup row lost its tap');
+  // The basal tap asks for the WORKING, not just a number — a figure nobody
+  // can audit is a figure they stop believing. And the weight tap says the
+  // targets re-base, because that is the reason to keep weighing in.
+  assert.match(panel, /show the working/, 'the basal row asks for a bare number');
+  assert.match(panel, /re-base from it automatically/, 'the weigh-in row hides what it feeds');
+  // The styles row carries the cost clause — a method without its cost is a
+  // pitch rather than a choice.
+  assert.match(panel, /what each one costs/, 'the styles row pitches without the cost');
   // Re-running the assessment says newer answers replace older — popping it
   // again must never read as starting an interrogation from zero.
   assert.match(panel, /newer answers replace the old ones/);
