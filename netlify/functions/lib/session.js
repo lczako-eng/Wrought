@@ -290,9 +290,18 @@ export async function recordSet(userId, { session, current, plan = [], today,
     done += 1;
   }
 
-  // An OPEN slot never finishes on its own — an ad-hoc session ends when the
-  // person stops, not when a number nobody set is reached.
-  const moreHere = current.sets == null ? true : done < current.sets;
+  // TWO DIFFERENT NULLS, and conflating them stuck the founder's checklist at
+  // exercise #1 for a whole session. An AD-HOC open slot (no sets, no minutes
+  // — nobody said how many are coming) never finishes on its own: the session
+  // ends when the person stops, not when a number nobody set is reached. But a
+  // TIMED movement carries sets:null BECAUSE it is measured in minutes — forty
+  // minutes on the treadmill logged once IS the slot done, and demanding a set
+  // count from it means the cursor never moves and "what's next" answers
+  // "the treadmill you just finished" forever.
+  const timed = current.timed === true || current.minutes != null;
+  const moreHere = timed ? false
+    : current.sets == null ? true
+    : done < current.sets;
   let cursor = session.cursor_index || 0;
   if (!moreHere) cursor += 1;
   if (cursor !== (session.cursor_index || 0)) {
