@@ -6811,8 +6811,11 @@ await test('a set reported with no workout running opens one', () => {
   // still goes through it rather than growing a second copy.
   assert.match(fn, /await recordSet\(user\.id, \{/, 'log_set no longer shares the write path');
   const sess = readFileSync(new URL('../netlify/functions/lib/session.js', import.meta.url), 'utf8');
-  assert.match(sess, /current\.sets == null \? true : done < current\.sets/,
-    'an open slot can still run out of sets');
+  // Two different nulls: an ad-hoc open slot never finishes on its own, while
+  // a TIMED slot (sets null BECAUSE it is minutes) completes on its first log —
+  // conflating them stuck the checklist at "the treadmill you just finished".
+  assert.match(sess, /const moreHere = timed \? false\n    : current\.sets == null \? true\n    : done < current\.sets;/,
+    'an open slot can run out of sets, or a timed slot never completes');
 
   // A different lift is appended in the order it actually happened, not
   // refused for not being on a plan.
@@ -9611,6 +9614,46 @@ await test('a thin log is not accused of starving, and a real flag never softens
   assert.match(s1, /worth a doctor/i, 'the ambiguous form dropped the doctor');
   assert.match(s2, /under what a body runs on/);
   assert.match(s2, /worth a doctor/i);
+});
+
+await test('finishing the treadmill moves the checklist to the next exercise', () => {
+  // The founder, mid-session: "when I'm done the one it should automatically
+  // go to the next." His S-Tier list opens with an incline treadmill — a TIMED
+  // movement, stored with no set count because minutes are what define it —
+  // and two stacked bugs kept the cursor at #1 for the whole session.
+  const routine = { tier: 'intermediate', exercises: [
+    { name: 'Incline treadmill', sets: null, reps: null, minutes: 38, detail: 'level 12.5, 2.5-3 mph' },
+    { name: 'Ab roller', sets: 2, reps: 8 },
+    { name: 'Bench press', sets: 2, reps: 8 },
+  ]};
+  const plan = planFromRoutine(routine);
+
+  // BUG ONE: planFromRoutine re-invented 3x8 for the treadmill ("|| 3", "?? 8")
+  // and dropped its minutes and setup text — so the clipboard showed three sets
+  // of treadmill nobody would ever log.
+  assert.equal(plan[0].sets, null, 'a timed movement grew a set count again');
+  assert.equal(plan[0].timed, true, 'the plan does not know the treadmill is timed');
+  assert.equal(plan[0].minutes, 38, 'the minutes were dropped at the door');
+  assert.match(plan[0].detail || '', /level 12\.5/, 'the verbatim setup was dropped — for cardio that text IS the instruction');
+  // Strength defaults hold exactly as before.
+  assert.equal(plan[1].sets, 2);
+  assert.equal(plan[2].reps, 8);
+
+  // And the old stored artifact — 3x8 with no minutes on a timed name — is
+  // retired on the way into the live plan, same as on every screen.
+  const artifact = planFromRoutine({ tier: 'intermediate', exercises: [
+    { name: 'Incline treadmill walk', sets: 3, reps: 8 },
+  ]});
+  assert.equal(artifact[0].sets, null, 'the 3x8 artifact reached the live plan');
+
+  // BUG TWO: recordSet asked "done < sets" of a slot whose sets are null, so
+  // moreHere stayed true forever and "what's next" answered "the treadmill you
+  // just finished" for the rest of the session. Timed completes on its first
+  // log; the ad-hoc open slot still never finishes on its own.
+  const sess = readFileSync(new URL('../netlify/functions/lib/session.js', import.meta.url), 'utf8');
+  const decision = sess.slice(sess.indexOf('const timed = current.timed'), sess.indexOf('let cursor'));
+  assert.match(decision, /timed \? false/, 'a timed slot still never completes');
+  assert.match(decision, /current\.sets == null \? true/, 'the ad-hoc open slot now runs out');
 });
 
 group('The morning briefing');

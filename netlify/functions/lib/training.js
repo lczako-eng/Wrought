@@ -908,17 +908,35 @@ export function planFromRoutine(routine) {
   // progress percentage and the next-lift call all read the plan, so dropping
   // it here drops it everywhere at once.
   const list = (Array.isArray(routine.exercises) ? routine.exercises : []).filter(e => !e.off);
-  return list.map((e, i) => ({
-    index: i,
-    name: e.name,
-    key: exerciseKey(e.name),
-    sets: Number(e.sets) || 3,
-    reps: e.reps ?? 8,
-    load_kg: e.load_kg ?? null,
-    rest_s: Number(e.rest_s) || TIERS[routine.tier]?.rest_s || 120,
-    muscles: e.muscles || [],
-    cue: e.cue || null,
-  }));
+  return list.map((e, i) => {
+    // THE SAME JUDGEMENT THE SCREENS USE, or the list and the live session
+    // disagree about the same movement. readMovement retires the 3×8 artifact
+    // and knows a treadmill from a bench; before this, the live plan re-invented
+    // 3 sets of 8 for a timed movement (`|| 3`, `?? 8`) and dropped its minutes
+    // and detail on the floor — so the checklist showed a treadmill as three
+    // sets nobody would ever log, and the cursor could not move past it.
+    const m = readMovement(e);
+    const timed = m.minutes != null || (m.sets == null && TIMED_MOVEMENT.test(m.name));
+    return {
+      index: i,
+      name: m.name,
+      key: exerciseKey(m.name),
+      // A timed slot carries NO set count — doing it once is doing it, and
+      // recordSet completes it on the first log. Strength defaults hold for
+      // strength movements exactly as before.
+      sets: timed ? null : (Number(m.sets) || 3),
+      reps: timed ? null : (m.reps ?? 8),
+      timed,
+      minutes: m.minutes ?? null,
+      // The verbatim setup IS the instruction for cardio — "level 10+,
+      // 2.5–3 mph" — and the clipboard is where it is needed most.
+      detail: m.detail ?? null,
+      load_kg: m.load_kg ?? null,
+      rest_s: Number(m.rest_s) || TIERS[routine.tier]?.rest_s || 120,
+      muscles: m.muscles || [],
+      cue: m.cue || null,
+    };
+  });
 }
 
 // ── Last night ──────────────────────────────────────────────────────────────
