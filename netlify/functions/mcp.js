@@ -1269,6 +1269,15 @@ async function log(args, user) {
         : parsed
           ? 'Read the recorded summaries back in one short line so a mis-heard word gets caught now, not next week.'
           : 'Could not parse this into structured entries — it was kept verbatim as a note so nothing was lost. Tell the user it was saved but not broken down.',
+    // THE STANDING ORDER FOR THE NEXT TURN, planted on the one surface a model
+    // cannot skip: the answer to the call it just made. The failure it exists
+    // for happened on the founder's phone — food logged, then "Going to the
+    // gym now", and the reply was "Hell yeah, go crush it" with no tool call
+    // at all. Nothing of ours is read when no tool gets called, so the rule
+    // has to ride OUT on this response, one turn ahead of the moment it is
+    // needed. It is the same playbook line the sheet carries; this is the
+    // braces to that belt.
+    playbook: 'STANDING ORDER: if they now say they are going to, at, or heading to the gym — or name a workout — call suggest_workout or start_session IN THAT TURN. Encouragement without the tool call loses the session: no readiness check, no plan, no checklist. "Crush it" is not a substitute for starting the workout.',
     next_actions: ['undo_last if anything came back wrong', 'brief for the day\'s read', 'whats_next if they are deciding what to eat'],
   };
 }
@@ -2197,6 +2206,7 @@ async function brief(args, user) {
     note: flags.length
       ? 'Care flags are up. They override the honesty doctrine — follow their guidance exactly and do not coach intake down.'
       : 'Deliver the verdict as written. It is already pitched to the bluntness they chose; do not soften it or add praise.',
+    playbook: 'STANDING ORDER: if they now say they are going to, at, or heading to the gym — or name a workout — call suggest_workout or start_session IN THAT TURN. Encouragement without the tool call loses the session.',
     next_actions: ['progress for the trend and the training matrix', 'whats_next for the immediate move', 'suggest_workout if they are training today'],
   };
 }
