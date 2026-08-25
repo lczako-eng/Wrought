@@ -9743,6 +9743,26 @@ await test('the routing habit installs itself, with consent, identically everywh
   assert.match(offer, /their choice about\n    \/\/ their own assistant/, 'consent is not named as the point');
 });
 
+await test('every standing choice has a home where it pops up again', () => {
+  // "We should have a customizable one, under your bio in settings, that you
+  // can change on the fly — where they all pop up again." The coach checklist
+  // disappears once setup is done (correctly), which left its choices with no
+  // home. One panel on Account, one row per choice, each a single tap that
+  // opens the assistant mid-ask — taps, not forms.
+  const src = page('app.html');
+  assert.match(src, /Your setup \\u00b7 change any of it on the fly/, 'the re-pop panel does not exist');
+  const panel = src.slice(src.indexOf('Your setup'), src.indexOf('Connected assistants'));
+  for (const row of ['The habit', 'Assessment', 'Goals &amp; targets', 'Check-ins', 'My gyms']) {
+    assert.ok(panel.includes(row), `the "${row}" choice has no re-pop row`);
+  }
+  // Every row is a TAP into the conversation, not a form on the page.
+  const taps = panel.match(/gptLink\(/g) || [];
+  assert.ok(taps.length >= 5, 'a setup row lost its tap');
+  // Re-running the assessment says newer answers replace older — popping it
+  // again must never read as starting an interrogation from zero.
+  assert.match(panel, /newer answers replace the old ones/);
+});
+
 group('The morning briefing');
 
 const { morningBrief, morningDue } = await import('../netlify/functions/lib/morning.js');

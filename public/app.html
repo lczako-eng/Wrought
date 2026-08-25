@@ -2287,11 +2287,42 @@ function renderAccount(user, ids, factors, linkNote) {
   const offer = ['apple', 'google'].filter(p => !have.has(p)).map(p =>
     `<button class="ghost" data-link="${p}">Link ${PROVIDER_NAME[p]}</button>`).join('');
 
+  // EVERY STANDING CHOICE, RE-POPPABLE. The founder: "we should have a
+  // customizable one, under your bio in settings, that you can change on the
+  // fly — where they all pop up again." The coach checklist disappears once
+  // setup is done (correctly — a finished checklist is clutter), which left
+  // the choices it installed with no home: nowhere to re-teach the habit,
+  // re-run the assessment, or move a check-in without remembering the words.
+  // One panel, one row per choice, each a single tap that pops the ask again.
+  // Taps, not forms — the product's whole shape is that the conversation does
+  // the work, so "change it" means "open the conversation mid-ask".
+  const co = lastPayload?.coach || {};
+  const checkinsNow = [co.morning && `morning ${co.morning}`, co.midday && `midday ${co.midday}`,
+    `evening ${co.evening || '22:00'}`].filter(Boolean).join(' \u00b7 ');
+
   $('content').innerHTML = `
     <section class="panel">
       <h2>You</h2>
       <div id="prof-body"><p class="empty">Loading…</p></div>
       <p class="msg" id="profmsg"></p>
+    </section>
+
+    <section class="panel">
+      <h2>Your setup \u00b7 change any of it on the fly</h2>
+      <div class="planrows">
+        <div class="planrow"><span class="lbl">The habit</span>
+          ${gptLink(ROUTING_HABIT, 'Teach it again')}</div>
+        <div class="planrow"><span class="lbl">Assessment</span>
+          ${gptLink('Gym bro \u2014 set me up properly. Run the full assessment again, a few questions at a time; my newer answers replace the old ones.', 'Run it again')}</div>
+        <div class="planrow"><span class="lbl">Goals &amp; targets</span>
+          ${gptLink('Gym bro \u2014 I want to change my goals. Show me my current targets and the computed options, and set what I pick.', 'Change them')}</div>
+        <div class="planrow"><span class="lbl">Check-ins${checkinsNow ? ` \u00b7 ${esc(checkinsNow)}` : ''}</span>
+          ${gptLink('Gym bro \u2014 I want to change my check-in times: morning, midday and evening. Ask me for each and set them.', 'Change times')}</div>
+        <div class="planrow"><span class="lbl">My gyms</span>
+          ${gptLink('Gym bro \u2014 let\\u2019s update my gyms. List what you have on file for each, and I\\u2019ll tell you what changed \\u2014 or I\\u2019ll send photos of a new one.', 'Update them')}</div>
+      </div>
+      <p class="sub dim">Each tap opens your assistant already asking \u2014 answer yes or no and it is done.
+      Notification rules live just below, and switch off without a conversation.</p>
     </section>
 
     <section class="panel">
@@ -2326,9 +2357,6 @@ function renderAccount(user, ids, factors, linkNote) {
 
     <section class="panel">
       <h2>Connected assistants</h2>
-      <p class="sub dim">${gptLink(ROUTING_HABIT, 'Teach your GPT the habit')} — one tap opens ChatGPT
-      asking it to remember, permanently, that food, training, weight and goals go through WROUGHT.
-      Say yes once and the playbook survives every new chat.</p>
       <div id="conn-body"><p class="empty">Checking…</p></div>
       <p class="msg" id="connmsg"></p>
     </section>
