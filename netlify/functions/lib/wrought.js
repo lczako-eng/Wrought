@@ -808,10 +808,25 @@ export function careFlags(range, profile) {
 
   const veryLow = fed.filter(d => d.calories < 1200);
   if (fed.length >= 3 && veryLow.length >= 3) {
+    // A DAY WITH ONE ENTRY ON IT IS NOT EVIDENCE OF A DAY'S EATING. The flag
+    // fired on the founder's own lock screen from days that each held a single
+    // logged item — partial logging reading as under-eating. The flag still
+    // fires, at full strength, because the record genuinely cannot tell a
+    // thin log from a thin day and a missed real flag is the worst failure in
+    // the product. But it says the second reading out loud: the same sentence
+    // that warns somebody genuinely under-eating must not accuse somebody who
+    // logged one coffee, or the flag cries wolf and gets dismissed — and a
+    // dismissed care flag is as dangerous as a missing one.
+    const partial = veryLow.every(d => (d.meals ?? 0) <= 1);
     flags.push({
       flag: 'very_low_intake',
-      detail: `${veryLow.length} of the last ${fed.length} logged days came in under 1,200 kcal.`,
-      guidance: 'Stop coaching intake down. Do not suggest a further deficit, a fast, or a lower target under any framing. Say plainly that this is under what a body needs to run on, and that a doctor or dietitian is the right person for it.',
+      partial,
+      detail: `${veryLow.length} of the last ${fed.length} logged days came in under 1,200 kcal.` +
+        (partial ? ' Each of those days holds a single entry, so this is either missed logging or genuinely too little.' : ''),
+      guidance: 'Stop coaching intake down. Do not suggest a further deficit, a fast, or a lower target under any framing. ' +
+        (partial
+          ? 'Those days each hold ONE logged item: first ask plainly whether meals went unlogged on them — if so, log them now and this clears. If the days really were that small, say that is under what a body needs to run on and a doctor or dietitian is the right person for it. Do not skip the question and do not soften the second half.'
+          : 'Say plainly that this is under what a body needs to run on, and that a doctor or dietitian is the right person for it.'),
     });
   }
 

@@ -18,8 +18,14 @@
 // deliberate rather than a fallback: a flag with no spoken form must not be
 // silently dropped, because silence is exactly the failure these exist to stop.
 const FLAG_SPOKEN = {
-  very_low_intake: d =>
-    `${d} That is under what a body runs on, so there is no target from me today. That one is worth a doctor.`,
+  // The spoken form gets the whole flag, not just the detail, so a flag that
+  // knows its own ambiguity can say it. A single-entry day cannot be told from
+  // a starved day by the record — the honest sentence carries both readings
+  // and the action for each, because a wrong accusation gets a care flag
+  // dismissed, and a dismissed flag is as dangerous as a missing one.
+  very_low_intake: (d, f) => f?.partial
+    ? `${d} Log those days fully and this clears — and if they really were that small, that is under what a body runs on, and worth a doctor.`
+    : `${d} That is under what a body runs on, so there is no target from me today. That one is worth a doctor.`,
   rapid_loss: d =>
     `${d} That is faster than is usually safe, and fast loss costs muscle. Worth easing the deficit.`,
   no_rest: d =>
@@ -31,7 +37,7 @@ export function spokenFlag(flag) {
   const shape = FLAG_SPOKEN[flag.flag];
   // An unmapped flag still gets said. Losing a care flag to a missing key is
   // the one bug in this file that could genuinely hurt somebody.
-  return shape ? shape(flag.detail) : flag.detail || null;
+  return shape ? shape(flag.detail, flag) : flag.detail || null;
 }
 
 /**
