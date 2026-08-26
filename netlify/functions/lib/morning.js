@@ -221,6 +221,27 @@ export function middayBrief({ facts = {}, flags = [], scored = [] } = {}) {
  * Separated from the message so the decision is testable without composing
  * anything, and so the cron's half-hour granularity lives in exactly one place.
  */
+/**
+ * Should a care-flag-only message be held back because the identical sentence
+ * already reached the lock screen today?
+ *
+ * The founder's screenshot was six copies of the same flag across three
+ * evenings — "always the same bullshit three times a day". The flag doctrine
+ * does not bend: it outranks everything, it is the entire message, and it goes
+ * out every day it stands. What this adds is only that the SAME SENTENCE is
+ * delivered once per day rather than at every check-in.
+ *
+ * Pure, and deliberately narrow — this is the one place in the product where
+ * suppressing a delivery is the dangerous direction, so both conditions must
+ * hold before anything is held back:
+ *   - same local day (never across days: a standing flag is said again tomorrow)
+ *   - EXACT same text (a new flag, or a count that moved, always goes out)
+ */
+export function flagRepeat({ text, sentOn = null, sentText = null, today = null }) {
+  if (!text || !today) return false;
+  return sentOn === today && sentText === text;
+}
+
 export function morningDue({ hour, minute, morningHour, morningMinute = 0, sentOn = null, today = null }) {
   // Null is off, and off is the default. Nothing here starts notifying somebody
   // because the product decided it knew best.

@@ -27,10 +27,10 @@ import {
   dayFacts, rangeFacts, summariseRange, scoreGoals, careFlags, writeVerdict,
 } from './lib/wrought.js';
 import { sendPush, vapidConfigured } from './lib/push.js';
-import { plainBrief } from './lib/voice.js';
+import { plainBrief, spokenFlag } from './lib/voice.js';
 import { energyBalance, weekSoFar, goalsToSet } from './lib/training.js';
 import { dueAlerts } from './lib/alerts.js';
-import { morningBrief, middayBrief, morningDue, morningLink } from './lib/morning.js';
+import { morningBrief, middayBrief, morningDue, morningLink, flagRepeat } from './lib/morning.js';
 
 const SEND_HOUR = 22;
 
@@ -213,6 +213,42 @@ async function middayColumnsExist() {
   return middayReady;
 }
 
+// ── A care flag is said once a day, not at every check-in ───────────────────
+//
+// The flag doctrine holds untouched: it outranks everything, it is the entire
+// message wherever it appears, and it goes out every day it stands. But the
+// morning, the midday and the evening each carry it as their whole message, so
+// one standing flag became the identical sentence three times a day — and a
+// repeated identical notification trains dismissal, which for a care flag is
+// as dangerous as losing it. flagRepeat (pure, in lib/morning.js) holds back
+// only an EXACT repeat on the SAME local day; the columns are 022 and are
+// probed like every other door, so an un-migrated database keeps the old
+// behaviour rather than throwing.
+let flagOnceReady = null;
+async function flagColumnsExist() {
+  if (flagOnceReady !== null) return flagOnceReady;
+  const { error } = await supabase.from('wrought_profile')
+    .select('flag_sent_on', { head: true }).limit(1);
+  flagOnceReady = !error;
+  return flagOnceReady;
+}
+
+async function flagAlreadyToday(userId, text, date) {
+  if (!(await flagColumnsExist())) return false;
+  const { data } = await supabase.from('wrought_profile')
+    .select('flag_sent_on, flag_sent_text').eq('user_id', userId).maybeSingle();
+  return flagRepeat({ text, sentOn: data?.flag_sent_on, sentText: data?.flag_sent_text, today: date });
+}
+
+// Stamped only when a flag-only message actually delivered — same rule as
+// every other sent_on in this file. Marking it on a failed send would make the
+// one day a phone was off the day the flag went quiet.
+async function stampFlag(userId, text, date) {
+  if (!(await flagColumnsExist())) return;
+  await supabase.from('wrought_profile')
+    .update({ flag_sent_on: date, flag_sent_text: text }).eq('user_id', userId);
+}
+
 // The founder's second check-in: where the day stands while there is still an
 // afternoon to act on it. Same guards as the morning — probed columns, once a
 // day, stamped only on success, a failure here never costs the evening read.
@@ -247,6 +283,15 @@ async function runMidday(userId, profile, now) {
   const out = middayBrief({ facts: day, flags, scored });
   if (!out?.text) return 0;
 
+  // A flag-only midday whose exact sentence already delivered today is done for
+  // the day — the flag is on the lock screen, and a second identical copy only
+  // teaches the thumb to swipe it away. Stamped as sent so nothing retries.
+  if (out.only && await flagAlreadyToday(userId, out.text, date)) {
+    await supabase.from('wrought_profile')
+      .update({ midday_sent_on: date }).eq('user_id', userId);
+    return 0;
+  }
+
   const sent = await deliver(userId, profile, {
     title: 'WROUGHT',
     body: out.text,
@@ -256,6 +301,7 @@ async function runMidday(userId, profile, now) {
   if (sent) {
     await supabase.from('wrought_profile')
       .update({ midday_sent_on: date }).eq('user_id', userId);
+    if (out.only) await stampFlag(userId, out.text, date);
   }
   return sent ? 1 : 0;
 }
@@ -333,6 +379,17 @@ async function runMorning(userId, profile, now) {
   // muted permanently, and muted never comes back on.
   if (!out) return 0;
 
+  // The same flag sentence is not re-delivered within a day. In practice the
+  // morning is usually the FIRST delivery of the day, so this bites when the
+  // evening already carried the flag late yesterday and a midnight boundary
+  // has not passed in their zone — and, mostly, it protects the later
+  // check-ins below and in the handler from repeating the morning's.
+  if (out.only && await flagAlreadyToday(userId, out.text, date)) {
+    await supabase.from('wrought_profile')
+      .update({ morning_sent_on: date }).eq('user_id', userId);
+    return 0;
+  }
+
   const sent = await deliver(userId, profile, {
     title: 'WROUGHT',
     body: out.text,
@@ -350,6 +407,7 @@ async function runMorning(userId, profile, now) {
   if (sent) {
     await supabase.from('wrought_profile')
       .update({ morning_sent_on: date }).eq('user_id', userId);
+    if (out.only) await stampFlag(userId, out.text, date);
   }
   return sent ? 1 : 0;
 }
@@ -442,8 +500,20 @@ export const handler = async () => {
     // the read at a different time than somebody who eats at nine at night, and
     // a notification at the wrong hour is how notifications get turned off for
     // good — after which they never come back on.
+    //
+    // THE HALF-HOUR MATTERS TOO, and it was the double-send bug. The cron fires
+    // at :00 AND :30 (for the half-hour morning times), and this check matched
+    // the hour alone — so both fires passed it, and the once-a-day guard below
+    // only bites when a brief row was stored, which without an OPENAI_API_KEY
+    // is never. The founder's lock screen had the identical evening sentence at
+    // 8:01 and 8:30, three nights running. morningDue is the ONE slot decision
+    // this file has — reused, not copied, so the evening cannot drift from it.
     const hour = Number.isInteger(profile.brief_hour) ? profile.brief_hour : SEND_HOUR;
-    if (Math.floor(localMinutesFor(profile.timezone, now) / 60) !== hour) continue;
+    const evMinutes = localMinutesFor(profile.timezone, now);
+    if (!morningDue({
+      hour: Math.floor(evMinutes / 60), minute: evMinutes % 60,
+      morningHour: hour, morningMinute: profile.brief_minute === 30 ? 30 : 0,
+    })) continue;
     considered++;
 
     const date = localDateFor(profile.timezone, now);
@@ -462,9 +532,20 @@ export const handler = async () => {
       // a nag, and a nightly nag is how a product gets muted forever.
       if (!out.logged) continue;
 
+      // A flag-only evening whose exact sentence already delivered today — at
+      // the morning brief, usually — is done. The flag reached the lock screen
+      // today; the identical copy at night is what teaches the thumb to
+      // dismiss it. A flag whose wording moved still goes out.
+      const flagText = out.flags?.length ? spokenFlag(out.flags[0]) : null;
+      const flagOnly = !!flagText && out.verdict === flagText;
+      if (flagOnly && await flagAlreadyToday(userId, flagText, out.date)) { skipped++; continue; }
+
       const { data: auth } = await supabase.auth.admin.getUserById(userId);
-      if (await email(auth?.user?.email, `Wrought — ${out.date}`, out.verdict)) mailed++;
-      pushed += await push(userId, profile, out);
+      const mailedThis = await email(auth?.user?.email, `Wrought — ${out.date}`, out.verdict);
+      if (mailedThis) mailed++;
+      const pushedThis = await push(userId, profile, out);
+      pushed += pushedThis;
+      if (flagOnly && (mailedThis || pushedThis)) await stampFlag(userId, flagText, out.date);
     } catch {
       skipped++;
     }

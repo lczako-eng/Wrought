@@ -56,6 +56,7 @@ const MIGRATIONS = [
   { file: '019_wrought_morning.sql',    probe: col('wrought_profile', 'morning_hour'), gives: 'the morning briefing — where you stand before the day, not a verdict on one that is over' },
   { file: '020_wrought_morning_opens.sql', probe: col('wrought_profile', 'morning_opens'), gives: 'tapping the morning brief opening your assistant with the day already asked for' },
   { file: '021_wrought_midday.sql',       probe: col('wrought_profile', 'midday_hour'), gives: 'the midday check-in — where the day stands while an afternoon can still act on it' },
+  { file: '022_wrought_flag_once.sql',    probe: col('wrought_profile', 'flag_sent_on'), gives: 'a care flag said once a day rather than at every check-in — the identical sentence three times a day trains dismissal' },
 ];
 
 // A probe that treats EVERY error as "not run" lies twice over: a timeout reads
