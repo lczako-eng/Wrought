@@ -24,7 +24,7 @@
 // not earned. Pure: it takes the profile, the goals and a weight, and does no
 // database work of its own, so both callers fetch the way they already fetch.
 
-import { restingBurn, ACTIVITY, PACES, PUSH } from './training.js';
+import { restingBurn, PACES, PUSH } from './training.js';
 
 /**
  * @param profile   the user's profile row
@@ -52,11 +52,12 @@ export function planRead({ profile = {}, goals = [], weightKg = null } = {}) {
   if (!push)   missing.push('how hard WROUGHT should chase them: light, normal, or relentless');
   if (!profile.train_days) missing.push('sessions a week they will honestly do');
 
+  // BASAL, NEVER A LIFESTYLE MULTIPLIER — goalCall's rule, and the same
+  // computation, because the plan somebody is TOLD and the target that was
+  // WRITTEN must never be priced off two different bases. See goalCall for
+  // the founder's instruction and what it costs.
   const rest = restingBurn(profile, weightKg);
-  const level = ACTIVITY[profile.activity_level];
-  const maintenance = rest.kcal != null
-    ? rest.kcal + (level ? Math.round(rest.kcal * (level.mult - 1)) : 0)
-    : null;
+  const maintenance = rest.kcal != null ? rest.kcal : null;
 
   const target = calGoal?.target_value != null ? Math.round(calGoal.target_value) : null;
   const deficit = maintenance != null && target != null ? maintenance - target : null;
@@ -72,9 +73,15 @@ export function planRead({ profile = {}, goals = [], weightKg = null } = {}) {
     lines.push(`Training ${profile.train_days} a week, at ${profile.tier || 'intermediate'} level.`);
   }
   if (target) {
-    lines.push(maintenance != null
-      ? `Daily: about ${target} kcal against a maintenance of about ${maintenance} — a ${Math.abs(deficit)} ${deficit >= 0 ? 'deficit' : 'surplus'}, roughly ${Math.abs(rate)}kg a week.`
-      : `Daily: about ${target} kcal.`);
+    // ABOVE BASAL IS NOT A SURPLUS. A target stored under the old
+    // maintenance basis sits above basal, and calling that a "surplus" tells
+    // somebody who is losing weight that they are gaining. Above basal simply
+    // means the deficit comes from movement rather than from the plate.
+    lines.push(maintenance == null
+      ? `Daily: about ${target} kcal.`
+      : deficit >= 0
+        ? `Daily: about ${target} kcal against a basal of about ${maintenance} — a ${deficit} deficit before you move at all, roughly ${Math.abs(rate)}kg a week on basal alone, and faster than that on a day you move.`
+        : `Daily: about ${target} kcal against a basal of about ${maintenance} — ${Math.abs(deficit)} above basal, so the deficit comes from what you move rather than from the plate.`);
     if (proGoal?.target_value) lines.push(`Protein about ${Math.round(proGoal.target_value)}g.`);
   }
 
@@ -89,7 +96,9 @@ export function planRead({ profile = {}, goals = [], weightKg = null } = {}) {
     tier: profile.tier || null,
     calorie_target: target,
     // The context that turns a number into a decision. Never quoted apart.
+    // This is BASAL — see the comment above the computation.
     maintenance,
+    basis: 'basal',
     deficit,
     projected_kg_per_week: rate,
     resting_burn: rest.kcal ?? null,

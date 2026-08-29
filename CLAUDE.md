@@ -1834,6 +1834,54 @@ it kept as design:
   and the refusal's `say` carries the goals-page URL itself, so a client that
   reads nothing else still shows a line the person can tap.
 
+### The target is priced off BASAL — the founder overrode the maintenance basis
+
+*"You can't count on my everyday activity. It has to be on my basal rate and
+only my basal rate."* — and again as an instruction: *"It's gonna be based off
+the basal rate that's assigned to you, and your basal rate should be a
+calculation of how big you are, age, sex."* Said twice, the second time after
+the objection below was raised. His call, recorded here.
+
+**He is right about the provenance, and that is the whole argument for it.**
+Maintenance was basal × an ACTIVITY multiplier, and that multiplier is a
+lifestyle CATEGORY somebody picks off a list — "moderate, moving most of the
+day". It moved his target by ~1,360 kcal on nothing but a guess, which is the
+invented-number failure with a dropdown in front of it. Basal is computed from
+four measured facts (height, weight, age, sex), `restingBurn.basis` shows its
+working, and a number that shows its working can be argued with.
+
+**What it costs, and the cost is real.** Basal is what a body costs doing
+nothing, so every step, shift and session comes off ON TOP of the deficit:
+a real day loses faster than the pace names. For the founder — basal 2,473 —
+the options became gentle 2,073, steady 1,723, **aggressive 1,473**.
+
+- **The 2,600 guard could no longer stand, and was re-pointed rather than
+  deleted.** The harness used to assert every computed option sat ABOVE the
+  2,600 a model once invented for this exact person — the proof the guard was
+  not decorative. 1,473 is below it. Quietly dropping the assertion would have
+  left the file looking guarded when it was not, so it now pins the two things
+  that actually still protect a large body: the 1,200 floor, and the response
+  SAYING movement is not included. A basal-priced target is only honest if the
+  person knows the rest of their day comes off as well — silence there would be
+  the invented-2,600 failure inverted, a computed number delivered as though it
+  were the whole story.
+- **The floors did not move**, and for a small body the 1,200 floor now binds
+  BEFORE the 300 deficit floor can — the rail working, in the safe direction.
+- **"Maintain" had to be renamed.** At basal, a body that moves still loses, so
+  the option is *"eat to basal"* everywhere — menu, dashboard, plan. Calling it
+  maintaining while it quietly ran a deficit is exactly the silent wrongness
+  this product exists to prevent.
+- **A stored target above basal is not a surplus.** Legacy accounts hold
+  maintenance-era targets, and "3,083 against a basal of 2,473" must read as
+  *the deficit comes from what you move* — never "surplus", which tells
+  somebody who is losing that they are gaining.
+- **The weigh-in trend stopped being a nicety.** It was always the corrector;
+  under this basis it is the only thing that reconciles the projected rate with
+  the real one, and every surface says so.
+
+`energyBalance` is untouched: the day's BURN still counts resting + training +
+work, and the receipt still itemises it. This is the TARGET basis only.
+
 ### One bun reported as a whole day
 
 *"Add another ciabatta bun — how many am I at today? How many calories?"*

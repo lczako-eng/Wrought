@@ -5549,8 +5549,9 @@ function planPanel(d) {
       <p class="sub">No plan on file yet. Tell your assistant what you are after and how fast —
       <em>"I want to lose weight, steady pace"</em> — and it works the numbers out from your own
       body and shows them here.</p>
-      ${p.maintenance ? `<p class="sub dim">For reference, maintenance for you is about
-        <strong>${n(p.maintenance)}</strong> a day.</p>` : ''}
+      ${p.maintenance ? `<p class="sub dim">For reference, your basal — what your body costs
+        doing nothing — is about <strong>${n(p.maintenance)}</strong> a day. Anything you move
+        comes off on top of that.</p>` : ''}
     </section>`;
   }
 
@@ -5559,9 +5560,10 @@ function planPanel(d) {
     <h2>Your plan</h2>
     ${t != null ? `<div class="plantop">
       <span class="planbig">${n(t)}<em>a day</em></span>
-      ${p.maintenance != null ? `<span class="planvs">against a maintenance of
-        <strong>${n(p.maintenance)}</strong>${p.deficit != null ? ` — about ${n(Math.abs(p.deficit))}
-        ${p.deficit >= 0 ? 'down' : 'up'} a day` : ''}${p.projected_kg_per_week != null
+      ${p.maintenance != null ? `<span class="planvs">against a basal of
+        <strong>${n(p.maintenance)}</strong>${p.deficit != null ? (p.deficit >= 0
+          ? ` — about ${n(p.deficit)} down a day before you move at all`
+          : ` — ${n(Math.abs(p.deficit))} above basal, so the deficit comes from what you move`) : ''}${p.deficit >= 0 && p.projected_kg_per_week != null
           ? `, roughly ${Math.abs(p.projected_kg_per_week)}kg a week` : ''}</span>` : ''}
     </div>` : ''}
     <div class="planrows">
@@ -5737,10 +5739,13 @@ function targetOptionsPanel(d) {
   return `<section class="panel" id="set-targets">
     <h2>No calorie target set</h2>
     ${gated}
-    <p class="sub">Nothing is set. These are worked out from your own height, weight, age, sex and
-    activity level — not picked off a chart — and none of them applies until you choose one.</p>
+    <p class="sub">Nothing is set. These are worked out from your own height, weight, age and
+    sex — your basal rate, not a lifestyle category picked off a chart — and
+    none of them applies until you choose one. <strong>Movement is not included:</strong>
+    walking, work and training all come off on top, so a day you move loses faster than
+    the pace says.</p>
     <div class="planrows">
-      ${row('Maintenance', o.maintenance, null, 'maintain', null)}
+      ${row('Eat to basal', o.maintenance, null, 'maintain', null)}
       ${L.gentle ? row('Gentle cut', L.gentle.calories, L.gentle.kg_per_week, 'lose', 'gentle') : ''}
       ${L.steady ? row('Steady cut', L.steady.calories, L.steady.kg_per_week, 'lose', 'steady') : ''}
       ${L.aggressive ? row('Aggressive cut', L.aggressive.calories, L.aggressive.kg_per_week, 'lose', 'aggressive') : ''}
