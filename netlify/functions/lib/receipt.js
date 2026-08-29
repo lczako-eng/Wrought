@@ -175,11 +175,24 @@ export function dayReceipt({ day = null, balance = null, date = null, today = nu
 
   const net = inn.total - out.total;
 
+  // THE MATH, SHOWN. The founder, on being handed lines without the add-up:
+  // "do the math, do the add-up — we have to see either plus or minus. My
+  // basal rate should be on there, plus what I burnt, minus what I've eaten,
+  // as an overview." The safe part is that these are the SAME figures as the
+  // lines above — the OUT equation is the three counted lines, which the
+  // harness already holds to sum exactly to the total — so an equation here
+  // can never argue with the receipt it sits on.
+  const math = {
+    out: `${out.lines.map(l => `${money(l.calories)} ${shortName(l.what)}`).join(' + ')} = ${money(out.total)} out`,
+    net: `${money(inn.total)} in − ${money(out.total)} out = ${net < 0 ? `${money(Math.abs(net))} down` : net > 0 ? `${money(net)} over` : 'level'}`,
+  };
+
   return {
     date: date || day.date,
     in: inn,
     out,
     net,
+    math,
     direction: balance.direction,
     projected_kg_per_week: balance.projected_kg_per_week,
     partial,
@@ -194,8 +207,17 @@ export function dayReceipt({ day = null, balance = null, date = null, today = nu
       'then the net. Do not round them differently, do not add them up yourself, and do not drop the lines and quote only the totals — ' +
       'the whole point is that they can be checked one at a time. ' +
       (setAside.length ? 'Say what was set aside and why — a correct figure that looks smaller than their own arithmetic reads as the log having been ignored. ' : '') +
+      'END WITH THE MATH: say both equations in `math` — the burn added up, then in minus out with its plus or minus. ' +
+      'THE BURN IS NEVER YOURS TO ESTIMATE. It comes only off these lines. If a piece is missing — a session with no minutes, a watch that has not synced — say exactly what is missing and ask for it, then log it and read the day again. Never fill the gap with a figure or a range of your own, at any size, under any framing. ' +
       'Every figure here is an estimate and is said to be one.',
   };
+}
+
+// The equation reads as words a person says — "resting", not a column header.
+function shortName(what) {
+  if (/resting/i.test(what)) return 'resting';
+  if (/training/i.test(what)) return 'training';
+  return 'work/moving';
 }
 
 function otherNote(balance, a) {
@@ -226,7 +248,11 @@ function receiptSay(inn, out, net, partial = false) {
     return lines.join('\n');
   }
 
-  lines.push(`OUT — ${money(out.total)}`);
+  // The add-up is ON the total line — "my basal rate should be on there, plus
+  // what I burnt". These are the same three counted figures as the lines
+  // below, which the harness holds to sum exactly, so the equation can never
+  // disagree with its own receipt.
+  lines.push(`OUT — ${out.lines.map(l => `${money(l.calories)} ${shortName(l.what)}`).join(' + ')} = ${money(out.total)}`);
   for (const l of out.lines) {
     lines.push(`  ${l.what} — ${money(l.calories)}`);
     for (const o of l.of || []) {
@@ -235,9 +261,12 @@ function receiptSay(inn, out, net, partial = false) {
     }
   }
 
-  lines.push((net < 0 ? `NET — ${money(Math.abs(net))} down`
-            : net > 0 ? `NET — ${money(net)} over`
-            : 'NET — level')
+  // The subtraction, written out with its plus or minus — never a bare verdict
+  // whose working the reader has to reconstruct.
+  lines.push(`NET — ${money(inn.total)} in − ${money(out.total)} out = `
+    + (net < 0 ? `${money(Math.abs(net))} down`
+     : net > 0 ? `${money(net)} over`
+     : 'level')
     + (partial ? ' so far — the burn is the whole day, the food is only what is logged yet' : ''));
   return lines.join('\n');
 }
