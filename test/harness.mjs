@@ -5479,7 +5479,7 @@ await test('four hours of work comes back with what it was worth', () => {
   assert.deepEqual(work.of, [{ what: 'Petting zoo, 4h', hours: 4, calories: 1050 }]);
   // And the shift is visible in the spoken form, not just the structure.
   assert.match(r.say, /Petting zoo, 4h \(4h\) — 1,050/);
-  assert.match(r.say, /NET — 4,603 down/);
+  assert.match(r.say, /NET — 330 in − 4,933 out = 4,603 down/);
 
   // Every eaten item keeps its own figure — the same doctrine, the other side.
   assert.equal(r.in.lines.length, 3);
@@ -5600,6 +5600,35 @@ await test('the receipt is read out rather than summarised', () => {
 
   assert.match(SERVER_INSTRUCTIONS, /BOTH SIDES OF THE SUBTRACTION GET ITEMISED/);
   assert.match(SERVER_INSTRUCTIONS, /LOGGING WORK ALWAYS COMES BACK WITH WHAT IT WAS WORTH/);
+});
+
+await test('the math is written out, and a burn gap is never the model\'s to fill', () => {
+  // "Do the math, do the add-up — we have to see either plus or minus. My
+  // basal rate should be on there, plus what I burnt, minus what I've eaten,
+  // as an overview." And in the same screenshot, the model had filled a burn
+  // gap with "~1,400–1,800 active calories" invented at his size — the
+  // invented-number failure on the side of the subtraction where flattery
+  // does the damage.
+  const r = dayReceipt({ day: PETTING_DAY(), balance: PETTING_BALANCE() });
+
+  // The OUT equation is built from the SAME counted lines the sum test holds
+  // to the total, so it can never argue with the receipt it sits on.
+  assert.ok(r.math.out.endsWith(`= ${r.out.total.toLocaleString()} out`), r.math.out);
+  for (const l of r.out.lines) {
+    assert.ok(r.math.out.includes(l.calories.toLocaleString()), `the equation dropped ${l.what}`);
+  }
+  assert.equal(r.math.net,
+    `${r.in.total.toLocaleString()} in − ${r.out.total.toLocaleString()} out = ${Math.abs(r.net).toLocaleString()} down`);
+
+  // Both equations live in the say — the form a model actually reads out.
+  assert.ok(r.say.includes(`= ${r.out.total.toLocaleString()}`), 'the OUT line lost its add-up');
+  assert.match(r.say, /NET — [\d,]+ in − [\d,]+ out = /);
+
+  // And the note forbids the exact failure: a missing piece of the burn is
+  // named and asked for, never filled with the model's own figure or range.
+  assert.match(r.note, /NEVER YOURS TO ESTIMATE/);
+  assert.match(r.note, /ask for it/);
+  assert.match(r.note, /range of your own/);
 });
 
 await test('every session is itemised from the same pass that totals them', () => {
