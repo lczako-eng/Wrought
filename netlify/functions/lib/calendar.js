@@ -24,6 +24,7 @@
 // deficit. Nothing is guessed to fill a cell.
 
 import { restingBurn, ACTIVITY } from './training.js';
+import { sayWeight } from './wrought.js';
 
 const n = v => (Number.isFinite(Number(v)) ? Number(v) : 0);
 
@@ -76,7 +77,7 @@ function burnFor(profile, weightKg, activeCalories) {
  * @param foodRows  food and drink events, with summary and detail
  * @param profile   the user's profile
  */
-export function calendarDays({ days = [], foodRows = [], profile = {} } = {}) {
+export function calendarDays({ days = [], foodRows = [], doneRows = [], profile = {} } = {}) {
   const weights = weightByDay(days);
 
   // Meals belong to the day they were eaten, in the order they went in.
@@ -91,9 +92,20 @@ export function calendarDays({ days = [], foodRows = [], profile = {} } = {}) {
     });
   }
 
+  // What was DONE that day, itemised — "when you push the calendar, it should
+  // pop up everything you did for that day." A square that opens to food and a
+  // bare session count is half the day; the workouts and the shifts are the
+  // other half, each with its own figure, exactly as the day card holds them.
+  const doneByDay = new Map();
+  for (const r of doneRows) {
+    if (!doneByDay.has(r.local_date)) doneByDay.set(r.local_date, []);
+    doneByDay.get(r.local_date).push(r);
+  }
+
   return days.map(d => {
     const burn = burnFor(profile, weights.get(d.date), d.active_calories);
     const meals = mealsByDay.get(d.date) || [];
+    const done = doneByDay.get(d.date) || [];
     const inn = d.calories != null ? d.calories : null;
 
     return {
@@ -109,10 +121,26 @@ export function calendarDays({ days = [], foodRows = [], profile = {} } = {}) {
       active_source: burn.source || null,
       meals,
       meal_count: meals.length,
+      // The training and the work, each entry with its own number — never a
+      // count standing in for a record. A shift keeps its work identity here
+      // exactly as everywhere else: shown, priced, never a session.
+      training: done.filter(r => r.event_type === 'workout').map(r => ({
+        summary: r.summary || 'workout',
+        minutes: r.detail?.minutes != null ? Math.round(n(r.detail.minutes)) : null,
+        distance_km: r.detail?.distance_km ?? null,
+        calories: r.detail?.calories != null ? Math.round(n(r.detail.calories)) : null,
+      })),
+      work: done.filter(r => r.event_type === 'activity').map(r => ({
+        summary: r.summary || 'work',
+        hours: r.detail?.hours ?? null,
+        calories: r.detail?.kcal != null ? Math.round(n(r.detail.kcal)) : null,
+      })),
       sessions: d.sessions || 0,
       minutes: d.minutes || 0,
       protein_g: d.protein_g,
       weight_kg: d.weight_kg,
+      // Pre-said in their own unit, because the page draws and never converts.
+      weight_say: sayWeight(d.weight_kg, profile.units),
       steps: d.steps,
       estimated: meals.some(m => m.estimated),
     };

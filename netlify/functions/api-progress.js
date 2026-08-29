@@ -143,7 +143,7 @@ export const handler = async (event) => {
   // "It takes a while to load" was not the queries being slow. It was them
   // queueing.
   const [range, today, goals, win, histSets, sessions, connections, routines, foodRows, brief, workoutRows,
-         recentRaw, blockRow, everCount, lastWeightRow, cardioRows, fastRows] = await Promise.all([
+         recentRaw, blockRow, everCount, lastWeightRow, cardioRows, fastRows, doneRows] = await Promise.all([
     rangeFacts(user.id, profile, from, to),
     dayFacts(user.id, profile, to),
     getGoals(user.id),
@@ -241,6 +241,17 @@ export const handler = async (event) => {
       .eq('user_id', user.id).eq('event_type', 'fast')
       .order('local_date', { ascending: false }).limit(60)
       .then(r => r.data || []),
+
+    // What was DONE on each calendar day — workouts and shifts with their own
+    // figures, so a tapped square opens to the whole day rather than food and
+    // a bare count. Bounded by the loaded window, which is all the calendar
+    // draws.
+    supabase.from('wrought_events')
+      .select('event_type, local_date, summary, detail')
+      .eq('user_id', user.id).in('event_type', ['workout', 'activity'])
+      .gte('local_date', from).lte('local_date', to)
+      .order('occurred_at', { ascending: true }).limit(2000)
+      .then(r => r.data || []),
   ]);
 
   // Everything that is a TREND stays bounded by the chosen range; only the
@@ -311,7 +322,7 @@ export const handler = async (event) => {
   // The month laid out as squares, both halves of the sum on each one. Totals
   // count logged days only — see lib/calendar.js for why that is load-bearing
   // rather than fussy.
-  const calDays = calendarDays({ days: range.days, foodRows, profile });
+  const calDays = calendarDays({ days: range.days, foodRows, doneRows, profile });
   const imperial = profile.units === 'imperial';
   const w = kg => (kg == null ? null : imperial ? kgToLb(kg) : kg);
 
