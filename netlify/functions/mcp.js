@@ -132,6 +132,8 @@ THE QUESTIONNAIRE GATES BUILDING A WORKOUT, NOT RUNNING ONE. suggest_workout, de
 
 THE TARGETS GATE, one step behind the questionnaire. Once the questionnaire is done, the same building tools refuse with goals_required until a daily calorie target is set — maintain is a first-class answer, never the option for somebody who would not commit. The refusal carries the computed options and set_link, the goals page. ALWAYS render set_link as a tappable markdown hyperlink — [Open your goals](https://wrought.fit/app.html#targets) — whenever it appears, here or on any goals-shaped response: the founder has asked for that link more times than anything else in this product, and naming the page without linking it is a failure. Two ways through, both one step: they say a pace or maintain (call set_goal, then the training tool again in the same turn), or they tap the link and set it on the dashboard. A care flag suspends this gate entirely, and saved routines and logging are never touched by it.
 
+AND UNTIL A TARGET HAS EVER BEEN CHOSEN, THE LINK IS AMBIENT: log and brief carry goals_link, and every reply that carries it ENDS with the one-line tappable hyperlink. No matter what the conversation is about — that is the founder's explicit order. It stops the moment a target exists (a dropped one counts as answered), stays silent under a care flag, and a quiet in-passing capture stays quiet.
+
 GETTING SOMEBODY TRAINING — THE EXPECTATION IS SET ONCE, THEN KEPT VISIBLE. The FIRST time they want a workout, a plan, or say they should be training more, and the profile has no train_days or equipment: ask ONCE, in one short message, all together — how many days a week they will honestly train (take their number; if they ask what is realistic, three to five is the honest range and three beats five for anybody new), what equipment they have, and whether there is anything they cannot do — an injury, a condition, a movement that hurts. Save days and equipment with set_profile, save limitations with remember (category "health"), and NEVER silently program a movement around a limitation without saying so. Then offer start_block so the expectation has a structure with an end.
 
 Every brief carries training_week — the week's sessions against their target, already computed. When the week is behind and no care flag is up, say it in ONE line and offer today's session via suggest_workout. When they trained today, when the target is met, or when any care flag is up, do not push — the no-rest flag exists precisely because more is not the goal. A missed week is information, never a debt: sessions never roll over, and next week starts at zero. Guilt is how training logs die.
@@ -1219,7 +1221,8 @@ async function log(args, user) {
   // Preemptive, on the surface that fires most often. A quiet capture stays
   // quiet — somebody mid-way through a tax question who mentioned ten push-ups
   // did not open a conversation about their training week.
-  const nudge = args.quiet ? null : await nudgeFor(user.id, profile, { day });
+  const nr = args.quiet ? null : await nudgeFor(user.id, profile, { day });
+  const nudge = nr?.nudge || null;
 
   return {
     ...(degraded ? { not_counted_yet: degraded } : {}),
@@ -1227,6 +1230,9 @@ async function log(args, user) {
     // setting and silenced entirely by a care flag. Null means say nothing.
     nudge: nudge || undefined,
     nudge_note: args.quiet ? undefined : nudgeNote(nudge, profile.plan_push),
+    // The founder: "if your goals are not set, the hyperlink will pop up no
+    // matter what." A quiet capture stays quiet — that exception holds.
+    ...(nr?.goals_link ? { goals_link: nr.goals_link } : {}),
     // Each thing written, WITH ITS OWN NUMBERS. Read back off the stored row,
     // never echoed from the arguments — the figures here are what the record
     // holds, which is what makes reading them out a confirmation rather than
@@ -2212,6 +2218,8 @@ async function brief(args, user) {
     receipt: dayReceipt({ day, balance, date, today }),
     nudge: nudge || undefined,
     nudge_note: nudgeNote(nudge, profile.plan_push),
+    // "If your goals are not set, the hyperlink will pop up no matter what."
+    ...(await goalsLink(user.id, goals, flags).then(l => (l ? { goals_link: l } : {}))),
     ...(flags.length ? { care_flags: flags } : {}),
     ...(setup ? { setup_needed: setup } : {}),
     ...(waiting.length ? {
@@ -3974,7 +3982,34 @@ async function nudgeFor(userId, profile, { day = null, goals = null } = {}) {
     day,
   });
 
-  return nudge ? { ...nudge, push: profile.plan_push || 'normal' } : null;
+  return {
+    nudge: nudge ? { ...nudge, push: profile.plan_push || 'normal' } : null,
+    goals_link: await goalsLink(userId, theGoals, flags),
+  };
+}
+
+// THE LINK, NO MATTER WHAT. The founder, confirming the gate: "if your goals
+// are not set, the hyperlink will pop up no matter what." The gate stops
+// workout-building; this makes the link ambient — until a daily calorie
+// target has EVER been chosen, every ordinary reply that reads the account
+// (a logged meal, the brief) ends with the goals page as a line to tap.
+//
+// Two silences, both load-bearing:
+// - EVER-chosen, because a dropped target is "none" and a link that keeps
+//   arriving after somebody answered is a form that follows them around.
+// - A care flag silences it. Pushing target-setting at a flagged account is
+//   coaching intake, and when a flag stands, coaching stops.
+async function goalsLink(userId, goals, flags) {
+  if (flags?.length) return null;
+  if (goals.some(g => g.metric === 'calories' && g.cadence === 'daily')) return null;
+  const { data: ever } = await supabase.from('wrought_goals')
+    .select('id').eq('user_id', userId)
+    .eq('metric', 'calories').eq('cadence', 'daily').limit(1);
+  if (ever?.length) return null;
+  return {
+    url: SET_TARGETS_URL,
+    note: `No goals are set on this account yet. END THE REPLY with one line offering the goals page as a tappable markdown hyperlink — [Set your goals](${SET_TARGETS_URL}) — every time, until a target exists. One line, always after answering what they actually asked; never a lecture, and never a calorie figure unless they ask for the options.`,
+  };
 }
 
 async function guide() {

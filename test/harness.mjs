@@ -4716,6 +4716,32 @@ await test('the targets gate — no further until goals are set, and the link is
   assert.match(appSrc, /Building a new workout waits on this/, 'the gate line is not on the targets panel');
 });
 
+await test('the hyperlink pops up no matter what, until goals are set', () => {
+  // The founder, confirming: "if your goals are not set, the hyperlink will
+  // pop up no matter what." The gate stops workout-building; this makes the
+  // link AMBIENT — log and brief, the two surfaces that fire most often,
+  // carry goals_link until a daily calorie target has ever been chosen.
+  const mcp = readFileSync(new URL('../netlify/functions/mcp.js', import.meta.url), 'utf8');
+  const at = mcp.indexOf('async function goalsLink(');
+  assert.ok(at > 0, 'goalsLink does not exist');
+  const gl = mcp.slice(at, at + 1800);
+  // The two silences, both load-bearing: a care flag stops the push (it is
+  // coaching), and a dropped target is "none" — answered, never re-asked.
+  assert.match(gl, /if \(flags\?\.length\) return null/, 'the ambient link talks over a care flag');
+  assert.match(gl, /if \(ever\?\.length\) return null/, 'a dropped target keeps the link coming forever');
+  // The tappable form, demanded on the response itself.
+  assert.match(gl, /\[Set your goals\]\(\$\{SET_TARGETS_URL\}\)/, 'the markdown hyperlink form is missing');
+  assert.match(gl, /END THE REPLY/, 'nothing orders the line onto every reply');
+
+  // Wired to both hot surfaces — and log's quiet in-passing capture stays
+  // quiet, because a tax conversation that mentioned ten push-ups did not
+  // open a conversation about targets.
+  assert.ok(mcp.includes('...(nr?.goals_link ? { goals_link: nr.goals_link } : {})'), 'log does not carry the link');
+  assert.ok(mcp.includes('const nr = args.quiet ? null : await nudgeFor'), 'the quiet exception is gone');
+  assert.ok(mcp.includes('goalsLink(user.id, goals, flags)'), 'the brief does not carry the link');
+  assert.match(SERVER_INSTRUCTIONS, /THE LINK IS AMBIENT/);
+});
+
 await test('the questionnaire is visible on the dashboard, not only inside a refusal', () => {
   // A gate nobody can see is indistinguishable from a product that never asks.
   const api = readFileSync(new URL('../netlify/functions/api-progress.js', import.meta.url), 'utf8');
