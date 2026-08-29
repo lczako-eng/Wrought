@@ -197,7 +197,7 @@ A RUNNING TOTAL IS THE WHOLE DAY, NEVER THE THING JUST LOGGED. "How many am I at
 
 SAYING SOMETHING WAS SAVED IS A CLAIM ABOUT THE RECORD, AND IT MAY ONLY EVER COME FROM A TOOL. Never say saved, added, logged, updated, changed, removed or "it's on your list" unless a tool call in THIS turn came back and said so. This has already gone wrong in production: "Added, Broski — S-Tier Home Workout is now saved" was answered without save_routine ever being called, and the account held one workout, not two. On a product whose entire promise is that it remembers, a claimed write that never happened is the worst failure there is — worse than a crash, because a crash is visible and this looks exactly like success. Nobody discovers it until they open the dashboard weeks later and their workout is not there. So: if they ask for something to be kept, CALL THE TOOL, in the same turn, before answering — "add that to my list", "save that", "keep it" are instructions, not conversation. Then quote what came back: save_routine returns on_file, which is every saved workout read from the database AFTER the write, and saying the count and the names is the only thing that tells a real save apart from a claimed one. If a call fails, say it failed and what to do — an honest error is worth ten confident sentences. Never write the confirmation first and the tool call later, and never let a long conversation about designing something stand in for having stored it.
 
-BOTH SIDES OF THE SUBTRACTION GET ITEMISED, NOT JUST THE EATING. "What did I do today", "how many calories", "what were those hours worth", "how am I doing on the day" are answered from the receipt block — which log_activity, energy_balance and get_day all return. Read it out LINE BY LINE: every item in with its own calories, then resting, training and work each with their own figure and what each is made of, then the two totals, then the net. Do not collapse it into a sentence, do not quote only the totals, and never add anything up yourself — the lines are there so each one can be argued with separately, which is the only way an estimate is worth anything. LOGGING WORK ALWAYS COMES BACK WITH WHAT IT WAS WORTH: "logged four hours as activity" with no number is the feature failing, because the number is the entire reason to log it. And set_aside is not optional — a figure that looks smaller than somebody's own arithmetic reads as the log having been ignored, so say what was not counted and why.
+BOTH SIDES OF THE SUBTRACTION GET ITEMISED, NOT JUST THE EATING. "What did I do today", "how many calories", "what were those hours worth", "how am I doing on the day", "break it down" are answered from the receipt block — which brief, log_activity, energy_balance and get_day all return. Read it out LINE BY LINE: every item in with its own calories, then resting, training and work each with their own figure and what each is made of, then the two totals, then the net. Do not collapse it into a sentence, do not quote only the totals, and never add anything up yourself — the lines are there so each one can be argued with separately, which is the only way an estimate is worth anything. LOGGING WORK ALWAYS COMES BACK WITH WHAT IT WAS WORTH: "logged four hours as activity" with no number is the feature failing, because the number is the entire reason to log it. And set_aside is not optional — a figure that looks smaller than somebody's own arithmetic reads as the log having been ignored, so say what was not counted and why.
 
 EVERY ITEM GETS ITS OWN NUMBER, AND THE TOTAL GOES UNDERNEATH. When they add something, say what THAT thing came to and then what the day is at — "the ciabatta bun is about 330, which puts you at 1,840 for the day." Never the total on its own. The item's figure is the only one they can check: they were there when they ate it, so they can tell you a steak was not 900 — and a mis-heard or badly estimated entry that only ever appears inside a sum is one nobody can ever find. When they ask what is in the day, list the items with their own calories and put the sum under them, in that order; day_total.items carries every one of them, straight off the stored rows. Read the figures back from the tool response rather than from what you passed in — that is what makes it a confirmation that the record holds them rather than a repetition of what you meant to write. Every one of these is an estimate and is said to be one.
 
@@ -398,7 +398,7 @@ const TOOLS = [
   {
     name: 'brief',
     title: 'The daily read — what happened and the honest verdict',
-    description: 'The product. Returns everything for a day already added up — calories and macros, sessions and volume, weight trend, sleep and steps from any connected device, goal scores, streak — plus a written verdict in the user\'s chosen bluntness. Call this for "how am I doing", "how was today", "what\'s the damage", "morning", or any progress question. Lead with it rather than asking what they want to see.',
+    description: 'The product. Returns everything for a day already added up — calories and macros, sessions and volume, weight trend, sleep and steps from any connected device, goal scores, streak — plus a written verdict in the user\'s chosen bluntness. Call this for "how am I doing", "how was today", "what\'s the damage", "break it down", "today\'s total", "morning", or any progress question. Lead with it rather than asking what they want to see. The response carries `receipt` — the day itemised on BOTH sides, each food item with its own calories and the burn split into resting, training and work. Read it out line by line: one figure per line, never a range, never added up by you.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -2113,6 +2113,14 @@ async function brief(args, user) {
   const flags   = careFlags(range, profile);
   const scored  = scoreGoals(goals, day, summary, profile);
 
+  // "How am I doing" lands HERE — and the sheet's promise that it is answered
+  // from the receipt was pointing at three tools this phrase never reaches.
+  // The founder got prose with ranges ("~11–12 km") and a shrug about the burn,
+  // because the model had a verdict and a facts blob and no receipt in front of
+  // it. The vacuum, again: the fix is never more forbidding, it is putting the
+  // real lines where the model reaches for a summary.
+  const balance = await balanceFor(user.id, profile, date, day);
+
   const facts = {
     date, kind, units: profile.units,
     food: day.food, training: day.training, body: day.body, device: day.device,
@@ -2195,6 +2203,11 @@ async function brief(args, user) {
 
   return {
     date, kind, facts, verdict,
+    // The day itemised on BOTH sides — every food item with its own calories,
+    // then resting, training and work each with their figure, the totals, the
+    // net. This is what "broken down completely" means, and it is computed
+    // here so the model relays lines instead of composing a paragraph.
+    receipt: dayReceipt({ day, balance, date, today }),
     nudge: nudge || undefined,
     nudge_note: nudgeNote(nudge, profile.plan_push),
     ...(flags.length ? { care_flags: flags } : {}),
@@ -2205,8 +2218,8 @@ async function brief(args, user) {
     } : {}),
     say: verdict || `${date}: ${day.food.say} · ${day.training.say}`,
     note: flags.length
-      ? 'Care flags are up. They override the honesty doctrine — follow their guidance exactly and do not coach intake down.'
-      : 'Deliver the verdict as written. It is already pitched to the bluntness they chose; do not soften it or add praise.',
+      ? 'Care flags are up. They override the honesty doctrine — follow their guidance exactly and do not coach intake down. The flag leads. If they asked where the day stands, the receipt may still be read after it — it is factual record, not coaching — but nothing in it may become advice about eating less.'
+      : 'Deliver the verdict as written. It is already pitched to the bluntness they chose; do not soften it or add praise. Then read the receipt LINE BY LINE, both sides: each thing eaten with its own calories, then resting, training and work each with their figure, the two totals, the net. Every number comes off a receipt line — one figure each, never a range, never added up by you.',
     playbook: 'STANDING ORDER: if they now say they are going to, at, or heading to the gym — or name a workout — call suggest_workout or start_session IN THAT TURN. Encouragement without the tool call loses the session.',
     next_actions: ['progress for the trend and the training matrix', 'whats_next for the immediate move', 'suggest_workout if they are training today'],
   };
