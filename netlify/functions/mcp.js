@@ -2449,29 +2449,57 @@ async function trainingGate(user, profile, goals, memory) {
     weightKg: f.weightKg, intent: f.intent,
   });
   const gate = intakeGate(state);
-  if (gate) return gate;
+  if (gate) {
+    // THE LINK RIDES THE GATE THAT ACTUALLY FIRES. In the primary flow the
+    // questionnaire is where targets get chosen — its intent question closes
+    // through set_goal, which writes the calorie target in the same insert —
+    // so a link delivered only by a second gate behind this one would almost
+    // never be seen. The founder's "100 times" demand lands here.
+    return {
+      ...gate,
+      set_link: SET_TARGETS_URL,
+      note: gate.note + ` When the questions reach their goal — what they are after, a pace, a target — include the goals page as a tappable markdown hyperlink, [Open your goals](${SET_TARGETS_URL}): the same computed options can be set with one press there, and the founder has asked for that link more times than anything else in the product.`,
+    };
+  }
   return goalsRequired(user, profile, g);
 }
 
-// THE TARGETS GATE — the founder, having asked "100 times": "we're not going
-// further anymore until there's a hyperlink that directs you right to either
-// your app or the website." Same perimeter as the questionnaire gate, one step
-// behind it: building a workout waits until a daily calorie target exists
-// (maintain is a first-class answer), and the refusal carries the LINK to the
-// goals page inside its own say — a line the person can tap, not a mention of
-// a page that exists somewhere.
+// THE TARGETS GATE — the safety net one step behind the questionnaire. The
+// founder, having asked "100 times": "we're not going further anymore until
+// there's a hyperlink that directs you right to either your app or the
+// website."
 //
-// Two ways through, both one step: say a pace (or maintain) in the chat, or
-// open the link and tap the same computed option on the dashboard. And two
-// deliberate absences:
-// - A CARE FLAG SUSPENDS THIS GATE. While one stands the product refuses to
-//   set a deficit target at all, so a gate demanding the thing the product
-//   will not give is a deadlock wearing a rule.
-// - Running a SAVED routine and logging stay untouched, exactly as with the
+// In the PRIMARY flow this gate never fires, and that is correct: the
+// questionnaire cannot complete without an intent, the intent is set through
+// set_goal, and set_goal writes the daily calorie target in the same insert.
+// What this catches is the paths that close the questionnaire WITHOUT a
+// calorie choice — a bare weight goal set without an intent, a legacy account
+// from before set_goal wrote both rows. For those, building a workout waits
+// until a target is chosen, and the refusal carries the LINK to the goals
+// page inside its own say — a line the person can tap, not a mention of a
+// page that exists somewhere.
+//
+// Three deliberate absences:
+// - "NONE" IS A REAL ANSWER. A calorie target that was set once and dropped
+//   is an answer this gate honours forever — drop_goal is maintenance, never
+//   a confession, and a gate that re-demands a target somebody deliberately
+//   removed is a form that follows them around. Only an account that has
+//   NEVER chosen meets this gate.
+// - A CARE FLAG SUSPENDS IT. When a flag stands, coaching stops — and a
+//   demand to pick a deficit is coaching intake. The gate must not be the
+//   one voice that keeps talking.
+// - Saved routines and logging stay untouched, exactly as with the
 //   questionnaire gate. Capture is never gated.
 async function goalsRequired(user, profile, goals) {
   // The common case costs nothing: a calorie target exists, the gate is open.
   if (goals.some(gl => gl.metric === 'calories' && gl.cadence === 'daily')) return null;
+
+  // Chose once and removed it — "none", honoured. getGoals reads active rows
+  // only, so the retired row is looked for here, and the gate stands down.
+  const { data: ever } = await supabase.from('wrought_goals')
+    .select('id').eq('user_id', user.id)
+    .eq('metric', 'calories').eq('cadence', 'daily').limit(1);
+  if (ever?.length) return null;
 
   const targets = await targetsFor(user.id, profile);
   if (!targets) return null;   // facts missing — the questionnaire gate owns that case
@@ -2554,8 +2582,19 @@ No preamble, no disclaimers, no warm-up boilerplate unless it matters for a name
   // fraction of something: with no daily target there is nothing for "80% of
   // your steps" to be 80% OF, and set_alert refuses to create the rule. So the
   // goal is not a separate feature from the notifications — it is the thing
-  // that makes them possible. Carried ON the suggestion, never blocking it.
-  const needGoals = goalsToSet({
+  // that makes them possible.
+  //
+  // The layering after the targets gate: a never-answered calorie target is
+  // the gate's, upstream of here. What this block still carries is the
+  // NON-BLOCKING asks — the step target, and a calorie ask to somebody who
+  // dropped theirs, which is offered and never forced.
+  //
+  // AND A CARE FLAG SILENCES IT COMPLETELY. Asking a flagged account to pick
+  // a deficit target is coaching intake, and when a flag stands, coaching
+  // stops — the alert kinds already obey this; the in-conversation ask obeys
+  // it too.
+  const flagsNow = careFlags(range, profile);
+  const needGoals = flagsNow.length ? null : goalsToSet({
     goals,
     targets: await targetsFor(user.id, profile),
     stepsAvg: summary.steps_avg,
@@ -2766,8 +2805,11 @@ async function startSession(args, user) {
   // Same targets prompt as suggest_workout — this is the OTHER door into a
   // session and the one somebody reaches by saying "I'm at the gym", so a
   // block that only rode on the suggestion would miss most sessions. Carried
-  // ON the handover, never blocking it.
-  const needGoals = goalsToSet({
+  // ON the handover, never blocking it — and silenced completely by a care
+  // flag, same as on the suggestion: asking a flagged account to pick a
+  // deficit target is coaching intake, and coaching stops.
+  const startFlags = careFlags(recent, profile);
+  const needGoals = startFlags.length ? null : goalsToSet({
     goals,
     targets: await targetsFor(user.id, profile, dayNow),
     stepsAvg: summariseRange(recent, profile).steps_avg,

@@ -143,7 +143,7 @@ export const handler = async (event) => {
   // "It takes a while to load" was not the queries being slow. It was them
   // queueing.
   const [range, today, goals, win, histSets, sessions, connections, routines, foodRows, brief, workoutRows,
-         recentRaw, blockRow, everCount, lastWeightRow, cardioRows, fastRows, doneRows] = await Promise.all([
+         recentRaw, blockRow, everCount, lastWeightRow, cardioRows, fastRows, doneRows, everCalGoal] = await Promise.all([
     rangeFacts(user.id, profile, from, to),
     dayFacts(user.id, profile, to),
     getGoals(user.id),
@@ -252,6 +252,14 @@ export const handler = async (event) => {
       .gte('local_date', from).lte('local_date', to)
       .order('occurred_at', { ascending: true }).limit(2000)
       .then(r => r.data || []),
+
+    // Has a daily calorie target EVER been chosen, active or retired? The
+    // targets gate honours a dropped one as "none" forever, so the screen has
+    // to make the same distinction or it promises an unlock the tools refuse.
+    supabase.from('wrought_goals')
+      .select('id', { count: 'exact', head: true })
+      .eq('user_id', user.id).eq('metric', 'calories').eq('cadence', 'daily')
+      .then(r => (r.count || 0) > 0),
   ]);
 
   // Everything that is a TREND stays bounded by the chosen range; only the
@@ -589,6 +597,15 @@ export const handler = async (event) => {
       setup: {
         answered: setup.known, of: setup.total, complete: setup.complete,
         remaining: setup.still_unknown,
+        // The targets gate, made visible — a gate nobody can see is
+        // indistinguishable from a product that never asks. True only in the
+        // exact state the tools refuse in: questionnaire done, a calorie
+        // target NEVER chosen (a dropped one is "none" and passes), no care
+        // flag standing.
+        targets_gate: !!(setup.complete
+          && !goals.some(g => g.metric === 'calories' && g.cadence === 'daily')
+          && !everCalGoal
+          && !flags.length),
       },
       // What has and has not been done this week, against what was agreed.
       training_week: trainingWeek,
