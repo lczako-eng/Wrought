@@ -5550,8 +5550,33 @@ await test('a day still running is not a finished subtraction', () => {
 
   // And every door passes today, or the label never fires where it matters.
   const mcp = readFileSync(new URL('../netlify/functions/mcp.js', import.meta.url), 'utf8');
-  assert.equal((mcp.match(/dayReceipt\(\{ day, balance, date, today:/g) || []).length, 3,
+  assert.equal((mcp.match(/dayReceipt\(\{ day, balance, date, today[,:\s]/g) || []).length, 4,
     'a receipt door does not tell the receipt what today is');
+});
+
+await test('"how am I doing" gets the receipt, never a summary with ranges', () => {
+  // The founder's screenshots: "today's total" answered with prose and ranges
+  // ("~11–12 km") and a shrug about the burn. The sheet promised the
+  // line-by-line read from three tools — and "how am I doing" routes to
+  // brief, which carried NO receipt. A model handed a verdict and a facts
+  // blob composes its own paragraph; the vacuum is removed by putting the
+  // lines on the tool the phrase actually reaches.
+  const mcp = readFileSync(new URL('../netlify/functions/mcp.js', import.meta.url), 'utf8');
+  const start = mcp.indexOf('async function brief(');
+  const briefFn = mcp.slice(start, mcp.indexOf('async function getDay(', start));
+  assert.match(briefFn, /receipt: dayReceipt\(/, 'the brief does not carry the receipt');
+  assert.match(briefFn, /LINE BY LINE/, "the brief's own note does not order the line-by-line read");
+  assert.match(briefFn, /never a range/, 'ranges are not forbidden on the tool itself');
+  // A care flag still leads, and the factual read never becomes intake advice.
+  assert.match(briefFn, /The flag leads/, 'the flagged branch lost its precedence');
+
+  // Braces on the tool: the DESCRIPTION names the receipt and the no-ranges
+  // rule, because not every client reads the sheet — and the sheet's own
+  // receipt line names brief among the doors.
+  assert.match(mcp, /Call this for "how am I doing"[\s\S]{0,500}?receipt[\s\S]{0,300}?never a range/,
+    'the brief description does not name the receipt and the no-ranges rule');
+  assert.match(SERVER_INSTRUCTIONS, /which brief, log_activity, energy_balance and get_day all return/,
+    'the sheet does not name brief among the receipt doors');
 });
 
 await test('half a subtraction is never presented as the whole picture', () => {
