@@ -1392,6 +1392,21 @@ export function targetOptions({ profile = {}, weightKg = null } = {}) {
   const maintain = goalCall({ profile, weightKg, intent: 'maintain' });
   const gain = goalCall({ profile, weightKg, intent: 'gain' });
 
+  // THE MENU — the founder: "can we not just have those pop-up questions
+  // GPTs use? Answer those, and have Other on it." A connector cannot draw
+  // buttons inside an assistant, so the closest honest thing is a fixed
+  // numbered menu the reply costs one keystroke to answer — and assistants'
+  // own suggestion chips usually pick these up verbatim when the options are
+  // shaped this way. Built HERE so the numbers and the order cannot be
+  // reworded by a model, and "Other" is a real entry, never a fallback.
+  const menu = [
+    ...(opts.gentle ? [`1 · Gentle cut — about ${opts.gentle.calories} a day`] : []),
+    ...(opts.steady ? [`2 · Steady cut — about ${opts.steady.calories} a day`] : []),
+    ...(opts.aggressive ? [`3 · Aggressive cut — about ${opts.aggressive.calories} a day`] : []),
+    ...(maintain.known ? [`4 · Maintain — about ${maintain.calorie_target} a day`] : []),
+    '5 · Other — say what you are after in your own words',
+  ];
+
   return {
     known: true,
     set: false,
@@ -1400,6 +1415,8 @@ export function targetOptions({ profile = {}, weightKg = null } = {}) {
     to_lose: opts,
     to_gain: gain.known ? gain.calorie_target : null,
     resting_basis: rest.basis || null,
+    menu,
+    menu_note: 'Present the choice as EXACTLY this numbered menu, one option per line, nothing reworded or reordered — a menu is what lets the reply be one keystroke, and suggestion chips pick the options up when they are shaped this way. A bare number in the next message IS the answer: 1-3 call set_goal with intent lose and that pace, 4 is intent maintain, 5 means ask one open question about what they are after and map the answer (lose weight AND build muscle is recomp). Never make them type a calorie figure.',
     // The other door, offered as a tappable link. The founder: "it will bring
     // you to your app through GPT like a pop-up hyperlink." The anchor opens
     // the dashboard with the Targets panel unfolded, where the same computed

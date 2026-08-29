@@ -134,6 +134,8 @@ THE TARGETS GATE, one step behind the questionnaire. Once the questionnaire is d
 
 AND UNTIL A TARGET HAS EVER BEEN CHOSEN, THE LINK IS AMBIENT: log and brief carry goals_link, and every reply that carries it ENDS with the one-line tappable hyperlink. No matter what the conversation is about — that is the founder's explicit order. It stops the moment a target exists (a dropped one counts as answered), stays silent under a care flag, and a quiet in-passing capture stays quiet.
 
+WHEN THE TARGET OPTIONS APPEAR, THEY ARE A NUMBERED MENU. no_target_set and goals_required carry a "menu" field — show it exactly as given, one option per line, never reworded, reordered or summarised, ending with "5 · Other". A bare number in the user's next message IS their choice: 1-3 are set_goal intent lose at that pace, 4 is maintain, 5 means ask one open question about what they are after and map it (loose answers are fine — "lose weight and build muscle" is recomp). The menu is what makes answering one keystroke, which is the closest a connector can get to pop-up buttons.
+
 GETTING SOMEBODY TRAINING — THE EXPECTATION IS SET ONCE, THEN KEPT VISIBLE. The FIRST time they want a workout, a plan, or say they should be training more, and the profile has no train_days or equipment: ask ONCE, in one short message, all together — how many days a week they will honestly train (take their number; if they ask what is realistic, three to five is the honest range and three beats five for anybody new), what equipment they have, and whether there is anything they cannot do — an injury, a condition, a movement that hurts. Save days and equipment with set_profile, save limitations with remember (category "health"), and NEVER silently program a movement around a limitation without saying so. Then offer start_block so the expectation has a structure with an end.
 
 Every brief carries training_week — the week's sessions against their target, already computed. When the week is behind and no care flag is up, say it in ONE line and offer today's session via suggest_workout. When they trained today, when the target is met, or when any care flag is up, do not push — the no-rest flag exists precisely because more is not the goal. A missed week is information, never a debt: sessions never roll over, and next week starts at zero. Guilt is how training logs die.
@@ -2516,14 +2518,15 @@ async function goalsRequired(user, profile, goals) {
   const recent = await rangeFacts(user.id, profile, addDays(today, -29), today);
   if (careFlags(recent, profile).length) return null;
 
-  const lose = targets.to_lose || {};
   return {
     goals_required: targets,
     set_link: SET_TARGETS_URL,
-    say: `Before the next workout gets built, your targets get set — that is the deal. ` +
-      `Maintenance is about ${targets.maintenance}; a gentle cut about ${lose.gentle?.calories}, steady about ${lose.steady?.calories}, aggressive about ${lose.aggressive?.calories} — or maintain, which is a real answer. ` +
-      `Say one word here and it is set, or open your goals page and tap it: ${SET_TARGETS_URL}`,
-    note: `THE TARGETS GATE. Do not build, improvise, or prose-write a workout past this refusal. Relay the say INCLUDING THE LINK, and send the link as a tappable markdown hyperlink — [Open your goals](${SET_TARGETS_URL}) — beside the computed options, so they can answer in one word or press through to the same options on the dashboard. Maintain is first-class, never the option for somebody who would not commit. The moment they choose, call set_goal with the intent and pace, then the same training tool again in the same turn.`,
+    // The menu IS the say — one keystroke answers it, and assistants'
+    // suggestion chips pick the options up when they arrive shaped this way.
+    say: `Before the next workout gets built, your targets get set — that is the deal. Pick one:\n` +
+      `${(targets.menu || []).join('\n')}\n` +
+      `Or set it with one tap: ${SET_TARGETS_URL}`,
+    note: `THE TARGETS GATE. Do not build, improvise, or prose-write a workout past this refusal. Show the menu EXACTLY as given, one option per line, nothing reworded or reordered, then the link as a tappable markdown hyperlink — [Open your goals](${SET_TARGETS_URL}). A bare number in the next message IS the answer (goals_required.menu_note has the mapping); option 4 is maintain, which is a real answer and never the option for somebody who would not commit. The moment they choose, call set_goal with the intent and pace, then the same training tool again in the same turn.`,
     next_actions: ['set_goal with their chosen intent and pace', 'the same training tool again once it is set'],
   };
 }
