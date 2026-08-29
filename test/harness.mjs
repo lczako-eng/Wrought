@@ -4684,6 +4684,8 @@ await test('the targets gate — no further until goals are set, and the link is
   assert.match(gr, /\[Open your goals\]\(\$\{SET_TARGETS_URL\}\)/, 'the markdown hyperlink form is not demanded');
   // Maintain is a first-class answer, or the gate railroads a deficit.
   assert.match(gr, /maintain, which is a real answer/);
+  // And the refusal's say IS the menu — one keystroke answers it.
+  assert.match(gr, /\(targets\.menu \|\| \[\]\)\.join/, 'the gate refusal does not show the menu');
 
   // THE IN-CONVERSATION TARGETS ASK IS SILENCED BY A FLAG, on both doors into
   // a session — asking a flagged account to pick a deficit target is coaching
@@ -4740,6 +4742,40 @@ await test('the hyperlink pops up no matter what, until goals are set', () => {
   assert.ok(mcp.includes('const nr = args.quiet ? null : await nudgeFor'), 'the quiet exception is gone');
   assert.ok(mcp.includes('goalsLink(user.id, goals, flags)'), 'the brief does not carry the link');
   assert.match(SERVER_INSTRUCTIONS, /THE LINK IS AMBIENT/);
+});
+
+await test('the target options are a numbered menu — the closest thing to pop-up buttons', async () => {
+  // The founder: "can we not just have those pop-up questions GPTs use?
+  // Answer those, and have Other on it." A connector cannot draw buttons in
+  // an assistant — that is a platform limit, like never speaking first — so
+  // the menu is built SERVER-SIDE, numbered, with Other as a real entry, and
+  // the notes order it shown verbatim with a bare number accepted as the
+  // answer. One keystroke, and suggestion chips pick the options up.
+  const { targetOptions } = await import('../netlify/functions/lib/training.js');
+  const o = targetOptions({
+    profile: { height_cm: 190.5, birth_year: 1982, sex: 'male', activity_level: 'moderate', timezone: 'UTC' },
+    weightKg: 149.7,
+  });
+  assert.equal(o.known, true);
+  assert.equal(o.menu.length, 5, 'the menu is missing options');
+  // Numbered 1-5, in pace order, with Other last and real.
+  o.menu.forEach((line, i) => assert.match(line, new RegExp(`^${i + 1} · `), `option ${i + 1} lost its number`));
+  assert.match(o.menu[3], /Maintain/);
+  assert.match(o.menu[4], /Other — say what you are after in your own words/);
+  // Every cut option carries its computed figure — a menu without the numbers
+  // is a form, and the numbers must be the same computed ones as the fields.
+  assert.ok(o.menu[0].includes(String(o.to_lose.gentle.calories)));
+  assert.ok(o.menu[1].includes(String(o.to_lose.steady.calories)));
+  assert.ok(o.menu[2].includes(String(o.to_lose.aggressive.calories)));
+  assert.ok(o.menu[3].includes(String(o.maintenance)));
+  // The note maps a bare number to the set_goal call, and forbids rewording.
+  assert.match(o.menu_note, /bare number/i);
+  assert.match(o.menu_note, /nothing reworded or reordered/);
+  assert.match(o.menu_note, /recomp/);
+  assert.match(o.menu_note, /Never make them type a calorie figure/);
+  // Belt on the sheet.
+  assert.match(SERVER_INSTRUCTIONS, /THEY ARE A NUMBERED MENU/);
+  assert.match(SERVER_INSTRUCTIONS, /A bare number in the user's next message IS their choice/);
 });
 
 await test('the questionnaire is visible on the dashboard, not only inside a refusal', () => {
