@@ -4683,8 +4683,14 @@ function demoData() {
             { summary: 'Steak and a baked potato', calories: Math.round(inn * 0.39), protein_g: 58, estimated: true },
           ],
           meal_count: inn == null ? 0 : 3,
+          // The same shape the server sends, because a demo missing a field is
+          // how the last two of these panels hid a silent name mismatch.
+          training: d.trained ? [{ summary: 'Push day', minutes: 58, distance_km: null, calories: 340 }] : [],
+          work: [],
           sessions: d.trained ? 1 : 0, minutes: d.trained ? 58 : 0,
-          protein_g: d.protein, weight_kg: d.weight, steps: 9000, estimated: true,
+          protein_g: d.protein, weight_kg: d.weight,
+          weight_say: d.weight != null ? `${d.weight} kg` : null,
+          steps: 9000, estimated: true,
         };
       });
       const roll = (arr, label) => {
@@ -6357,6 +6363,20 @@ function calDayPanel(e) {
       + (e.in != null ? `<div class="total"><span>Total in</span><b>${e.in.toLocaleString()}</b></div>` : '')
     : `<div class="row"><span>Nothing eaten was logged on this day.</span><b></b></div>`;
 
+  // EVERYTHING the day held, not food and a bare count — "when you push the
+  // calendar, it should pop up everything you did for that day." Training and
+  // work each keep their own figure, work keeps its work chip (never a
+  // session), and the server pre-says the weight in their own unit because
+  // this page draws and never converts.
+  const trained = (e.training || []).map(t =>
+    `<div class="row"><span>${esc(t.summary)}${t.minutes ? ` · ${t.minutes} min` : t.distance_km ? ` · ${t.distance_km} km` : ''}</span><b>${t.calories != null ? t.calories.toLocaleString() : '—'}</b></div>`).join('');
+  const worked = (e.work || []).map(w =>
+    `<div class="row"><span>${esc(w.summary)}${w.hours ? ` · ${w.hours}h on task` : ''} <span class="chip">work</span></span><b>${w.calories != null ? w.calories.toLocaleString() : '—'}</b></div>`).join('');
+  const dayChips = [
+    e.steps ? `${Math.round(e.steps).toLocaleString()} steps` : null,
+    e.weight_say ? `weighed in: ${esc(e.weight_say)}` : null,
+  ].filter(Boolean);
+
   return `<div class="calday">
     <h3>${esc(e.date)}</h3>
     <div class="sums">
@@ -6366,6 +6386,9 @@ function calDayPanel(e) {
       ${e.sessions ? `<div><b>${e.sessions}</b><span>${e.sessions === 1 ? 'session' : 'sessions'}</span></div>` : ''}
     </div>
     ${rows}
+    ${trained ? `<p class="sub">Trained</p>${trained}` : ''}
+    ${worked ? `<p class="sub">Worked</p>${worked}` : ''}
+    ${dayChips.length ? `<p class="sub dim">${dayChips.join(' · ')}</p>` : ''}
     ${e.estimated ? '<p class="sub dim">Calories are estimated from what you described, not measured.</p>' : ''}
     ${e.out != null && e.active_source === 'none' ? '<p class="sub dim">Out is your resting burn only — nothing was counting your movement, so the real figure is higher.</p>' : ''}
   </div>`;

@@ -7011,6 +7011,44 @@ await test('an unlogged day is empty, never a zero-calorie day', () => {
   assert.match(r.week.say, /Counted across \d+ days, not the whole/);
 });
 
+await test('a tapped calendar square opens to everything the day held', () => {
+  // "When you push the calendar, it should pop up everything you did for that
+  // day. I want this all logged." Food and a bare session count is half a day
+  // — the workouts, the shifts, the steps and the weigh-in are the other
+  // half, each with its own figure. A shift keeps its work identity here
+  // exactly as everywhere else.
+  const days = [{ date: '2026-08-28', logged: true, calories: 2000, sessions: 1,
+                  minutes: 120, steps: 8000, weight_kg: 150, active_calories: null }];
+  const doneRows = [
+    { event_type: 'workout',  local_date: '2026-08-28', summary: 'Watkins Glen hike', detail: { minutes: 120, calories: 900 } },
+    { event_type: 'activity', local_date: '2026-08-28', summary: 'Petting zoo',       detail: { hours: 4, kcal: 1050 } },
+  ];
+  const [e] = calendarDays({ days, foodRows: [], doneRows, profile: { units: 'imperial' } });
+  assert.deepEqual(e.training, [{ summary: 'Watkins Glen hike', minutes: 120, distance_km: null, calories: 900 }]);
+  assert.deepEqual(e.work, [{ summary: 'Petting zoo', hours: 4, calories: 1050 }]);
+  // Pre-said in their own unit — the page draws, it never converts.
+  assert.equal(e.weight_say, '330.7 lb');
+
+  // The panel reads exactly these names — the entries-vs-log lesson: pin what
+  // the panel reads to what the server sends, or a rename empties the screen
+  // in silence.
+  const page = readFileSync(new URL('../public/app.html', import.meta.url), 'utf8');
+  const panel = page.slice(page.indexOf('function calDayPanel('), page.indexOf('function calRollup('));
+  for (const f of ['e.training', 'e.work', 'e.weight_say', 'e.steps']) {
+    assert.ok(panel.includes(f), `the day pop-up does not read ${f}`);
+  }
+  // And the API hands calendarDays the rows — without this, the fields exist
+  // and are empty on every real account while the demo looks perfect.
+  const api = readFileSync(new URL('../netlify/functions/api-progress.js', import.meta.url), 'utf8');
+  assert.match(api, /calendarDays\(\{ days: range\.days, foodRows, doneRows, profile \}\)/,
+    'api-progress does not pass the done rows to the calendar');
+
+  // The demo carries the shape, because a demo missing a field is how the
+  // last two of these panels hid.
+  assert.match(page, /training: d\.trained \? \[\{ summary: 'Push day'/);
+  assert.match(page, /weight_say: d\.weight != null/);
+});
+
 await test('no net until BOTH sides are actually known', () => {
   // A net computed against a zero nobody measured is a fabricated deficit.
   const days = [calDay('2026-08-01', { weight_kg: 84 })];
