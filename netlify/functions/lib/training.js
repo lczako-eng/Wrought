@@ -1219,8 +1219,28 @@ export function goalCall({ profile = {}, weightKg = null, intent = 'maintain', p
     return { known: false, missing: rest.missing,
              say: `Setting a real target needs ${rest.missing.join(' and ')} first.` };
   }
-  const level = ACTIVITY[profile.activity_level];
-  const maintenance = rest.kcal + (level ? Math.round(rest.kcal * (level.mult - 1)) : 0);
+  // THE TARGET COMES OFF BASAL, AND ONLY BASAL. The founder, twice, the second
+  // time as an instruction: "you can't count on my everyday activity — it has
+  // to be on my basal rate and only my basal rate ... your basal rate should
+  // be a calculation of how big you are, age, sex."
+  //
+  // This overrides the earlier maintenance-based basis, and he is right about
+  // the provenance. An activity multiplier is a LIFESTYLE CATEGORY somebody
+  // picked off a list — "moderate, moving most of the day" — and it silently
+  // moves the target by hundreds of calories on nothing but a guess. Basal is
+  // computed from four measured facts about a body: height, weight, age, sex.
+  // A target built on a guess is the invented-number failure with a dropdown
+  // in front of it; a target built on basal can be audited (restingBurn.basis
+  // shows its working) and argued with.
+  //
+  // WHAT THAT COSTS, STATED RATHER THAN HIDDEN: basal is what a body costs
+  // doing nothing, so the deficit against a real day is LARGER than the one
+  // projected here — a target off basal plus a working shift is a faster loss
+  // than the pace names. The floors do not move (1,200, and the rapid-loss
+  // ceiling), the receipt still shows the real burn in full, and the weekly
+  // weigh-in trend is what corrects the target. That correction is now
+  // load-bearing rather than a nicety, and the caveat says so.
+  const maintenance = rest.kcal;
 
   const w = Number(weightKg);
   const p = PACES[pace] || PACES.steady;
@@ -1243,9 +1263,15 @@ export function goalCall({ profile = {}, weightKg = null, intent = 'maintain', p
     rate = -Math.round((300 * 7 / 7700) * 100) / 100;
     framing = 'a recomposition — modest deficit, protein high, training does the rest';
   } else {
+    // NOT "MAINTENANCE" ANY MORE, and the label had to move with the basis.
+    // Eating to basal is not holding steady — a body that walks, works and
+    // trains burns well past it, so this option still loses. Calling it
+    // "maintain" while it quietly ran a deficit would be the exact class of
+    // silent wrongness this product exists to prevent, so it is named for
+    // what it is.
     target = maintenance;
     rate = 0;
-    framing = 'maintenance';
+    framing = 'eating to basal — what your body costs at rest, so anything you move on top still comes off';
   }
 
   // THE PRODUCT MUST NOT PRESCRIBE WHAT IT WARNS ABOUT.
@@ -1274,19 +1300,29 @@ export function goalCall({ profile = {}, weightKg = null, intent = 'maintain', p
     known: true,
     intent,
     pace,
+    // The basis for the target. Named `maintenance` because every reader of
+    // this object already calls it that, and `basis` says what it actually
+    // is — basal, never a lifestyle multiplier.
     maintenance,
+    basis: 'basal',
+    basal: rest.kcal,
+    resting_basis: rest.basis || null,
     calorie_target: target,
     protein_target_g: protein,
     projected_kg_per_week: rate,
-    resting_only: !level,
+    // Always true now: the target is priced off what a body costs doing
+    // nothing, so the real deficit on a day with movement in it is bigger.
+    resting_only: true,
     approximate: true,
     ...(held ? { held } : {}),
-    say: `Roughly ${maintenance} a day to hold steady, so the target is about ${target} — ${framing}` +
-         (rate ? `, on pace for roughly ${Math.abs(rate)}kg a ${rate < 0 ? 'week down' : 'week up'}` : '') +
+    say: `Your basal is about ${maintenance} a day — what your body costs doing nothing, from ${rest.basis?.say || 'your height, weight, age and sex'} — so the target is about ${target} — ${framing}` +
+         (rate ? `, which is roughly ${Math.abs(rate)}kg a ${rate < 0 ? 'week down' : 'week up'} against basal alone` : '') +
          `. Protein target about ${protein}g a day.` +
          (held ? ` ${held}` : '') +
-         (!level ? ' NOTE: nothing is counting movement, so maintenance here is resting-only and the real figure is higher — set an activity level and this improves.' : ''),
-    caveat: 'All of it is an estimate. The weekly weigh-in trend is the truth; the target gets corrected against it, never the other way round.',
+         (intent === 'lose' || intent === 'recomp'
+           ? ' Everything you move on top of that — walking, work, training — comes off as well, so a day with movement in it loses faster than the pace says. The weekly weigh-in is what corrects it.'
+           : ''),
+    caveat: 'All of it is an estimate, and it is priced off BASAL rather than a whole day — deliberately, because a lifestyle multiplier is a guess and basal is computed from height, weight, age and sex. The weekly weigh-in trend is the truth; the target gets corrected against it, never the other way round.',
   };
 }
 
@@ -1403,7 +1439,9 @@ export function targetOptions({ profile = {}, weightKg = null } = {}) {
     ...(opts.gentle ? [`1 · Gentle cut — about ${opts.gentle.calories} a day`] : []),
     ...(opts.steady ? [`2 · Steady cut — about ${opts.steady.calories} a day`] : []),
     ...(opts.aggressive ? [`3 · Aggressive cut — about ${opts.aggressive.calories} a day`] : []),
-    ...(maintain.known ? [`4 · Maintain — about ${maintain.calorie_target} a day`] : []),
+    // NAMED FOR WHAT IT IS. Every figure here is priced off basal, so this one
+    // is eating to basal — not "maintain", which it would not do.
+    ...(maintain.known ? [`4 · Eat to basal — about ${maintain.calorie_target} a day`] : []),
     '5 · Other — say what you are after in your own words',
   ];
 
@@ -1424,9 +1462,10 @@ export function targetOptions({ profile = {}, weightKg = null } = {}) {
     // than talk, and for the moment a model has said the numbers twice and
     // the person still has not answered.
     set_link: SET_TARGETS_URL,
-    say: `Nothing is set yet. From ${rest.basis?.say || 'their own numbers'} maintenance is about ${maintain.calorie_target}. ` +
-         `A steady cut is about ${opts.steady?.calories}, gentle about ${opts.gentle?.calories}, aggressive about ${opts.aggressive?.calories}.`,
-    note: 'These are COMPUTED from their height, weight, age, sex and activity level — quote them exactly and never round them into a range of your own. None of them is set: offer, let them pick, then call set_goal with the intent and pace so the brief can score it. ' +
+    say: `Nothing is set yet. Every figure is priced off BASAL, never a lifestyle multiplier: from ${rest.basis?.say || 'their own numbers'} basal is about ${maintain.calorie_target}. ` +
+         `A steady cut is about ${opts.steady?.calories}, gentle about ${opts.gentle?.calories}, aggressive about ${opts.aggressive?.calories}. ` +
+         `Movement is NOT in any of these — walking, work and training all come off on top, so a real day loses faster than the pace names, and the weekly weigh-in is what corrects it.`,
+    note: 'These are COMPUTED off BASAL — from their height, weight, age and sex, never an activity multiplier, which is a lifestyle category somebody picked off a list. Quote them exactly and never round them into a range of your own. Say once that movement is not included: walking, work and training all come off on top, so a real day loses faster than the pace names and the weekly weigh-in is what corrects the target. Option 4 is "eat to basal", NOT maintenance — never call it maintaining, because at basal a body that moves still loses. None of them is set: offer, let them pick, then call set_goal with the intent and pace so the brief can score it. ' +
       'ALSO offer set_link as a plain tappable hyperlink ("or set it with one tap: <link>") — some people would rather press than say, and the link lands on the same computed options. If they do not choose, leave it unset rather than assuming one.',
   };
 }

@@ -3599,8 +3599,49 @@ await test('loss is paced to the body it is for, and the deficit is clamped', ()
   // not handed a rounding-error deficit that does nothing.
   const heavy = goalCall({ profile: GOAL_P, weightKg: 150, intent: 'lose' });
   assert.equal(heavy.maintenance - heavy.calorie_target, 750, 'the deficit cap did not bind');
+  // The light woman now meets the 1,200 FLOOR before the 300 deficit floor can
+  // bind — basal for a small body is close enough to 1,200 that the deficit has
+  // nowhere to go. That is the rail working, and it is the safe direction: the
+  // floor wins over the pace, always.
   const light = goalCall({ profile: { height_cm: 160, birth_year: 1998, sex: 'female', activity_level: 'sedentary' }, weightKg: 50, intent: 'lose' });
-  assert.equal(light.maintenance - light.calorie_target, 300, 'the deficit floor did not bind');
+  assert.equal(light.calorie_target, 1200, 'the care floor did not bind for a small body');
+  assert.ok(light.maintenance - light.calorie_target < 300, 'the deficit outran the floor');
+  assert.match(light.held || '', /1,200 floor/, 'the floor was applied without being said');
+});
+
+await test('the target is priced off BASAL, never a lifestyle multiplier', () => {
+  // The founder, twice, the second time as an instruction: "you can't count on
+  // my everyday activity. It has to be on my basal rate and only my basal
+  // rate — and your basal rate should be a calculation of how big you are,
+  // age, sex." This OVERRIDES the earlier maintenance basis. He is right about
+  // the provenance: an activity multiplier is a category somebody picks off a
+  // list, and it moves a target by hundreds of calories on a guess.
+  const p = { height_cm: 190.5, birth_year: 1982, sex: 'male', activity_level: 'moderate' };
+  const basal = restingBurn(p, 149.7).kcal;
+
+  const c = goalCall({ profile: p, weightKg: 149.7, intent: 'lose', pace: 'steady' });
+  assert.equal(c.maintenance, basal, 'the target basis is not basal');
+  assert.equal(c.basis, 'basal');
+  // The activity level must change NOTHING — that is the whole point.
+  const sedentary = goalCall({ profile: { ...p, activity_level: 'sedentary' }, weightKg: 149.7, intent: 'lose', pace: 'steady' });
+  const active = goalCall({ profile: { ...p, activity_level: 'very_active' }, weightKg: 149.7, intent: 'lose', pace: 'steady' });
+  assert.equal(sedentary.calorie_target, active.calorie_target, 'a lifestyle category still moves the target');
+
+  // WHAT IT COSTS, SAID RATHER THAN HIDDEN. Basal is what a body costs doing
+  // nothing, so every step, shift and session comes off ON TOP — a real day
+  // loses faster than the pace names. The number is not wrong; a silent one
+  // would be, and the weigh-in trend is what corrects it.
+  assert.match(c.say, /basal/i);
+  assert.match(c.say, /comes off as well|come off|on top of that/i);
+  assert.match(c.say, /weekly weigh-in/i);
+  assert.match(c.caveat, /priced off BASAL/);
+
+  // "Maintain" is NOT maintenance at basal — a body that moves still loses
+  // eating to basal, so the option is named for what it actually does.
+  const m = goalCall({ profile: p, weightKg: 149.7, intent: 'maintain' });
+  assert.equal(m.calorie_target, basal);
+  assert.match(m.say, /eating to basal/i);
+  assert.ok(!/\bmaintenance\b/i.test(m.say), 'eating to basal is still being called maintenance');
 });
 
 await test('the intake target never lands below the care floor', () => {
@@ -3896,13 +3937,19 @@ await test('a target is never quoted without its maintenance', () => {
 
   assert.equal(p.set, true);
   assert.equal(p.calorie_target, 3083);
-  assert.ok(p.maintenance > p.calorie_target, 'maintenance is missing or below the target');
+  // The basis is BASAL now, so a target STORED under the old maintenance basis
+  // sits ABOVE it — and that is a legacy account, not a bug. It must read
+  // honestly rather than as a "surplus", which would say gaining to somebody
+  // who is losing: above basal means the movement is what makes the deficit.
+  assert.equal(p.basis, 'basal');
+  assert.ok(p.maintenance > 0, 'the basal figure is missing');
   assert.equal(p.deficit, p.maintenance - p.calorie_target, 'the three do not subtract');
   // The rate is derived from the deficit, never stated independently.
   assert.equal(p.projected_kg_per_week, -Math.round((p.deficit * 7 / 7700) * 100) / 100);
   // And the sentence carries all three, so a target can never be read alone.
-  assert.match(p.say, /against a maintenance of about/);
-  assert.match(p.say, /kg a week/);
+  assert.match(p.say, /against a basal of about/);
+  assert.ok(!/surplus/.test(p.say), 'a target above basal was reported as a surplus — that reads as gaining');
+  assert.match(p.say, /movement|move/i, 'nothing says where the deficit actually comes from');
 
   // No goal set: no invented target, and nothing pretending to be one.
   const bare = planRead({ profile: { height_cm: 190.5, birth_year: 1982, sex: 'male', activity_level: 'moderate' },
@@ -3915,8 +3962,12 @@ await test('a target is never quoted without its maintenance', () => {
   // stops a model reaching for a plausible one.
   assert.ok(bare.maintenance > 0);
 
-  assert.match(SERVER_INSTRUCTIONS, /THE TARGET IS ALWAYS QUOTED BESIDE ITS MAINTENANCE/);
+  assert.match(SERVER_INSTRUCTIONS, /THE TARGET IS ALWAYS QUOTED BESIDE ITS BASIS/);
   assert.match(SERVER_INSTRUCTIONS, /Never quote the target alone/);
+  // And the basis itself is on the sheet, with both consequences.
+  assert.match(SERVER_INSTRUCTIONS, /PRICED OFF BASAL, NEVER A LIFESTYLE MULTIPLIER/);
+  assert.match(SERVER_INSTRUCTIONS, /Movement is NOT in the target/);
+  assert.match(SERVER_INSTRUCTIONS, /NEVER "maintain"/);
 });
 
 await test('the plan is readable on the website, not only through the assistant', () => {
@@ -3984,17 +4035,38 @@ await test('a missing target is filled by the server, not by the model', () => {
   const t = targetOptions({ profile: p, weightKg: 149.7 });
   assert.ok(t.known);
   assert.equal(t.set, false, 'options must never read as a target already set');
-  assert.ok(t.maintenance > 3000);
+  // Priced off basal on the founder's instruction, so this is his basal
+  // rather than a multiplied day. Computed, auditable, never a category.
+  assert.equal(t.maintenance, restingBurn(p, 149.7).kcal);
   for (const pace of ['gentle', 'steady', 'aggressive']) {
     assert.ok(t.to_lose[pace].calories >= 1200, `${pace} broke the floor`);
     assert.ok(Math.abs(t.to_lose[pace].kg_per_week) < 1.2, `${pace} paces into the care flag`);
   }
-  // Faster means fewer, in order, and every one is well above the invented 2,600.
+  // Faster means fewer, in order.
   assert.ok(t.to_lose.aggressive.calories < t.to_lose.steady.calories);
   assert.ok(t.to_lose.steady.calories < t.to_lose.gentle.calories);
-  assert.ok(t.to_lose.aggressive.calories > 2600,
-    'the computed floor is below the number that was invented — the guard is pointless');
+
+  // THE 2,600 GUARD, RE-POINTED RATHER THAN DELETED — and this is the entry
+  // worth reading twice.
+  //
+  // It used to assert that every computed option sat ABOVE the 2,600 a model
+  // once invented for this exact person, which was the proof the guard was
+  // not decorative. Pricing off basal (the founder's instruction, given
+  // twice) puts the aggressive option BELOW that number: basal 2,473 minus a
+  // 1,000 deficit is 1,473. The assertion cannot stand, and quietly dropping
+  // it would leave the file looking guarded when it is not.
+  //
+  // What still stands between a large body and a target that is too low is
+  // now exactly two things, and both are pinned here: the 1,200 floor above,
+  // and the response SAYING that movement is not included — because a target
+  // off basal is only honest if the person knows the rest of their day comes
+  // off on top. Silence there would be the invented-2,600 failure inverted:
+  // a computed number, delivered as though it were the whole story.
+  assert.match(t.say, /Movement is NOT in any of these/,
+    'the basal basis is not disclosed — the number reads as a whole-day allowance');
+  assert.match(t.say, /weigh-in/, 'nothing names the thing that corrects the target');
   assert.match(t.note, /never round them into a range/i);
+  assert.match(t.note, /never an activity multiplier/i);
 
   // Missing facts produce a refusal, never a guess.
   const blind = targetOptions({ profile: {}, weightKg: null });
@@ -4760,7 +4832,10 @@ await test('the target options are a numbered menu — the closest thing to pop-
   assert.equal(o.menu.length, 5, 'the menu is missing options');
   // Numbered 1-5, in pace order, with Other last and real.
   o.menu.forEach((line, i) => assert.match(line, new RegExp(`^${i + 1} · `), `option ${i + 1} lost its number`));
-  assert.match(o.menu[3], /Maintain/);
+  // NAMED FOR WHAT IT DOES. Every option is priced off basal, so option 4 is
+  // eating to basal — never "maintain", which at basal a moving body does not.
+  assert.match(o.menu[3], /Eat to basal/);
+  assert.ok(!/maintain/i.test(o.menu[3]), 'eating to basal is still labelled maintaining');
   assert.match(o.menu[4], /Other — say what you are after in your own words/);
   // Every cut option carries its computed figure — a menu without the numbers
   // is a form, and the numbers must be the same computed ones as the fields.
@@ -6981,7 +7056,14 @@ await test('the plan panel can never draw a target on its own', () => {
   const panel = src.slice(src.indexOf('function planPanel('), src.indexOf('// Defensible numbers'));
   assert.match(panel, /p\.maintenance/);
   assert.match(panel, /projected_kg_per_week/);
-  assert.match(panel, /against a maintenance of/);
+  // The basis is BASAL and the panel says so — quoting a basal figure under
+  // the word "maintenance" would overstate what the target is measured
+  // against, which is the one error that makes a deficit look smaller than it
+  // is. And a target above basal reads as movement doing the work, never as a
+  // surplus, which would say gaining to somebody who is losing.
+  assert.match(panel, /against a basal of/);
+  assert.match(panel, /above basal, so the deficit comes from what you move/);
+  assert.ok(!/against a maintenance of/.test(panel), 'basal is still being labelled maintenance');
   // Changing it is never a negotiation.
   assert.match(panel, /never a negotiation/);
   assert.ok(!/commit|discipline|serious about/i.test(panel), 'the plan panel is lecturing');
