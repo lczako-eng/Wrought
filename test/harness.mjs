@@ -4640,6 +4640,48 @@ await test('a finished questionnaire opens the gate, and capture is never behind
   assert.match(SERVER_INSTRUCTIONS, /CAPTURE IS NEVER GATED/);
 });
 
+await test('the targets gate — no further until goals are set, and the link is ON the refusal', () => {
+  // The founder, having asked "100 times": "we're not going further anymore
+  // until there's a hyperlink that directs you right to either your app or
+  // the website." Same perimeter as the questionnaire gate, one step behind
+  // it, and the refusal carries the goals-page link in its own say — a line
+  // to tap, not a mention of a page that exists somewhere.
+  const mcp = readFileSync(new URL('../netlify/functions/mcp.js', import.meta.url), 'utf8');
+  const tg = mcp.slice(mcp.indexOf('async function trainingGate('), mcp.indexOf('async function suggestWorkout('));
+
+  // Chained BEHIND the questionnaire gate — the questionnaire collects the
+  // facts the target options are computed from.
+  assert.match(tg, /const gate = intakeGate\(state\);\s*if \(gate\) return gate;\s*return goalsRequired\(/,
+    'the targets gate is not chained behind the questionnaire gate');
+
+  const gr = tg.slice(tg.indexOf('async function goalsRequired('));
+  // The common case is the cheap case: an account with a calorie target pays
+  // no extra queries — the goals check comes before any await.
+  assert.ok(gr.indexOf("gl.metric === 'calories'") > 0
+         && gr.indexOf("gl.metric === 'calories'") < gr.indexOf('await targetsFor'),
+    'an account with a target pays for the gate anyway');
+  // A care flag suspends the gate — while one stands the product refuses to
+  // set a deficit target, and a gate demanding the thing the product will not
+  // give is a deadlock wearing a rule.
+  assert.match(gr, /careFlags\(recent, profile\)\.length\) return null/,
+    'the targets gate can deadlock a flagged account');
+  // The LINK rides in the say itself (a client that reads nothing else still
+  // shows it) and the note demands the tappable markdown form.
+  assert.match(gr, /say:[\s\S]{0,500}\$\{SET_TARGETS_URL\}/, 'the refusal say does not carry the link');
+  assert.match(gr, /\[Open your goals\]\(\$\{SET_TARGETS_URL\}\)/, 'the markdown hyperlink form is not demanded');
+  // Maintain is a first-class answer, or the gate railroads a deficit.
+  assert.match(gr, /maintain, which is a real answer/);
+
+  // Belt on the sheet: the gate and the always-hyperlink order.
+  assert.match(SERVER_INSTRUCTIONS, /THE TARGETS GATE/);
+  assert.match(SERVER_INSTRUCTIONS, /\[Open your goals\]\(https:\/\/wrought\.fit\/app\.html#targets\)/);
+
+  // And a refusal's own way-through survives the call sites — the handlers
+  // must not overwrite the targets gate's next steps with questionnaire ones.
+  assert.ok((mcp.match(/next_actions: gate\.next_actions \?\?/g) || []).length >= 4,
+    'a call site overwrites the gate\'s own next_actions');
+});
+
 await test('the questionnaire is visible on the dashboard, not only inside a refusal', () => {
   // A gate nobody can see is indistinguishable from a product that never asks.
   const api = readFileSync(new URL('../netlify/functions/api-progress.js', import.meta.url), 'utf8');

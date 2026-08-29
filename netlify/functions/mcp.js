@@ -130,6 +130,8 @@ Every goal with a number is scored in every brief and drawn as a ring on the das
 
 THE QUESTIONNAIRE GATES BUILDING A WORKOUT, NOT RUNNING ONE. suggest_workout, design_workout, programmes, start_block, and start_session WITH NO ROUTINE NAMED will refuse with setup_required until the questionnaire is finished, and you must not work around them: no improvised sessions, no "quick workout while we set up", and never a plan of your own composed in prose. But STARTING A WORKOUT THEY ALREADY SAVED IS NEVER GATED — start_session with a routine name runs, and so does log_set, which opens an ad-hoc session on the first set. That is their own plan and their own record, not WROUGHT prescribing for a stranger. When the gate fires it carries can_run_now: offer those saved workouts BY NAME first, in one line, because they can train this minute. Run the questionnaire the response hands you conversationally — three or four questions per message, never the whole list, arithmetic five first, injuries next. Loose combined answers are fine ("lose weight AND build muscle" is recomp) and "none" is a real answer that closes its question — record it. Save every answer the moment it arrives (set_profile, set_goal, set_plan, remember), then call the training tool again in the same turn and hand over the workout without making them ask twice. CAPTURE IS NEVER GATED: food, weight, or training they already did gets logged immediately, questionnaire finished or not.
 
+THE TARGETS GATE, one step behind the questionnaire. Once the questionnaire is done, the same building tools refuse with goals_required until a daily calorie target is set — maintain is a first-class answer, never the option for somebody who would not commit. The refusal carries the computed options and set_link, the goals page. ALWAYS render set_link as a tappable markdown hyperlink — [Open your goals](https://wrought.fit/app.html#targets) — whenever it appears, here or on any goals-shaped response: the founder has asked for that link more times than anything else in this product, and naming the page without linking it is a failure. Two ways through, both one step: they say a pace or maintain (call set_goal, then the training tool again in the same turn), or they tap the link and set it on the dashboard. A care flag suspends this gate entirely, and saved routines and logging are never touched by it.
+
 GETTING SOMEBODY TRAINING — THE EXPECTATION IS SET ONCE, THEN KEPT VISIBLE. The FIRST time they want a workout, a plan, or say they should be training more, and the profile has no train_days or equipment: ask ONCE, in one short message, all together — how many days a week they will honestly train (take their number; if they ask what is realistic, three to five is the honest range and three beats five for anybody new), what equipment they have, and whether there is anything they cannot do — an injury, a condition, a movement that hurts. Save days and equipment with set_profile, save limitations with remember (category "health"), and NEVER silently program a movement around a limitation without saying so. Then offer start_block so the expectation has a structure with an end.
 
 Every brief carries training_week — the week's sessions against their target, already computed. When the week is behind and no care flag is up, say it in ONE line and offer today's session via suggest_workout. When they trained today, when the target is met, or when any care flag is up, do not push — the no-rest flag exists precisely because more is not the goal. A missed week is information, never a debt: sessions never roll over, and next week starts at zero. Guilt is how training logs die.
@@ -2441,11 +2443,53 @@ Answer in 2-4 short sentences: what to do right now and why, in their units. If 
 // remember somebody's training would be the opposite of the product.
 async function trainingGate(user, profile, goals, memory) {
   const f = await planFacts(user.id);
+  const g = goals ?? f.goals;
   const state = intakeState({
-    profile, goals: goals ?? f.goals, memory: memory ?? await getMemory(user.id),
+    profile, goals: g, memory: memory ?? await getMemory(user.id),
     weightKg: f.weightKg, intent: f.intent,
   });
-  return intakeGate(state);
+  const gate = intakeGate(state);
+  if (gate) return gate;
+  return goalsRequired(user, profile, g);
+}
+
+// THE TARGETS GATE — the founder, having asked "100 times": "we're not going
+// further anymore until there's a hyperlink that directs you right to either
+// your app or the website." Same perimeter as the questionnaire gate, one step
+// behind it: building a workout waits until a daily calorie target exists
+// (maintain is a first-class answer), and the refusal carries the LINK to the
+// goals page inside its own say — a line the person can tap, not a mention of
+// a page that exists somewhere.
+//
+// Two ways through, both one step: say a pace (or maintain) in the chat, or
+// open the link and tap the same computed option on the dashboard. And two
+// deliberate absences:
+// - A CARE FLAG SUSPENDS THIS GATE. While one stands the product refuses to
+//   set a deficit target at all, so a gate demanding the thing the product
+//   will not give is a deadlock wearing a rule.
+// - Running a SAVED routine and logging stay untouched, exactly as with the
+//   questionnaire gate. Capture is never gated.
+async function goalsRequired(user, profile, goals) {
+  // The common case costs nothing: a calorie target exists, the gate is open.
+  if (goals.some(gl => gl.metric === 'calories' && gl.cadence === 'daily')) return null;
+
+  const targets = await targetsFor(user.id, profile);
+  if (!targets) return null;   // facts missing — the questionnaire gate owns that case
+
+  const today = localDateFor(profile.timezone);
+  const recent = await rangeFacts(user.id, profile, addDays(today, -29), today);
+  if (careFlags(recent, profile).length) return null;
+
+  const lose = targets.to_lose || {};
+  return {
+    goals_required: targets,
+    set_link: SET_TARGETS_URL,
+    say: `Before the next workout gets built, your targets get set — that is the deal. ` +
+      `Maintenance is about ${targets.maintenance}; a gentle cut about ${lose.gentle?.calories}, steady about ${lose.steady?.calories}, aggressive about ${lose.aggressive?.calories} — or maintain, which is a real answer. ` +
+      `Say one word here and it is set, or open your goals page and tap it: ${SET_TARGETS_URL}`,
+    note: `THE TARGETS GATE. Do not build, improvise, or prose-write a workout past this refusal. Relay the say INCLUDING THE LINK, and send the link as a tappable markdown hyperlink — [Open your goals](${SET_TARGETS_URL}) — beside the computed options, so they can answer in one word or press through to the same options on the dashboard. Maintain is first-class, never the option for somebody who would not commit. The moment they choose, call set_goal with the intent and pace, then the same training tool again in the same turn.`,
+    next_actions: ['set_goal with their chosen intent and pace', 'the same training tool again once it is set'],
+  };
 }
 
 async function suggestWorkout(args, user) {
@@ -2453,7 +2497,7 @@ async function suggestWorkout(args, user) {
   const today = localDateFor(profile.timezone);
 
   const gate = await trainingGate(user, profile, goals, memory);
-  if (gate) return { ...gate, next_actions: ['set_profile / set_goal / set_plan / remember with the answers', 'suggest_workout again once the questionnaire is finished'] };
+  if (gate) return { ...gate, next_actions: gate.next_actions ?? ['set_profile / set_goal / set_plan / remember with the answers', 'suggest_workout again once the questionnaire is finished'] };
 
   const range   = await rangeFacts(user.id, profile, addDays(today, -27), today);
   const summary = summariseRange(range, profile);
@@ -2668,15 +2712,14 @@ async function startSession(args, user) {
         can_run_now: names,
         say: names.length
           ? `I can start one you have already saved right now — ${names.join(', ')} — just say the name. ` +
-            `Building you a NEW one needs the rest of the questionnaire first. ${gate.say}`
+            `Building you a NEW one ${gate.goals_required ? 'waits on your targets' : 'needs the rest of the questionnaire'} first. ${gate.say}`
           : gate.say,
         note: (names.length
           ? 'THEY CAN TRAIN RIGHT NOW. Offer the saved workouts in can_run_now by name FIRST, in one line — starting one of those is not gated and needs nothing answered. Only building a new session is blocked. If they pick one, call start_session again with that routine name in the same turn. If they would rather have something new, then: '
           : '') + gate.note,
         next_actions: [
           ...(names.length ? [`start_session with routine "${names[0]}"`] : []),
-          'finish the questionnaire, saving each answer',
-          'start_session again once it is done',
+          ...(gate.next_actions ?? ['finish the questionnaire, saving each answer', 'start_session again once it is done']),
         ],
       };
     }
@@ -4184,7 +4227,7 @@ async function startBlock(args, user) {
   const profile = await getProfile(user.id);
 
   const gate = await trainingGate(user, profile);
-  if (gate) return { ...gate, next_actions: ['finish the questionnaire, saving each answer', 'start_block again once it is done'] };
+  if (gate) return { ...gate, next_actions: gate.next_actions ?? ['finish the questionnaire, saving each answer', 'start_block again once it is done'] };
 
   const tier = profile.training_age === 'beginner' ? 'beginner'
              : profile.training_age === 'advanced' ? 'advanced' : 'intermediate';
@@ -4335,7 +4378,7 @@ async function designWorkout(args, user) {
   // to suggest_workout and programmes. Recording is never gated; this is not
   // recording.
   const gate = await trainingGate(user, profile, goals, memory);
-  if (gate) return { ...gate, next_actions: ['set_profile / set_goal / set_plan / remember with the answers', 'design_workout again once the questionnaire is finished'] };
+  if (gate) return { ...gate, next_actions: gate.next_actions ?? ['set_profile / set_goal / set_plan / remember with the answers', 'design_workout again once the questionnaire is finished'] };
 
   const name = String(args.name || '').trim().slice(0, 120);
   if (!name) return { error: 'Ask what they want it called first — the name is theirs, not a tidied version of it.' };
@@ -4444,7 +4487,7 @@ async function programmes(args, user) {
 
   // Building or adopting a whole programme is prescribing — the gate applies.
   const gate = await trainingGate(user, profile);
-  if (gate) return { ...gate, next_actions: ['finish the questionnaire, saving each answer', 'programmes again once it is done'] };
+  if (gate) return { ...gate, next_actions: gate.next_actions ?? ['finish the questionnaire, saving each answer', 'programmes again once it is done'] };
 
   const chosen = args.programme
     ? (PROGRAMMES.find(p => p.id === args.programme)
