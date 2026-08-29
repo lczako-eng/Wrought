@@ -1795,6 +1795,45 @@ is drawn precisely:
 - Asked in GROUPS of three or four at the gate (they asked for a workout; the
   fastest way through is to finish), one-at-a-time in-passing everywhere else.
 
+### The targets gate — the second stop, and where the link actually rides
+
+The founder, after asking for the goals hyperlink "100 times": *"we're not
+going further anymore until there's a hyperlink that directs you right to
+either your app or the website."* This overrides the softer "carried on both
+doors, never blocking" doctrine for the CALORIE target the same way the
+questionnaire gate overrode in-passing intake — his call, recorded here.
+
+`goalsRequired()` in `mcp.js`, chained one step behind `intakeGate` in
+`trainingGate`. What an adversarial review of the first version found, all of
+it kept as design:
+
+- **In the primary flow this gate never fires, and that is correct.** The
+  questionnaire cannot complete without an intent; the intent is set through
+  `set_goal`, and `set_goal` writes the daily calorie target in the same
+  insert. So the questionnaire refusal is the gate that actually fires — and
+  **the hyperlink rides THERE** (`trainingGate` attaches `set_link` and the
+  markdown-link instruction to every intake refusal). The targets gate is the
+  net behind it, for paths that close the questionnaire without a calorie
+  choice: a bare weight goal set without an intent, a legacy account.
+- **"None" is a real answer.** A calorie target set once and dropped passes
+  the gate forever — `drop_goal` is maintenance, never a confession, and a
+  gate that re-demands a deliberately removed target is a form that follows
+  somebody around. Only an account that has NEVER chosen meets the gate.
+- **A care flag suspends the gate, and silences the non-blocking asks too.**
+  The honest rationale: a demand to pick a deficit is coaching intake, and
+  when a flag stands, coaching stops. (The first version claimed the product
+  "refuses to set a target under a flag" — no such refusal exists in code;
+  `set_goal` itself stays open because its outputs are floored and paced-safe
+  by construction.) The same rule now silences `goals_needed` on
+  `suggest_workout` and `start_session` for flagged accounts — the alert
+  kinds already obeyed it; the in-conversation ask obeys it too.
+- **The gate is visible.** `targets_gate` on the api-progress `setup` block,
+  computed server-side in the exact state the tools refuse in, draws one line
+  on the No-calorie-target panel — a gate nobody can see is indistinguishable
+  from a product that never asks. Saved routines and capture stay ungated,
+  and the refusal's `say` carries the goals-page URL itself, so a client that
+  reads nothing else still shows a line the person can tap.
+
 ### One bun reported as a whole day
 
 *"Add another ciabatta bun — how many am I at today? How many calories?"*

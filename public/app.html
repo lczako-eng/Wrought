@@ -5727,8 +5727,16 @@ function targetOptionsPanel(d) {
     ${!DEMO && intent ? `<button class="ghost small" data-settarget="${esc(intent)}" data-setpace="${esc(pace || '')}">Set</button>` : ''}
   </div>`;
   const L = o.to_lose || {};
+  // THE GATE, MADE VISIBLE — a gate nobody can see is indistinguishable from a
+  // product that never asks. Server-decided (the exact state the tools refuse
+  // in), so this line and the refusal can never disagree.
+  const gated = d.setup?.targets_gate
+    ? `<p class="sub"><strong>Building a new workout waits on this.</strong> Pick one — including
+       maintenance, which is a real answer — and workouts unlock. Your saved workouts run either way.</p>`
+    : '';
   return `<section class="panel" id="set-targets">
     <h2>No calorie target set</h2>
+    ${gated}
     <p class="sub">Nothing is set. These are worked out from your own height, weight, age, sex and
     activity level — not picked off a chart — and none of them applies until you choose one.</p>
     <div class="planrows">
