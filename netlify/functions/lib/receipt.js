@@ -112,8 +112,10 @@ export function dayReceipt({ day = null, balance = null, date = null, today = nu
       what: 'Training',
       calories: n(balance.training_burn),
       ...(t.entries?.length ? { of: t.entries.map(e => ({
-        what: e.summary, minutes: e.minutes, calories: e.kcal,
-        ...(e.source === 'uncounted' ? { counts_as: 0, why: e.why } : { from: e.source }),
+        what: e.summary, minutes: e.minutes, ...(e.km ? { km: e.km } : {}), calories: e.kcal,
+        ...(e.source === 'uncounted' ? { counts_as: 0, why: e.why }
+          : e.source === 'distance' ? { from: 'distance', why: e.why }
+          : { from: e.source }),
       })) } : {}),
       ...(balance.training_burn === 0 && !t.entries?.length ? { note: 'nothing logged' } : {}),
     },
@@ -256,7 +258,7 @@ function receiptSay(inn, out, net, partial = false) {
   for (const l of out.lines) {
     lines.push(`  ${l.what} — ${money(l.calories)}`);
     for (const o of l.of || []) {
-      const how = o.hours ? `${o.hours}h` : o.minutes ? `${o.minutes} min` : null;
+      const how = o.hours ? `${o.hours}h` : o.minutes ? `${o.minutes} min` : o.km ? `${o.km} km` : null;
       lines.push(`    ${o.what}${how ? ` (${how})` : ''} — ${money(o.calories)}`);
     }
   }

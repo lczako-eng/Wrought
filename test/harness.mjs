@@ -5631,6 +5631,58 @@ await test('the math is written out, and a burn gap is never the model\'s to fil
   assert.match(r.note, /range of your own/);
 });
 
+await test('a distance prices a walk — generic in, generic out, never zero', () => {
+  // "Why do I have to put a time to it? It's just a generic thing — give me a
+  // generic when I say something generic." Right for movement in a way it
+  // would be wrong for food: a walk with a KNOWN distance needs no guess at
+  // all — per-km cost barely moves with pace, so a modest assumed speed plus
+  // the MET table price it. Conservative (the walk is the default reading),
+  // said out loud, and a stated time always replaces it.
+  const walk = trainingBurn([
+    { summary: 'Walking around the fair', detail: { distance_km: 5.5 } },
+  ], 150);
+  const e = walk.entries[0];
+  assert.equal(e.source, 'distance');
+  assert.equal(e.km, 5.5);
+  // (3.5−1) × 150kg × (5.5km ÷ 4.5km/h) × 1.05 ≈ 481 — never zero.
+  assert.equal(e.kcal, Math.round(2.5 * 150 * (5.5 / 4.5) * 1.05));
+  assert.match(e.why, /say how long it took/);
+
+  // A named run prices from the running economy, not the walking one.
+  const run = trainingBurn([{ summary: 'Morning run', detail: { distance_km: 5.5 } }], 150);
+  assert.ok(run.entries[0].kcal > e.kcal * 1.5, 'a run priced like a stroll');
+
+  // The crunch lesson, applied before it costs anything: "Brunch walk" holds
+  // the letters r-u-n and is a walk.
+  const b = trainingBurn([{ summary: 'Brunch walk', detail: { distance_km: 2 } }], 150);
+  assert.equal(b.entries[0].kcal, Math.round(2.5 * 150 * (2 / 4.5) * 1.05));
+
+  // With neither time nor distance there is genuinely nothing to price — it
+  // still counts zero and still says so.
+  const u = trainingBurn([{ summary: 'Went for a walk', detail: {} }], 150);
+  assert.equal(u.entries[0].source, 'uncounted');
+
+  // And needsDuration no longer flags a distance-priced walk as counting
+  // nothing — that sentence would now be false. The receipt's own line asks
+  // for the time as a refinement instead.
+  assert.equal(needsDuration(
+    [{ id: 1, event_type: 'workout', summary: 'Fair walk' }],
+    [{ detail: { distance_km: 5.5 } }]).length, 0);
+  assert.equal(needsDuration(
+    [{ id: 1, event_type: 'workout', summary: 'Gym' }],
+    [{ detail: {} }]).length, 1);
+
+  // On the receipt it reads as a counted line with its km, never as set-aside.
+  const day = PETTING_DAY();
+  const bal = PETTING_BALANCE();
+  bal.training_detail = { entries: walk.entries };
+  bal.training_burn = walk.kcal;
+  const r = dayReceipt({ day, balance: bal });
+  assert.match(r.say, /Walking around the fair \(5\.5 km\) — 481/);
+  assert.ok(!(r.set_aside || []).some(s => /Walking around the fair/.test(s)),
+    'a priced walk was still named as counting nothing');
+});
+
 await test('every session is itemised from the same pass that totals them', () => {
   // Recomputing per-session figures somewhere else is how a receipt and a
   // total end up quoting two different numbers for the same workout.

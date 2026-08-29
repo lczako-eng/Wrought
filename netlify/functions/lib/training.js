@@ -234,6 +234,25 @@ export const ACTIVITY = {
 // daily resting burn.
 const TRAINING_MET = { strength: 5.0, cardio: 7.0, mobility: 2.8 };
 
+// A DISTANCE PRICES A WALK. The founder, told his fair walking counted zero
+// without a time on it: "why do I have to put a time to it? Give me a generic
+// when I say something generic." He is right for movement in a way he would be
+// wrong for food: a guessed lunch poisons a total, but a walk with a KNOWN
+// distance needs no guess at all — per-kilometre cost is nearly pace-invariant
+// for a given mode, so a modest assumed speed plus the Compendium MET prices
+// it defensibly. The assumption is still said out loud, and a stated time
+// always replaces it. The default is the walk, deliberately the cheapest
+// reading — same conservatism as the shift pricing.
+const DISTANCE_MODES = [
+  { match: /\b(run|running|jog|jogging|sprint)/i,             met: 9.8, kmh: 9.5, say: 'a running pace' },
+  { match: /\b(bike|biking|cycl|rode|ride|riding|spin)/i,     met: 6.8, kmh: 16,  say: 'a steady ride' },
+  { match: /\b(swim|swimming)/i,                              met: 7.0, kmh: 2.5, say: 'a steady swim' },
+];
+const DISTANCE_WALK = { met: 3.5, kmh: 4.5, say: 'a walking pace' };
+function distanceMode(summary = '') {
+  return DISTANCE_MODES.find(m => m.match.test(String(summary))) || DISTANCE_WALK;
+}
+
 export function trainingBurn(workouts = [], weightKg = null) {
   let measured = 0, estimated = 0, anyMeasured = false, anyEstimated = false;
   // EVERY SESSION ITEMISED, from the same pass that computes the total, so a
@@ -252,6 +271,18 @@ export function trainingBurn(workouts = [], weightKg = null) {
 
     const mins = Number(w.detail?.minutes);
     if (!Number.isFinite(mins) || mins <= 0 || !weightKg) {
+      // A known distance is enough — pricing it beats a row that says zero
+      // under a day somebody plainly spent on their feet.
+      const km = Number(w.detail?.distance_km);
+      if (Number.isFinite(km) && km > 0 && weightKg) {
+        const mode = distanceMode(w.summary);
+        const est = Math.round((mode.met - 1) * Number(weightKg) * (km / mode.kmh) * 1.05);
+        estimated += est;
+        anyEstimated = true;
+        entries.push({ summary: w.summary, minutes: null, km, kcal: est, source: 'distance',
+                       why: `priced from its ${km} km at ${mode.say} — say how long it took and it sharpens` });
+        continue;
+      }
       // Named rather than dropped. A session contributing zero while looking
       // perfectly logged is the failure needsDuration exists to catch, and a
       // receipt that silently omits it hides exactly that.
