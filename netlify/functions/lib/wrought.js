@@ -995,6 +995,10 @@ export function needsDuration(written = [], events = []) {
     // with calories on it needs nothing.
     if (detail.calories != null) return;
     if (Number(detail.minutes) > 0) return;
+    // A distance is enough to price it — trainingBurn does, at a stated
+    // assumed pace — so flagging it as counting nothing would be false. The
+    // receipt's own line asks for the time as a refinement instead.
+    if (Number(detail.distance_km) > 0) return;
     out.push({ id: row.id, summary: row.summary });
   });
   return out;
