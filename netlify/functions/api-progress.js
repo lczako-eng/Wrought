@@ -741,7 +741,7 @@ export const handler = async (event) => {
         push_devices: pushSubs,
         morning: checkins?.morning_hour != null ? `${checkins.morning_hour}:${String(checkins.morning_minute || 0).padStart(2, '0')}` : null,
         midday:  checkins?.midday_hour != null ? `${checkins.midday_hour}:${String(checkins.midday_minute || 0).padStart(2, '0')}` : null,
-        evening: `${checkins?.brief_hour ?? 22}:00`,
+        evening: `${checkins?.brief_hour ?? 20}:00`,
       },
       profile_known: {
         height_cm: profile.height_cm ?? null,

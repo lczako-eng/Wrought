@@ -2298,7 +2298,7 @@ function renderAccount(user, ids, factors, linkNote) {
   // the work, so "change it" means "open the conversation mid-ask".
   const co = lastPayload?.coach || {};
   const checkinsNow = [co.morning && `morning ${co.morning}`, co.midday && `midday ${co.midday}`,
-    `evening ${co.evening || '22:00'}`].filter(Boolean).join(' \u00b7 ');
+    `evening ${co.evening || '20:00'}`].filter(Boolean).join(' \u00b7 ');
 
   $('content').innerHTML = `
     <section class="panel">
@@ -2317,7 +2317,7 @@ function renderAccount(user, ids, factors, linkNote) {
         <div class="planrow"><span class="lbl">Goals &amp; targets</span>
           ${gptLink('Gym bro \u2014 I want to change my goals. Show me my current targets and the computed options, and set what I pick.', 'Change them')}</div>
         <div class="planrow"><span class="lbl">Check-ins${checkinsNow ? ` \u00b7 ${esc(checkinsNow)}` : ''}</span>
-          ${gptLink('Gym bro \u2014 I want to change my check-in times: morning, midday and evening. Ask me for each and set them.', 'Change times')}</div>
+          ${gptLink('Gym bro \u2014 I want to change my check-ins. Ask me for the morning, midday and evening times, and where the morning notification should open: ChatGPT, Claude or the app. Then set them.', 'Change times & destination')}</div>
         <div class="planrow"><span class="lbl">My gyms</span>
           ${gptLink('Gym bro \u2014 let\\u2019s update my gyms. List what you have on file for each, and I\\u2019ll tell you what changed \\u2014 or I\\u2019ll send photos of a new one.', 'Update them')}</div>
         <div class="planrow"><span class="lbl">My weight</span>
@@ -2910,7 +2910,7 @@ async function loadPush() {
     <p class="sub dim" style="margin-top:14px">What hour do you want it?</p>
     <div class="btnrow">
       <select id="push-hour" class="hourpick">
-        ${HOURS.map(h => `<option value="${h}"${h === (d.brief_hour ?? 22) ? ' selected' : ''}>${String(h).padStart(2, '0')}:00</option>`).join('')}
+        ${HOURS.map(h => `<option value="${h}"${h === (d.brief_hour ?? 20) ? ' selected' : ''}>${String(h).padStart(2, '0')}:00</option>`).join('')}
       </select>
       <button class="ghost" id="push-hour-save">Save</button>
     </div>

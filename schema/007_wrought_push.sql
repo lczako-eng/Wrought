@@ -46,7 +46,7 @@ begin
 end $$;
 
 -- ── When to send ────────────────────────────────────────────────────────────
--- brief-nightly runs hourly, not nightly, because 22:00 is a different instant
+-- brief-nightly runs hourly, not nightly, because 20:00 is a different instant
 -- for every user. This is the hour each person wants it, in their own timezone,
 -- and null means the default. A notification that arrives at the wrong hour is
 -- how somebody turns notifications off for good, and they never come back on.
@@ -66,6 +66,6 @@ begin
 end $$;
 
 comment on column public.wrought_profile.brief_hour is
-  'Local hour to send the nightly read, 0-23. Null means 22:00.';
+  'Local hour to send the nightly read, 0-23. Null means 20:00.';
 comment on column public.wrought_profile.push_enabled is
   'Off means no push, ever, whatever subscriptions exist. A per-device unsubscribe is a device decision; this is the person''s decision.';

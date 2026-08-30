@@ -23,9 +23,9 @@
 //   - Nothing is invented. Every figure comes from the same computed facts the
 //     dashboard and the connector read, so three surfaces cannot disagree.
 //   - A briefing is short, but it is a briefing: yesterday's completed burn,
-//     the week's training position, then one question that opens the day.
-//     Those three belong together because the question is the action the two
-//     facts set up. Anything beyond that is a lecture and will not be read.
+//     today's goals, the week's training position, then a tap that opens the
+//     decision. Those belong together because the interaction is the action
+//     the facts set up. Anything beyond that is a lecture and will not be read.
 //   - Silence is a real answer. A brief with nothing to say sends nothing.
 
 import { spokenFlag } from './voice.js';
@@ -33,7 +33,28 @@ import { spokenFlag } from './voice.js';
 // What the morning can usefully raise, hardest first. The order is the order of
 // consequence, not of cheerfulness: something that makes every other number
 // meaningless outranks a number.
-const MAX_LINES = 4;
+const MAX_LINES = 5;
+const GOAL_NAMES = {
+  calories: 'calories', protein_g: 'protein', steps: 'steps',
+  distance_km: 'distance', active_minutes: 'active minutes',
+  sleep_minutes: 'sleep', weight_kg: 'goal weight',
+};
+
+function goalExpectations(goals = []) {
+  return goals
+    // The live week line below owns training. scoreGoals' general summary can
+    // span a month; the morning must never label that count as this week.
+    .filter(g => g.metric !== 'workout_days' && g.target_value != null)
+    .map(g => {
+      const n = Number(g.target_value);
+      if (!Number.isFinite(n)) return null;
+      const value = (Math.round(n * 10) / 10).toLocaleString('en-US');
+      const unit = g.target_unit ? ` ${g.target_unit}` : '';
+      const cadence = g.cadence === 'weekly' ? ' weekly' : '';
+      return `${GOAL_NAMES[g.metric] || g.goal || g.metric}: ${value}${unit}${cadence}`;
+    })
+    .filter(Boolean);
+}
 
 /**
  * The morning message, or null to send nothing.
@@ -42,6 +63,7 @@ const MAX_LINES = 4;
  * @param flags        careFlags output
  * @param yesterdayBalance energyBalance for the completed day, or null
  * @param week         weekSoFar output
+ * @param goals        active goal rows — expectations, not today's score
  * @param goalsToSet   what has no target yet, from goalsToSet()
  * @param yesterday    yesterday's dayFacts, for the one backward-looking line
  * @param readiness    readiness() output, or null
@@ -49,7 +71,7 @@ const MAX_LINES = 4;
  */
 export function morningBrief({
   facts = {}, flags = [], yesterdayBalance = null, week = null,
-  goalsToSet = null, yesterday = null, readiness = null, planned = null,
+  goals = [], goalsToSet = null, yesterday = null, readiness = null, planned = null,
 } = {}) {
   // THE FLAG IS THE WHOLE MESSAGE. Same rule as the spoken answer and the
   // nightly read, and it is the one line in this file that must never grow a
@@ -68,43 +90,30 @@ export function morningBrief({
     lines.push(`Yesterday: about ${Math.round(yesterdayBalance.calories_out).toLocaleString()} kcal burned.`);
   }
 
-  // 2. WHERE THE WEEK STANDS — always. "2 of 4" is the game state the founder
+  // 2. TODAY'S EXPECTATIONS, read from goals the person actually set. These
+  //    are targets, never an allowance and never a number invented on the lock
+  //    screen. Tapping the notification opens the assistant to keep or change
+  //    them; the push itself never negotiates with a closed conversation.
+  const expectations = goalExpectations(goals);
+  if (expectations.length) {
+    lines.push(`Today's goals: ${expectations.join('; ')}.`);
+  } else if (goalsToSet?.missing?.length) {
+    const what = goalsToSet.missing.slice(0, 2).join(' and ');
+    lines.push(`Nothing set for ${what} yet — tap to set it with WROUGHT.`);
+  }
+
+  // 3. WHERE THE WEEK STANDS — always. "2 of 4" is the game state the founder
   //    asked for; hiding it when the target is met turns the most useful fact
   //    into a nag that only appears while somebody is behind.
   if (week?.say) {
     lines.push(week.say);
   }
 
-  // 3. THE BODY'S VETO, when there is one. It only ever softens; it never turns
+  // 4. THE BODY'S VETO, when there is one. It only ever softens; it never turns
   //    a good reading into permission to go harder.
   const heldBack = readiness && readiness.state && readiness.state !== 'ready';
   if (heldBack && readiness.say) {
     lines.push(readiness.say);
-  }
-
-  // 4. THE INTERACTION. A push cannot accept an answer, but its tap opens the
-  //    assistant with the same question already addressed to the connector.
-  //    A saved workout is an option, not a command; even with a met target the
-  //    question leaves rest as a first-class answer rather than pushing more.
-  if (lines.length || planned?.name) {
-    lines.push(planned?.name && !week?.met && !heldBack
-      ? `Up next: ${planned.name}${planned.est_minutes ? `, about ${planned.est_minutes} min` : ''}. What do you want to train today?`
-      : 'What do you want to train today — or is today a rest day?');
-  }
-
-  // 3. A TARGET THAT DOES NOT EXIST outranks any figure, because without one
-  //    every percentage, ring and pace alert in the product has nothing to be a
-  //    fraction OF. This is the single most useful thing a morning can raise
-  //    with somebody who has been using it for a fortnight and never set one.
-  //    It states the gap and NEVER a number — goalsToSet computes the options,
-  //    set_goal commits one, and a figure arriving unasked on a lock screen
-  //    reads as a decision already taken.
-  if (goalsToSet?.missing?.length) {
-    // `missing` already reads as a noun phrase — "a daily calorie target" — so
-    // it is dropped straight into the sentence rather than having the word
-    // "target" appended to it a second time.
-    const what = goalsToSet.missing.slice(0, 2).join(' and ');
-    lines.push(`Nothing set for ${what} yet — ask WROUGHT and it works one out from your own numbers.`);
   }
 
   // 5. YESTERDAY'S INTAKE, in one clause and only if it is genuinely informative. This
@@ -118,6 +127,16 @@ export function morningBrief({
     lines.push(f.meals_uncounted === f.meals
       ? `Yesterday went in with no macros on it yet.`
       : `Yesterday: roughly ${Math.round(f.calories)} in.`);
+  }
+
+  // 6. THE INTERACTION. The whole notification is the hyperlink; a tap opens
+  //    the selected assistant with the goals and training question already in
+  //    its prompt. A saved workout is an option, not a command, and rest stays
+  //    a first-class answer even when the weekly target is already met.
+  if (lines.length || planned?.name) {
+    lines.push(planned?.name && !week?.met && !heldBack
+      ? `Up next: ${planned.name}${planned.est_minutes ? `, about ${planned.est_minutes} min` : ''}. Tap to keep or change the plan.`
+      : 'Tap to keep or change the goals, then choose today\'s training — or a rest day.');
   }
 
   if (!lines.length) return null;
@@ -157,8 +176,9 @@ export function morningBrief({
 const OPENERS = {
   morning:
     'Gym bro — morning. Using the Wrought connector, give me my morning brief: yesterday\'s computed ' +
-    'calories burned and where I stand in this week\'s training target. Then ask ' +
-    'what I want to train today and wait for my answer before choosing or building today\'s training plan.',
+    'calories burned, my current goals and expectations, and where I stand in this week\'s training target. ' +
+    'Ask whether I want to keep or change any of it, then ask what I want to train today. Wait for my ' +
+    'answer before changing a goal or choosing or building today\'s training plan.',
   // The midday opener ASKS, because the founder's midday is an assessment the
   // AI takes, not a report it reads out: it exists to collect the half-day —
   // what has been eaten, how the day feels — and the assistant's first act is

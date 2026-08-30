@@ -1280,6 +1280,10 @@ export async function writeVerdict({ facts, profile, goals, memory, flags, kind 
       `\nDrop the coaching register entirely for this. Be kind, be plain, do not push performance.`
     : '';
 
+  const receiptRule = facts.goal_receipt
+    ? `\nA computed goal receipt will be placed BEFORE your words:\n${facts.goal_receipt}\nDo not repeat its figures. Add at most two short sentences explaining which recorded actions moved the stated goals. Do not plan tomorrow; the evening closes today.`
+    : '';
+
   const prompt = `You are WROUGHT, writing the ${kind} read for one person's training and eating.
 
 Tone: ${style}
@@ -1291,13 +1295,13 @@ ${JSON.stringify(facts, null, 2)}
 
 ${goals.length ? `THEIR GOALS:\n${goals.map(g => `- ${g.goal}`).join('\n')}` : 'No goals set.'}
 
-${memory.length ? `WHAT YOU KNOW ABOUT THEM:\n${memory.slice(0, 12).map(m => `- ${m.fact}`).join('\n')}` : ''}${guardrails}
+${memory.length ? `WHAT YOU KNOW ABOUT THEM:\n${memory.slice(0, 12).map(m => `- ${m.fact}`).join('\n')}` : ''}${guardrails}${receiptRule}
 
-Write 3-5 short sentences, second person, no headings and no bullet points:
+${facts.goal_receipt ? `Write 1-2 short sentences, second person, no headings and no bullet points.` : `Write 3-5 short sentences, second person, no headings and no bullet points:
 1. What actually happened, in one line.
 2. What they got right — only if they got something right.
 3. What they got wrong, named specifically, with the number.
-4. The one thing to do tomorrow. One thing, not a list.
+4. The one thing to do tomorrow. One thing, not a list.`}
 
 Never diagnose anything. Never comment on their body or appearance beyond the numbers they logged themselves. If food was estimated, say "roughly" rather than stating it as fact.`;
 

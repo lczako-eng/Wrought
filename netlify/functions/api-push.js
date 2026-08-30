@@ -49,7 +49,7 @@ export const handler = async (event) => {
       devices: (subs || []).map(s => ({
         id: s.id, label: s.label, added: s.created_at, last_sent: s.last_sent_at,
       })),
-      brief_hour: prof?.brief_hour ?? 22,
+      brief_hour: prof?.brief_hour ?? 20,
       push_enabled: prof?.push_enabled !== false,
       // The rules somebody set by TALKING, readable and switchable off from
       // the website too. Being able to see what is going to be sent, and stop
