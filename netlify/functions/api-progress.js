@@ -313,10 +313,11 @@ export const handler = async (event) => {
   // that need a run-up to be computable at all. Read off the SELECTED range
   // they break in two different ways on the 1d view the dashboard now opens on:
   //
-  //   - care flags need three logged days and a fortnight, so on one day they
-  //     CANNOT FIRE. They are the one thing that outranks everything else in
-  //     this product, and a screen where they are structurally silent is the
-  //     worst version of this bug.
+  //   - care flags read WEEKS of logged days — an acute week, a fortnight
+  //     average, a month of thin-day memory — none of which one calendar day
+  //     can hold, so on the 1d view they CANNOT FIRE. They are the one thing
+  //     that outranks everything else in this product, and a screen where
+  //     they are structurally silent is the worst version of this bug.
   //   - the week's session count read off one day reports one day. That is not
   //     a missing number, it is a WRONG one, on the figure the whole plan rests
   //     on — and a wrong number is worse than no number.

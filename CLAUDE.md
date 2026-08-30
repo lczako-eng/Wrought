@@ -1344,6 +1344,46 @@ when the tools are absent, none of this server's instructions or descriptions
 are in the model's context to steer it. The catch-up is the recovery, not the
 prevention.
 
+### Sustained means NOW, but the flag keeps its memory — the wolf-cry fix, corrected by its own review
+
+The founder, after three weeks of the identical doctor sentence on his lock
+screen every morning: *"Is this ever gonna be resolved?"* The honest answer
+under the whole-window rule was **September 12** — five half-logged days from
+mid-August kept it firing daily while his current week ran 2,065 / 2,240 /
+1,535. He had long since stopped reading it, which is the failure the
+partial-reading entry already names: **a dismissed care flag is as dangerous
+as a missing one.**
+
+**The first fix was wrong, and the adversarial review proved it by running
+the code.** Judging only the last 7 logged days went blind to a 5:2-shaped
+crash pattern (two 450-kcal days, five 1,250-kcal days, every week — a
+sustained **1,021 average** with never three thin days in one week), and
+forgot a genuine 200-kcal crisis five logged days later behind days that only
+scraped past the binary 1,200 line. The claimed backstop was false:
+`rapid_loss` needs weigh-ins, and the person this flag exists for is the
+person avoiding the scale. Those counterexamples are pinned in the harness so
+they cannot come back.
+
+The rule is now a **composite — any one reading fires, at full strength**:
+
+- **Acute** — 3+ of the last 7 logged days under 1,200. Present tense.
+- **Average** — the last 14 logged days *averaging* under 1,200: the
+  doctrine's literal definition, and the reading line-scraping cannot fake
+  (a 200-kcal crisis followed by 1,210-kcal days averages 831 and HOLDS
+  until recovery is real eating).
+- **Lingering** — 3+ thin days across the month AND the latest still inside
+  the last week of logging. Accumulated evidence fires while it touches the
+  present — the weekly two-crash-day cycle stays caught forever — and
+  releases only after a genuinely clean week, not a calendar month.
+
+What the founder gets: the flag clears **days** after honest eating resumes
+(a clean logged week plus a healthy fortnight average), never three stale
+weeks later — escapable by behaviour, which is what keeps it believed. What
+never moved: the 1,200 line, full-strength firing on thin logs, the partial
+reading, flag-outranks-everything, and the guidance. Clearing now costs a
+clean week AND a healthy average — the price the old rule charged, minus the
+wolf-cry.
+
 ### The invented target — the named failure, in production
 
 The most important entry in this file, because the thing every doctrine here
@@ -2113,8 +2153,9 @@ invented.
 
 **And the one that mattered most.** Care flags, the week's count, recovery and
 earned room were all read off the SELECTED range — harmless at thirty days and
-broken at one. **Care flags need three logged days and a fortnight, so on the
-1d view the dashboard now opens on they could not fire at all** — the one thing
+broken at one. **Care flags read weeks of the record — an acute week, a
+fortnight average, a month of thin-day memory — so on the 1d view the
+dashboard now opens on they could not fire at all** — the one thing
 that outranks everything else in this product, structurally silent. The week's
 count read off a single day is not a missing number, it is a WRONG one, on the
 figure the whole plan rests on. They get their own thirty days whatever the

@@ -801,13 +801,109 @@ function goalActual(g, day, summary) {
 // fires the instructions require the coaching to stop and the tone to change.
 // Getting this wrong is the only way this product genuinely hurts somebody.
 
+// THE SAFETY WINDOW IS ONE FIXED LENGTH, WHATEVER THE CALLER ASKED FOR.
+//
+// careFlags used to judge whatever range it was handed, and every tool hands
+// it a different one: the dashboard passes a range the person CHOSE (a day to
+// four hundred), whats_next fourteen days, start_session fifteen, a workout
+// suggestion twenty-eight, earned_room seven. So the answer to "is this person
+// eating too little" depended on which button was pressed — the same account
+// flagged inside one tool and clear inside the next, on the one computation
+// that outranks everything else in the product. A four-hundred-day range would
+// also count January against somebody and call it "the last month".
+//
+// So the window is fixed here, in the function, rather than trusted to five
+// call sites that each have their own reason to be short or long. Callers may
+// pass more; nothing older than this is ever read. Callers that pass LESS are
+// widened at their own fetch — a flag computed from seven days is not a
+// smaller flag, it is a wrong one.
+export const CARE_WINDOW_DAYS = 30;
+
+function careWindow(days = []) {
+  const dated = days.filter(d => typeof d?.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(d.date));
+  // Hand-built rows without real dates (tests, and any caller building days by
+  // hand) are used whole — capping on a date that does not exist would silently
+  // drop every row, which is the one failure mode a safety window must not have.
+  if (dated.length !== days.length || !dated.length) return days;
+  const last = dated.reduce((m, d) => (d.date > m ? d.date : m), dated[0].date);
+  const cutoff = addDays(last, -(CARE_WINDOW_DAYS - 1));
+  return days.filter(d => d.date >= cutoff);
+}
+
+/**
+ * The last N calendar days of an already-fetched range.
+ *
+ * The other half of the fixed safety window: a tool whose own window is
+ * shorter than 30 days now FETCHES 30 and narrows here for its own
+ * arithmetic, so the care flags see the full window without anybody paying a
+ * second round trip. Widening a fetch is free; a second query on every
+ * suggestion is the queueing failure this file already has a test for.
+ */
+export function lastDays(range, n) {
+  const days = range?.days || [];
+  if (!days.length || !(n > 0)) return range;
+  const last = days.reduce((m, d) => (d.date > m ? d.date : m), days[0].date);
+  const cutoff = addDays(last, -(n - 1));
+  return { ...range, days: days.filter(d => d.date >= cutoff) };
+}
+
 export function careFlags(range, profile) {
   const flags = [];
-  const days = range.days;
+  const days = careWindow(range.days);
   const fed = days.filter(d => d.calories);
 
-  const veryLow = fed.filter(d => d.calories < 1200);
-  if (fed.length >= 3 && veryLow.length >= 3) {
+  // SUSTAINED MEANS NOW — BUT THE FLAG KEEPS ITS MEMORY.
+  //
+  // Two failures shaped this rule, in order. First the founder lived the
+  // wolf-cry: three weeks of the identical doctor sentence on his lock screen
+  // every morning, held up entirely by days two and three weeks old while his
+  // current week ran 2,065 / 2,240 / 1,535 — "Is this ever gonna be
+  // resolved?" A flag nobody can escape by behaviour is one people stop
+  // reading, and a dismissed care flag is as dangerous as a missing one.
+  //
+  // The first fix judged ONLY the last 7 logged days, and an adversarial
+  // review broke it by execution, twice. A 5:2-shaped crash — two 450-kcal
+  // days and five 1,250-kcal days, every week, forever — averages 1,021 a day
+  // and never puts 3 thin days in one week, so it never fired. And a genuine
+  // crisis (three 200-kcal days) was forgotten five logged days later behind
+  // days that only had to scrape past the binary 1,200 line. "rapid_loss will
+  // catch it" was false: that flag needs weigh-ins, and the person this flag
+  // exists for is the person avoiding the scale.
+  //
+  // So the judgement is a COMPOSITE — any one of three readings fires, all at
+  // full strength:
+  //
+  //   acute      3+ of the last 7 logged days under 1,200. The current week
+  //              is thin. Present tense, exactly what "sustained" promises.
+  //   average    the last 14 logged days AVERAGE under 1,200 — the doctrine's
+  //              literal definition, and the reading a binary day-count
+  //              cannot fake its way past: five 1,210-kcal days after a
+  //              200-kcal crisis still average 831, so the crisis is held
+  //              until recovery is real eating, not line-scraping.
+  //   lingering  3+ thin days across the window AND the latest of them still
+  //              inside the last 7 logged days. Accumulated evidence keeps
+  //              firing while it touches the present — the weekly
+  //              two-crash-day cycle stays caught forever — and releases only
+  //              after a genuinely clean week of logging, not a calendar
+  //              month. That release is what makes the flag escapable, and an
+  //              escapable flag is one people keep believing.
+  //
+  // The record can be lied to in every direction — that is true of every rule
+  // over a self-reported log — but clearing this one now takes a full clean
+  // week AND a healthy fortnight average, which is the cost the old 30-day
+  // rule effectively charged, minus the three stale weeks of wolf-cry.
+  const thin = d => d.calories < 1200;
+  const recent7 = fed.slice(-7);
+  const last14 = fed.slice(-14);
+  const thinAll = fed.filter(thin);
+  const acuteCount = recent7.filter(thin).length;
+  const avg14 = last14.length ? last14.reduce((s, d) => s + d.calories, 0) / last14.length : null;
+
+  const acute = acuteCount >= 3;
+  const avgLow = fed.length >= 7 && avg14 < 1200;
+  const lingering = thinAll.length >= 3 && recent7.some(thin);
+
+  if (fed.length >= 3 && (acute || avgLow || lingering)) {
     // A DAY WITH ONE ENTRY ON IT IS NOT EVIDENCE OF A DAY'S EATING. The flag
     // fired on the founder's own lock screen from days that each held a single
     // logged item — partial logging reading as under-eating. The flag still
@@ -817,11 +913,27 @@ export function careFlags(range, profile) {
     // that warns somebody genuinely under-eating must not accuse somebody who
     // logged one coffee, or the flag cries wolf and gets dismissed — and a
     // dismissed care flag is as dangerous as a missing one.
-    const partial = veryLow.every(d => (d.meals ?? 0) <= 1);
+    // PARTIAL IS JUDGED ON THE EVIDENCE THAT ACTUALLY FIRED, never on every
+    // thin day in the window. Read across the whole month it took one older,
+    // fully-logged thin day to turn `partial` false for three CURRENT
+    // single-entry days — which drops the "did meals go unlogged?" question
+    // and accuses somebody of genuinely under-eating on the strength of a day
+    // that had nothing to do with the reading. The evidence set has to be the
+    // one the sentence below is about.
+    const evidence = acute ? recent7.filter(thin)
+                   : avgLow ? last14.filter(thin)
+                   : thinAll;
+    const partial = evidence.length > 0 && evidence.every(d => (d.meals ?? 0) <= 1);
     flags.push({
       flag: 'very_low_intake',
       partial,
-      detail: `${veryLow.length} of the last ${fed.length} logged days came in under 1,200 kcal.` +
+      // The sentence names the reading that fired — the most current first —
+      // so what would clear it is legible from the flag itself.
+      detail: (acute
+        ? `${acuteCount} of your last ${recent7.length} logged days came in under 1,200 kcal.`
+        : avgLow
+        ? `Your last ${last14.length} logged days average about ${Math.round(avg14)} kcal a day.`
+        : `${thinAll.length} days under 1,200 kcal in the last month, the latest inside your last week of logging.`) +
         (partial ? ' Each of those days holds a single entry, so this is either missed logging or genuinely too little.' : ''),
       guidance: 'Stop coaching intake down. Do not suggest a further deficit, a fast, or a lower target under any framing. ' +
         (partial
