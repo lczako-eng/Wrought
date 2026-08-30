@@ -42,7 +42,7 @@ import {
   duplicateItems, duplicateExtra, VALID_TYPES, degradePlan,
   effectiveType, withEffectiveTypes,
 } from '../netlify/functions/lib/wrought.js';
-import { spokenBrief, spokenLog, spokenFlag, pendingVoice, plainBrief } from '../netlify/functions/lib/voice.js';
+import { spokenBrief, spokenLog, spokenFlag, pendingVoice, eveningReceipt, plainBrief } from '../netlify/functions/lib/voice.js';
 
 let passed = 0, failed = 0;
 const results = [];
@@ -8183,17 +8183,60 @@ await test('the nightly read fires without an OpenAI key', () => {
   // dead, for exactly the reason the founder did not want to pay for a key.
   const line = plainBrief({
     facts: {
+      logged: true,
       food: { meals: 3, calories: 1520, protein_g: 57, meals_uncounted: 0 },
-      training: { sessions: 1, say: '1 session, 44 min' },
+      training: { sessions: 1, minutes: 44, say: '1 session, 44 min' },
       device: { steps: 9945 },
+      goals: [
+        { metric: 'calories', scored: true, actual: 1520, target: 2200, unit: 'kcal' },
+        { metric: 'protein_g', scored: true, actual: 57, target: 180, unit: 'g' },
+      ],
       training_week: { say: '2 of 3 sessions this week, 2 days left.', target: 3 },
     },
     balance: { known: true, calories_in: 1520, calories_out: 3213, net: -1693 },
   });
-  assert.match(line, /1520 in/);
-  assert.match(line, /1693 down/);
+  assert.match(line, /Today: 1 workout \(44 min\)/);
+  assert.match(line, /9,945 steps/);
+  assert.match(line, /roughly 1,520 kcal in and 57g protein/);
+  assert.match(line, /about 3,213 kcal burned/);
+  assert.match(line, /Against your goals: calories: 1,520\/2,200 kcal; protein: 57\/180 g/);
   assert.match(line, /2 of 3 sessions/);
-  assert.match(line, /[Ee]stimates/);
+  assert.match(line, /Estimates are labelled/);
+
+  // The receipt itself is the fixed lead whether a model key exists or not.
+  // The written verdict may interpret it, but it may never replace the day's
+  // exact actions or become the first lock-screen sentence.
+  const receipt = eveningReceipt({
+    facts: {
+      logged: true,
+      food: { meals: 2, calories: 1800, protein_g: 140, meals_uncounted: 0 },
+      training: { sessions: 1, minutes: 52 },
+      device: { steps: 8120 },
+      goals: [{ metric: 'protein_g', scored: true, actual: 140, target: 180, unit: 'g' }],
+      training_week: { say: '3 of 4 sessions this week, 3 days left.', target: 4 },
+    },
+    balance: { known: true, calories_out: 3040 },
+  });
+  assert.match(receipt, /^Today:/);
+  assert.match(receipt, /Against your goals:/);
+  assert.match(receipt, /Training week: 3 of 4 sessions/);
+
+  // A note is evidence that somebody spoke, not evidence that they ate zero,
+  // walked zero or slept zero. Only metrics actually recorded today may be
+  // printed as actual/target in a daily receipt.
+  const thin = eveningReceipt({
+    facts: {
+      logged: true,
+      food: { meals: 0, calories: 0, protein_g: 0 },
+      device: { steps: null },
+      goals: [
+        { metric: 'calories', cadence: 'daily', scored: true, actual: 0, target: 2200, unit: 'kcal' },
+        { metric: 'steps', cadence: 'daily', scored: true, actual: 0, target: 8000, unit: 'steps' },
+      ],
+    },
+    balance: { known: false },
+  });
+  assert.equal(thin, null, 'an unlogged metric was printed as zero toward its goal');
 
   // A care flag is the whole message — a lock screen has no room to bury it.
   const flagged = plainBrief({
@@ -8219,6 +8262,19 @@ await test('the nightly hour is theirs to move', () => {
   const src = readFileSync(new URL('../netlify/functions/mcp.js', import.meta.url), 'utf8');
   const fn = src.slice(src.indexOf('async function setProfile('), src.indexOf('async function setGoal('));
   assert.match(fn, /'brief_hour'/);
+
+  // Eight is the product's default close; an explicit personal hour still
+  // wins. Keep every fallback surface aligned or the settings screen and the
+  // sender tell two different stories.
+  const nightly = readFileSync(new URL('../netlify/functions/brief-nightly.js', import.meta.url), 'utf8');
+  const pushApi = readFileSync(new URL('../netlify/functions/api-push.js', import.meta.url), 'utf8');
+  const progressApi = readFileSync(new URL('../netlify/functions/api-progress.js', import.meta.url), 'utf8');
+  const app = page('app.html');
+  assert.match(nightly, /const SEND_HOUR = 20/);
+  assert.match(pushApi, /brief_hour: prof\?\.brief_hour \?\? 20/);
+  assert.match(progressApi, /brief_hour \?\? 20/);
+  assert.ok((app.match(/brief_hour \?\? 20/g) || []).length >= 1,
+    'the notification picker still defaults to a different hour');
   assert.match(fn, /h < 0 \|\| h > 23/);
 });
 
@@ -10358,6 +10414,8 @@ await test('every standing choice has a home where it pops up again', () => {
   // Re-running the assessment says newer answers replace older — popping it
   // again must never read as starting an interrogation from zero.
   assert.match(panel, /newer answers replace the old ones/);
+  assert.match(panel, /where the morning notification should open: ChatGPT, Claude or the app/,
+    'the check-in row cannot move the morning tap back to the person\'s GPT');
 });
 
 group('The morning briefing');
@@ -10372,15 +10430,21 @@ await test('the morning is a briefing, not last night\'s verdict moved', () => {
   const week = { say: 'One session in, three to go this week.', target: 4, met: false, impossible: false };
   const out = morningBrief({
     week, facts: {}, flags: [],
+    goals: [
+      { metric: 'calories', target_value: 2600, target_unit: 'kcal', cadence: 'daily' },
+      { metric: 'protein_g', target_value: 180, target_unit: 'g', cadence: 'daily' },
+    ],
     yesterday: { logged: true, food: { meals: 3 } },
     yesterdayBalance: { known: true, calories_out: 3421 },
     planned: { name: 'Leg day', est_minutes: 45 },
   });
   assert.match(out.text, /Yesterday: about 3,421 kcal burned/,
     'the morning does not report yesterday\'s completed burn');
+  assert.match(out.text, /Today\'s goals: calories: 2,600 kcal; protein: 180 g/,
+    'the morning does not restate the expectations the day is meant to serve');
   assert.ok(out && /three to go/.test(out.text), 'the week is the one thing a morning can still act on');
-  assert.match(out.text, /What do you want to train today\?/,
-    'the briefing does not hand the day back as an interactive question');
+  assert.match(out.text, /Tap to keep or change the plan/,
+    'the briefing does not hand the goals and training choice back to the person');
 
   // A target that does not exist outranks any figure — without one, every
   // percentage, ring and pace alert has nothing to be a fraction OF.
@@ -10548,6 +10612,11 @@ await test('tapping the morning brief opens the assistant with the day already a
   for (const word of ['Gym bro', 'morning', 'Wrought', 'brief', 'plan']) {
     assert.ok(opener.includes(word), `the opener does not carry "${word}"`);
   }
+  assert.match(opener, /current goals and expectations/);
+  assert.match(opener, /keep or change/);
+  assert.match(opener, /what I want to train today/);
+  assert.match(opener, /Wait for my answer/,
+    'the assistant can change the plan before the person answers');
   // No figures. A number in a pre-written prompt is a number the server chose
   // arriving as though the person asked for it.
   assert.ok(!/\d/.test(opener), 'the opener carries a number');
@@ -10581,7 +10650,7 @@ await test('the morning says what is planned, and only when it should', async ()
   const planned = { name: 'S-Tier Training List', est_minutes: 50 };
 
   const out = morningBrief({ planned, week: { say: 'One in, two to go.', target: 3, met: false, impossible: false } });
-  assert.match(out.text, /Up next: S-Tier Training List, about 50 min\. What do you want to train today\?/);
+  assert.match(out.text, /Up next: S-Tier Training List, about 50 min\. Tap to keep or change the plan\./);
 
   // A met week silences it — being offered another session past the target is
   // nagging wearing a plan's clothes.
@@ -10614,10 +10683,10 @@ await test('the scheduled morning computes the completed day, not today\'s proje
     'the completed balance never reaches the notification composer');
 
   const morning = readFileSync(new URL('../netlify/functions/lib/morning.js', import.meta.url), 'utf8');
-  assert.match(morning, /morning brief: yesterday\\'s computed/,
-    'the tap-through prompt does not request the completed-day figures');
-  assert.match(morning, /what I want to train today and wait for my answer/,
-    'tapping the push does not open the interactive briefing');
+  assert.match(morning, /current goals and expectations/,
+    'the tap-through prompt does not request the current expectations');
+  assert.match(morning, /Wait for my/,
+    'tapping the push can alter the day before the person answers');
 });
 
 await test('a missed hour is a delay, never a cancelled day', () => {
