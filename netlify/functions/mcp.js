@@ -20,7 +20,7 @@ import {
   localDateFor, localMinutesFor, clockString, humanDuration, addDays, daysBetween,
   sayWeight, sayWeightDelta, sayLength, lbToKg, inToCm, kgToLb,
   getProfile, getMemory, getGoals, getWindow, windowStatus,
-  dayFacts, rangeFacts, summariseRange, scoreGoals, careFlags,
+  dayFacts, rangeFacts, summariseRange, scoreGoals, careFlags, CARE_WINDOW_DAYS, lastDays,
   parseLog, eventsFromClient, needsMacros, needsDuration, matchEntries, duplicateItems, setupNeeded, insertEvents, writeVerdict, rememberFact,
   fastLength, fastingSummary,
 } from './lib/wrought.js';
@@ -2274,7 +2274,14 @@ async function progress(args, user) {
 
   const range   = await rangeFacts(user.id, profile, from, to);
   const summary = summariseRange(range, profile);
-  const flags   = careFlags(range, profile);
+  // A WINDOW IS NOT A MEMORY, and a care flag least of all. `span` is the
+  // range the PERSON asked to look at — three days or four hundred — and the
+  // flags must not move with it. Anything past 30 days careFlags caps itself;
+  // a short range is topped up here, in the same shape api-progress already
+  // uses, so a 3d view cannot silence the one thing that outranks everything.
+  const careRange = span >= CARE_WINDOW_DAYS ? range
+    : await rangeFacts(user.id, profile, addDays(to, -(CARE_WINDOW_DAYS - 1)), to);
+  const flags   = careFlags(careRange, profile);
 
   // What position in the session is costing them. Nobody else can answer this,
   // because nobody else stores where in the hour a lift happened.
@@ -2400,7 +2407,11 @@ async function whatsNext(args, user) {
     has_window: !!wStatus,
   };
 
-  const range = await rangeFacts(user.id, profile, addDays(today, -13), today);
+  // THE CARE WINDOW IS 30 DAYS WHOEVER ASKS. This used to fetch a fortnight,
+  // so the same account could be flagged by the brief and clear here — on the
+  // one computation that outranks everything else. Nothing else in this
+  // function reads the range, so it is simply widened.
+  const range = await rangeFacts(user.id, profile, addDays(today, -(CARE_WINDOW_DAYS - 1)), today);
   const flags = careFlags(range, profile);
 
   let recommendation = null;
@@ -2540,7 +2551,11 @@ async function suggestWorkout(args, user) {
   const gate = await trainingGate(user, profile, goals, memory);
   if (gate) return { ...gate, next_actions: gate.next_actions ?? ['set_profile / set_goal / set_plan / remember with the answers', 'suggest_workout again once the questionnaire is finished'] };
 
-  const range   = await rangeFacts(user.id, profile, addDays(today, -27), today);
+  // 30 for the care flags (the fixed safety window, whoever asks), narrowed to
+  // the four training weeks this suggestion is actually built from. One fetch,
+  // two windows, and the flag cannot disagree with the brief's.
+  const careRange = await rangeFacts(user.id, profile, addDays(today, -(CARE_WINDOW_DAYS - 1)), today);
+  const range   = lastDays(careRange, 28);
   const summary = summariseRange(range, profile);
 
   // Days since each muscle group was last touched — this is what makes the
@@ -2606,7 +2621,7 @@ No preamble, no disclaimers, no warm-up boilerplate unless it matters for a name
   // a deficit target is coaching intake, and when a flag stands, coaching
   // stops — the alert kinds already obey this; the in-conversation ask obeys
   // it too.
-  const flagsNow = careFlags(range, profile);
+  const flagsNow = careFlags(careRange, profile);
   const needGoals = flagsNow.length ? null : goalsToSet({
     goals,
     targets: await targetsFor(user.id, profile),
@@ -2799,7 +2814,11 @@ async function startSession(args, user) {
   // What the body says before the session starts. The founder asked for
   // exactly this — recovery knowing the moment training begins — and the
   // moment it is useful is now, not in tonight's brief.
-  const recent = await rangeFacts(user.id, profile, addDays(today, -14), today);
+  // 30 for the care flags — the fixed safety window, whoever asks — narrowed
+  // to the fortnight readiness reads them against ("you today versus you
+  // lately", which is deliberately a fortnight and not a month).
+  const careRange = await rangeFacts(user.id, profile, addDays(today, -(CARE_WINDOW_DAYS - 1)), today);
+  const recent = lastDays(careRange, 15);
   const ready = readiness({ days: recent.days, today });
 
   // THE FIVE MINUTES BEFORE THE FIRST SET. "Should I ask you before work how
@@ -2821,7 +2840,7 @@ async function startSession(args, user) {
   // ON the handover, never blocking it — and silenced completely by a care
   // flag, same as on the suggestion: asking a flagged account to pick a
   // deficit target is coaching intake, and coaching stops.
-  const startFlags = careFlags(recent, profile);
+  const startFlags = careFlags(careRange, profile);
   const needGoals = startFlags.length ? null : goalsToSet({
     goals,
     targets: await targetsFor(user.id, profile, dayNow),
@@ -3804,8 +3823,12 @@ async function earnedRoomTool(args, user) {
   const to   = args.date || localDateFor(profile.timezone);
   const from = addDays(to, -6);
 
-  const range = await rangeFacts(user.id, profile, from, to);
-  const flags = careFlags(range, profile);
+  // Earned room is a read of THE WEEK, and the care flags are a read of the
+  // month — the shorter window is this feature's, never the safety one. One
+  // fetch covers both: 30 days for the flags, sliced to seven for the room.
+  const careRange = await rangeFacts(user.id, profile, addDays(to, -(CARE_WINDOW_DAYS - 1)), to);
+  const flags = careFlags(careRange, profile);
+  const range = lastDays(careRange, 7);
 
   // A stated calorie goal wins. Failing that, derive maintenance from their own
   // body and treat that as the line — better than refusing to answer, and it is

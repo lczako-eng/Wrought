@@ -387,6 +387,135 @@ await test('sustained means NOW — but the flag keeps its memory', () => {
   ]));
 });
 
+await test('the care window is 30 days whoever asks — the range the user picked cannot move it', async () => {
+  // careFlags used to judge whatever range it was handed, and every tool hands
+  // it a different one: the dashboard passes a range the PERSON chose (a day
+  // to four hundred), whats_next a fortnight, start_session fifteen days, a
+  // suggestion twenty-eight, earned_room seven. So the answer to "is this
+  // person eating too little" depended on which button was pressed — the same
+  // account flagged in one tool and clear in the next, on the one computation
+  // that outranks everything else.
+  const { CARE_WINDOW_DAYS, lastDays } = await import('../netlify/functions/lib/wrought.js');
+  assert.equal(CARE_WINDOW_DAYS, 30);
+  const day = (date, calories, meals = 3) => ({ date, calories, meals, logged: true });
+  const get = ds => careFlags({ days: ds }, {}).find(f => f.flag === 'very_low_intake');
+
+  // OVERSIZED: a 400-day range must not reach back to January and call it
+  // "the last month". Two thin days last winter, one thin day now — under the
+  // uncapped rule that was three, and the lingering sentence said "in the
+  // last month" about days seven months old.
+  const long = [
+    day('2026-01-04', 500), day('2026-01-06', 480),
+    day('2026-08-23', 2100), day('2026-08-24', 2000), day('2026-08-25', 2200),
+    day('2026-08-26', 1900), day('2026-08-27', 2050), day('2026-08-28', 2150),
+    day('2026-08-29', 900),
+  ];
+  assert.ok(!get(long), 'a 400-day range leaked winter thin days into "the last month"');
+  // The same three thin days INSIDE one month still fire — the cap trims the
+  // window, never the sensitivity.
+  assert.ok(get([
+    day('2026-08-04', 500), day('2026-08-06', 480),
+    day('2026-08-23', 2100), day('2026-08-24', 2000), day('2026-08-25', 2200),
+    day('2026-08-26', 1900), day('2026-08-27', 2050), day('2026-08-28', 2150),
+    day('2026-08-29', 900),
+  ]), 'three thin days within the month stopped firing');
+
+  // Rows with no real date (hand-built, and the older tests) are used whole —
+  // capping on a date that does not exist would silently drop every row, and
+  // an empty window is the one failure mode a safety read must not have.
+  assert.ok(careFlags({ days: [
+    { date: 'x', calories: 900, meals: 3 }, { date: 'x', calories: 800, meals: 3 },
+    { date: 'x', calories: 1000, meals: 3 },
+  ] }, {}).find(f => f.flag === 'very_low_intake'));
+
+  // lastDays is the other half: a tool whose own window is shorter fetches 30
+  // and narrows here, so nobody pays a second round trip for the flags.
+  const sliced = lastDays({ days: long }, 7);
+  assert.equal(sliced.days.length, 7);
+  assert.equal(sliced.days[0].date, '2026-08-23');
+  assert.deepEqual(lastDays({ days: [] }, 7).days, []);
+});
+
+await test('every caller feeds the care flags the full window, whatever its own is', () => {
+  // The integration half: capping inside careFlags stops an oversized range
+  // leaking, and only widening the SHORT fetches stops a small one silencing.
+  // Five tools had their own reason to be short; none of them is a reason for
+  // a smaller safety read.
+  const mcp = readFileSync(new URL('../netlify/functions/mcp.js', import.meta.url), 'utf8');
+  // The whole function body, to the next declaration — a fixed-length slice
+  // silently stops before the line under test and passes for the wrong reason.
+  const fn = name => {
+    const at = mcp.indexOf(`async function ${name}(`);
+    assert.ok(at > 0, `${name} not found`);
+    const next = mcp.indexOf('\nasync function ', at + 10);
+    return mcp.slice(at, next > 0 ? next : mcp.length);
+  };
+
+  // whats_next fetched a fortnight; nothing else in it reads the range.
+  assert.match(fn('whatsNext'), /rangeFacts\(user\.id, profile, addDays\(today, -\(CARE_WINDOW_DAYS - 1\)\), today\)/,
+    'whats_next still reads care flags off a fortnight');
+
+  // earned_room is a read of THE WEEK — its own window stays seven days, and
+  // the flags get the month from the same fetch.
+  const er = fn('earnedRoomTool');
+  assert.match(er, /careRange = await rangeFacts\(user\.id, profile, addDays\(to, -\(CARE_WINDOW_DAYS - 1\)\), to\)/);
+  assert.match(er, /careFlags\(careRange, profile\)/);
+  assert.match(er, /lastDays\(careRange, 7\)/, 'earned room lost its own seven-day window');
+
+  // The two session doors: 28 days of training history, 15 for readiness —
+  // both sliced from a 30-day fetch the flags read whole.
+  const sw = fn('suggestWorkout');
+  assert.match(sw, /careRange = await rangeFacts\(user\.id, profile, addDays\(today, -\(CARE_WINDOW_DAYS - 1\)\), today\)/);
+  assert.match(sw, /lastDays\(careRange, 28\)/, 'the suggestion lost its four-week training window');
+  assert.match(sw, /careFlags\(careRange, profile\)/);
+  const ss = fn('startSession');
+  assert.match(ss, /careRange = await rangeFacts\(user\.id, profile, addDays\(today, -\(CARE_WINDOW_DAYS - 1\)\), today\)/);
+  assert.match(ss, /lastDays\(careRange, 15\)/, 'readiness lost its own fortnight');
+  assert.match(ss, /careFlags\(careRange, profile\)/);
+
+  // progress takes a span the PERSON chose, 3 to 400. Long ranges are capped
+  // inside careFlags; short ones are topped up, or a 3d view silences the one
+  // thing that outranks everything else.
+  assert.match(fn('progress'), /span >= CARE_WINDOW_DAYS \? range[\s\S]{0,160}CARE_WINDOW_DAYS - 1\)\), to\)/,
+    'a short progress span still starves the care flags');
+
+  // And no caller may pass a window narrower than the safety one again.
+  assert.ok(!/careFlags\(range, profile\)[\s\S]{0,4}$/.test(''), 'placeholder');
+  for (const short of [/addDays\(today, -13\), today\);\n  const flags = careFlags/,
+                       /addDays\(today, -14\), today\);[\s\S]{0,400}careFlags\(recent/]) {
+    assert.ok(!short.test(mcp), 'a short-window care-flag read came back');
+  }
+});
+
+await test('partial is judged on the evidence that actually fired', () => {
+  // Read across the whole month, ONE older fully-logged thin day turned
+  // `partial` false for three current single-entry days — which drops the
+  // "did meals go unlogged?" question and accuses somebody of genuinely
+  // under-eating on the strength of a day the reading was not about.
+  const day = (date, calories, meals) => ({ date, calories, meals, logged: true });
+  const f = careFlags({ days: [
+    day('2026-08-05', 800, 3),                       // older, thin, FULLY logged
+    day('2026-08-20', 2000, 3), day('2026-08-21', 2000, 3),
+    day('2026-08-22', 2000, 3), day('2026-08-23', 2000, 3),
+    day('2026-08-27', 500, 1), day('2026-08-28', 500, 1), day('2026-08-29', 500, 1),
+  ] }, {}).find(x => x.flag === 'very_low_intake');
+
+  assert.ok(f, 'three current thin days stopped firing');
+  assert.match(f.detail, /3 of your last 7 logged days/, 'the acute reading is not the one that fired');
+  assert.equal(f.partial, true,
+    'an older fully-logged thin day is still vetoing the missed-logging question for current single-entry days');
+  assert.match(f.detail, /single entry/);
+  assert.match(f.guidance, /ask plainly whether meals went unlogged/);
+
+  // And the veto still works when it is honest: the SAME three current days,
+  // fully logged, are not excused as thin logging.
+  const real = careFlags({ days: [
+    day('2026-08-20', 2000, 3), day('2026-08-21', 2000, 3),
+    day('2026-08-27', 500, 4), day('2026-08-28', 500, 3), day('2026-08-29', 500, 3),
+  ] }, {}).find(x => x.flag === 'very_low_intake');
+  assert.equal(real.partial, false, 'a fully-logged thin week is being excused as missed logging');
+});
+
 await test('dangerously fast weight loss raises a flag', () => {
   const days = mkDays(14, i => ({ weight_kg: 90 - i * 0.25, calories: 2000 }));
   const flags = careFlags({ days }, { units: 'metric' });

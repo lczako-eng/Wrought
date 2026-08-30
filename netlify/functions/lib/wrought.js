@@ -801,9 +801,55 @@ function goalActual(g, day, summary) {
 // fires the instructions require the coaching to stop and the tone to change.
 // Getting this wrong is the only way this product genuinely hurts somebody.
 
+// THE SAFETY WINDOW IS ONE FIXED LENGTH, WHATEVER THE CALLER ASKED FOR.
+//
+// careFlags used to judge whatever range it was handed, and every tool hands
+// it a different one: the dashboard passes a range the person CHOSE (a day to
+// four hundred), whats_next fourteen days, start_session fifteen, a workout
+// suggestion twenty-eight, earned_room seven. So the answer to "is this person
+// eating too little" depended on which button was pressed — the same account
+// flagged inside one tool and clear inside the next, on the one computation
+// that outranks everything else in the product. A four-hundred-day range would
+// also count January against somebody and call it "the last month".
+//
+// So the window is fixed here, in the function, rather than trusted to five
+// call sites that each have their own reason to be short or long. Callers may
+// pass more; nothing older than this is ever read. Callers that pass LESS are
+// widened at their own fetch — a flag computed from seven days is not a
+// smaller flag, it is a wrong one.
+export const CARE_WINDOW_DAYS = 30;
+
+function careWindow(days = []) {
+  const dated = days.filter(d => typeof d?.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(d.date));
+  // Hand-built rows without real dates (tests, and any caller building days by
+  // hand) are used whole — capping on a date that does not exist would silently
+  // drop every row, which is the one failure mode a safety window must not have.
+  if (dated.length !== days.length || !dated.length) return days;
+  const last = dated.reduce((m, d) => (d.date > m ? d.date : m), dated[0].date);
+  const cutoff = addDays(last, -(CARE_WINDOW_DAYS - 1));
+  return days.filter(d => d.date >= cutoff);
+}
+
+/**
+ * The last N calendar days of an already-fetched range.
+ *
+ * The other half of the fixed safety window: a tool whose own window is
+ * shorter than 30 days now FETCHES 30 and narrows here for its own
+ * arithmetic, so the care flags see the full window without anybody paying a
+ * second round trip. Widening a fetch is free; a second query on every
+ * suggestion is the queueing failure this file already has a test for.
+ */
+export function lastDays(range, n) {
+  const days = range?.days || [];
+  if (!days.length || !(n > 0)) return range;
+  const last = days.reduce((m, d) => (d.date > m ? d.date : m), days[0].date);
+  const cutoff = addDays(last, -(n - 1));
+  return { ...range, days: days.filter(d => d.date >= cutoff) };
+}
+
 export function careFlags(range, profile) {
   const flags = [];
-  const days = range.days;
+  const days = careWindow(range.days);
   const fed = days.filter(d => d.calories);
 
   // SUSTAINED MEANS NOW — BUT THE FLAG KEEPS ITS MEMORY.
@@ -867,7 +913,17 @@ export function careFlags(range, profile) {
     // that warns somebody genuinely under-eating must not accuse somebody who
     // logged one coffee, or the flag cries wolf and gets dismissed — and a
     // dismissed care flag is as dangerous as a missing one.
-    const partial = thinAll.length > 0 && thinAll.every(d => (d.meals ?? 0) <= 1);
+    // PARTIAL IS JUDGED ON THE EVIDENCE THAT ACTUALLY FIRED, never on every
+    // thin day in the window. Read across the whole month it took one older,
+    // fully-logged thin day to turn `partial` false for three CURRENT
+    // single-entry days — which drops the "did meals go unlogged?" question
+    // and accuses somebody of genuinely under-eating on the strength of a day
+    // that had nothing to do with the reading. The evidence set has to be the
+    // one the sentence below is about.
+    const evidence = acute ? recent7.filter(thin)
+                   : avgLow ? last14.filter(thin)
+                   : thinAll;
+    const partial = evidence.length > 0 && evidence.every(d => (d.meals ?? 0) <= 1);
     flags.push({
       flag: 'very_low_intake',
       partial,
