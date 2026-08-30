@@ -1085,6 +1085,18 @@ async function context(userId) {
   return { profile, goals, memory, win, today: localDateFor(profile.timezone) };
 }
 
+// Every MCP door gets the same 30-calendar-day safety reading. Reuse a range
+// that already covers it; otherwise fetch the missing history. careFlags()
+// applies the same cap defensively when a caller supplies a longer range.
+async function careFlagsFor(userId, profile, toDate, availableRange = null) {
+  const from = addDays(toDate, -29);
+  const coversWindow = availableRange?.from <= from && availableRange?.to >= toDate;
+  const safetyRange = coversWindow
+    ? availableRange
+    : await rangeFacts(userId, profile, from, toDate);
+  return careFlags(safetyRange, profile);
+}
+
 // THE DAY SO FAR, IN NUMBERS, on every response that changes the day.
 //
 // The founder asked "how many am I at today? How many calories?" straight
@@ -2122,7 +2134,7 @@ async function brief(args, user) {
     rangeFacts(user.id, profile, addDays(date, -29), date),
   ]);
   const summary = summariseRange(range, profile);
-  const flags   = careFlags(range, profile);
+  const flags   = await careFlagsFor(user.id, profile, date, range);
   const scored  = scoreGoals(goals, day, summary, profile);
 
   // "How am I doing" lands HERE — and the sheet's promise that it is answered
@@ -2274,7 +2286,7 @@ async function progress(args, user) {
 
   const range   = await rangeFacts(user.id, profile, from, to);
   const summary = summariseRange(range, profile);
-  const flags   = careFlags(range, profile);
+  const flags   = await careFlagsFor(user.id, profile, to, range);
 
   // What position in the session is costing them. Nobody else can answer this,
   // because nobody else stores where in the hour a lift happened.
@@ -2401,7 +2413,7 @@ async function whatsNext(args, user) {
   };
 
   const range = await rangeFacts(user.id, profile, addDays(today, -13), today);
-  const flags = careFlags(range, profile);
+  const flags = await careFlagsFor(user.id, profile, today, range);
 
   let recommendation = null;
   if (openai) {
@@ -2518,7 +2530,7 @@ async function goalsRequired(user, profile, goals) {
 
   const today = localDateFor(profile.timezone);
   const recent = await rangeFacts(user.id, profile, addDays(today, -29), today);
-  if (careFlags(recent, profile).length) return null;
+  if ((await careFlagsFor(user.id, profile, today, recent)).length) return null;
 
   return {
     goals_required: targets,
@@ -2606,7 +2618,7 @@ No preamble, no disclaimers, no warm-up boilerplate unless it matters for a name
   // a deficit target is coaching intake, and when a flag stands, coaching
   // stops — the alert kinds already obey this; the in-conversation ask obeys
   // it too.
-  const flagsNow = careFlags(range, profile);
+  const flagsNow = await careFlagsFor(user.id, profile, today, range);
   const needGoals = flagsNow.length ? null : goalsToSet({
     goals,
     targets: await targetsFor(user.id, profile),
@@ -2821,7 +2833,7 @@ async function startSession(args, user) {
   // ON the handover, never blocking it — and silenced completely by a care
   // flag, same as on the suggestion: asking a flagged account to pick a
   // deficit target is coaching intake, and coaching stops.
-  const startFlags = careFlags(recent, profile);
+  const startFlags = await careFlagsFor(user.id, profile, today, recent);
   const needGoals = startFlags.length ? null : goalsToSet({
     goals,
     targets: await targetsFor(user.id, profile, dayNow),
@@ -3805,7 +3817,7 @@ async function earnedRoomTool(args, user) {
   const from = addDays(to, -6);
 
   const range = await rangeFacts(user.id, profile, from, to);
-  const flags = careFlags(range, profile);
+  const flags = await careFlagsFor(user.id, profile, to, range);
 
   // A stated calorie goal wins. Failing that, derive maintenance from their own
   // body and treat that as the line — better than refusing to answer, and it is
@@ -3976,7 +3988,7 @@ async function nudgeFor(userId, profile, { day = null, goals = null } = {}) {
     goals ? Promise.resolve(goals) : getGoals(userId),
   ]);
 
-  const flags = careFlags(range, profile);
+  const flags = await careFlagsFor(userId, profile, today, range);
   const weightKg = range.days.filter(d => d.weight_kg != null).pop()?.weight_kg ?? null;
 
   const nudge = nextNudge({

@@ -801,9 +801,37 @@ function goalActual(g, day, summary) {
 // fires the instructions require the coaching to stop and the tone to change.
 // Getting this wrong is the only way this product genuinely hurts somebody.
 
+export const CARE_WINDOW_DAYS = 30;
+
+// Care is always judged against the same recent calendar window, regardless
+// of which screen or tool asked. Some callers need one day, some need a year;
+// neither is permission to silently change what "sustained" means. Keeping
+// the cap here also protects new callers that already fetched a larger range.
+export function careWindow(range = {}) {
+  const source = [...(range.days || [])].sort((a, b) =>
+    String(a.date || '').localeCompare(String(b.date || '')));
+  const dated = source.filter(d => /^\d{4}-\d{2}-\d{2}$/.test(String(d.date || '')));
+  const to = /^\d{4}-\d{2}-\d{2}$/.test(String(range.to || ''))
+    ? range.to
+    : dated.at(-1)?.date;
+
+  // Small arithmetic tests and defensive callers may not carry real dates.
+  // There is no honest calendar cutoff to apply in that case, so preserve the
+  // supplied record rather than manufacturing one.
+  if (!to) return { ...range, days: source };
+
+  const from = addDays(to, -(CARE_WINDOW_DAYS - 1));
+  return {
+    ...range,
+    from,
+    to,
+    days: source.filter(d => d.date >= from && d.date <= to),
+  };
+}
+
 export function careFlags(range, profile) {
   const flags = [];
-  const days = range.days;
+  const days = careWindow(range).days;
   const fed = days.filter(d => d.calories);
 
   // SUSTAINED MEANS NOW — BUT THE FLAG KEEPS ITS MEMORY.
@@ -867,7 +895,15 @@ export function careFlags(range, profile) {
     // that warns somebody genuinely under-eating must not accuse somebody who
     // logged one coffee, or the flag cries wolf and gets dismissed — and a
     // dismissed care flag is as dangerous as a missing one.
-    const partial = thinAll.length > 0 && thinAll.every(d => (d.meals ?? 0) <= 1);
+    // Judge completeness from the SAME evidence that raised the flag. An old,
+    // fully logged thin day must not erase the missed-meals question when the
+    // current acute run consists entirely of one-entry days.
+    const evidence = acute
+      ? recent7.filter(thin)
+      : avgLow
+        ? last14.filter(thin)
+        : thinAll;
+    const partial = evidence.length > 0 && evidence.every(d => (d.meals ?? 0) <= 1);
     flags.push({
       flag: 'very_low_intake',
       partial,

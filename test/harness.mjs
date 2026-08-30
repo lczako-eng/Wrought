@@ -385,6 +385,21 @@ await test('sustained means NOW — but the flag keeps its memory', () => {
     day('2026-08-25', 900), day('2026-08-26', 2200), day('2026-08-27', 800),
     day('2026-08-28', 2400), day('2026-08-29', 2100),
   ]));
+
+  // THE WINDOW IS CALENDAR-BOUND, NOT WHATEVER RANGE A CALLER HAPPENED TO
+  // fetch. A progress request can carry a year; old thin days must not turn
+  // that into a year-long care flag described misleadingly as "last month".
+  const stale = careFlags({
+    to: '2026-08-30',
+    days: [
+      day('2026-03-01', 500), day('2026-03-02', 600), day('2026-03-03', 700),
+      day('2026-08-24', 2200), day('2026-08-25', 2100), day('2026-08-26', 2300),
+      day('2026-08-27', 650), day('2026-08-28', 2200), day('2026-08-29', 2100),
+      day('2026-08-30', 2300),
+    ],
+  }, { units: 'metric' });
+  assert.ok(!stale.some(f => f.flag === 'very_low_intake'),
+    'evidence older than the canonical 30-day care window still raises the flag');
 });
 
 await test('dangerously fast weight loss raises a flag', () => {
@@ -4843,7 +4858,7 @@ await test('the targets gate — no further until goals are set, and the link is
   assert.ok(gr.indexOf("eq('metric', 'calories')") > 0, 'the ever-chosen check does not look at retired rows');
   // A care flag suspends the gate: a demand to pick a deficit is coaching
   // intake, and when a flag stands, coaching stops.
-  assert.match(gr, /careFlags\(recent, profile\)\.length\) return null/,
+  assert.match(gr, /await careFlagsFor\(user\.id, profile, today, recent\)\)\.length\) return null/,
     'the targets gate keeps talking over a care flag');
   // The LINK rides in the say itself (a client that reads nothing else still
   // shows it) and the note demands the tappable markdown form.
@@ -6976,6 +6991,19 @@ await test('care flags and the week are never read off a one-day window', () => 
   // And the guards themselves still demand a run-up, or none of the above matters.
   const flags = careFlags({ days: [{ date: '2026-08-11', logged: true, calories: 900, sessions: 1 }] }, {});
   assert.equal(flags.length, 0, 'a care flag fired off a single day');
+
+  // The connector has several doors with 7-, 14-, 15-, 28-, and user-chosen
+  // ranges. They must all pass through one canonical safety fetch rather than
+  // silently changing the rule according to which tool happened to run.
+  const mcp = readFileSync(new URL('../netlify/functions/mcp.js', import.meta.url), 'utf8');
+  assert.match(mcp, /async function careFlagsFor/);
+  assert.match(mcp, /const from = addDays\(toDate, -29\)/);
+  const executableDirectCalls = mcp.split('\n').filter(line =>
+    !line.trimStart().startsWith('//') && line.includes('careFlags('));
+  assert.equal(executableDirectCalls.length, 1,
+    'an MCP tool bypasses the canonical 30-day careFlagsFor helper');
+  assert.ok((mcp.match(/await careFlagsFor\(/g) || []).length >= 8,
+    'not every MCP care decision uses the canonical helper');
 });
 
 const { workoutList } = await import('../netlify/functions/lib/session.js');
@@ -10070,6 +10098,24 @@ await test('a thin log is not accused of starving, and a real flag never softens
   assert.ok(f2 && !f2.partial);
   assert.ok(!/single entry/.test(f2.detail), 'a fully-logged low fortnight is being excused as thin logging');
   assert.match(f2.guidance, /under what a body needs to run on/);
+
+  // Completeness follows the trigger that won. A fully logged thin day early
+  // in the month is irrelevant to a current acute run of one-entry days; it
+  // must not suppress the question that lets missed meals clear the warning.
+  const dated = (date, calories, meals) => ({ date, calories, meals, logged: true });
+  const acutePartial = careFlags({ to: '2026-08-30', days: [
+    dated('2026-08-02', 900, 3),
+    dated('2026-08-20', 2200, 3), dated('2026-08-21', 2200, 3),
+    dated('2026-08-22', 2200, 3), dated('2026-08-23', 2200, 3),
+    dated('2026-08-24', 2200, 3), dated('2026-08-25', 2200, 3),
+    dated('2026-08-27', 500, 1), dated('2026-08-28', 600, 1),
+    dated('2026-08-30', 700, 1),
+  ] }, {});
+  const f3 = acutePartial.find(f => f.flag === 'very_low_intake');
+  assert.ok(f3, 'the acute three-day run stopped firing');
+  assert.equal(f3.partial, true,
+    'unrelated old evidence suppressed the incomplete-logging question');
+  assert.match(f3.guidance, /ask plainly whether meals went unlogged/);
 
   // The spoken forms carry the same split, and both still end at the doctor.
   const s1 = spokenFlag(f1), s2 = spokenFlag(f2);

@@ -1384,6 +1384,16 @@ reading, flag-outranks-everything, and the guidance. Clearing now costs a
 clean week AND a healthy average — the price the old rule charged, minus the
 wolf-cry.
 
+**The safety window is one invariant, not a property of the caller.** MCP
+tools naturally fetch different spans — seven days for earned room, a
+fortnight for recovery, a month for a brief, and up to 400 days for progress.
+They now all obtain the same trailing 30 calendar days before calling the
+guard, while `careFlags()` itself caps an oversized range so old evidence can
+never be described as "last month." The partial-log reading is likewise tied
+to the evidence for the trigger that actually won: an unrelated fully logged
+day earlier in the month cannot silence the missed-meals question for a
+current acute run of one-entry days.
+
 ### The invented target — the named failure, in production
 
 The most important entry in this file, because the thing every doctrine here
