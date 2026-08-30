@@ -1344,6 +1344,40 @@ when the tools are absent, none of this server's instructions or descriptions
 are in the model's context to steer it. The catch-up is the recovery, not the
 prevention.
 
+### Sustained means NOW — the care-flag window, corrected before it taught dismissal
+
+The founder, after three weeks of the identical doctor sentence on his lock
+screen every morning: *"Is this ever gonna be resolved?"* The honest answer
+under the old rule was **September 12** — the flag counted thin days across
+the whole 30-day window, so five half-logged days from mid-August kept it
+firing daily while his current week ran 2,065 / 2,240 / 1,535. He had long
+since stopped reading it, which is the exact failure the partial-reading
+entry already names: **a dismissed care flag is as dangerous as a missing
+one.**
+
+The doctrine's word is **sustained**, and sustained is present tense. The
+flag now judges the last **7 logged days**: three or more under 1,200 fires,
+at full strength, with the partial reading intact. What changed and what
+deliberately did not:
+
+- **The dangerous direction is untouched and tested.** A genuinely thin
+  current week fires exactly as before; three logged days that are all thin
+  still fire; the 1,200 line, the guidance, and flag-outranks-everything are
+  all unmoved.
+- **The flag became escapable by BEHAVIOUR** — a few honest days of real
+  eating clear it — instead of by waiting out a calendar. An escapable flag
+  is one people keep believing; an unescapable one trains the swipe that
+  dismisses the real warning later.
+- **What it no longer catches, on purpose:** two-ish thin days a week
+  accumulating three-in-thirty. That is intermittent, not sustained — the
+  fasting doctrine already refuses to grade that pattern — and `rapid_loss`
+  still watches the body itself, which is the signal that cannot be
+  half-logged.
+- Adversarially reviewed before merge (safety prosecution, correctness,
+  doctrine), with the sparse-logger case checked: for somebody who logs
+  twice a week, "the last 7 logged days" spans weeks, so thin-every-log
+  still fires.
+
 ### The invented target — the named failure, in production
 
 The most important entry in this file, because the thing every doctrine here

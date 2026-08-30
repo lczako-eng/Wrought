@@ -292,6 +292,49 @@ await test('normal intake raises nothing', () => {
   assert.equal(careFlags({ days }, { units: 'metric' }).length, 0);
 });
 
+await test('sustained means NOW — the flag judges the last week of logged days, not a month of memory', () => {
+  // The founder, after three weeks of the identical doctor sentence on his
+  // lock screen, held up entirely by days two and three weeks old while his
+  // current week was fine: "Is this ever gonna be resolved?" A flag that
+  // cannot be escaped by behaviour — only by waiting out a calendar — is one
+  // people stop reading, and a dismissed care flag is as dangerous as a
+  // missing one.
+  const day = (date, calories) => ({ date, calories, meals: 3, logged: true });
+
+  // HIS EXACT SHAPE: five thin days early in the month, a clean recent week.
+  // The old rule flagged this until mid-September; sustained it is not.
+  const stale = careFlags({ days: [
+    day('2026-08-09', 600), day('2026-08-11', 360), day('2026-08-13', 960),
+    day('2026-08-15', 490), day('2026-08-21', 725),
+    day('2026-08-16', 1200), day('2026-08-19', 3040), day('2026-08-20', 1985),
+    day('2026-08-27', 2065), day('2026-08-28', 2240), day('2026-08-29', 1535),
+  ].sort((a, b) => a.date < b.date ? -1 : 1) }, { units: 'metric' });
+  assert.ok(!stale.find(f => f.flag === 'very_low_intake'),
+    'a clean recent week is still being accused over stale days');
+
+  // THE DIRECTION THAT MUST NEVER WEAKEN: the same five thin days as the
+  // CURRENT week fire at full strength — three of the last seven logged.
+  const current = careFlags({ days: [
+    day('2026-08-16', 1200), day('2026-08-19', 3040), day('2026-08-20', 1985),
+    day('2026-08-23', 2065), day('2026-08-25', 600), day('2026-08-27', 360),
+    day('2026-08-28', 960), day('2026-08-29', 490),
+  ] }, { units: 'metric' });
+  const f = current.find(x => x.flag === 'very_low_intake');
+  assert.ok(f, 'a genuinely current thin week stopped firing — the one regression this change must not make');
+  assert.match(f.detail, /of your last \d logged days/);
+
+  // Three logged days, all thin — the minimum record still fires.
+  const minimal = careFlags({ days: [day('2026-08-27', 900), day('2026-08-28', 800), day('2026-08-29', 1000)] }, {});
+  assert.ok(minimal.find(x => x.flag === 'very_low_intake'));
+
+  // Two thin days in the recent week do not — intermittent is not sustained.
+  const two = careFlags({ days: [
+    day('2026-08-25', 900), day('2026-08-26', 2200), day('2026-08-27', 800),
+    day('2026-08-28', 2400), day('2026-08-29', 2100),
+  ] }, {});
+  assert.ok(!two.find(x => x.flag === 'very_low_intake'));
+});
+
 await test('dangerously fast weight loss raises a flag', () => {
   const days = mkDays(14, i => ({ weight_kg: 90 - i * 0.25, calories: 2000 }));
   const flags = careFlags({ days }, { units: 'metric' });
