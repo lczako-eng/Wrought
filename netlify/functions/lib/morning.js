@@ -22,8 +22,10 @@
 //     doing arithmetic about what is allowed.
 //   - Nothing is invented. Every figure comes from the same computed facts the
 //     dashboard and the connector read, so three surfaces cannot disagree.
-//   - One thing, never a list. A notification with three items in it is a
-//     lecture and the second is never read.
+//   - A briefing is short, but it is a briefing: yesterday's completed burn,
+//     the week's training position, then one question that opens the day.
+//     Those three belong together because the question is the action the two
+//     facts set up. Anything beyond that is a lecture and will not be read.
 //   - Silence is a real answer. A brief with nothing to say sends nothing.
 
 import { spokenFlag } from './voice.js';
@@ -31,14 +33,14 @@ import { spokenFlag } from './voice.js';
 // What the morning can usefully raise, hardest first. The order is the order of
 // consequence, not of cheerfulness: something that makes every other number
 // meaningless outranks a number.
-const MAX_LINES = 3;
+const MAX_LINES = 4;
 
 /**
  * The morning message, or null to send nothing.
  *
  * @param facts        rangeFacts/dayFacts-shaped facts for TODAY
  * @param flags        careFlags output
- * @param balance      energyBalance for today, or null
+ * @param yesterdayBalance energyBalance for the completed day, or null
  * @param week         weekSoFar output
  * @param goalsToSet   what has no target yet, from goalsToSet()
  * @param yesterday    yesterday's dayFacts, for the one backward-looking line
@@ -46,7 +48,7 @@ const MAX_LINES = 3;
  * @param planned      { name, est_minutes } — the workout most due today, or null
  */
 export function morningBrief({
-  facts = {}, flags = [], balance = null, week = null,
+  facts = {}, flags = [], yesterdayBalance = null, week = null,
   goalsToSet = null, yesterday = null, readiness = null, planned = null,
 } = {}) {
   // THE FLAG IS THE WHOLE MESSAGE. Same rule as the spoken answer and the
@@ -56,34 +58,38 @@ export function morningBrief({
 
   const lines = [];
 
-  // 1. THE BODY'S VETO COMES FIRST, because it changes what the rest of the day
-  //    should look like. It only ever softens — a good reading means train as
-  //    planned and NOTHING more, so "ready" is not worth a notification and is
-  //    deliberately not reported here.
-  if (readiness && readiness.state && readiness.state !== 'ready' && readiness.say) {
+  // 1. YESTERDAY'S COMPLETED BURN, not a projection of today at breakfast.
+  //    The old implementation passed TODAY into energyBalance and then said
+  //    "to burn today" — the opposite of the founder's morning brief. A past
+  //    day is only stated when something was actually recorded on it, and the
+  //    figure stays labelled as an estimate because every calories-out figure
+  //    is one, watch included.
+  if (yesterday?.logged && yesterdayBalance?.known && yesterdayBalance.calories_out) {
+    lines.push(`Yesterday: about ${Math.round(yesterdayBalance.calories_out).toLocaleString()} kcal burned.`);
+  }
+
+  // 2. WHERE THE WEEK STANDS — always. "2 of 4" is the game state the founder
+  //    asked for; hiding it when the target is met turns the most useful fact
+  //    into a nag that only appears while somebody is behind.
+  if (week?.say) {
+    lines.push(week.say);
+  }
+
+  // 3. THE BODY'S VETO, when there is one. It only ever softens; it never turns
+  //    a good reading into permission to go harder.
+  const heldBack = readiness && readiness.state && readiness.state !== 'ready';
+  if (heldBack && readiness.say) {
     lines.push(readiness.say);
   }
 
-  // 2. WHAT IS PLANNED, said before where the week stands — "what workouts do
-  //    you have planned, if any, today?" is the founder's own definition of
-  //    preemptive, and a named session is a plan where a count is a debt. It is
-  //    the longest-rested saved workout, the same answer end_session gives,
-  //    because two functions answering "what's next" differently is how the
-  //    morning and the evening contradict each other. Silent when the week is
-  //    already met — a met target silences the push, and being offered another
-  //    session past it is nagging wearing a plan's clothes. Silent too when
-  //    readiness flagged: the veto above already said train lighter, and
-  //    naming a session right after reads as overriding it.
-  if (planned?.name && !week?.met && !(readiness && readiness.state && readiness.state !== 'ready')) {
-    lines.push(`Today's plan: ${planned.name}${planned.est_minutes ? `, about ${planned.est_minutes} min` : ''}.`);
-  }
-
-  // 3. WHERE THE WEEK STANDS, which is the number the whole plan rests on and
-  //    the one thing a morning can still act on. Never a countdown to zero on
-  //    an impossible week and never a scolding: sessions do not roll over, and
-  //    guilt is how training logs die.
-  if (week?.say && week.target && !week.met && !week.impossible) {
-    lines.push(week.say);
+  // 4. THE INTERACTION. A push cannot accept an answer, but its tap opens the
+  //    assistant with the same question already addressed to the connector.
+  //    A saved workout is an option, not a command; even with a met target the
+  //    question leaves rest as a first-class answer rather than pushing more.
+  if (lines.length || planned?.name) {
+    lines.push(planned?.name && !week?.met && !heldBack
+      ? `Up next: ${planned.name}${planned.est_minutes ? `, about ${planned.est_minutes} min` : ''}. What do you want to train today?`
+      : 'What do you want to train today — or is today a rest day?');
   }
 
   // 3. A TARGET THAT DOES NOT EXIST outranks any figure, because without one
@@ -101,7 +107,7 @@ export function morningBrief({
     lines.push(`Nothing set for ${what} yet — ask WROUGHT and it works one out from your own numbers.`);
   }
 
-  // 4. YESTERDAY, in one clause and only if it is genuinely informative. This
+  // 5. YESTERDAY'S INTAKE, in one clause and only if it is genuinely informative. This
   //    is the one backward-looking line allowed, and it earns its place by
   //    being the thing that sets up today rather than a verdict on a day that
   //    is finished. A day nobody logged says nothing at all — an empty
@@ -112,16 +118,6 @@ export function morningBrief({
     lines.push(f.meals_uncounted === f.meals
       ? `Yesterday went in with no macros on it yet.`
       : `Yesterday: roughly ${Math.round(f.calories)} in.`);
-  }
-
-  // 5. WHAT IS ALREADY KNOWN ABOUT TODAY, which at 7:30 is usually the resting
-  //    burn and nothing else. Stated as the burn, LABELLED as a whole-day
-  //    estimate, and never as a deficit — the dashboard hero's rule, needed
-  //    again. At breakfast against no food a subtraction reads as an enormous
-  //    deficit, which is an artifact of the day being two hours old and runs in
-  //    the direction that tells somebody to eat less than they need.
-  if (!lines.length && balance?.known && balance.calories_out) {
-    lines.push(`About ${Math.round(balance.calories_out)} to burn today on current numbers.`);
   }
 
   if (!lines.length) return null;
@@ -160,8 +156,9 @@ export function morningBrief({
  */
 const OPENERS = {
   morning:
-    'Gym bro — morning. Using the Wrought connector, read me my morning brief and ' +
-    "today's plan: where I stand, what workout is planned if any, and what the day needs.",
+    'Gym bro — morning. Using the Wrought connector, give me my morning brief: yesterday\'s computed ' +
+    'calories burned and where I stand in this week\'s training target. Then ask ' +
+    'what I want to train today and wait for my answer before choosing or building today\'s training plan.',
   // The midday opener ASKS, because the founder's midday is an assessment the
   // AI takes, not a report it reads out: it exists to collect the half-day —
   // what has been eaten, how the day feels — and the assistant's first act is

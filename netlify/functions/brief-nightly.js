@@ -311,6 +311,7 @@ async function runMorning(userId, profile, now) {
 
   const date = localDateFor(profile.timezone, now);
   const minutes = localMinutesFor(profile.timezone, now);
+  const yesterdayDate = addDays(date, -1);
 
   // Read the three morning columns on their own. profile came from getProfile,
   // which does not select them — and adding them there would put every caller
@@ -336,8 +337,9 @@ async function runMorning(userId, profile, now) {
   // Everything here comes from the same computed facts the dashboard and the
   // connector read. Nothing in this file does arithmetic — a third mouth
   // relaying numbers computed once, which is the doctrine everywhere else.
-  const [day, recent, goals, dueRoutine] = await Promise.all([
+  const [day, yesterday, recent, goals, dueRoutine] = await Promise.all([
     dayFacts(userId, profile, date),
+    dayFacts(userId, profile, yesterdayDate),
     rangeFacts(userId, profile, addDays(date, -29), date),
     getGoals(userId),
     // The workout most due — the longest-rested active routine, which is the
@@ -350,21 +352,24 @@ async function runMorning(userId, profile, now) {
       .order('last_used_on', { ascending: true, nullsFirst: true })
       .limit(1).maybeSingle().then(r => r.data || null),
   ]);
-  const yesterday = recent.days.find(d => d.date === addDays(date, -1)) || null;
-
   const flags = careFlags(recent, profile);
   const week = weekSoFar(recent.days, { today: date, target: profile.train_days || null });
 
-  // The same call buildBriefFor makes, so the morning and the evening cannot
-  // quote two different burns for the same day.
-  const balance = energyBalance({
-    profile, weightKg: day.body.weight_kg,
-    caloriesIn: day.food.calories,
-    activeCalories: day.device.active_calories,
-    foodEstimated: day.food.estimated,
-    workouts: day.training.entries,
-    activities: day.activity.entries,
-    deviceResting: day.device.resting_calories,
+  // The morning closes YESTERDAY. The former code fed today's barely started
+  // record into this calculation and announced a whole-day projection instead
+  // of answering what was burned. Use the last weight known by yesterday so a
+  // normal non-weigh-in day still computes without borrowing a future reading.
+  const yesterdayWeight = yesterday.body.weight_kg
+    ?? [...recent.days].reverse().find(d => d.date <= yesterdayDate && d.weight_kg != null)?.weight_kg
+    ?? null;
+  const yesterdayBalance = energyBalance({
+    profile, weightKg: yesterdayWeight,
+    caloriesIn: yesterday.food.calories,
+    activeCalories: yesterday.device.active_calories,
+    foodEstimated: yesterday.food.estimated,
+    workouts: yesterday.training.entries,
+    activities: yesterday.activity.entries,
+    deviceResting: yesterday.device.resting_calories,
   });
 
   // targets stays null on purpose: the morning states the GAP and never a
@@ -372,7 +377,7 @@ async function runMorning(userId, profile, now) {
   // decision already taken, which is the invented-2,600 failure with a
   // notification wrapped around it. set_goal is where a number gets committed.
   const out = morningBrief({
-    facts: day, flags, balance, week, yesterday, planned: dueRoutine,
+    facts: day, flags, yesterdayBalance, week, yesterday, planned: dueRoutine,
     goalsToSet: goalsToSet({ goals, targets: null, stepsAvg: null }),
   });
   // Nothing worth saying sends nothing. A morning nag is how a product gets

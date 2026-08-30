@@ -10370,8 +10370,17 @@ await test('the morning is a briefing, not last night\'s verdict moved', () => {
   // that is a worse message, because nothing in it can be acted on. Every line
   // here has to be something the next sixteen hours can still change.
   const week = { say: 'One session in, three to go this week.', target: 4, met: false, impossible: false };
-  const out = morningBrief({ week, facts: {}, flags: [] });
+  const out = morningBrief({
+    week, facts: {}, flags: [],
+    yesterday: { logged: true, food: { meals: 3 } },
+    yesterdayBalance: { known: true, calories_out: 3421 },
+    planned: { name: 'Leg day', est_minutes: 45 },
+  });
+  assert.match(out.text, /Yesterday: about 3,421 kcal burned/,
+    'the morning does not report yesterday\'s completed burn');
   assert.ok(out && /three to go/.test(out.text), 'the week is the one thing a morning can still act on');
+  assert.match(out.text, /What do you want to train today\?/,
+    'the briefing does not hand the day back as an interactive question');
 
   // A target that does not exist outranks any figure — without one, every
   // percentage, ring and pace alert has nothing to be a fraction OF.
@@ -10398,7 +10407,8 @@ await test('a care flag is the entire morning message', () => {
     flags: [{ kind: 'low_intake', severity: 'high' }],
     week: { say: 'One session in, three to go.', target: 4, met: false, impossible: false },
     goalsToSet: { missing: ['a daily calorie target'] },
-    balance: { known: true, calories_out: 3800 },
+    yesterday: { logged: true },
+    yesterdayBalance: { known: true, calories_out: 3800 },
   });
   assert.ok(out.only, 'the flag is not marked as the whole message');
   assert.ok(!/three to go/.test(out.text), 'coaching survived a care flag');
@@ -10406,20 +10416,23 @@ await test('a care flag is the entire morning message', () => {
   assert.ok(!/3800|3,800/.test(out.text), 'a figure survived a care flag');
 });
 
-await test('the morning never tells anybody to eat less', () => {
-  // A phone at 7:30am is the worst possible place to start doing arithmetic
-  // about what is allowed — and the burn is a WHOLE DAY's figure, so against
-  // no food it would read as an enormous deficit that is an artifact of the
-  // day being two hours old.
+await test('the morning reports yesterday\'s burn and never tells anybody to eat less', () => {
+  // A phone at 7:30am may state the completed burn from yesterday. It must not
+  // project today's whole day against an empty breakfast log or turn the
+  // number into a deficit, allowance, or instruction to eat less.
   const out = morningBrief({
     facts: {}, flags: [],
-    balance: { known: true, calories_out: 3833, calories_in: 0, net: -3833 },
+    yesterday: { logged: true, food: { meals: 3 } },
+    yesterdayBalance: { known: true, calories_out: 3833, calories_in: 2100, net: -1733 },
+    week: { say: 'Two of four sessions this week.', target: 4, met: false },
   });
   assert.ok(out, 'nothing at all was said on a day with a known burn');
   for (const word of ['left', 'deficit', 'under', 'remaining', 'allowed', 'stop eating']) {
     assert.ok(!new RegExp(word, 'i').test(out.text), `the morning said "${word}"`);
   }
-  assert.match(out.text, /to burn today/, 'the burn is not stated as a burn');
+  assert.match(out.text, /Yesterday: about 3,833 kcal burned/,
+    'yesterday\'s burn is not stated as the completed-day estimate');
+  assert.ok(!/burn today/.test(out.text), 'the morning still projects today instead of closing yesterday');
 
   // An empty yesterday is a fact about whether they told anybody, never about
   // their eating, and must not be reported as the latter.
@@ -10568,22 +10581,43 @@ await test('the morning says what is planned, and only when it should', async ()
   const planned = { name: 'S-Tier Training List', est_minutes: 50 };
 
   const out = morningBrief({ planned, week: { say: 'One in, two to go.', target: 3, met: false, impossible: false } });
-  assert.match(out.text, /Today's plan: S-Tier Training List, about 50 min/);
+  assert.match(out.text, /Up next: S-Tier Training List, about 50 min\. What do you want to train today\?/);
 
   // A met week silences it — being offered another session past the target is
   // nagging wearing a plan's clothes.
   const met = morningBrief({ planned, week: { say: 'Done.', target: 3, met: true } });
-  assert.ok(!met || !/Today's plan/.test(met.text), 'a met week is still being offered a session');
+  assert.ok(!/Up next/.test(met.text), 'a met week is still being offered a session');
+  assert.match(met.text, /rest day/, 'a met week is not handed back as a real choice');
 
   // Readiness flagged: the veto said train lighter, and naming a session right
   // after reads as overriding it.
   const strained = morningBrief({ planned, readiness: { state: 'strained', say: 'Down on your baseline — train lighter today.' } });
-  assert.ok(!/Today's plan/.test(strained.text), 'the plan overrides the body\'s veto');
+  assert.ok(!/Up next/.test(strained.text), 'the plan overrides the body\'s veto');
   assert.match(strained.text, /lighter/);
 
   // And a care flag is still the entire message.
   const flagged = morningBrief({ planned, flags: [{ kind: 'low_intake' }] });
-  assert.ok(flagged.only && !/Today's plan/.test(flagged.text), 'a plan line survived a care flag');
+  assert.ok(flagged.only && !/Up next|What do you want/.test(flagged.text), 'a plan line survived a care flag');
+});
+
+await test('the scheduled morning computes the completed day, not today\'s projection', () => {
+  const src = readFileSync(new URL('../netlify/functions/brief-nightly.js', import.meta.url), 'utf8');
+  const fn = src.slice(src.indexOf('async function runMorning'), src.indexOf('// Cheap exit before any of the reads below'));
+  assert.match(fn, /const yesterdayDate = addDays\(date, -1\)/);
+  assert.match(fn, /dayFacts\(userId, profile, yesterdayDate\)/,
+    'the scheduler never loads yesterday as a complete day');
+  assert.match(fn, /caloriesIn: yesterday\.food\.calories/,
+    'the burn still uses today\'s food record');
+  assert.match(fn, /activeCalories: yesterday\.device\.active_calories/,
+    'the burn still uses today\'s device record');
+  assert.match(fn, /morningBrief\(\{[\s\S]{0,180}yesterdayBalance/,
+    'the completed balance never reaches the notification composer');
+
+  const morning = readFileSync(new URL('../netlify/functions/lib/morning.js', import.meta.url), 'utf8');
+  assert.match(morning, /morning brief: yesterday\\'s computed/,
+    'the tap-through prompt does not request the completed-day figures');
+  assert.match(morning, /what I want to train today and wait for my answer/,
+    'tapping the push does not open the interactive briefing');
 });
 
 await test('a missed hour is a delay, never a cancelled day', () => {

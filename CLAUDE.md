@@ -2398,6 +2398,38 @@ it away: **never say "everything you have logged with me"** — the conversation
 is not the record, the two are routinely different, and that difference is the
 thing the person actually needs told.
 
+### The morning brief closes yesterday, shows the game, then asks
+
+`lib/morning.js` + the morning pass in `brief-nightly.js`. The founder's shape
+is exact: *"this is what you burned yesterday; this is where you are in the
+game; you trained this many times this week; what do you wanna train today?"*
+
+The old morning got two of those ideas near the screen and missed the point.
+It fed **today's barely started record** to `energyBalance()` and announced a
+whole-day projection, while yesterday's intake was only a fallback after every
+other line. It also presented the longest-rested routine as a static plan. That
+is a status notification, not a morning conversation.
+
+The sequence is now load-bearing:
+
+- **Yesterday's completed burn first**, computed from yesterday's food,
+  workouts, work, device active energy and device resting energy. It is still
+  said as *about* — calories out remains an estimate even when a watch supplied
+  part of it — and an unrecorded day never receives a made-up historical total.
+- **The training week always states its position**, including when the target
+  is met. Hiding the count after success makes the figure behave like a nag
+  that only appears while somebody is behind.
+- **The last line is a question.** A due saved routine is offered as *up next*,
+  never assigned. Otherwise rest is named as a first-class answer. Tapping the
+  push opens the chosen assistant with a prompt that asks for the same two
+  computed facts, asks what they want to train, and explicitly waits for the
+  answer before choosing or building a plan. The human tap remains the legal
+  bridge across MCP's request/response boundary.
+
+A care flag is still the entire notification and stops this sequence before
+the first line. Safety did not become a preamble just because the brief became
+interactive.
+
 ### Notifications you set by talking — the AI writes the rule, the cron sends it
 
 `018_wrought_alerts.sql` + `lib/alerts.js` + `set_alert` / `my_alerts` /
