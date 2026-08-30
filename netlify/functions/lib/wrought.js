@@ -806,8 +806,34 @@ export function careFlags(range, profile) {
   const days = range.days;
   const fed = days.filter(d => d.calories);
 
-  const veryLow = fed.filter(d => d.calories < 1200);
-  if (fed.length >= 3 && veryLow.length >= 3) {
+  // SUSTAINED MEANS NOW — the last 7 LOGGED days, never a month of memory.
+  //
+  // The flag used to count thin days across the whole loaded window, and the
+  // founder lived the consequence: three weeks of the identical doctor
+  // sentence on his lock screen every morning, held up entirely by days two
+  // and three weeks old, while his current week was fine — "Is this ever
+  // gonna be resolved?" A flag that stands for a month on stale evidence is
+  // not protection, it is wolf-crying, and this file already knows what that
+  // costs: a dismissed care flag is as dangerous as a missing one, and he had
+  // long since stopped reading it.
+  //
+  // The doctrine's own word is SUSTAINED, and sustained is present tense. So
+  // the judgement is the most recent week of logged days: three or more of
+  // the last seven under 1,200 fires, at full strength, exactly as before.
+  // Somebody genuinely under-eating trips this continuously; somebody who had
+  // a bad logging stretch and has eaten properly since stops being accused
+  // within a few honest days — which is also what makes the flag ESCAPABLE by
+  // behaviour rather than by waiting out a calendar, and an escapable flag is
+  // one people keep believing.
+  //
+  // What this deliberately no longer catches: two-ish thin days a week
+  // against five normal ones, accumulating three-in-thirty. That pattern is
+  // intermittent, not sustained — the fasting doctrine already refuses to
+  // grade it — and each thin day is still visible in its own receipt, while
+  // rapid_loss watches the body itself. The trade was considered, not missed.
+  const recent = fed.slice(-7);
+  const veryLow = recent.filter(d => d.calories < 1200);
+  if (recent.length >= 3 && veryLow.length >= 3) {
     // A DAY WITH ONE ENTRY ON IT IS NOT EVIDENCE OF A DAY'S EATING. The flag
     // fired on the founder's own lock screen from days that each held a single
     // logged item — partial logging reading as under-eating. The flag still
@@ -821,7 +847,7 @@ export function careFlags(range, profile) {
     flags.push({
       flag: 'very_low_intake',
       partial,
-      detail: `${veryLow.length} of the last ${fed.length} logged days came in under 1,200 kcal.` +
+      detail: `${veryLow.length} of your last ${recent.length} logged days came in under 1,200 kcal.` +
         (partial ? ' Each of those days holds a single entry, so this is either missed logging or genuinely too little.' : ''),
       guidance: 'Stop coaching intake down. Do not suggest a further deficit, a fast, or a lower target under any framing. ' +
         (partial
