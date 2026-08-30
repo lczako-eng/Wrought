@@ -292,47 +292,99 @@ await test('normal intake raises nothing', () => {
   assert.equal(careFlags({ days }, { units: 'metric' }).length, 0);
 });
 
-await test('sustained means NOW — the flag judges the last week of logged days, not a month of memory', () => {
-  // The founder, after three weeks of the identical doctor sentence on his
-  // lock screen, held up entirely by days two and three weeks old while his
-  // current week was fine: "Is this ever gonna be resolved?" A flag that
-  // cannot be escaped by behaviour — only by waiting out a calendar — is one
-  // people stop reading, and a dismissed care flag is as dangerous as a
-  // missing one.
+await test('sustained means NOW — but the flag keeps its memory', () => {
+  // The founder, after three weeks of the identical doctor sentence held up
+  // by days two and three weeks old while his current week was fine: "Is this
+  // ever gonna be resolved?" A flag nobody can escape by behaviour is one
+  // people stop reading. The FIRST fix judged only the last 7 logged days,
+  // and an adversarial review broke it by execution — those counterexamples
+  // are pinned here so they can never come back.
   const day = (date, calories) => ({ date, calories, meals: 3, logged: true });
+  const range = ds => ({ days: [...ds].sort((a, b) => (a.date < b.date ? -1 : 1)) });
+  const get = ds => careFlags(range(ds), { units: 'metric' }).find(f => f.flag === 'very_low_intake');
 
-  // HIS EXACT SHAPE: five thin days early in the month, a clean recent week.
-  // The old rule flagged this until mid-September; sustained it is not.
-  const stale = careFlags({ days: [
+  // ACUTE: three of the last seven logged days — fires, exactly as always.
+  const current = get([
+    day('2026-08-16', 1200), day('2026-08-19', 3040), day('2026-08-20', 1985),
+    day('2026-08-23', 2065), day('2026-08-25', 600), day('2026-08-27', 360),
+    day('2026-08-28', 960), day('2026-08-29', 490),
+  ]);
+  assert.ok(current, 'a genuinely current thin week stopped firing — the one regression this must never make');
+  assert.match(current.detail, /of your last \d logged days/);
+
+  // THE FOUNDER'S SHAPE: five thin days, the latest nine days old but still
+  // inside his last week of LOGGED days — LINGERING holds it, with the
+  // sentence that says what it is and therefore what ends it.
+  const founder = [
     day('2026-08-09', 600), day('2026-08-11', 360), day('2026-08-13', 960),
     day('2026-08-15', 490), day('2026-08-21', 725),
     day('2026-08-16', 1200), day('2026-08-19', 3040), day('2026-08-20', 1985),
     day('2026-08-27', 2065), day('2026-08-28', 2240), day('2026-08-29', 1535),
-  ].sort((a, b) => a.date < b.date ? -1 : 1) }, { units: 'metric' });
-  assert.ok(!stale.find(f => f.flag === 'very_low_intake'),
-    'a clean recent week is still being accused over stale days');
+  ];
+  const lingering = get(founder);
+  assert.ok(lingering, 'accumulated thin days touching the present stopped firing');
+  assert.match(lingering.detail, /5 days under 1,200 kcal in the last month, the latest inside your last week of logging/);
 
-  // THE DIRECTION THAT MUST NEVER WEAKEN: the same five thin days as the
-  // CURRENT week fire at full strength — three of the last seven logged.
-  const current = careFlags({ days: [
-    day('2026-08-16', 1200), day('2026-08-19', 3040), day('2026-08-20', 1985),
-    day('2026-08-23', 2065), day('2026-08-25', 600), day('2026-08-27', 360),
-    day('2026-08-28', 960), day('2026-08-29', 490),
-  ] }, { units: 'metric' });
-  const f = current.find(x => x.flag === 'very_low_intake');
-  assert.ok(f, 'a genuinely current thin week stopped firing — the one regression this change must not make');
-  assert.match(f.detail, /of your last \d logged days/);
+  // AND THE WAY OUT IS A CLEAN WEEK, NOT A CALENDAR: four more properly
+  // logged days push the last thin day out of the recent week, the fortnight
+  // average is healthy, and it clears — escapable by behaviour, in days.
+  const recovered = get([...founder,
+    day('2026-08-30', 2000), day('2026-08-31', 2100), day('2026-09-01', 1900), day('2026-09-02', 2200)]);
+  assert.ok(!recovered, 'a clean week and a healthy average are still being accused over stale days');
+
+  // ADVERSARIAL COUNTEREXAMPLE 1 — the 5:2-shaped crash the first fix went
+  // blind to: two 450-kcal days and five 1,250-kcal days, every week,
+  // forever. Never 3 thin in one week; averages 1,021 a day. Must fire.
+  const crash52 = [];
+  for (let w = 0; w < 4; w++) {
+    const base = 1 + w * 7;
+    crash52.push(day(`2026-08-${String(base).padStart(2, '0')}`, 450), day(`2026-08-${String(base + 1).padStart(2, '0')}`, 450));
+    for (let i = 2; i < 7; i++) crash52.push(day(`2026-08-${String(base + i).padStart(2, '0')}`, 1250));
+  }
+  const f52 = get(crash52);
+  assert.ok(f52, 'the 5:2 crash pattern is invisible again — a sustained 1,021 average with no flag');
+  assert.match(f52.detail, /average about 1,?0\d\d kcal a day/);
+
+  // ADVERSARIAL COUNTEREXAMPLE 2 — a real crisis is not forgotten five
+  // binary days later: three 200-kcal days then five days scraping past the
+  // line at 1,210 is an average of 831, and the flag HOLDS.
+  const crisis = [
+    day('2026-08-20', 200), day('2026-08-21', 200), day('2026-08-22', 200),
+    day('2026-08-23', 1210), day('2026-08-24', 1210), day('2026-08-25', 1210),
+    day('2026-08-26', 1210), day('2026-08-27', 1210),
+  ];
+  const fc = get(crisis);
+  assert.ok(fc, 'a 200-kcal crisis was cleared by five days of line-scraping');
+  assert.match(fc.detail, /average about 831 kcal a day/);
+
+  // GENUINE recovery — a full week of real eating — does clear that crisis:
+  // no thin day in the recent week, and the average back above the line.
+  const healed = get([
+    day('2026-08-20', 200), day('2026-08-21', 200), day('2026-08-22', 200),
+    day('2026-08-23', 2000), day('2026-08-24', 2000), day('2026-08-25', 2000),
+    day('2026-08-26', 2000), day('2026-08-27', 2000), day('2026-08-28', 2000), day('2026-08-29', 2000),
+  ]);
+  assert.ok(!healed, 'a week of genuinely normal eating after a crisis still cannot clear the flag');
+
+  // The weekly two-crash-day cycle at otherwise normal eating: caught by the
+  // lingering rule, forever — the thin days never stop touching the present.
+  const weekly = [];
+  for (let w = 0; w < 4; w++) {
+    const base = 1 + w * 7;
+    weekly.push(day(`2026-08-${String(base).padStart(2, '0')}`, 500), day(`2026-08-${String(base + 1).padStart(2, '0')}`, 500));
+    for (let i = 2; i < 7; i++) weekly.push(day(`2026-08-${String(base + i).padStart(2, '0')}`, 2000));
+  }
+  assert.ok(get(weekly), 'two crash days every week forever is not being flagged');
 
   // Three logged days, all thin — the minimum record still fires.
-  const minimal = careFlags({ days: [day('2026-08-27', 900), day('2026-08-28', 800), day('2026-08-29', 1000)] }, {});
-  assert.ok(minimal.find(x => x.flag === 'very_low_intake'));
+  assert.ok(get([day('2026-08-27', 900), day('2026-08-28', 800), day('2026-08-29', 1000)]));
 
-  // Two thin days in the recent week do not — intermittent is not sustained.
-  const two = careFlags({ days: [
+  // Two thin days with no month-scale accumulation and a healthy average: no
+  // flag — there is genuinely nothing sustained here.
+  assert.ok(!get([
     day('2026-08-25', 900), day('2026-08-26', 2200), day('2026-08-27', 800),
     day('2026-08-28', 2400), day('2026-08-29', 2100),
-  ] }, {});
-  assert.ok(!two.find(x => x.flag === 'very_low_intake'));
+  ]));
 });
 
 await test('dangerously fast weight loss raises a flag', () => {

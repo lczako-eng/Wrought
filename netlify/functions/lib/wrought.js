@@ -806,34 +806,58 @@ export function careFlags(range, profile) {
   const days = range.days;
   const fed = days.filter(d => d.calories);
 
-  // SUSTAINED MEANS NOW — the last 7 LOGGED days, never a month of memory.
+  // SUSTAINED MEANS NOW — BUT THE FLAG KEEPS ITS MEMORY.
   //
-  // The flag used to count thin days across the whole loaded window, and the
-  // founder lived the consequence: three weeks of the identical doctor
-  // sentence on his lock screen every morning, held up entirely by days two
-  // and three weeks old, while his current week was fine — "Is this ever
-  // gonna be resolved?" A flag that stands for a month on stale evidence is
-  // not protection, it is wolf-crying, and this file already knows what that
-  // costs: a dismissed care flag is as dangerous as a missing one, and he had
-  // long since stopped reading it.
+  // Two failures shaped this rule, in order. First the founder lived the
+  // wolf-cry: three weeks of the identical doctor sentence on his lock screen
+  // every morning, held up entirely by days two and three weeks old while his
+  // current week ran 2,065 / 2,240 / 1,535 — "Is this ever gonna be
+  // resolved?" A flag nobody can escape by behaviour is one people stop
+  // reading, and a dismissed care flag is as dangerous as a missing one.
   //
-  // The doctrine's own word is SUSTAINED, and sustained is present tense. So
-  // the judgement is the most recent week of logged days: three or more of
-  // the last seven under 1,200 fires, at full strength, exactly as before.
-  // Somebody genuinely under-eating trips this continuously; somebody who had
-  // a bad logging stretch and has eaten properly since stops being accused
-  // within a few honest days — which is also what makes the flag ESCAPABLE by
-  // behaviour rather than by waiting out a calendar, and an escapable flag is
-  // one people keep believing.
+  // The first fix judged ONLY the last 7 logged days, and an adversarial
+  // review broke it by execution, twice. A 5:2-shaped crash — two 450-kcal
+  // days and five 1,250-kcal days, every week, forever — averages 1,021 a day
+  // and never puts 3 thin days in one week, so it never fired. And a genuine
+  // crisis (three 200-kcal days) was forgotten five logged days later behind
+  // days that only had to scrape past the binary 1,200 line. "rapid_loss will
+  // catch it" was false: that flag needs weigh-ins, and the person this flag
+  // exists for is the person avoiding the scale.
   //
-  // What this deliberately no longer catches: two-ish thin days a week
-  // against five normal ones, accumulating three-in-thirty. That pattern is
-  // intermittent, not sustained — the fasting doctrine already refuses to
-  // grade it — and each thin day is still visible in its own receipt, while
-  // rapid_loss watches the body itself. The trade was considered, not missed.
-  const recent = fed.slice(-7);
-  const veryLow = recent.filter(d => d.calories < 1200);
-  if (recent.length >= 3 && veryLow.length >= 3) {
+  // So the judgement is a COMPOSITE — any one of three readings fires, all at
+  // full strength:
+  //
+  //   acute      3+ of the last 7 logged days under 1,200. The current week
+  //              is thin. Present tense, exactly what "sustained" promises.
+  //   average    the last 14 logged days AVERAGE under 1,200 — the doctrine's
+  //              literal definition, and the reading a binary day-count
+  //              cannot fake its way past: five 1,210-kcal days after a
+  //              200-kcal crisis still average 831, so the crisis is held
+  //              until recovery is real eating, not line-scraping.
+  //   lingering  3+ thin days across the window AND the latest of them still
+  //              inside the last 7 logged days. Accumulated evidence keeps
+  //              firing while it touches the present — the weekly
+  //              two-crash-day cycle stays caught forever — and releases only
+  //              after a genuinely clean week of logging, not a calendar
+  //              month. That release is what makes the flag escapable, and an
+  //              escapable flag is one people keep believing.
+  //
+  // The record can be lied to in every direction — that is true of every rule
+  // over a self-reported log — but clearing this one now takes a full clean
+  // week AND a healthy fortnight average, which is the cost the old 30-day
+  // rule effectively charged, minus the three stale weeks of wolf-cry.
+  const thin = d => d.calories < 1200;
+  const recent7 = fed.slice(-7);
+  const last14 = fed.slice(-14);
+  const thinAll = fed.filter(thin);
+  const acuteCount = recent7.filter(thin).length;
+  const avg14 = last14.length ? last14.reduce((s, d) => s + d.calories, 0) / last14.length : null;
+
+  const acute = acuteCount >= 3;
+  const avgLow = fed.length >= 7 && avg14 < 1200;
+  const lingering = thinAll.length >= 3 && recent7.some(thin);
+
+  if (fed.length >= 3 && (acute || avgLow || lingering)) {
     // A DAY WITH ONE ENTRY ON IT IS NOT EVIDENCE OF A DAY'S EATING. The flag
     // fired on the founder's own lock screen from days that each held a single
     // logged item — partial logging reading as under-eating. The flag still
@@ -843,11 +867,17 @@ export function careFlags(range, profile) {
     // that warns somebody genuinely under-eating must not accuse somebody who
     // logged one coffee, or the flag cries wolf and gets dismissed — and a
     // dismissed care flag is as dangerous as a missing one.
-    const partial = veryLow.every(d => (d.meals ?? 0) <= 1);
+    const partial = thinAll.length > 0 && thinAll.every(d => (d.meals ?? 0) <= 1);
     flags.push({
       flag: 'very_low_intake',
       partial,
-      detail: `${veryLow.length} of your last ${recent.length} logged days came in under 1,200 kcal.` +
+      // The sentence names the reading that fired — the most current first —
+      // so what would clear it is legible from the flag itself.
+      detail: (acute
+        ? `${acuteCount} of your last ${recent7.length} logged days came in under 1,200 kcal.`
+        : avgLow
+        ? `Your last ${last14.length} logged days average about ${Math.round(avg14)} kcal a day.`
+        : `${thinAll.length} days under 1,200 kcal in the last month, the latest inside your last week of logging.`) +
         (partial ? ' Each of those days holds a single entry, so this is either missed logging or genuinely too little.' : ''),
       guidance: 'Stop coaching intake down. Do not suggest a further deficit, a fast, or a lower target under any framing. ' +
         (partial
