@@ -388,7 +388,7 @@ end $$;
 --   08:30  "eggs and black coffee"                    → 1 food event
 --   12:45  "chicken burrito bowl, no rice"            → 1 food event
 --   18:20  "pushed 40 minutes, bench 3x8 at 80"       → 1 workout event
---   22:00  brief: what you ate, what you moved, what the scale is doing,
+--   20:00  brief: what you ate, what you moved, what the scale is doing,
 --          what you got right, what you did not, and what tomorrow is for.
 --
 -- and not one word of it had to be re-explained the next morning.

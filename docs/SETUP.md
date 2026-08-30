@@ -91,7 +91,7 @@ Prints three values. Paste them into Netlify:
 subscription silently — nobody gets an error, notifications simply stop.
 
 Then: Dashboard → Account → *Turn on notifications*, and *Send a test* so you
-find out it works now rather than at 22:00 tonight.
+find out it works now rather than at 20:00 tonight.
 
 `RESEND_API_KEY` separately enables the nightly email. Push and email are
 independent; either alone is fine.

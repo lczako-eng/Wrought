@@ -3641,7 +3641,7 @@ describing a different mechanism. What actually reaches a phone:
    the response carries `notification` — that day's verdict — and one extra
    *Show Notification* action puts it on the lock screen. No app, no push
    certificates, no permission grants. Shipped.
-2. **Email at 22:00** via `brief-nightly.js`. Shipped (needs `RESEND_API_KEY`).
+2. **Email at 20:00 by default** via `brief-nightly.js`. Shipped (needs `RESEND_API_KEY`).
 3. **Web push to an installed PWA** — the proper answer. `sw.js` and
    `site.webmanifest` are built and the site offers to install itself: Android
    gets a real button off `beforeinstallprompt`, iOS gets the honest Share →
@@ -3652,12 +3652,12 @@ describing a different mechanism. What actually reaches a phone:
    deliberately compose nothing; the server sends words it has already computed,
    so a notification can never disagree with the brief.
 
-`brief-nightly.js` runs **hourly**, not nightly, because 22:00 is a different
+`brief-nightly.js` runs **hourly**, not nightly, because 20:00 is a different
 instant per user — it serves only those for whom it is currently the send hour.
 A day with nothing logged gets no email; a nightly nag is how a product gets
 muted forever.
 
-**Where the model still runs server-side:** only `writeVerdict` for the 22:00
+**Where the model still runs server-side:** only `writeVerdict` for the evening
 email, and `buildPlan`. `/ingest` never needed one — watch data arrives as
 numbers. The founder's answer to the last one is right and is the plan: the
 verdict lives on the website and the phone app, written by the connected model

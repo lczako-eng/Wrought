@@ -8174,6 +8174,8 @@ await test('the nightly hour is theirs to move', () => {
   assert.match(progressApi, /brief_hour \?\? 20/);
   assert.ok((app.match(/brief_hour \?\? 20/g) || []).length >= 1,
     'the notification picker still defaults to a different hour');
+  assert.ok(!app.includes("c.evening || '22:00'"),
+    'the setup panel still advertises the retired 10 PM default');
   assert.match(fn, /h < 0 \|\| h > 23/);
 });
 

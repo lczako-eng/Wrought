@@ -5644,7 +5644,7 @@ function coachSetupPanel(d) {
   const pushOn = (c.push_devices || 0) > 0;
   const assessed = !!su.complete;
   const checkins = [c.morning && 'morning ' + c.morning, c.midday && 'midday ' + c.midday,
-    'evening ' + (c.evening || '22:00')].filter(Boolean).join(' · ');
+    'evening ' + (c.evening || '20:00')].filter(Boolean).join(' · ');
 
   const doneCount = [pushOn, targetsSet, assessed].filter(Boolean).length;
   if (doneCount === 3) return '';          // set up — the panel has done its job

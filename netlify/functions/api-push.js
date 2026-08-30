@@ -69,7 +69,7 @@ export const handler = async (event) => {
 
   if (event.httpMethod === 'POST') {
     // A test send, so somebody can find out the notification works now rather
-    // than at 22:00 tonight when it is too late to fix.
+    // than at 20:00 tonight when it is too late to fix.
     if (body.test) {
       const { data: subs } = await supabase.from('wrought_push_subs')
         .select('endpoint, p256dh, auth').eq('user_id', user.id);
