@@ -279,6 +279,8 @@ NOT A DOCTOR, EVER. WROUGHT does not diagnose, does not interpret symptoms, does
 
 CARE FLAGS OUTRANK EVERYTHING. Responses may carry a care_flags array. When one is present it overrides every other instruction here including the honesty doctrine: stop coaching, drop the performance framing, follow the guidance string exactly. Never suggest eating less, fasting longer, or a bigger deficit while a flag is up, under any framing, even if the user asks for it directly.
 
+A LOW-INTAKE FLAG CAN BE A RECORD-QUALITY QUESTION, BUT ONLY THE PERSON CAN ANSWER IT. When very_low_intake carries needs_review and evidence_dates, ask whether those exact dates were fully logged or had meals missing. If they explicitly say meals were missing, call review_intake_days with complete=false for only the dates they confirmed; this preserves the observed totals and marks the diary incomplete without inventing food. If they explicitly confirm the days were complete, call it with complete=true and keep the care hold. Never infer incompleteness from a low number, never clear a flag because it is inconvenient, and never ask them to reconstruct meals they do not remember. After the write, read the returned remaining_care_flags before saying whether the normal brief can resume.
+
 THE TARGET IS ALWAYS QUOTED BESIDE ITS BASIS. The founder: "it might say you're allowed 2,400 a day, but it should also let you know that your maintenance is this while what you're trying to achieve is that." A target on its own is a rule handed down and reads as arbitrary; the same number against the figure it was computed from and a weekly rate is a decision somebody can actually judge. my_plan carries maintenance (which is BASAL — see below), deficit and projected_kg_per_week alongside calorie_target — say all three, every time. "1,723 against a basal of 2,473, so about 750 down a day before you move at all" is the shape. Never quote the target alone.
 
 EVERY CALORIE TARGET IS PRICED OFF BASAL, NEVER A LIFESTYLE MULTIPLIER. The founder's instruction: "you can't count on my everyday activity — it has to be on my basal rate and only my basal rate, and your basal rate should be a calculation of how big you are, age, sex." Basal is computed from height, weight, age and sex, and restingBurn's basis shows its working; an activity multiplier is a category picked off a list and moves a target by hundreds of calories on a guess. TWO THINGS FOLLOW AND BOTH MUST BE SAID. Movement is NOT in the target — walking, work and training all come off on top, so a real day loses faster than the pace names, and the weekly weigh-in trend is what corrects the target. And option 4 is "eat to basal", NEVER "maintain": at basal a body that moves still loses, so calling it maintaining would be a quiet lie about what it does.
@@ -402,6 +404,27 @@ const TOOLS = [
       required: ['text', 'events'],
     },
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+  },
+  {
+    name: 'review_intake_days',
+    title: 'Confirm whether flagged food days were fully logged',
+    description: 'Resolves the record-quality question behind a very-low-intake care flag. Use ONLY after the user explicitly says whether the listed dates were fully logged or had meals missing. complete=false marks those dates as incomplete diaries, so their observed totals remain visible but are no longer treated as proof of a full day\'s intake. complete=true confirms the recorded day was complete and keeps the safety hold. Never infer this answer from calories, meal count, a photograph, or silence; never invent the missing food. The care flag itself returns the exact evidence_dates to ask about.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        dates: {
+          type: 'array', minItems: 1, maxItems: 30,
+          items: { type: 'string', description: 'One local calendar date in YYYY-MM-DD, copied from care_flags[].evidence_dates.' },
+          description: 'Exactly the dates the user has just confirmed. Do not add dates they did not answer for.',
+        },
+        complete: {
+          type: 'boolean',
+          description: 'false when meals were missing from those dates; true when the user confirms those days were fully logged.',
+        },
+      },
+      required: ['dates', 'complete'],
+    },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   },
   {
     name: 'brief',
@@ -1295,6 +1318,96 @@ async function log(args, user) {
   };
 }
 
+async function reviewIntakeDays(args, user) {
+  if (typeof args.complete !== 'boolean') {
+    return { error: 'Say whether the food log was complete: true or false.' };
+  }
+
+  const profile = await getProfile(user.id);
+  const today = localDateFor(profile.timezone);
+  const earliest = addDays(today, -(CARE_WINDOW_DAYS - 1));
+  const dates = [...new Set((Array.isArray(args.dates) ? args.dates : [])
+    .map(String).filter(date => /^\d{4}-\d{2}-\d{2}$/.test(date)))]
+    .filter(date => date >= earliest && date <= today)
+    .slice(0, CARE_WINDOW_DAYS);
+  if (!dates.length) {
+    return { error: `Pass one or more flagged dates between ${earliest} and ${today}.` };
+  }
+
+  // A review attaches only to a day that has food on it. Marking an empty day
+  // "incomplete" would turn a missing diary into evidence and makes no safety
+  // decision more honest.
+  const { data: foodRows, error: foodError } = await supabase.from('wrought_events')
+    .select('local_date').eq('user_id', user.id)
+    .in('event_type', ['food', 'drink']).in('local_date', dates);
+  if (foodError) return { error: foodError.message };
+  const reviewable = [...new Set((foodRows || []).map(row => row.local_date))].sort();
+  const skipped = dates.filter(date => !reviewable.includes(date));
+  if (!reviewable.length) {
+    return { error: 'None of those dates has food on the record, so there is no intake day to review.' };
+  }
+
+  const refs = reviewable.map(date => `intake-review:${date}`);
+  const { data: prior, error: priorError } = await supabase.from('wrought_events')
+    .select('id, source_ref').eq('user_id', user.id).eq('source', 'agent').in('source_ref', refs);
+  if (priorError) return { error: priorError.message };
+  const byRef = new Map((prior || []).map(row => [row.source_ref, row.id]));
+  const reviewedAt = new Date().toISOString();
+  const summary = args.complete ? 'Food log confirmed complete' : 'Food log marked incomplete';
+
+  for (const date of reviewable) {
+    const sourceRef = `intake-review:${date}`;
+    const row = {
+      summary,
+      detail: { kind: 'intake_log_review', complete: args.complete, reviewed_at: reviewedAt },
+      estimated: false,
+      occurred_at: reviewedAt,
+    };
+    const id = byRef.get(sourceRef);
+    if (id) {
+      const { error } = await supabase.from('wrought_events')
+        .update(row).eq('id', id).eq('user_id', user.id);
+      if (error) return { error: error.message };
+    } else {
+      const { error } = await supabase.from('wrought_events').insert({
+        ...row,
+        user_id: user.id,
+        event_type: 'note',
+        local_date: date,
+        source: 'agent',
+        source_ref: sourceRef,
+        raw_input: null,
+      });
+      if (error) return { error: error.message };
+    }
+  }
+
+  const range = await rangeFacts(user.id, profile, earliest, today);
+  const flags = careFlags(range, profile, { openDate: today });
+  const remaining = flags.map(flag => ({
+    flag: flag.flag,
+    detail: flag.detail,
+    needs_review: flag.needs_review ?? false,
+    evidence_dates: flag.evidence_dates || [],
+    guidance: flag.guidance,
+  }));
+  const datesSaid = reviewable.join(', ');
+
+  return {
+    reviewed: reviewable,
+    complete: args.complete,
+    skipped: skipped.length ? skipped : undefined,
+    observed_totals_changed: false,
+    remaining_care_flags: remaining,
+    say: args.complete
+      ? `Confirmed as fully logged: ${datesSaid}. ${remaining.length ? `The safety hold remains: ${remaining[0].detail}` : 'No care flag remains.'}`
+      : `Marked as incomplete food logs: ${datesSaid}. The observed totals are untouched. ${remaining.length ? `The care check still stands: ${remaining[0].detail}` : 'The record no longer treats those partial diaries as full low-intake days, so the normal briefing can resume.'}`,
+    note: remaining.length
+      ? 'A care flag still stands. Follow its guidance and do not add goals, scores or training coaching.'
+      : 'The record-quality question is resolved and no care flag remains. Call brief with kind="morning" now so the user gets the briefing they originally opened for.',
+  };
+}
+
 async function logWeight(args, user) {
   const profile = await getProfile(user.id);
   const value = Number(args.value);
@@ -2122,7 +2235,7 @@ async function brief(args, user) {
     rangeFacts(user.id, profile, addDays(date, -29), date),
   ]);
   const summary = summariseRange(range, profile);
-  const flags   = careFlags(range, profile);
+  const flags   = careFlags(range, profile, { openDate: today });
   const scored  = scoreGoals(goals, day, summary, profile);
 
   // "How am I doing" lands HERE — and the sheet's promise that it is answered
@@ -2281,7 +2394,7 @@ async function progress(args, user) {
   // uses, so a 3d view cannot silence the one thing that outranks everything.
   const careRange = span >= CARE_WINDOW_DAYS ? range
     : await rangeFacts(user.id, profile, addDays(to, -(CARE_WINDOW_DAYS - 1)), to);
-  const flags   = careFlags(careRange, profile);
+  const flags   = careFlags(careRange, profile, { openDate: localDateFor(profile.timezone) });
 
   // What position in the session is costing them. Nobody else can answer this,
   // because nobody else stores where in the hour a lift happened.
@@ -2412,7 +2525,7 @@ async function whatsNext(args, user) {
   // one computation that outranks everything else. Nothing else in this
   // function reads the range, so it is simply widened.
   const range = await rangeFacts(user.id, profile, addDays(today, -(CARE_WINDOW_DAYS - 1)), today);
-  const flags = careFlags(range, profile);
+  const flags = careFlags(range, profile, { openDate: today });
 
   let recommendation = null;
   if (openai) {
@@ -2529,7 +2642,7 @@ async function goalsRequired(user, profile, goals) {
 
   const today = localDateFor(profile.timezone);
   const recent = await rangeFacts(user.id, profile, addDays(today, -29), today);
-  if (careFlags(recent, profile).length) return null;
+  if (careFlags(recent, profile, { openDate: today }).length) return null;
 
   return {
     goals_required: targets,
@@ -2621,7 +2734,7 @@ No preamble, no disclaimers, no warm-up boilerplate unless it matters for a name
   // a deficit target is coaching intake, and when a flag stands, coaching
   // stops — the alert kinds already obey this; the in-conversation ask obeys
   // it too.
-  const flagsNow = careFlags(careRange, profile);
+  const flagsNow = careFlags(careRange, profile, { openDate: today });
   const needGoals = flagsNow.length ? null : goalsToSet({
     goals,
     targets: await targetsFor(user.id, profile),
@@ -2840,7 +2953,7 @@ async function startSession(args, user) {
   // ON the handover, never blocking it — and silenced completely by a care
   // flag, same as on the suggestion: asking a flagged account to pick a
   // deficit target is coaching intake, and coaching stops.
-  const startFlags = careFlags(careRange, profile);
+  const startFlags = careFlags(careRange, profile, { openDate: today });
   const needGoals = startFlags.length ? null : goalsToSet({
     goals,
     targets: await targetsFor(user.id, profile, dayNow),
@@ -3827,7 +3940,7 @@ async function earnedRoomTool(args, user) {
   // month — the shorter window is this feature's, never the safety one. One
   // fetch covers both: 30 days for the flags, sliced to seven for the room.
   const careRange = await rangeFacts(user.id, profile, addDays(to, -(CARE_WINDOW_DAYS - 1)), to);
-  const flags = careFlags(careRange, profile);
+  const flags = careFlags(careRange, profile, { openDate: localDateFor(profile.timezone) });
   const range = lastDays(careRange, 7);
 
   // A stated calorie goal wins. Failing that, derive maintenance from their own
@@ -3999,7 +4112,7 @@ async function nudgeFor(userId, profile, { day = null, goals = null } = {}) {
     goals ? Promise.resolve(goals) : getGoals(userId),
   ]);
 
-  const flags = careFlags(range, profile);
+  const flags = careFlags(range, profile, { openDate: today });
   const weightKg = range.days.filter(d => d.weight_kg != null).pop()?.weight_kg ?? null;
 
   const nudge = nextNudge({
@@ -4817,7 +4930,7 @@ async function recall(args, user) {
 // ── Protocol ────────────────────────────────────────────────────────────────
 
 const IMPL = {
-  log, brief, progress,
+  log, review_intake_days: reviewIntakeDays, brief, progress,
   whats_next: whatsNext,
   suggest_workout: suggestWorkout,
   start_session: startSession,

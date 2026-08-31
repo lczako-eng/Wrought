@@ -326,7 +326,7 @@ export const handler = async (event) => {
   // again when the selected range is shorter than that.
   const recent = recentRaw || range;
 
-  const flags    = careFlags(recent, profile);
+  const flags    = careFlags(recent, profile, { openDate: localDateFor(profile.timezone) });
 
   // THE ONE-DAY VIEW STILL NEEDS CONTEXT. Opening on today is right — it is
   // the question somebody has now — but it left every graph behind the 7d

@@ -190,12 +190,34 @@ const OPENERS = {
     'stand against my targets and what the afternoon needs.',
 };
 
+function careOpener(flag = {}) {
+  const dates = (flag.evidence_dates || []).join(', ');
+  return 'Gym bro — Wrought paused coaching because the food record shows a sustained low-intake pattern' +
+    (dates ? ` on these dates: ${dates}` : '') + '. Ask me first whether each flagged date was fully logged or had meals missing. ' +
+    'For exactly the dates I confirm were incomplete, call review_intake_days with complete=false; do not invent meals or calories. ' +
+    'For dates I confirm were complete, call it with complete=true. Then read the care flag again. Only if it clears, give me the normal morning brief; ' +
+    'otherwise explain the safety hold plainly and stop there.';
+}
+
 export function morningLink(opens, which = 'morning') {
   const q = encodeURIComponent(OPENERS[which] || OPENERS.morning);
   if (opens === 'chatgpt') return `https://chatgpt.com/?q=${q}`;
   if (opens === 'claude') return `https://claude.ai/new?q=${q}`;
   // The dashboard is the one destination every account verifiably has.
   return '/app.html';
+}
+
+/**
+ * A care notification must still be the whole message, but it must not be a
+ * dead end. The person's tap opens the same assistant they chose for their
+ * morning briefing with the exact dates and the one permitted resolution:
+ * record whether the diary was incomplete, without fabricating what was eaten.
+ */
+export function careReviewLink(opens, flag) {
+  const q = encodeURIComponent(careOpener(flag));
+  if (opens === 'chatgpt') return `https://chatgpt.com/?q=${q}`;
+  if (opens === 'claude') return `https://claude.ai/new?q=${q}`;
+  return '/app.html#care-review';
 }
 
 /**

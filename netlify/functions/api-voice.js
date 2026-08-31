@@ -126,7 +126,7 @@ export const handler = async (event) => {
       deviceResting: day.device.resting_calories,
       deviceExpected: Date.now() - lastSync < 3 * 86400000,
     });
-    const flags = careFlags(range, profile);
+    const flags = careFlags(range, profile, { openDate: today });
     const week  = weekSoFar(range.days, { today, target: profile.train_days });
 
     await supabase.from('wrought_ingest_keys')

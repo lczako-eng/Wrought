@@ -2435,6 +2435,37 @@ A care flag is still the entire notification and stops this sequence before
 the first line. Safety did not become a preamble just because the brief became
 interactive.
 
+### A care flag must be a door, not a daily dead end
+
+The founder's lock screen showed the failure more clearly than any test could:
+the same doctor warning every morning, with no goals, no training position and
+no way to answer the uncertainty behind it. Worse, the count moved from five
+low days in the morning to six at night because **380 calories logged so far
+today was treated as a completed day**. That wording change bypassed the
+same-day repeat guard and sent the warning twice.
+
+Two rules now hold together:
+
+- **An open day is never intake evidence.** Every live care-flag caller passes
+  the person's current `local_date` as `openDate`; `careFlags()` excludes that
+  date from the low-intake reading while leaving today's weigh-in and training
+  available to their own safety checks. Breakfast is not a 380-calorie day.
+- **Incomplete food logs are record quality, not nutrition.** A low-intake flag
+  carries the exact `evidence_dates` and `needs_review`. The notification stays
+  care-only, but tapping it opens the person's chosen assistant with one task:
+  ask which dates were fully logged and which had meals missing. No ordinary
+  morning opener, no goal score, no training nudge.
+
+`review_intake_days` records the person's explicit answer as an idempotent note
+(`intake-review:YYYY-MM-DD`). `complete=false` leaves every observed calorie
+and meal untouched but prevents that partial diary being used as proof of a
+full day's intake. `complete=true` keeps the day in the safety reading. **The
+tool may never infer the answer from a small number, a meal count or silence**,
+and it never asks somebody to invent meals they do not remember. After the
+write it recomputes the flag; the normal morning brief resumes only if the care
+hold genuinely clears. A reviewed complete low-intake pattern still stops all
+coaching and points to a doctor or dietitian exactly as before.
+
 ### The evening brief is today's receipt against the goals
 
 The default close is **20:00 in the person's timezone**; an hour they explicitly

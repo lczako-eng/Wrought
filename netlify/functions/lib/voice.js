@@ -23,9 +23,11 @@ const FLAG_SPOKEN = {
   // a starved day by the record — the honest sentence carries both readings
   // and the action for each, because a wrong accusation gets a care flag
   // dismissed, and a dismissed flag is as dangerous as a missing one.
-  very_low_intake: (d, f) => f?.partial
-    ? `${d} Log those days fully and this clears — and if they really were that small, that is under what a body runs on, and worth a doctor.`
-    : `${d} That is under what a body runs on, so there is no target from me today. That one is worth a doctor.`,
+  very_low_intake: (d, f) => f?.needs_review
+    ? `${d} Tap to review ${shortDates(f.evidence_dates)}. Mark missing-meal days incomplete without inventing food; if the log was complete, that is under what a body runs on and worth a doctor.`
+    : f?.partial
+      ? `${d} Those days were confirmed complete, and that is under what a body runs on and worth a doctor.`
+      : `${d} That is under what a body runs on, so there is no target from me today. That one is worth a doctor.`,
   rapid_loss: d =>
     `${d} That is faster than is usually safe, and fast loss costs muscle. Worth easing the deficit.`,
   no_rest: d =>
@@ -38,6 +40,37 @@ export function spokenFlag(flag) {
   // An unmapped flag still gets said. Losing a care flag to a missing key is
   // the one bug in this file that could genuinely hurt somebody.
   return shape ? shape(flag.detail, flag) : flag.detail || null;
+}
+
+function shortDates(dates = []) {
+  const shown = dates.slice(0, 4).map(date => {
+    const d = new Date(`${date}T12:00:00Z`);
+    return Number.isNaN(d.getTime())
+      ? date
+      : d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
+  });
+  if (!shown.length) return 'the flagged days';
+  if (dates.length > shown.length) return `${shown.join(', ')} + ${dates.length - shown.length} more`;
+  if (shown.length === 1) return shown[0];
+  return `${shown.slice(0, -1).join(', ')} and ${shown.at(-1)}`;
+}
+
+/**
+ * The care flag shaped for a lock screen.
+ *
+ * The old notification was a verdict with no door out of it. When the record
+ * itself could not distinguish missed meals from a complete low-intake day,
+ * it repeated "worth a doctor" every morning and linked to a static screen.
+ * This stays a care-only message — no score or training nudge is appended —
+ * but the uncertainty is now an action the user can resolve in one tap.
+ */
+export function careNotification(flag) {
+  if (flag?.flag === 'very_low_intake' && flag?.needs_review) {
+    const body = `Low-intake check: ${shortDates(flag.evidence_dates)}. Tap to mark missing meals. If complete, this is worth a doctor; coaching stays paused.`;
+    return { title: 'WROUGHT · CHECK THE RECORD', body: body.length > 160 ? `${body.slice(0, 157)}…` : body };
+  }
+  const body = String(spokenFlag(flag) || '').trim();
+  return { title: 'WROUGHT · CARE', body: body.length > 160 ? `${body.slice(0, 157)}…` : body };
 }
 
 /**

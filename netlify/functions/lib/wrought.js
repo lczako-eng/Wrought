@@ -379,6 +379,17 @@ export async function dayFacts(userId, profile, date) {
   // instead of stating a number that is confidently wrong.
   const mealsUncounted = meals.filter(e => e.detail?.calories == null).length;
 
+  // A low total can mean two completely different things: a complete day on
+  // too little food, or an incomplete diary. The user is the only person who
+  // can settle that distinction. `review_intake_days` stores their answer as
+  // a note rather than inventing the missing meals, and every reader carries
+  // it as record quality — never as nutrition.
+  const intakeReview = [...evs].reverse().find(e =>
+    e.event_type === 'note' && e.detail?.kind === 'intake_log_review');
+  const foodLogComplete = intakeReview
+    ? intakeReview.detail?.complete === true
+    : null;
+
   // Late eating — the number that actually explains a stalled week.
   const lastMeal = meals.length ? meals[meals.length - 1] : null;
   const lastMealMin = lastMeal ? localMinutesFor(profile.timezone, new Date(lastMeal.occurred_at)) : null;
@@ -422,6 +433,7 @@ export async function dayFacts(userId, profile, date) {
       meals: meals.length,
       estimated: foodEstimated,
       meals_uncounted: mealsUncounted,
+      log_complete: foodLogComplete,
       last_meal_at: lastMealMin != null ? clockString(lastMealMin) : null,
       last_meal_summary: lastMeal?.summary || null,
       say: !meals.length
@@ -560,7 +572,7 @@ export async function rangeFacts(userId, profile, fromDate, toDate) {
       date: d, calories: 0, protein_g: 0, carbs_g: 0, fat_g: 0,
       meals: 0, sessions: 0, minutes: 0, volume_kg: 0,
       weights: [], steps: 0, sleep_minutes: 0, active_calories: 0,
-      muscles: new Set(), logged: false,
+      muscles: new Set(), logged: false, food_log_complete: null,
     });
     return byDay.get(d);
   };
@@ -576,6 +588,9 @@ export async function rangeFacts(userId, profile, fromDate, toDate) {
       day.carbs_g   += num(e.detail?.carbs_g);
       day.fat_g     += num(e.detail?.fat_g);
       day.meals     += 1;
+    }
+    if (e.event_type === 'note' && e.detail?.kind === 'intake_log_review') {
+      day.food_log_complete = e.detail?.complete === true;
     }
     if (e.event_type === 'workout') {
       day.sessions += 1;
@@ -609,6 +624,7 @@ export async function rangeFacts(userId, profile, fromDate, toDate) {
     carbs_g: Math.round(d.carbs_g) || null,
     fat_g: Math.round(d.fat_g) || null,
     meals: d.meals,
+    food_log_complete: d.food_log_complete,
     sessions: d.sessions,
     minutes: d.minutes,
     volume_kg: Math.round(d.volume_kg) || null,
@@ -847,10 +863,20 @@ export function lastDays(range, n) {
   return { ...range, days: days.filter(d => d.date >= cutoff) };
 }
 
-export function careFlags(range, profile) {
+export function careFlags(range, profile, { openDate = null } = {}) {
   const flags = [];
+  // An unfinished day is not a low-intake day. The screenshot that finally
+  // made this visible showed breakfast and lunch turning into a sixth
+  // "under 1,200" day before noon, which both prolonged the warning and made
+  // its wording change between the morning and evening pushes. Scheduled
+  // callers know which local date is still open and pass it here. Historical
+  // callers omit the option and retain their exact old meaning.
   const days = careWindow(range.days);
-  const fed = days.filter(d => d.calories);
+  // An explicitly incomplete food diary is evidence about record quality, not
+  // intake. Keep the row and its honest observed total everywhere else, but do
+  // not use it to accuse somebody of under-eating. Only the user's explicit
+  // review can set this false; nothing infers it from a small number.
+  const fed = days.filter(d => d.date !== openDate && d.calories && d.food_log_complete !== false);
 
   // SUSTAINED MEANS NOW — BUT THE FLAG KEEPS ITS MEMORY.
   //
@@ -924,9 +950,12 @@ export function careFlags(range, profile) {
                    : avgLow ? last14.filter(thin)
                    : thinAll;
     const partial = evidence.length > 0 && evidence.every(d => (d.meals ?? 0) <= 1);
+    const unreviewed = evidence.filter(d => d.food_log_complete == null);
     flags.push({
       flag: 'very_low_intake',
       partial,
+      needs_review: unreviewed.length > 0,
+      evidence_dates: evidence.map(d => d.date).filter(Boolean),
       // The sentence names the reading that fired — the most current first —
       // so what would clear it is legible from the flag itself.
       detail: (acute
@@ -936,8 +965,10 @@ export function careFlags(range, profile) {
         : `${thinAll.length} days under 1,200 kcal in the last month, the latest inside your last week of logging.`) +
         (partial ? ' Each of those days holds a single entry, so this is either missed logging or genuinely too little.' : ''),
       guidance: 'Stop coaching intake down. Do not suggest a further deficit, a fast, or a lower target under any framing. ' +
-        (partial
-          ? 'Those days each hold ONE logged item: first ask plainly whether meals went unlogged on them — if so, log them now and this clears. If the days really were that small, say that is under what a body needs to run on and a doctor or dietitian is the right person for it. Do not skip the question and do not soften the second half.'
+        (unreviewed.length
+          ? `First ask plainly whether meals went unlogged on ${unreviewed.map(d => d.date).join(', ')} — in other words, whether each food log was complete. If meals were missed, call review_intake_days with complete=false for exactly the dates they confirm; that records uncertainty without inventing food. If the days were complete, call it with complete=true and say that intake is under what a body needs to run on and a doctor or dietitian is the right person for it. Never infer the answer or mark a day incomplete just because its number is small. Do not skip the question and do not soften the second half. Do not coach past this question.`
+        : partial
+          ? 'Those days each hold ONE logged item but were confirmed complete. Say plainly that this is under what a body needs to run on and a doctor or dietitian is the right person for it.'
           : 'Say plainly that this is under what a body needs to run on, and that a doctor or dietitian is the right person for it.'),
     });
   }

@@ -28,10 +28,10 @@ import {
   dayFacts, rangeFacts, summariseRange, scoreGoals, careFlags, writeVerdict,
 } from './lib/wrought.js';
 import { sendPush, vapidConfigured } from './lib/push.js';
-import { eveningNotification, eveningReceipt, plainBrief, spokenFlag } from './lib/voice.js';
+import { careNotification, eveningNotification, eveningReceipt, plainBrief, spokenFlag } from './lib/voice.js';
 import { energyBalance, weekSoFar, goalsToSet } from './lib/training.js';
 import { dueAlerts } from './lib/alerts.js';
-import { morningBrief, middayBrief, morningDue, morningLink, flagRepeat } from './lib/morning.js';
+import { careReviewLink, morningBrief, middayBrief, morningDue, morningLink, flagRepeat } from './lib/morning.js';
 
 const SEND_HOUR = 20;
 
@@ -58,7 +58,7 @@ export async function buildBriefFor(userId, now = new Date()) {
   ]);
 
   const summary = summariseRange(range, profile);
-  const flags   = careFlags(range, profile);
+  const flags   = careFlags(range, profile, { openDate: date });
 
   const facts = {
     date, kind: 'evening', units: profile.units,
@@ -160,16 +160,25 @@ async function email(to, subject, text) {
 // here composes a sentence: the verdict was computed already, and a notification
 // that phrased things its own way could disagree with the brief it came from.
 async function push(userId, profile, out) {
-  const care = !!out.flags?.length;
+  const flag = out.flags?.[0] || null;
+  const care = !!flag;
+  let opens = null;
+  if (care) {
+    const { data } = await supabase.from('wrought_profile')
+      .select('morning_opens').eq('user_id', userId).maybeSingle()
+      .then(r => (r.error ? { data: null } : r), () => ({ data: null }));
+    opens = data?.morning_opens || null;
+  }
+  const notice = care ? careNotification(flag) : null;
   return deliver(userId, profile, {
-    title: care ? 'WROUGHT' : 'WROUGHT · DAY CLOSED',
+    title: care ? notice.title : 'WROUGHT · DAY CLOSED',
     // A care flag is still the whole notification. Every ordinary close uses
     // the computed scoreboard, with the old sentence only as a safe fallback
     // for an older stored brief shape.
-    body: care ? firstSentence(out.verdict)
+    body: care ? notice.body
       : (out.facts?.notification_body || firstSentence(out.verdict)),
     tag: `wrought-${out.date}`,
-    url: care ? '/app.html' : '/app.html#daily-close',
+    url: care ? careReviewLink(opens, flag) : '/app.html#daily-close',
   });
 }
 
@@ -308,7 +317,7 @@ async function runMidday(userId, profile, now) {
     rangeFacts(userId, profile, addDays(date, -29), date),
     getGoals(userId),
   ]);
-  const flags = careFlags(recent, profile);
+  const flags = careFlags(recent, profile, { openDate: date });
   const scored = scoreGoals(goals, day, summariseRange(recent, profile), profile);
 
   const out = middayBrief({ facts: day, flags, scored });
@@ -323,11 +332,12 @@ async function runMidday(userId, profile, now) {
     return 0;
   }
 
+  const notice = out.only ? careNotification(flags[0]) : null;
   const sent = await deliver(userId, profile, {
-    title: 'WROUGHT',
-    body: out.text,
+    title: notice?.title || 'WROUGHT',
+    body: notice?.body || out.text,
     tag: `wrought-midday-${date}`,
-    url: out.only ? '/app.html' : morningLink(mo?.morning_opens, 'midday'),
+    url: out.only ? careReviewLink(mo?.morning_opens, flags[0]) : morningLink(mo?.morning_opens, 'midday'),
   });
   if (sent) {
     await supabase.from('wrought_profile')
@@ -383,7 +393,7 @@ async function runMorning(userId, profile, now) {
       .order('last_used_on', { ascending: true, nullsFirst: true })
       .limit(1).maybeSingle().then(r => r.data || null),
   ]);
-  const flags = careFlags(recent, profile);
+  const flags = careFlags(recent, profile, { openDate: date });
   const week = weekSoFar(recent.days, { today: date, target: profile.train_days || null });
 
   // The morning closes YESTERDAY. The former code fed today's barely started
@@ -426,15 +436,17 @@ async function runMorning(userId, profile, now) {
     return 0;
   }
 
+  const notice = out.only ? careNotification(flags[0]) : null;
   const sent = await deliver(userId, profile, {
-    title: 'WROUGHT',
-    body: out.text,
+    title: notice?.title || 'WROUGHT',
+    body: notice?.body || out.text,
     tag: `wrought-morning-${date}`,
     // Tapping it opens the assistant with the day's opener pre-filled — the
     // one legal bridge across MCP's no-push rule, because the person's tap is
-    // what carries the words. A care flag never rides it into a chat opener:
-    // the flag IS the message, and the dashboard is where it is explained.
-    url: out.only ? '/app.html' : morningLink(mo?.morning_opens),
+    // what carries the words. A care flag gets its OWN review opener — never
+    // the start-my-day coaching prompt — so the tap can resolve incomplete
+    // logging without putting goals or training beside the warning.
+    url: out.only ? careReviewLink(mo?.morning_opens, flags[0]) : morningLink(mo?.morning_opens),
   });
 
   // STAMPED ONLY ON SUCCESS, exactly like an alert's last_sent_on. Marking it
@@ -471,7 +483,7 @@ async function runAlerts(userId, profile, now) {
 
   // A CARE FLAG OUTRANKS EVERYTHING and needs its own thirty days — read off
   // the same window the dashboard gives it, never off today alone.
-  const flags = careFlags(recent, profile);
+  const flags = careFlags(recent, profile, { openDate: date });
 
   const week = weekSoFar(recent.days, { today: date, target: profile.train_days || null });
 
