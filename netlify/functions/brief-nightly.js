@@ -28,7 +28,7 @@ import {
   dayFacts, rangeFacts, summariseRange, scoreGoals, careFlags, writeVerdict,
 } from './lib/wrought.js';
 import { sendPush, vapidConfigured } from './lib/push.js';
-import { eveningReceipt, plainBrief, spokenFlag } from './lib/voice.js';
+import { eveningNotification, eveningReceipt, plainBrief, spokenFlag } from './lib/voice.js';
 import { energyBalance, weekSoFar, goalsToSet } from './lib/training.js';
 import { dueAlerts } from './lib/alerts.js';
 import { morningBrief, middayBrief, morningDue, morningLink, flagRepeat } from './lib/morning.js';
@@ -101,6 +101,7 @@ export async function buildBriefFor(userId, now = new Date()) {
     direction: balance.direction,
   } : { known: false, missing: balance.missing || [] };
   facts.goal_receipt = eveningReceipt({ facts, balance });
+  facts.notification_body = eveningNotification({ facts, balance });
 
   const writtenVerdict = flags.length
     ? null
@@ -161,9 +162,13 @@ async function email(to, subject, text) {
 async function push(userId, profile, out) {
   return deliver(userId, profile, {
     title: 'WROUGHT',
-    // First sentence only. A lock screen truncates anyway, and a verdict cut
-    // mid-clause reads as harsher than it is.
-    body: firstSentence(out.verdict),
+    // The daily goal receipt owns this line. firstSentence(verdict) used to
+    // discard everything after the generic action list — including the entire
+    // "Against your goals" sentence the 8 PM notification exists to deliver.
+    // A care flag still outranks the receipt and remains the entire message.
+    body: out.flags?.length
+      ? firstSentence(out.verdict)
+      : out.facts?.notification_body || firstSentence(out.verdict),
     tag: `wrought-${out.date}`,
     url: '/app.html',
   });

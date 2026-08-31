@@ -42,7 +42,7 @@ import {
   duplicateItems, duplicateExtra, VALID_TYPES, degradePlan,
   effectiveType, withEffectiveTypes,
 } from '../netlify/functions/lib/wrought.js';
-import { spokenBrief, spokenLog, spokenFlag, pendingVoice, eveningReceipt, plainBrief } from '../netlify/functions/lib/voice.js';
+import { spokenBrief, spokenLog, spokenFlag, pendingVoice, eveningNotification, eveningReceipt, plainBrief } from '../netlify/functions/lib/voice.js';
 
 let passed = 0, failed = 0;
 const results = [];
@@ -8120,6 +8120,34 @@ await test('the nightly read fires without an OpenAI key', () => {
   assert.match(receipt, /Against your goals:/);
   assert.match(receipt, /Training week: 3 of 4 sessions/);
 
+  const lockScreen = eveningNotification({
+    facts: {
+      logged: true,
+      food: { meals: 3, calories: 1520, protein_g: 57, meals_uncounted: 0 },
+      training: { sessions: 1, minutes: 44 },
+      activity: { count: 1, minutes: 270 },
+      device: { steps: 9945 },
+      goals: [
+        { metric: 'calories', scored: true, actual: 1520, target: 2200, unit: 'kcal' },
+        { metric: 'protein_g', scored: true, actual: 57, target: 180, unit: 'g' },
+        { metric: 'steps', scored: true, actual: 9945, target: 10000, unit: 'steps' },
+      ],
+      training_week: { done: 2, target: 3, say: '2 of 3 sessions this week.' },
+    },
+    balance: { known: true, calories_out: 3213 },
+  });
+  assert.equal(lockScreen,
+    'Today vs goals — 1 workout/44m; 1 work entry/270m; 9,945/10,000 steps; 1,520/2,200 kcal; 57/180g protein; ~3,213 kcal burned; week 2/3.');
+  assert.ok(lockScreen.length <= 160, 'the goal receipt will be cut off on the lock screen');
+
+  // Regression for the production failure: the push may not take the first
+  // sentence of the long verdict, because the goal comparison is sentence two.
+  const nightlySource = readFileSync(new URL('../netlify/functions/brief-nightly.js', import.meta.url), 'utf8');
+  const pushSource = nightlySource.slice(nightlySource.indexOf('async function push('), nightlySource.indexOf('// One sender'));
+  assert.match(pushSource, /out\.facts\?\.notification_body/);
+  assert.doesNotMatch(pushSource, /body:\s*firstSentence\(out\.verdict\)/,
+    'the push strips the goal comparison off again');
+
   // A note is evidence that somebody spoke, not evidence that they ate zero,
   // walked zero or slept zero. Only metrics actually recorded today may be
   // printed as actual/target in a daily receipt.
@@ -8136,6 +8164,15 @@ await test('the nightly read fires without an OpenAI key', () => {
     balance: { known: false },
   });
   assert.equal(thin, null, 'an unlogged metric was printed as zero toward its goal');
+  assert.equal(eveningNotification({
+    facts: {
+      logged: true,
+      food: { meals: 0, calories: 0, protein_g: 0 },
+      device: { steps: null },
+      goals: [{ metric: 'calories', scored: true, actual: 0, target: 2200, unit: 'kcal' }],
+    },
+    balance: { known: false },
+  }), null, 'the lock screen printed an unlogged zero against a goal');
 
   // A care flag is the whole message — a lock screen has no room to bury it.
   const flagged = plainBrief({

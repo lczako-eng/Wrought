@@ -144,6 +144,28 @@ const compactNumber = value => {
   return (Math.round(n * 10) / 10).toLocaleString('en-US');
 };
 
+function dailyScoredGoals(facts = {}) {
+  const food = facts.food || {};
+  const device = facts.device || {};
+  const hasTodayEvidence = g => {
+    switch (g.metric) {
+      // A partial food total cannot honestly be printed against a goal: the
+      // real figure is higher, and the amount is unknown. Keep the food action
+      // in the receipt, but do not dress the partial sum up as a score.
+      case 'calories':
+      case 'protein_g': return food.meals > 0 && Number(food.meals_uncounted || 0) === 0;
+      case 'steps': return device.steps != null;
+      case 'distance_km': return device.distance_km != null;
+      case 'active_minutes': return device.active_minutes != null;
+      case 'sleep_minutes': return device.sleep_minutes != null;
+      case 'weight_kg': return facts.body?.weight_kg != null;
+      default: return false;
+    }
+  };
+  return (facts.goals || []).filter(g =>
+    g.scored && g.metric !== 'workout_days' && g.cadence !== 'weekly' && hasTodayEvidence(g));
+}
+
 // The deterministic close of the day: what actually went on the record, then
 // where those facts put the goals. This leads the evening brief whether or not
 // an OpenAI key exists, so the lock screen can never be an AI's impression of
@@ -177,20 +199,7 @@ export function eveningReceipt({ facts = {}, balance = null } = {}) {
   // a range summary, so they are not evidence of what THIS day contributed.
   // Daily goals only appear when the matching fact was actually recorded: a
   // stray note must never turn an unlogged intake into "0 / target".
-  const hasTodayEvidence = g => {
-    switch (g.metric) {
-      case 'calories':
-      case 'protein_g': return food.meals > 0;
-      case 'steps': return device.steps != null;
-      case 'distance_km': return device.distance_km != null;
-      case 'active_minutes': return device.active_minutes != null;
-      case 'sleep_minutes': return device.sleep_minutes != null;
-      case 'weight_kg': return facts.body?.weight_kg != null;
-      default: return false;
-    }
-  };
-  const goals = (facts.goals || []).filter(g =>
-    g.scored && g.metric !== 'workout_days' && g.cadence !== 'weekly' && hasTodayEvidence(g));
+  const goals = dailyScoredGoals(facts);
   const goalLines = goals.map(g => {
     const actual = compactNumber(g.actual);
     const target = compactNumber(g.target);
@@ -206,6 +215,69 @@ export function eveningReceipt({ facts = {}, balance = null } = {}) {
     lines.push(`Training week: ${facts.training_week.say}`);
   }
   return lines.join(' ') || null;
+}
+
+/**
+ * The ACTUAL lock-screen line for the 8 PM close.
+ *
+ * This is deliberately separate from the long receipt above. The push sender
+ * used to take firstSentence(verdict), which kept the generic "Today" list and
+ * cut off the next sentence — the one beginning "Against your goals". So the
+ * server did the requested calculation and then removed it at the last door.
+ * This compact line is computed directly, keeps whole clauses under the same
+ * 160-character lock-screen ceiling, and cannot be replaced by model prose.
+ */
+export function eveningNotification({ facts = {}, balance = null } = {}) {
+  const food = facts.food || {};
+  const training = facts.training || {};
+  const activity = facts.activity || {};
+  const device = facts.device || {};
+  const goals = new Map(dailyScoredGoals(facts).map(g => [g.metric, g]));
+  const parts = [];
+
+  if (training.sessions) {
+    parts.push(`${training.sessions} workout${training.sessions === 1 ? '' : 's'}` +
+      (training.minutes ? `/${Math.round(training.minutes)}m` : ''));
+  }
+  if (activity.count) {
+    parts.push(`${activity.count} work entr${activity.count === 1 ? 'y' : 'ies'}` +
+      (activity.minutes ? `/${Math.round(activity.minutes)}m` : ''));
+  }
+
+  const stepsGoal = goals.get('steps');
+  if (stepsGoal) {
+    parts.push(`${compactNumber(stepsGoal.actual)}/${compactNumber(stepsGoal.target)} steps`);
+  } else if (device.steps != null) {
+    parts.push(`${Math.round(device.steps).toLocaleString('en-US')} steps`);
+  }
+
+  if (food.meals && Number(food.meals_uncounted || 0) === 0) {
+    const caloriesGoal = goals.get('calories');
+    const proteinGoal = goals.get('protein_g');
+    parts.push(caloriesGoal
+      ? `${compactNumber(caloriesGoal.actual)}/${compactNumber(caloriesGoal.target)} kcal`
+      : `~${Math.round(food.calories).toLocaleString('en-US')} kcal`);
+    parts.push(proteinGoal
+      ? `${compactNumber(proteinGoal.actual)}/${compactNumber(proteinGoal.target)}g protein`
+      : `${Math.round(food.protein_g).toLocaleString('en-US')}g protein`);
+  } else if (food.meals) {
+    parts.push(`${food.meals} food entr${food.meals === 1 ? 'y' : 'ies'}, macros unknown`);
+  }
+
+  if (balance?.known && (facts.logged || parts.length)) {
+    parts.push(`~${Math.round(balance.calories_out).toLocaleString('en-US')} kcal burned`);
+  }
+  if (facts.training_week?.target != null && facts.training_week?.done != null) {
+    parts.push(`week ${facts.training_week.done}/${facts.training_week.target}`);
+  }
+
+  const prefix = 'Today vs goals — ';
+  const kept = [];
+  for (const part of parts) {
+    const candidate = `${prefix}${[...kept, part].join('; ')}.`;
+    if (candidate.length <= 160) kept.push(part);
+  }
+  return kept.length ? `${prefix}${kept.join('; ')}.` : null;
 }
 
 export function plainBrief({ facts = {}, flags = [], balance = null } = {}) {

@@ -2462,6 +2462,15 @@ the next morning owns that conversation. A weekly goal is not presented as a
 daily score, and an unlogged metric is never rendered as zero. A care flag is
 still the entire evening message.
 
+**The lock screen has its own computed receipt.** Do not derive it by taking
+the first sentence of the long verdict. The long receipt starts with the day's
+generic actions and puts `Against your goals` in sentence two; `firstSentence`
+therefore produced the old-looking notification while silently throwing away
+the exact comparison the new brief was built to show. `eveningNotification()`
+fits whole clauses under 160 characters: workout/work time, recorded daily
+actual/target figures, labelled burn and the live week count. Model prose can
+never replace it. Partial food totals are never scored against a target.
+
 ### Notifications you set by talking — the AI writes the rule, the cron sends it
 
 `018_wrought_alerts.sql` + `lib/alerts.js` + `set_alert` / `my_alerts` /
