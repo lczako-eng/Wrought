@@ -44,7 +44,7 @@ import {
 } from '../netlify/functions/lib/wrought.js';
 import {
   spokenBrief, spokenLog, spokenFlag, pendingVoice,
-  eveningNotification, eveningReceipt, plainBrief,
+  careNotification, eveningNotification, eveningReceipt, plainBrief,
 } from '../netlify/functions/lib/voice.js';
 
 let passed = 0, failed = 0;
@@ -462,7 +462,7 @@ await test('every caller feeds the care flags the full window, whatever its own 
   // the flags get the month from the same fetch.
   const er = fn('earnedRoomTool');
   assert.match(er, /careRange = await rangeFacts\(user\.id, profile, addDays\(to, -\(CARE_WINDOW_DAYS - 1\)\), to\)/);
-  assert.match(er, /careFlags\(careRange, profile\)/);
+  assert.match(er, /careFlags\(careRange, profile(?:, \{[^}]+\})?\)/);
   assert.match(er, /lastDays\(careRange, 7\)/, 'earned room lost its own seven-day window');
 
   // The two session doors: 28 days of training history, 15 for readiness —
@@ -470,11 +470,11 @@ await test('every caller feeds the care flags the full window, whatever its own 
   const sw = fn('suggestWorkout');
   assert.match(sw, /careRange = await rangeFacts\(user\.id, profile, addDays\(today, -\(CARE_WINDOW_DAYS - 1\)\), today\)/);
   assert.match(sw, /lastDays\(careRange, 28\)/, 'the suggestion lost its four-week training window');
-  assert.match(sw, /careFlags\(careRange, profile\)/);
+  assert.match(sw, /careFlags\(careRange, profile(?:, \{[^}]+\})?\)/);
   const ss = fn('startSession');
   assert.match(ss, /careRange = await rangeFacts\(user\.id, profile, addDays\(today, -\(CARE_WINDOW_DAYS - 1\)\), today\)/);
   assert.match(ss, /lastDays\(careRange, 15\)/, 'readiness lost its own fortnight');
-  assert.match(ss, /careFlags\(careRange, profile\)/);
+  assert.match(ss, /careFlags\(careRange, profile(?:, \{[^}]+\})?\)/);
 
   // progress takes a span the PERSON chose, 3 to 400. Long ranges are capped
   // inside careFlags; short ones are topped up, or a 3d view silences the one
@@ -517,6 +517,82 @@ await test('partial is judged on the evidence that actually fired', () => {
     day('2026-08-27', 500, 4), day('2026-08-28', 500, 3), day('2026-08-29', 500, 3),
   ] }, {}).find(x => x.flag === 'very_low_intake');
   assert.equal(real.partial, false, 'a fully-logged thin week is being excused as missed logging');
+});
+
+await test('an open day is never promoted from breakfast into a full low-intake day', () => {
+  // The founder's lock screen changed from five low days in the morning to six
+  // at night because 380 kcal logged SO FAR was judged as a finished day. That
+  // wording change also bypassed the exact-repeat guard and delivered the flag
+  // twice. Historical reads keep their meaning; live callers name the open day.
+  const days = [
+    { date: '2026-08-25', calories: 900, meals: 3 },
+    { date: '2026-08-26', calories: 2100, meals: 4 },
+    { date: '2026-08-27', calories: 800, meals: 3 },
+    { date: '2026-08-28', calories: 2050, meals: 4 },
+    { date: '2026-08-29', calories: 2200, meals: 5 },
+    { date: '2026-08-30', calories: 1900, meals: 4 },
+    { date: '2026-08-31', calories: 380, meals: 3 }, // breakfast/lunch, not a day
+  ];
+  assert.ok(careFlags({ days }, {}).some(f => f.flag === 'very_low_intake'),
+    'the counterexample no longer demonstrates the old failure');
+  assert.ok(!careFlags({ days }, {}, { openDate: '2026-08-31' }).some(f => f.flag === 'very_low_intake'),
+    'food logged so far today is still treated as a completed low-intake day');
+
+  const cron = readFileSync(new URL('../netlify/functions/brief-nightly.js', import.meta.url), 'utf8');
+  assert.ok((cron.match(/careFlags\([^\n]+\{ openDate: date \}\)/g) || []).length >= 4,
+    'one of the scheduled notification paths still counts the open day');
+});
+
+await test('the person can mark an incomplete diary without inventing food', () => {
+  const low = (date, complete) => ({ date, calories: 800, meals: 3, food_log_complete: complete });
+  const healthy = (date) => ({ date, calories: 2100, meals: 4 });
+
+  const unknown = careFlags({ days: [
+    low('2026-08-20', null), low('2026-08-21', null), low('2026-08-22', null),
+    healthy('2026-08-23'), healthy('2026-08-24'),
+  ] }, {}).find(f => f.flag === 'very_low_intake');
+  assert.ok(unknown?.needs_review, 'an unreviewed low-intake pattern has no record-quality question');
+  assert.deepEqual(unknown.evidence_dates, ['2026-08-20', '2026-08-21', '2026-08-22']);
+  assert.match(unknown.guidance, /review_intake_days/);
+  assert.match(unknown.guidance, /without inventing food/);
+
+  const incomplete = careFlags({ days: [
+    low('2026-08-20', false), low('2026-08-21', false), low('2026-08-22', false),
+    healthy('2026-08-23'), healthy('2026-08-24'),
+  ] }, {});
+  assert.ok(!incomplete.some(f => f.flag === 'very_low_intake'),
+    'explicitly incomplete diaries are still being used as proof of intake');
+
+  const complete = careFlags({ days: [
+    low('2026-08-20', true), low('2026-08-21', true), low('2026-08-22', true),
+    healthy('2026-08-23'), healthy('2026-08-24'),
+  ] }, {}).find(f => f.flag === 'very_low_intake');
+  assert.ok(complete && !complete.needs_review,
+    'a confirmed complete low-intake record was softened or cleared');
+
+  const tool = TOOLS.find(t => t.name === 'review_intake_days');
+  assert.ok(tool, 'the assistant has no write that can resolve the record-quality question');
+  assert.deepEqual(tool.inputSchema.required, ['dates', 'complete']);
+  assert.match(tool.description, /Never infer/);
+  const mcp = readFileSync(new URL('../netlify/functions/mcp.js', import.meta.url), 'utf8');
+  assert.match(mcp, /kind: 'intake_log_review'/);
+  assert.match(mcp, /observed_totals_changed: false/);
+  assert.match(mcp, /careFlags\(range, profile, \{ openDate: today \}\)/);
+});
+
+await test('a care push is actionable, short, and still contains no coaching', () => {
+  const notice = careNotification({
+    flag: 'very_low_intake', needs_review: true,
+    evidence_dates: ['2026-08-09', '2026-08-11', '2026-08-13', '2026-08-15', '2026-08-21'],
+    detail: '5 days under 1,200 kcal.',
+  });
+  assert.equal(notice.title, 'WROUGHT · CHECK THE RECORD');
+  assert.match(notice.body, /Tap to mark missing meals/);
+  assert.match(notice.body, /worth a doctor/);
+  assert.match(notice.body, /coaching stays paused/);
+  assert.ok(notice.body.length <= 160, `care push is ${notice.body.length} characters`);
+  assert.doesNotMatch(notice.body, /goal|train|session|protein/i,
+    'the record check grew a coaching line beside the care flag');
 });
 
 await test('dangerously fast weight loss raises a flag', () => {
@@ -4984,7 +5060,7 @@ await test('the targets gate — no further until goals are set, and the link is
   assert.ok(gr.indexOf("eq('metric', 'calories')") > 0, 'the ever-chosen check does not look at retired rows');
   // A care flag suspends the gate: a demand to pick a deficit is coaching
   // intake, and when a flag stands, coaching stops.
-  assert.match(gr, /careFlags\(recent, profile\)\.length\) return null/,
+  assert.match(gr, /careFlags\(recent, profile, \{ openDate: today \}\)\.length\) return null/,
     'the targets gate keeps talking over a care flag');
   // The LINK rides in the say itself (a client that reads nothing else still
   // shows it) and the note demands the tappable markdown form.
@@ -7109,7 +7185,7 @@ await test('care flags and the week are never read off a one-day window', () => 
   const api = readFileSync(new URL('../netlify/functions/api-progress.js', import.meta.url), 'utf8');
   assert.match(api, /span >= 30 \? Promise\.resolve\(null\) : rangeFacts\(user\.id, profile, addDays\(to, -29\), to\)/);
   assert.match(api, /const recent = recentRaw \|\| range;/);
-  assert.match(api, /careFlags\(recent, profile\)/, 'care flags still read the selected range');
+  assert.match(api, /careFlags\(recent, profile, \{ openDate:/, 'care flags still read the selected range or count today as a finished day');
   assert.match(api, /weekSoFar\(recent\.days/, 'the week still reads the selected range');
   assert.match(api, /readiness\(\{ days: recent\.days\.slice\(-15\)/, 'recovery still reads the selected range');
   assert.match(api, /days: recent\.days\.slice\(-7\)/, 'earned room still reads the selected range');
@@ -8336,8 +8412,10 @@ await test('the lock screen is a complete computed scoreboard, not a clipped par
   assert.match(nightly, /WROUGHT · DAY CLOSED/);
   assert.match(nightly, /out\.facts\?\.notification_body/);
   assert.match(nightly, /'\/app\.html#daily-close'/);
-  assert.match(nightly, /care \? firstSentence\(out\.verdict\)/,
+  assert.match(nightly, /care \? notice\.body/,
     'a care flag can be mixed into the ordinary scorecard');
+  assert.match(nightly, /careNotification\(flag\)/,
+    'the care notification has no dedicated lock-screen shape');
 });
 
 await test('tapping the close opens one polished receipt, even when the app is already open', () => {
@@ -10378,7 +10456,7 @@ await test('a thin log is not accused of starving, and a real flag never softens
 
   // The spoken forms carry the same split, and both still end at the doctor.
   const s1 = spokenFlag(f1), s2 = spokenFlag(f2);
-  assert.match(s1, /Log those days fully and this clears/);
+  assert.match(s1, /Tap to review/);
   assert.match(s1, /worth a doctor/i, 'the ambiguous form dropped the doctor');
   assert.match(s2, /under what a body runs on/);
   assert.match(s2, /worth a doctor/i);
@@ -10719,7 +10797,7 @@ await test('tapping the morning brief opens the assistant with the day already a
   // gonna start our day." The one legal bridge across MCP's no-push rule: the
   // server pushes words it computed, and the PERSON'S TAP is what carries them
   // into the assistant. Nothing reaches the AI until they choose to tap.
-  const { morningLink } = await import('../netlify/functions/lib/morning.js');
+  const { careReviewLink, morningLink } = await import('../netlify/functions/lib/morning.js');
 
   const gpt = morningLink('chatgpt');
   assert.match(gpt, /^https:\/\/chatgpt\.com\/\?q=/);
@@ -10747,12 +10825,24 @@ await test('tapping the morning brief opens the assistant with the day already a
   assert.equal(morningLink(undefined), '/app.html');
   assert.equal(morningLink(null), '/app.html');
 
-  // A CARE FLAG NEVER RIDES INTO A CHAT OPENER. The flag is the whole message
-  // and the dashboard is where it is explained — handing it to an assistant as
-  // a cheery "start my day" prompt is the persona outranking the flag.
+  // A care flag remains the whole message, but it is no longer a dead-end
+  // dashboard link. It opens a DIFFERENT prompt that asks about the record and
+  // cannot proceed to the normal brief unless the flag actually clears.
+  const care = careReviewLink('chatgpt', {
+    flag: 'very_low_intake', evidence_dates: ['2026-08-09', '2026-08-13'],
+  });
+  assert.match(care, /^https:\/\/chatgpt\.com\/\?q=/);
+  const carePrompt = decodeURIComponent(care.split('?q=')[1]);
+  assert.match(carePrompt, /2026-08-09, 2026-08-13/);
+  assert.match(carePrompt, /review_intake_days/);
+  assert.match(carePrompt, /do not invent meals or calories/i);
+  assert.match(carePrompt, /Only if it clears/);
+  assert.doesNotMatch(carePrompt, /what I want to train today/,
+    'the care-review link carries the normal start-my-day coaching prompt');
+
   const cron = readFileSync(new URL('../netlify/functions/brief-nightly.js', import.meta.url), 'utf8');
-  assert.match(cron, /out\.only \? '\/app\.html' : morningLink/,
-    'a care-flag morning still opens the assistant with a start-my-day opener');
+  assert.match(cron, /out\.only \? careReviewLink\(/,
+    'a care-flag morning is still a dead-end app link');
 
   // And the sw click handler must be able to open a cross-origin URL — a
   // same-origin filter here would silently turn the whole feature into a
