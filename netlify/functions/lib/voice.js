@@ -179,8 +179,14 @@ export function eveningReceipt({ facts = {}, balance = null } = {}) {
   // stray note must never turn an unlogged intake into "0 / target".
   const hasTodayEvidence = g => {
     switch (g.metric) {
+      // COUNTED meals, not merely logged ones. A day of macros-unknown entries
+      // sums to 0 kcal/0g in dayFacts, so `food.meals > 0` would score it as
+      // "0 / target" — the confidently-wrong zero this file's own comment
+      // forbids, and worse on an at_most ceiling, where 0 reads as "under it".
+      // The actions line above already draws this exact distinction with
+      // `meals_uncounted === meals`; the goals line has to draw it too.
       case 'calories':
-      case 'protein_g': return food.meals > 0;
+      case 'protein_g': return (food.meals || 0) > (food.meals_uncounted || 0);
       case 'steps': return device.steps != null;
       case 'distance_km': return device.distance_km != null;
       case 'active_minutes': return device.active_minutes != null;

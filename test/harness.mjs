@@ -8238,6 +8238,42 @@ await test('the nightly read fires without an OpenAI key', () => {
   });
   assert.equal(thin, null, 'an unlogged metric was printed as zero toward its goal');
 
+  // THE MACROS-UNKNOWN DAY, the adversarial reviewers' counterexample: three
+  // meals logged, every one still uncounted (the ordinary state of a dictated
+  // or pre-structured day). dayFacts sums those to 0 kcal / 0 g — so scoring
+  // them "0 / target" is the confidently-wrong zero, and on an at_most ceiling
+  // it reads as "stayed under" a limit the food was never counted against. The
+  // goals line must not draw it; the actions line already labels it "unknown".
+  const uncounted = eveningReceipt({
+    facts: {
+      logged: true,
+      food: { meals: 3, calories: 0, protein_g: 0, meals_uncounted: 3 },
+      device: { steps: null },
+      goals: [
+        { metric: 'calories', cadence: 'daily', direction: 'at_most', scored: true, actual: 0, target: 2200, unit: 'kcal', hit: true },
+        { metric: 'protein_g', cadence: 'daily', scored: true, actual: 0, target: 180, unit: 'g' },
+      ],
+    },
+    balance: { known: false },
+  });
+  assert.match(uncounted, /macros still unknown/, 'the actions line lost the unknown label');
+  assert.ok(!/Against your goals/.test(uncounted),
+    'macros-unknown meals were scored as 0/target — the confidently-wrong zero');
+  assert.ok(!/0\/2,200|0\/180/.test(uncounted), 'a zero macro figure reached the receipt');
+
+  // And a day with SOME counted macros still scores — the guard trims the
+  // uncounted case only, never a real intake.
+  const counted = eveningReceipt({
+    facts: {
+      logged: true,
+      food: { meals: 3, calories: 1600, protein_g: 120, meals_uncounted: 1 },
+      device: { steps: null },
+      goals: [{ metric: 'calories', cadence: 'daily', scored: true, actual: 1600, target: 2200, unit: 'kcal' }],
+    },
+    balance: { known: false },
+  });
+  assert.match(counted, /calories: 1,600\/2,200 kcal/, 'a genuinely counted day lost its goals line');
+
   // A care flag is the whole message — a lock screen has no room to bury it.
   const flagged = plainBrief({
     facts: { food: { meals: 3, calories: 900 } },
