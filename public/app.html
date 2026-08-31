@@ -80,8 +80,18 @@ body {
    screen is read for its numbers, not admired. */
 body::before {
   content: ""; position: fixed; inset: -10% -20% auto -20%; height: 70vh; z-index: -1;
-  background: radial-gradient(58% 50% at 50% 0%, rgba(242,100,25,.11), transparent 72%);
+  background:
+    radial-gradient(50% 48% at 76% 0%, rgba(245,166,35,.08), transparent 72%),
+    radial-gradient(58% 50% at 32% 0%, rgba(242,100,25,.16), transparent 72%);
   pointer-events: none;
+}
+body::after {
+  content: ""; position: fixed; inset: 0; z-index: -2; pointer-events: none;
+  background-image:
+    linear-gradient(rgba(255,255,255,.012) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255,255,255,.012) 1px, transparent 1px);
+  background-size: 42px 42px;
+  mask-image: linear-gradient(to bottom, rgba(0,0,0,.55), transparent 72%);
 }
 a { color: var(--heat-3); }
 :focus-visible { outline: 2px solid var(--heat-4); outline-offset: 2px; border-radius: 2px; }
@@ -91,8 +101,9 @@ a { color: var(--heat-3); }
 /* ── Chrome ─────────────────────────────────────────────────────────────── */
 header {
   border-bottom: 1px solid var(--edge); padding-block: 20px 16px;
-  position: sticky; top: 0; background: rgba(20,17,15,.94);
+  position: sticky; top: 0; background: linear-gradient(180deg, rgba(20,17,15,.98), rgba(20,17,15,.92));
   backdrop-filter: blur(12px); z-index: 20;
+  box-shadow: 0 16px 38px -34px rgba(0,0,0,.9);
 }
 .bar { display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap; }
 /* An author display rule beats the hidden attribute, so anything set to flex
@@ -142,7 +153,7 @@ header {
    Different job, different shape — collapsing them would make "30d" look like
    somewhere you had navigated to. */
 
-main { padding-block: 26px 0; display: flex; flex-direction: column; gap: 22px; }
+main { padding-block: 34px 0; display: flex; flex-direction: column; gap: 26px; }
 .whoami {
   display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
   padding: 22px 0 40px; margin-top: 26px; border-top: 1px solid var(--edge);
@@ -396,15 +407,15 @@ svg.ser .cursor { transition: opacity var(--quick) var(--ease); }
      but 14px and a flat shadow was the other extreme, and it is why the app
      looked cramped beside the page that sold it. The shadow is the landing
      page's, because depth is most of what separates the two. */
-  background: linear-gradient(180deg, var(--scale-2), var(--scale));
-  border: 1px solid transparent; border-radius: 20px;
-  box-shadow: 0 1px 0 rgba(255,255,255,.05) inset, 0 22px 44px -30px rgba(0,0,0,.95);
-  padding: clamp(20px, 4.5vw, 28px); display: flex; flex-direction: column; gap: 14px;
+  background: linear-gradient(180deg, rgba(38,32,32,.96), rgba(25,21,19,.96));
+  border: 1px solid rgba(255,255,255,.025); border-radius: 24px;
+  box-shadow: 0 1px 0 rgba(255,255,255,.055) inset, 0 30px 62px -38px rgba(0,0,0,.98);
+  padding: clamp(22px, 4.8vw, 32px); display: flex; flex-direction: column; gap: 15px;
   animation: rise var(--settle) var(--ease) both;
 }
 .panel > h2 {
-  margin: 0; font-size: 11px; font-family: var(--mono); font-weight: 500;
-  letter-spacing: .18em; text-transform: uppercase; color: var(--ash-dim);
+  margin: 0; font-size: 12px; font-family: var(--mono); font-weight: 650;
+  letter-spacing: .17em; text-transform: uppercase; color: var(--ash);
 }
 
 /* ── Folding a panel away ─────────────────────────────────────────────────
@@ -443,6 +454,93 @@ svg.ser .cursor { transition: opacity var(--quick) var(--ease); }
    ones already open by default, and on the rest a one-line preview is either
    the least interesting number in the panel or a second thing to read before
    deciding whether to read the panel. */
+
+/* ── The record arrives like the product that sold it ─────────────────────
+   The public page leads with scale, confidence and one graphic at a time. The
+   old signed-in page led with a small callout and a wall of panels, so signing
+   in felt like stepping into a different, cheaper product. This is not sales
+   copy: it names the screen and gives today's record a proper front door. */
+.record-intro { padding: clamp(18px, 4vw, 38px) clamp(2px, 1vw, 10px) 4px; }
+.record-kicker {
+  margin: 0 0 13px; font-family: var(--mono); font-size: 11px; letter-spacing: .22em;
+  text-transform: uppercase; color: var(--heat-3);
+}
+.record-title {
+  max-width: 880px; margin: 0; font-family: var(--grotesk); font-weight: 900;
+  font-stretch: 75%; font-size: clamp(42px, 8vw, 84px); line-height: .9;
+  letter-spacing: -.05em; text-transform: uppercase; text-wrap: balance;
+}
+.record-title em { color: var(--heat-4); font-style: normal; }
+.record-lead {
+  max-width: 47ch; margin: 19px 0 0; color: var(--ash); font-size: clamp(16px, 2.4vw, 19px);
+}
+
+.overview-stage { display: grid; grid-template-columns: minmax(310px,.82fr) minmax(0,1.5fr); gap: 18px; align-items: stretch; }
+.overview-stage > .panel { min-width: 0; }
+.overview-stage .hero {
+  background:
+    radial-gradient(60% 58% at 50% 42%, rgba(91,144,176,.12), transparent 72%),
+    linear-gradient(180deg, rgba(38,32,32,.98), rgba(23,20,18,.98));
+}
+
+.momentum {
+  position: relative; overflow: hidden; gap: 19px;
+  background:
+    radial-gradient(72% 80% at 100% 0%, rgba(242,100,25,.1), transparent 64%),
+    linear-gradient(180deg, rgba(38,32,32,.98), rgba(23,20,18,.98));
+}
+.momentum::before {
+  content: ""; position: absolute; inset: 0 0 auto; height: 2px;
+  background: linear-gradient(90deg, var(--temper), var(--heat-3), transparent 92%);
+}
+.momentum-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 18px; }
+.momentum-title {
+  margin: 0; font-family: var(--grotesk); font-size: clamp(25px, 4vw, 38px);
+  line-height: 1; letter-spacing: -.035em; text-transform: uppercase;
+}
+.momentum-period {
+  font-family: var(--mono); font-size: 9.5px; letter-spacing: .14em;
+  text-transform: uppercase; color: var(--ash-dim); white-space: nowrap;
+}
+.pulse-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.pulse-card {
+  min-width: 0; padding: 14px 14px 11px; border-radius: 14px;
+  background: rgba(20,17,15,.58); border: 1px solid var(--edge);
+}
+.pulse-top { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.pulse-label {
+  font-family: var(--mono); font-size: 9px; letter-spacing: .15em;
+  text-transform: uppercase; color: var(--ash-dim);
+}
+.pulse-value {
+  font-family: var(--grotesk); font-size: clamp(22px, 3.4vw, 31px); line-height: 1;
+  font-weight: 850; letter-spacing: -.035em; font-variant-numeric: tabular-nums;
+}
+.pulse-unit { color: var(--ash-dim); font-size: .45em; letter-spacing: 0; }
+.pulse-read {
+  min-height: 1.2em; margin: 5px 0 1px; font-family: var(--mono); font-size: 9px;
+  letter-spacing: .06em; text-transform: uppercase; color: var(--ash-dim);
+}
+.pulse-svg { display: block; width: 100%; height: auto; overflow: visible; }
+.pulse-gridline { stroke: var(--edge); stroke-width: 1; }
+.pulse-target { stroke: var(--ash-dim); stroke-width: 1; stroke-dasharray: 3 4; opacity: .7; }
+.pulse-line {
+  fill: none; stroke-width: 2.8; stroke-linecap: round; stroke-linejoin: round;
+  stroke-dasharray: 1; animation: draw 900ms var(--ease) both;
+}
+.pulse-dot { stroke: var(--iron); stroke-width: 2; }
+
+@media (max-width: 860px) {
+  .overview-stage { grid-template-columns: 1fr; }
+}
+@media (max-width: 560px) {
+  .record-intro { padding-top: 6px; }
+  .record-title { font-size: clamp(42px, 15vw, 62px); }
+  .pulse-grid { gap: 7px; }
+  .pulse-card { padding: 12px 10px 9px; }
+  .pulse-value { font-size: 22px; }
+  .momentum-head { align-items: flex-start; flex-direction: column; gap: 5px; }
+}
 
 /* ── Today, as one graphic ────────────────────────────────────────────────
    The screen opens on the only question that matters at a glance: in versus
@@ -534,7 +632,7 @@ svg.ser .cursor { transition: opacity var(--quick) var(--ease); }
   * { transition: none !important; }
 }
 .sub { color: var(--ash); font-size: 13.5px; margin: 0; }
-.grid-2 { display: grid; grid-template-columns: 1fr; gap: 22px; }
+.grid-2 { display: grid; grid-template-columns: 1fr; gap: 18px; }
 @media (min-width: 800px) { .grid-2 { grid-template-columns: 1fr 1fr; } }
 
 /* ── The verdict — the one thing that isn't a number ────────────────────── */
@@ -547,17 +645,104 @@ svg.ser .cursor { transition: opacity var(--quick) var(--ease); }
   text-transform: uppercase; color: var(--ash-dim);
 }
 
+/* ── Daily Close ──────────────────────────────────────────────────────────
+   A notification has almost no visual vocabulary of its own. Its tap lands
+   here, where the same server-computed figures can read like a finished
+   receipt: what happened, what the agreement was, and where it ended. */
+.daily-close {
+  position: relative; overflow: hidden; gap: 22px;
+  scroll-margin-top: 132px;
+  padding: clamp(22px, 5vw, 38px);
+  background:
+    linear-gradient(145deg, rgba(242,100,25,.11), transparent 42%),
+    linear-gradient(180deg, #28201d, var(--scale));
+  border-color: var(--edge-lit);
+  box-shadow: 0 20px 70px -38px rgba(242,100,25,.72),
+              0 1px 0 rgba(255,255,255,.055) inset;
+}
+.daily-close::before {
+  content: ""; position: absolute; inset: 0 0 auto; height: 3px;
+  background: linear-gradient(90deg, var(--heat-2), var(--heat-4) 58%, transparent);
+}
+.dc-head { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; }
+.dc-kicker {
+  font-family: var(--stamp); font-size: 13px; font-weight: 700;
+  letter-spacing: .08em; text-transform: uppercase; color: var(--bright);
+}
+.dc-date {
+  font-family: var(--mono); font-size: 10px; letter-spacing: .12em;
+  text-transform: uppercase; color: var(--ash-dim);
+}
+.dc-title {
+  max-width: 760px; margin: 0; font-family: var(--grotesk); font-weight: 900;
+  font-stretch: 75%; font-size: clamp(34px, 8vw, 68px); line-height: .94;
+  letter-spacing: -.045em; text-transform: uppercase;
+}
+.dc-sub { max-width: 62ch; margin: -8px 0 0; color: var(--ash); }
+.dc-record { display: flex; flex-wrap: wrap; gap: 8px; }
+.dc-chip {
+  display: flex; align-items: baseline; gap: 8px; padding: 9px 12px;
+  border: 1px solid var(--edge); border-radius: 3px; background: rgba(20,17,15,.48);
+}
+.dc-chip-label {
+  font-family: var(--mono); font-size: 9px; letter-spacing: .14em;
+  text-transform: uppercase; color: var(--ash-dim);
+}
+.dc-chip-value {
+  font-family: var(--mono); font-size: 13px; font-weight: 650;
+  color: var(--bright); font-variant-numeric: tabular-nums;
+}
+.dc-goals { display: grid; grid-template-columns: repeat(auto-fit, minmax(245px, 1fr)); gap: 10px; }
+.dc-goal {
+  padding: 16px; border: 1px solid var(--edge); border-radius: 4px;
+  background: rgba(20,17,15,.56);
+}
+.dc-goal-name {
+  display: block; margin-bottom: 13px; font-family: var(--mono); font-size: 10px;
+  letter-spacing: .16em; text-transform: uppercase; color: var(--heat-4);
+}
+.dc-three { display: grid; grid-template-columns: 1.35fr 1fr .8fr; gap: 10px; align-items: end; }
+.dc-col { min-width: 0; }
+.dc-col-label {
+  display: block; margin-bottom: 4px; font-family: var(--mono); font-size: 8.5px;
+  letter-spacing: .14em; text-transform: uppercase; color: var(--ash-dim);
+}
+.dc-value {
+  display: block; overflow-wrap: anywhere; font-family: var(--grotesk);
+  font-size: clamp(17px, 3.6vw, 25px); line-height: 1; font-weight: 850;
+  letter-spacing: -.025em; font-variant-numeric: tabular-nums;
+}
+.dc-value.target { font-size: clamp(15px, 3vw, 20px); color: var(--ash); }
+.dc-value.met { color: var(--moss); }
+.dc-value.open { color: var(--temper); }
+.dc-value.over { color: var(--heat-3); }
+.dc-empty { margin: 0; padding: 16px; border: 1px dashed var(--edge-lit); color: var(--ash); }
+.dc-foot {
+  display: flex; align-items: center; justify-content: space-between; gap: 18px;
+  padding-top: 4px; border-top: 1px solid var(--edge);
+}
+.dc-note { margin: 0; max-width: 52ch; color: var(--ash-dim); font-size: 12px; }
+.dc-foot .linky { flex: 0 0 auto; }
+
+@media (max-width: 560px) {
+  .daily-close { scroll-margin-top: 180px; }
+  .dc-head, .dc-foot { align-items: flex-start; flex-direction: column; }
+  .dc-goals { grid-template-columns: 1fr; }
+  .dc-three { grid-template-columns: 1.25fr 1fr .72fr; }
+  .dc-foot .linky { width: 100%; text-align: center; }
+}
+
 /* ── Tiles ──────────────────────────────────────────────────────────────── */
-.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(136px, 1fr)); gap: 12px; }
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(145px, 1fr)); gap: 12px; }
 .tile {
-  background: linear-gradient(180deg, var(--scale-2), var(--scale));
-  border: 1px solid transparent; border-radius: 12px;
-  box-shadow: 0 1px 0 rgba(255,255,255,.03) inset, 0 6px 18px -12px rgba(0,0,0,.7);
-  padding: 16px 17px; display: flex; flex-direction: column; gap: 5px;
+  background: linear-gradient(160deg, rgba(45,37,33,.94), rgba(24,20,18,.96));
+  border: 1px solid rgba(255,255,255,.025); border-radius: 18px;
+  box-shadow: 0 1px 0 rgba(255,255,255,.04) inset, 0 18px 34px -26px rgba(0,0,0,.9);
+  padding: 20px; display: flex; flex-direction: column; gap: 7px;
   animation: rise var(--settle) var(--ease) both;
 }
 .tile .k { font-family: var(--mono); font-size: 10px; letter-spacing: .14em; text-transform: uppercase; color: var(--ash-dim); }
-.tile .v { font-size: 30px; font-weight: 650; letter-spacing: -.025em; font-variant-numeric: tabular-nums; line-height: 1.05; }
+.tile .v { font-family: var(--grotesk); font-size: 34px; font-weight: 850; letter-spacing: -.035em; font-variant-numeric: tabular-nums; line-height: 1.02; }
 .tile .s { font-size: 12px; color: var(--ash); }
 .v.hot { color: var(--heat-4); } .v.cool { color: var(--temper); } .v.good { color: var(--moss); }
 
@@ -604,6 +789,12 @@ svg.ser .area { animation: fade 900ms var(--ease) both; }
    the spikes are what actually happened, and both have to stay legible. */
 svg.ser .trend { stroke-dasharray: none; }
 .tkey { color: var(--ash-dim); }
+.graph-panel { overflow: hidden; }
+.graph-panel svg.ser {
+  margin-top: 4px; padding: 8px 4px 0; border-radius: 14px;
+  background: linear-gradient(180deg, rgba(20,17,15,.38), rgba(20,17,15,.08));
+}
+.graph-panel .series { filter: drop-shadow(0 4px 8px rgba(0,0,0,.28)); }
 
 /* ── Lifts ──────────────────────────────────────────────────────────────── */
 .lifts { display: flex; flex-direction: column; }
@@ -4313,6 +4504,24 @@ function demoData() {
     const win = rows.slice(Math.max(0, i - 6), i + 1).map(r => r[k]).filter(v => Number.isFinite(v) && v > 0);
     return { date: d.date, value: win.length < 3 ? null : Math.round((win.reduce((a, b) => a + b, 0) / win.length) * 10) / 10 };
   });
+  // The real endpoint always carries a fourteen-day pulse even while the main
+  // dashboard is on 1d. The demo has to carry that same shape or the first
+  // screen people judge would hide the graphs the signed-in product gets.
+  const pulseRows = Array.from({ length: 14 }, (_, i) => {
+    const date = iso(end - (13 - i) * 86400000);
+    const missed = i === 4 || i === 10;
+    return {
+      date,
+      calories: missed ? null : Math.round(2120 + wave(i, 2.8, 250)),
+      protein_g: missed ? null : Math.round(145 + wave(i, 3.4, 19)),
+      steps: Math.round(8900 + wave(i, 2.4, 2100)),
+      training: i < 6 ? null : [3, 3, 4, 4, 3, 4, 4, 4][i - 6],
+    };
+  });
+  const pulseMetric = (key, label, unit, target, latest, average = null) => ({
+    key, label, unit, target, latest, seven_day_average: average,
+    points: pulseRows.map(r => ({ date: r.date, value: r[key] })),
+  });
   const logged = series.filter(d => !d.missed).length;
   const trainedDays = series.filter(d => d.trained).length;
 
@@ -4403,7 +4612,7 @@ function demoData() {
       date: series[Math.max(0, N - 1)].date,
       food: { say: 'Roughly 2,140 kcal · 148g protein · 196g carbs · 71g fat (estimated from what you described)',
               calories: 2140, protein_g: 148, carbs_g: 196, fat_g: 71, estimated: true },
-      training: { say: '2 sessions, 78 min — legs, glutes, core',
+      training: { sessions: 2, minutes: 78, say: '2 sessions, 78 min — legs, glutes, core',
         // What actually happened today, with its own numbers. The matrix and
         // the volume bars are arithmetic ABOUT training; this is the training,
         // on the day it happened, which is what the 1d view is for.
@@ -4502,6 +4711,15 @@ function demoData() {
         say: `Trending down about 0.39 kg a week — averaging ${series[Math.max(0, N - 1)].weight} kg now vs 84 kg at the start.`,
       },
       matrix: { muscles, weeks, grid, neglected: ['legs'] },
+    },
+    overview: {
+      label: 'Last 14 days',
+      metrics: [
+        pulseMetric('calories', 'Fuel', 'kcal', 2300, 2140, 2166),
+        pulseMetric('protein_g', 'Protein', 'g', 150, 148, 147),
+        pulseMetric('steps', 'Steps', '', 10000, 9840, 9120),
+        pulseMetric('training', 'Training', 'sessions/wk', 4, 4),
+      ],
     },
     goals: [
       { goal: '10,000 steps a day', metric: 'steps', scored: true, hit: false, over: false,
@@ -6699,6 +6917,171 @@ function targetsPanel(d) {
   </section>`;
 }
 
+const CLOSE_GOAL_LABEL = {
+  steps: 'Steps', calories: 'Fuel', protein_g: 'Protein', sleep_minutes: 'Sleep',
+  distance_km: 'Distance', active_minutes: 'Active time', weight_kg: 'Weight',
+};
+
+function closeGoalNumber(value, unit = '') {
+  if (value == null || !Number.isFinite(Number(value))) return '—';
+  const rounded = Math.round(Number(value) * 10) / 10;
+  return `${rounded.toLocaleString()}${String(unit || '').trim() ? ` ${String(unit).trim()}` : ''}`;
+}
+
+function dailyCloseGoal(g, food) {
+  const isFood = g.metric === 'calories' || g.metric === 'protein_g';
+  const rough = isFood && food.estimated ? '~' : '';
+  const partial = isFood && (food.meals_uncounted || 0) > 0 ? '+' : '';
+  const unit = String(g.unit || '').trim();
+  const actual = `${rough}${closeGoalNumber(g.actual)}${partial}${unit ? ` ${unit}` : ''}`;
+  const target = closeGoalNumber(g.target, g.unit);
+  const state = g.over ? 'over' : g.hit ? 'met' : 'open';
+  const result = g.over ? 'over' : g.hit ? 'met' : (g.percent != null ? `${g.percent}%` : 'open');
+
+  return `<article class="dc-goal">
+    <span class="dc-goal-name">${esc(CLOSE_GOAL_LABEL[g.metric] || g.goal || g.metric)}</span>
+    <div class="dc-three">
+      <div class="dc-col"><span class="dc-col-label">Did</span><strong class="dc-value">${esc(actual)}</strong></div>
+      <div class="dc-col"><span class="dc-col-label">Target</span><strong class="dc-value target">${esc(target)}</strong></div>
+      <div class="dc-col"><span class="dc-col-label">Result</span><strong class="dc-value ${state}">${esc(result)}</strong></div>
+    </div>
+  </article>`;
+}
+
+function dailyClosePanel(d) {
+  // A care flag owns the screen just as it owns the notification. Never put a
+  // polished scorecard beside the line that is meant to stop coaching.
+  if ((d.care_flags || []).length) return '';
+
+  const today = d.today || {};
+  const food = today.food || {};
+  const training = today.training || {};
+  const activity = today.activity || {};
+  const balance = today.balance || {};
+  const evidence = g => {
+    if (g.metric === 'calories' || g.metric === 'protein_g') {
+      // The demo predates meal_count on this object but carries a real nonzero
+      // actual. Real payloads use meals, which keeps a missing day from being
+      // presented as a measured zero.
+      return (food.meals || 0) > (food.meals_uncounted || 0) || Number(g.actual) > 0;
+    }
+    if (g.metric === 'steps') return today.device?.steps != null;
+    if (g.metric === 'distance_km') return today.device?.distance_km != null || Number(g.actual) > 0;
+    if (g.metric === 'active_minutes') return today.device?.active_minutes != null;
+    if (g.metric === 'sleep_minutes') return today.device?.sleep_minutes != null;
+    if (g.metric === 'weight_kg') return today.body?.weight_kg != null;
+    return Number(g.actual) > 0;
+  };
+  const goals = (d.goals || []).filter(g =>
+    g.scored && g.target != null && g.metric !== 'workout_days' && g.cadence !== 'weekly' && evidence(g));
+  const chips = [];
+  if (training.sessions) chips.push(['Training', `${training.sessions} × ${n(training.minutes)} min`]);
+  if (activity.count) chips.push(['Work', `${activity.count} × ${n(activity.minutes)} min on task`]);
+  if (balance.known) chips.push(['Burn', `~${n(balance.calories_out)} kcal`]);
+  if (d.training_week?.target != null) chips.push(['Week', `${d.training_week.done || 0} / ${d.training_week.target} sessions`]);
+
+  return `<section class="panel nofold daily-close" id="daily-close">
+    <div class="dc-head">
+      <span class="dc-kicker">WROUGHT / Day closed</span>
+      <span class="dc-date">${esc(today.date || '')}</span>
+    </div>
+    <h1 class="dc-title">The day, against the deal.</h1>
+    <p class="dc-sub">What went on record, what you aimed at, and where it finished. No reinterpretation on the way to the screen.</p>
+    ${chips.length ? `<div class="dc-record">${chips.map(([label, value]) => `<div class="dc-chip">
+      <span class="dc-chip-label">${esc(label)}</span><strong class="dc-chip-value">${esc(value)}</strong>
+    </div>`).join('')}</div>` : ''}
+    ${goals.length ? `<div class="dc-goals">${goals.map(g => dailyCloseGoal(g, food)).join('')}</div>`
+      : '<p class="dc-empty">No scored target had a recorded figure today. The log stays intact; the card does not turn missing data into zero.</p>'}
+    <div class="dc-foot">
+      <p class="dc-note">~ marks an estimate. + means another logged item still has no macros, so the real total is higher.</p>
+      ${gptLink('Gym bro — review today against my goals. Use the Wrought connector, tell me what moved and what did not, and do not plan tomorrow yet.', 'Discuss this day')}
+    </div>
+  </section>`;
+}
+
+function recordIntro(d) {
+  return `<section class="record-intro">
+    <p class="record-kicker">Your record · ${esc(d.today?.date || 'today')}</p>
+    <h1 class="record-title">Today, <em>in one look.</em></h1>
+    <p class="record-lead">What happened. What it moved. What the longer record says underneath it.</p>
+  </section>`;
+}
+
+const PULSE_COLOUR = {
+  calories: 'var(--heat-3)', protein_g: 'var(--moss)',
+  steps: 'var(--temper)', training: 'var(--heat-4)',
+};
+
+function pulseNumber(value, unit = '') {
+  if (value == null || !Number.isFinite(Number(value))) return '—';
+  const rounded = Math.round(Number(value) * 10) / 10;
+  const compact = rounded >= 10000 && rounded % 1000 === 0
+    ? `${rounded / 1000}k`
+    : rounded.toLocaleString();
+  return `${compact}${unit ? `<small class="pulse-unit"> ${esc(unit)}</small>` : ''}`;
+}
+
+function pulseGraph(metric) {
+  const points = metric.points || [];
+  // Null is a gap, never zero. Number(null) is 0 in JavaScript, which would
+  // draw every unlogged day as a plunge to the floor — the most dangerous way
+  // a pretty graph can lie.
+  const values = points.map(p => p.value != null && Number.isFinite(Number(p.value)) ? Number(p.value) : null);
+  const known = values.filter(v => v != null);
+  const target = Number.isFinite(Number(metric.target)) ? Number(metric.target) : null;
+  const colour = PULSE_COLOUR[metric.key] || 'var(--temper)';
+
+  if (known.length < 2) {
+    return `<article class="pulse-card">
+      <div class="pulse-top"><span class="pulse-label">${esc(metric.label)}</span>
+        <strong class="pulse-value">${pulseNumber(metric.latest, metric.unit)}</strong></div>
+      <p class="pulse-read">The line starts with two recorded points.</p>
+    </article>`;
+  }
+
+  const scaleValues = target == null ? known : [...known, target];
+  let min = Math.min(...scaleValues), max = Math.max(...scaleValues);
+  const pad = (max - min) * .13 || Math.abs(max * .04) || 1;
+  min -= pad; max += pad;
+  const W = 220, H = 72, P = 6, N = Math.max(1, points.length - 1);
+  const x = i => P + (i / N) * (W - P * 2);
+  const y = v => P + (1 - (v - min) / (max - min)) * (H - P * 2);
+  let path = '', pen = false, last = -1;
+  values.forEach((v, i) => {
+    if (v == null) { pen = false; return; }
+    path += `${pen ? 'L' : 'M'}${x(i).toFixed(1)},${y(v).toFixed(1)} `;
+    pen = true; last = i;
+  });
+  const average = metric.seven_day_average != null
+    ? `7d avg ${Number(metric.seven_day_average).toLocaleString()}${metric.unit ? ` ${metric.unit}` : ''}`
+    : target != null ? `goal ${Number(target).toLocaleString()}${metric.unit ? ` ${metric.unit}` : ''}` : '';
+
+  return `<article class="pulse-card">
+    <div class="pulse-top"><span class="pulse-label">${esc(metric.label)}</span>
+      <strong class="pulse-value">${pulseNumber(metric.latest, metric.unit)}</strong></div>
+    <p class="pulse-read">${esc(average)}</p>
+    <svg class="pulse-svg" viewBox="0 0 ${W} ${H}" role="img"
+         aria-label="${esc(metric.label)} over ${points.length} days">
+      <line class="pulse-gridline" x1="${P}" y1="${(H / 2).toFixed(1)}" x2="${W - P}" y2="${(H / 2).toFixed(1)}"/>
+      ${target != null ? `<line class="pulse-target" x1="${P}" y1="${y(target).toFixed(1)}" x2="${W - P}" y2="${y(target).toFixed(1)}"/>` : ''}
+      <path class="pulse-line" pathLength="1" d="${path.trim()}" stroke="${colour}"/>
+      ${last >= 0 ? `<circle class="pulse-dot" cx="${x(last).toFixed(1)}" cy="${y(values[last]).toFixed(1)}" r="4" fill="${colour}"/>` : ''}
+    </svg>
+  </article>`;
+}
+
+function momentumPanel(d) {
+  const metrics = d.overview?.metrics || [];
+  if (!metrics.length) return '';
+  return `<section class="panel nofold momentum">
+    <div class="momentum-head">
+      <div><span class="record-kicker">Momentum</span><h2 class="momentum-title">The shape behind today.</h2></div>
+      <span class="momentum-period">${esc(d.overview.label || 'Recent')}</span>
+    </div>
+    <div class="pulse-grid">${metrics.map(pulseGraph).join('')}</div>
+  </section>`;
+}
+
 function render(d) {
   const s = d.summary, wu = d.weight_unit, out = [];
   if (wu) { weightUnit = wu; try { localStorage.setItem('wrought_wu', wu); } catch { /* fine */ } }
@@ -6725,6 +7108,11 @@ function render(d) {
   // describe the wrong day.
   out.push(zoneWarning(d));
 
+  // The evening notification lands on a receipt, not at the top of a long
+  // dashboard. It uses this same payload and only draws server-computed values.
+  if (location.hash === '#daily-close') out.push(dailyClosePanel(d));
+  else out.push(recordIntro(d));
+
   // THE ONE THING WORTH RAISING WITHOUT BEING ASKED — the same line the
   // assistant gets. Preemptive is not a conversation feature: somebody who
   // opened the dashboard is exactly as entitled to be told it. Never drawn
@@ -6734,9 +7122,14 @@ function render(d) {
       d.nudge.kind === 'best' ? 'Worth saying' : 'Worth knowing', esc(d.nudge.say)));
   }
 
-  // The graphic opens the page — care flags above it and nothing else, because
-  // a flag is the one thing that outranks the day's arithmetic.
+  // Today and the recent shape it sits inside. Even the 1d view keeps these
+  // fourteen-day lines, because context is not the same thing as changing the
+  // selected range.
+  const momentum = momentumPanel(d);
+  out.push('<div class="overview-stage">');
   out.push(hero(d));
+  if (momentum) out.push(momentum);
+  out.push('</div>');
   out.push(coachSetupPanel(d));
 
   // THE DAY IN PLAIN WORDS, before any more arithmetic — what was eaten and
@@ -6808,9 +7201,9 @@ function render(d) {
 
   if (!trends) {
     out.push(`<section class="panel">
-      <h2>Trends</h2>
-      <p class="sub">Charts, the training matrix and the weekday pattern all need more than
-      one day to say anything true. Tap <strong>7d</strong> or <strong>30d</strong> above and they fill in —
+      <h2>Deeper trends</h2>
+      <p class="sub">The quick lines above keep the last fourteen days in view. Tap <strong>7d</strong> or <strong>30d</strong>
+      for the full interactive charts, training matrix and weekday pattern —
       along with the running total for that stretch.</p>
     </section>`);
   } else {
@@ -6890,6 +7283,7 @@ function stagger(root = $('content')) {
   bits.forEach((el, i) => { el.style.animationDelay = `${Math.min(i * 45, 450)}ms`; });
   makeFoldable(root);
   honourTargetsAnchor(root);
+  honourDailyCloseAnchor(root);
   wireCharts(root);
 }
 
@@ -6939,6 +7333,15 @@ function honourTargetsAnchor(root) {
   targetsAnchorPending = false;
   panel.classList.remove('folded');
   panel.querySelector('h2.fold')?.setAttribute('aria-expanded', 'true');
+  panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+let dailyCloseAnchorPending = location.hash === '#daily-close';
+function honourDailyCloseAnchor(root) {
+  if (!dailyCloseAnchorPending) return;
+  const panel = root.querySelector('#daily-close');
+  if (!panel) return;
+  dailyCloseAnchorPending = false;
   panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
@@ -7124,12 +7527,12 @@ function balancePanel(d) {
 // Every number here was computed in api-progress. This draws them.
 function chart(title, sub, series, colour, unit, opts = {}) {
   const pts = series.filter(p => p.value != null);
-  if (!pts.length) return `<section class="panel"><h2>${esc(title)}</h2><p class="empty">Not enough data yet.</p></section>`;
+  if (!pts.length) return `<section class="panel graph-panel"><h2>${esc(title)}</h2><p class="empty">Not enough data yet.</p></section>`;
   // ONE point draws as one point. "Not enough data yet" over a day somebody
   // DID log reads as the log not working — a dot with its value is honest and
   // is the difference between "it's coming" and "it's broken".
   if (pts.length === 1) {
-    return `<section class="panel"><h2>${esc(title)}</h2>
+    return `<section class="panel graph-panel"><h2>${esc(title)}</h2>
       ${sub ? `<p class="sub">${esc(sub)}</p>` : ''}
       <div class="onept"><b>${Number(pts[0].value).toLocaleString()}</b><span>${esc(unit)}</span>
         <em>${esc(pts[0].date)} — one day so far. The line starts at two.</em></div>
@@ -7139,7 +7542,7 @@ function chart(title, sub, series, colour, unit, opts = {}) {
   const trend = (opts.trend || []).filter(p => p.value != null);
   const target = Number.isFinite(Number(opts.target)) ? Number(opts.target) : null;
 
-  const W = 460, H = 150, P = { t: 10, r: 8, b: 20, l: 38 };
+  const W = 460, H = 175, P = { t: 12, r: 8, b: 22, l: 38 };
   const vals = pts.map(p => p.value);
   // The target has to be INSIDE the frame or the line it draws sits off the
   // top of the chart and silently stops existing.
@@ -7205,7 +7608,7 @@ function chart(title, sub, series, colour, unit, opts = {}) {
   const geo = JSON.stringify({ W, H, l: P.l, r: P.r, t: P.t, b: P.b, min, max, unit: unit || '' });
   const data = JSON.stringify(series.map(p => [p.date, p.value]));
 
-  return `<section class="panel"><h2>${esc(title)}</h2>
+  return `<section class="panel graph-panel"><h2>${esc(title)}</h2>
     <div class="chart-head">
       <p class="sub">${esc(sub)}${trendPath ? ' <span class="tkey">— the heavier line is the 7-day average.</span>' : ''}</p>
       <p class="readout" aria-live="polite"></p>
@@ -7225,8 +7628,8 @@ function chart(title, sub, series, colour, unit, opts = {}) {
       ${trendPath ? `<path class="trend" d="${trendPath}" fill="none" stroke="${colour}"
             stroke-width="2.5" stroke-opacity=".45" stroke-linejoin="round" stroke-linecap="round"/>` : ''}
       <path class="series" pathLength="1" d="${path.trim()}" fill="none" stroke="${colour}"
-            stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
-      ${last >= 0 ? `<circle cx="${x(last).toFixed(1)}" cy="${y(series[last].value).toFixed(1)}" r="3.5" fill="${colour}"/>` : ''}
+            stroke-width="2.8" stroke-linejoin="round" stroke-linecap="round"/>
+      ${last >= 0 ? `<circle cx="${x(last).toFixed(1)}" cy="${y(series[last].value).toFixed(1)}" r="4.2" fill="${colour}" stroke="var(--iron)" stroke-width="2"/>` : ''}
       <circle class="cursor" r="4.5" fill="${colour}" opacity="0"/>
       <text class="axis" x="${P.l}" y="${H - 4}">${esc(series[0].date.slice(5))}</text>
       <text class="axis" x="${W - P.r}" y="${H - 4}" text-anchor="end">${esc(series[series.length - 1].date.slice(5))}</text>
@@ -7312,7 +7715,7 @@ function inOutChart(d) {
       <span>${Number(c.date.slice(8))}</span>
     </div>`;
   }).join('');
-  return `<section class="panel">
+  return `<section class="panel graph-panel">
     <h2>In vs out · day by day</h2>
     <p class="sub"><i class="iokey in"></i> eaten &nbsp; <i class="iokey out"></i> burned —
       the pair is the picture. A day with one bar missing was not fully counted.</p>
@@ -7329,7 +7732,7 @@ function bars(title, sub, series) {
   const bw = Math.max(1.5, (W - P.l - P.r) / N - 1.5);
   const y = v => P.t + (1 - v / max) * (H - P.t - P.b);
 
-  return `<section class="panel"><h2>${esc(title)}</h2><p class="sub">${esc(sub)}</p>
+  return `<section class="panel graph-panel"><h2>${esc(title)}</h2><p class="sub">${esc(sub)}</p>
     <svg viewBox="0 0 ${W} ${H}" role="img" aria-label="training volume per day">
       <line class="gridline" x1="${P.l}" y1="${H - P.b}" x2="${W - P.r}" y2="${H - P.b}"/>
       <text class="axis" x="${P.l - 6}" y="${P.t + 4}" text-anchor="end">${Math.round(max)}</text>

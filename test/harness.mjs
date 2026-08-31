@@ -42,7 +42,10 @@ import {
   duplicateItems, duplicateExtra, VALID_TYPES, degradePlan,
   effectiveType, withEffectiveTypes,
 } from '../netlify/functions/lib/wrought.js';
-import { spokenBrief, spokenLog, spokenFlag, pendingVoice, eveningReceipt, plainBrief } from '../netlify/functions/lib/voice.js';
+import {
+  spokenBrief, spokenLog, spokenFlag, pendingVoice,
+  eveningNotification, eveningReceipt, plainBrief,
+} from '../netlify/functions/lib/voice.js';
 
 let passed = 0, failed = 0;
 const results = [];
@@ -8289,6 +8292,59 @@ await test('the nightly read fires without an OpenAI key', () => {
   assert.match(src, /plainBrief/);
 });
 
+await test('the lock screen is a complete computed scoreboard, not a clipped paragraph', () => {
+  const body = eveningNotification({
+    facts: {
+      logged: true,
+      food: { meals: 3, calories: 1520, protein_g: 57, meals_uncounted: 0, estimated: true },
+      training: { sessions: 1, minutes: 44 },
+      activity: { count: 1, minutes: 270 },
+      device: { steps: 9945 },
+      goals: [
+        { metric: 'steps', scored: true, actual: 9945, target: 10000 },
+        { metric: 'calories', scored: true, actual: 1520, target: 2200 },
+        { metric: 'protein_g', scored: true, actual: 57, target: 180 },
+      ],
+      training_week: { done: 2, target: 3 },
+    },
+    balance: { known: true, calories_out: 3213 },
+  });
+  assert.equal(body,
+    'TRAIN 1×44m · WORK 1×270m · STEPS 9,945/10k · FUEL ~1,520/2,200 kcal · PROTEIN ~57/180g · BURN ~3,213 · WEEK 2/3');
+  assert.ok(body.length <= 160, `lock-screen body is ${body.length} characters`);
+
+  // Some food was structured and some was not. The number is a labelled
+  // lower bound, never the confidently exact total the old notification used.
+  const partial = eveningNotification({
+    facts: {
+      food: { meals: 3, meals_uncounted: 1, estimated: true },
+      goals: [{ metric: 'calories', scored: true, actual: 1600, target: 2200 }],
+    },
+  });
+  assert.match(partial, /FUEL ~1,600\+\/2,200 kcal/);
+
+  const nightly = readFileSync(new URL('../netlify/functions/brief-nightly.js', import.meta.url), 'utf8');
+  assert.match(nightly, /WROUGHT · DAY CLOSED/);
+  assert.match(nightly, /out\.facts\?\.notification_body/);
+  assert.match(nightly, /'\/app\.html#daily-close'/);
+  assert.match(nightly, /care \? firstSentence\(out\.verdict\)/,
+    'a care flag can be mixed into the ordinary scorecard');
+});
+
+await test('tapping the close opens one polished receipt, even when the app is already open', () => {
+  const app = page('app.html');
+  const sw = readFileSync(new URL('../public/sw.js', import.meta.url), 'utf8');
+  assert.match(app, /function dailyClosePanel\(d\)/);
+  assert.match(app, /id="daily-close"/);
+  assert.match(app, /The day, against the deal\./);
+  for (const heading of ['Did', 'Target', 'Result']) assert.ok(app.includes(`>${heading}<`));
+  assert.match(app, /~ marks an estimate/);
+  assert.match(app, /location\.hash === '#daily-close'/);
+  assert.match(app, /Discuss this day/);
+  assert.match(sw, /w\.navigate\(wanted\.href\)/,
+    'an open dashboard gets focused without ever navigating to the receipt');
+});
+
 await test('the nightly hour is theirs to move', () => {
   // "It should be a daily analysis at 9pm." A notification at the wrong hour
   // is how somebody mutes an app for good.
@@ -8317,6 +8373,25 @@ await test('the nightly hour is theirs to move', () => {
 // ── Lines that say whether it is working ────────────────────────────────────
 
 group('Charts — the trend, the target, and the gaps');
+
+await test('today keeps a fourteen-day pulse without changing the selected range', () => {
+  // The dashboard opens on 1d because today is the question. That must not
+  // strip every graph off the first signed-in screen: recent was already read
+  // for care and the training week, so four compact lines can travel without a
+  // second database round trip or a second arithmetic implementation.
+  const api = readFileSync(new URL('../netlify/functions/api-progress.js', import.meta.url), 'utf8');
+  const app = page('app.html');
+  assert.match(api, /const overviewDays = recent\.days\.slice\(-14\)/);
+  assert.match(api, /seven_day_average: means\[means\.length - 1\]/);
+  assert.match(api, /overviewMetric\('calories', 'Fuel'/);
+  assert.match(api, /overviewMetric\('protein_g', 'Protein'/);
+  assert.match(api, /overviewMetric\('steps', 'Steps'/);
+  assert.match(api, /key: 'training', label: 'Training'/);
+  assert.match(app, /function momentumPanel\(d\)/);
+  assert.match(app, /The shape behind today\./);
+  assert.match(app, /p\.value != null && Number\.isFinite/,
+    'a missing graph point can be coerced into a zero-value plunge');
+});
 
 await test('a chart draws the mean as well as the days', () => {
   // One day's calories is salt, sleep and memory. Somebody reading the spikes
