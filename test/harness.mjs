@@ -3191,6 +3191,15 @@ await test('the OAuth metadata and the manifest agree with it', async () => {
   assert.ok(manifest.icons?.length);
   // Same mark in both, PNG first for the same reason as the handshake.
   assert.equal(manifest.icons[0].src, 'https://wrought.fit/icon-512.png');
+
+  // "WROUGHT" IS A WORD DICTATION CANNOT SPELL, so the discovery keywords carry
+  // the spellings it actually produces — a registry search for "route" or
+  // "roz" has to surface this connector, because that is what the person
+  // saying its name into a phone will type looking for it.
+  const kw = (manifest.keywords || []).map(k => k.toLowerCase());
+  for (const spelling of ['wrought', 'route', 'roz', 'rought']) {
+    assert.ok(kw.includes(spelling), `discovery keywords do not carry "${spelling}"`);
+  }
 });
 
 await test('the icon is served cross-origin or a listing renders nothing', () => {
