@@ -144,6 +144,32 @@ const compactNumber = value => {
   return (Math.round(n * 10) / 10).toLocaleString('en-US');
 };
 
+// A goal only belongs in the close of TODAY when the matching fact was
+// actually recorded today. Kept in one place because the long receipt and the
+// lock-screen scorecard must never disagree about whether an apparent zero is
+// a measurement or simply missing data.
+const dailyScoredGoals = facts => {
+  const food = facts.food || {};
+  const device = facts.device || {};
+  const hasTodayEvidence = g => {
+    switch (g.metric) {
+      // COUNTED meals, not merely logged ones. A day of macros-unknown entries
+      // sums to 0 kcal/0g, which is unknown rather than a perfect zero.
+      case 'calories':
+      case 'protein_g': return (food.meals || 0) > (food.meals_uncounted || 0);
+      case 'steps': return device.steps != null;
+      case 'distance_km': return device.distance_km != null;
+      case 'active_minutes': return device.active_minutes != null;
+      case 'sleep_minutes': return device.sleep_minutes != null;
+      case 'weight_kg': return facts.body?.weight_kg != null;
+      default: return false;
+    }
+  };
+
+  return (facts.goals || []).filter(g =>
+    g.scored && g.metric !== 'workout_days' && g.cadence !== 'weekly' && hasTodayEvidence(g));
+};
+
 // The deterministic close of the day: what actually went on the record, then
 // where those facts put the goals. This leads the evening brief whether or not
 // an OpenAI key exists, so the lock screen can never be an AI's impression of
@@ -175,28 +201,7 @@ export function eveningReceipt({ facts = {}, balance = null } = {}) {
 
   // workout_days is read from weekSoFar below. Weekly scores in scoreGoals use
   // a range summary, so they are not evidence of what THIS day contributed.
-  // Daily goals only appear when the matching fact was actually recorded: a
-  // stray note must never turn an unlogged intake into "0 / target".
-  const hasTodayEvidence = g => {
-    switch (g.metric) {
-      // COUNTED meals, not merely logged ones. A day of macros-unknown entries
-      // sums to 0 kcal/0g in dayFacts, so `food.meals > 0` would score it as
-      // "0 / target" — the confidently-wrong zero this file's own comment
-      // forbids, and worse on an at_most ceiling, where 0 reads as "under it".
-      // The actions line above already draws this exact distinction with
-      // `meals_uncounted === meals`; the goals line has to draw it too.
-      case 'calories':
-      case 'protein_g': return (food.meals || 0) > (food.meals_uncounted || 0);
-      case 'steps': return device.steps != null;
-      case 'distance_km': return device.distance_km != null;
-      case 'active_minutes': return device.active_minutes != null;
-      case 'sleep_minutes': return device.sleep_minutes != null;
-      case 'weight_kg': return facts.body?.weight_kg != null;
-      default: return false;
-    }
-  };
-  const goals = (facts.goals || []).filter(g =>
-    g.scored && g.metric !== 'workout_days' && g.cadence !== 'weekly' && hasTodayEvidence(g));
+  const goals = dailyScoredGoals(facts);
   const goalLines = goals.map(g => {
     const actual = compactNumber(g.actual);
     const target = compactNumber(g.target);
@@ -212,6 +217,82 @@ export function eveningReceipt({ facts = {}, balance = null } = {}) {
     lines.push(`Training week: ${facts.training_week.say}`);
   }
   return lines.join(' ') || null;
+}
+
+/**
+ * The same close, cut for a lock screen rather than a paragraph.
+ *
+ * Push notifications cannot carry the dashboard's type, colour or layout. The
+ * useful design material they do have is hierarchy and rhythm: one unmistakable
+ * title, then a compact scoreboard made only from already-computed facts. No
+ * prose is truncated mid-thought and tapping it opens the full Daily Close.
+ */
+export function eveningNotification({ facts = {}, balance = null } = {}) {
+  const food = facts.food || {};
+  const training = facts.training || {};
+  const activity = facts.activity || {};
+  const device = facts.device || {};
+  const goals = dailyScoredGoals(facts);
+  const goal = metric => goals.find(g => g.metric === metric);
+  const clauses = [];
+
+  if (training.sessions) {
+    clauses.push(`TRAIN ${training.sessions}\u00d7${training.minutes ? `${Math.round(training.minutes)}m` : ''}`);
+  }
+  if (activity.count) {
+    clauses.push(`WORK ${activity.count}\u00d7${activity.minutes ? `${Math.round(activity.minutes)}m` : ''}`);
+  }
+
+  const steps = goal('steps');
+  if (steps) {
+    const actual = compactNumber(steps.actual);
+    const targetNumber = Number(steps.target);
+    const target = Number.isFinite(targetNumber) && targetNumber >= 10000 && targetNumber % 1000 === 0
+      ? `${targetNumber / 1000}k`
+      : compactNumber(steps.target);
+    if (actual != null && target != null) clauses.push(`STEPS ${actual}/${target}`);
+  } else if (device.steps != null) {
+    clauses.push(`STEPS ${Math.round(device.steps).toLocaleString('en-US')}`);
+  }
+
+  const partial = (food.meals_uncounted || 0) > 0;
+  const rough = food.estimated ? '~' : '';
+  const more = partial ? '+' : '';
+  const calories = goal('calories');
+  if (calories) {
+    clauses.push(`FUEL ${rough}${compactNumber(calories.actual)}${more}/${compactNumber(calories.target)} kcal`);
+  } else if (food.meals && food.meals_uncounted === food.meals) {
+    clauses.push('FUEL MACROS PENDING');
+  } else if (food.meals && food.calories != null) {
+    clauses.push(`FUEL ${rough}${compactNumber(food.calories)}${more} kcal`);
+  }
+
+  const protein = goal('protein_g');
+  if (protein) {
+    clauses.push(`PROTEIN ${rough}${compactNumber(protein.actual)}${more}/${compactNumber(protein.target)}g`);
+  } else if (food.meals && food.meals_uncounted !== food.meals && food.protein_g != null) {
+    clauses.push(`PROTEIN ${rough}${compactNumber(food.protein_g)}${more}g`);
+  }
+
+  if (balance?.known && (facts.logged || clauses.length)) {
+    clauses.push(`BURN ~${Math.round(balance.calories_out).toLocaleString('en-US')}`);
+  }
+  if (facts.training_week?.target != null) {
+    clauses.push(`WEEK ${facts.training_week.done || 0}/${facts.training_week.target}`);
+  }
+
+  if (!clauses.length) return null;
+  const body = clauses.join(' \u00b7 ');
+  if (body.length <= 160) return body;
+
+  // Whole clauses only. A lock screen cutting "PROTEIN" in half looks broken
+  // and can change meaning; the full card remains one tap away.
+  const kept = [];
+  for (const clause of clauses) {
+    const next = [...kept, clause].join(' \u00b7 ');
+    if (next.length <= 159) kept.push(clause);
+  }
+  return kept.join(' \u00b7 ');
 }
 
 export function plainBrief({ facts = {}, flags = [], balance = null } = {}) {

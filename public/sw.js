@@ -136,9 +136,16 @@ self.addEventListener('notificationclick', (e) => {
   const target = e.notification.data?.url || '/app.html';
   e.waitUntil(
     self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((wins) => {
-      // Focus the app if it is already open rather than opening a second copy.
+      const wanted = new URL(target, self.location.origin);
+      // A Daily Close hash is a real destination. If the app is already open
+      // on /app.html, navigate that window to the card instead of opening a
+      // duplicate merely because the fragments differ.
       for (const w of wins) {
-        if (w.url.includes(target) && 'focus' in w) return w.focus();
+        const current = new URL(w.url);
+        if (current.origin === wanted.origin && current.pathname === wanted.pathname) {
+          if (current.href === wanted.href && 'focus' in w) return w.focus();
+          if ('navigate' in w) return w.navigate(wanted.href).then(client => client?.focus());
+        }
       }
       return self.clients.openWindow(target);
     })
