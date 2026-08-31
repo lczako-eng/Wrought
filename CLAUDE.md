@@ -40,10 +40,13 @@ nothing else.
 - **Honest, never cruel.** Hard on the behaviour, never on the person. No
   commentary on their body. Bluntness is the user's setting (`gentle` /
   `honest` / `brutal`) and is honoured exactly.
-- **Care flags outrank everything**, including the honesty doctrine. Computed
-  server-side in `careFlags()`: sustained sub-1200 kcal intake, loss faster than
-  1.2 kg/week, no rest in 14 days. When one fires, coaching stops. This is the
-  only way this product genuinely hurts somebody — treat it as load-bearing.
+- **Care flags outrank automated coaching, not the daily briefing itself.**
+  Computed server-side in `careFlags()`: sustained sub-1200 kcal intake, loss
+  faster than 1.2 kg/week, no rest in 14 days. When one fires, coaching stops.
+  But the scheduled morning, midday and evening pushes are appointments: they
+  still deliver the factual brief the person asked for and carry `REVIEW` as a
+  secondary title note. Replacing all three with the same warning makes the
+  brief — the product — disappear. This distinction is load-bearing.
 - **Estimates are labelled.** Calories from a described meal are inferred. Say
   "roughly". The credibility dies the first time a guess is read as a fact.
 - **Not a medical device.** No diagnosis, no reading HRV as a clinical sign, no
@@ -327,9 +330,10 @@ not want to pay for a key.
 The fallback composes the line from facts already computed: in, out, the net,
 sessions, steps, where the week stands. No opinion, no coaching, no praise —
 a number and its direction is worth a notification and an invented sentence is
-not. A care flag is the **entire** message, because a lock screen has no room
-to bury one. Nothing logged still sends nothing; a nightly nag is how a product
-gets muted permanently.
+not. A care flag remains the entire spoken or generated verdict, but the
+scheduled lock-screen close still carries the computed receipt and marks
+`REVIEW` secondarily in its title. Nothing logged still sends nothing; a
+nightly nag is how a product gets muted permanently.
 
 The written verdict stays better when a key exists, and is still preferred.
 
@@ -2431,9 +2435,11 @@ The sequence is now load-bearing:
   waits before changing a target or choosing/building the session. The human
   tap remains the legal bridge across MCP's request/response boundary.
 
-A care flag is still the entire notification and stops this sequence before
-the first line. Safety did not become a preamble just because the brief became
-interactive.
+A care flag never stops this sequence before its first line. The lock-screen
+title gains `REVIEW`, and the long form may add a factual record note after the
+brief, but yesterday's burn, today's goals, the live week and the training
+question remain the morning appointment. This was settled after the founder's
+phone showed a doctor warning in place of every briefing he had configured.
 
 ### A care flag must be a door, not a daily dead end
 
@@ -2451,10 +2457,10 @@ Two rules now hold together:
   date from the low-intake reading while leaving today's weigh-in and training
   available to their own safety checks. Breakfast is not a 380-calorie day.
 - **Incomplete food logs are record quality, not nutrition.** A low-intake flag
-  carries the exact `evidence_dates` and `needs_review`. The notification stays
-  care-only, but tapping it opens the person's chosen assistant with one task:
-  ask which dates were fully logged and which had meals missing. No ordinary
-  morning opener, no goal score, no training nudge.
+  carries the exact `evidence_dates` and `needs_review`. An explicit review door
+  still asks which dates were fully logged and which had meals missing, but it
+  does not replace any scheduled brief. The morning push opens the ordinary
+  morning conversation; any care note is mentioned after the briefing.
 
 `review_intake_days` records the person's explicit answer as an idempotent note
 (`intake-review:YYYY-MM-DD`). `complete=false` leaves every observed calorie
@@ -2462,9 +2468,9 @@ and meal untouched but prevents that partial diary being used as proof of a
 full day's intake. `complete=true` keeps the day in the safety reading. **The
 tool may never infer the answer from a small number, a meal count or silence**,
 and it never asks somebody to invent meals they do not remember. After the
-write it recomputes the flag; the normal morning brief resumes only if the care
-hold genuinely clears. A reviewed complete low-intake pattern still stops all
-coaching and points to a doctor or dietitian exactly as before.
+write it recomputes the flag. A reviewed complete low-intake pattern still
+stops automated coaching and points to a doctor or dietitian exactly as before;
+it does not suppress factual scheduled briefings.
 
 ### The evening brief is today's receipt against the goals
 
@@ -2474,14 +2480,14 @@ facts as the dashboard: workouts and minutes, physical work and time on task,
 steps, food and protein, computed burn, each evidenced daily goal as
 actual/target, and the live training-week count. It says exactly what went on
 the record that day and what those facts did against the expectations stated in
-the morning.
+the morning. A care flag changes the title to `DAY CLOSED · REVIEW`; it never
+replaces this receipt with the warning again.
 
 That receipt leads whether an OpenAI key exists or not. When a key exists, the
 written verdict may add at most two short sentences of interpretation; it may
 not recompute, replace or repeat the receipt, and it does not plan tomorrow —
 the next morning owns that conversation. A weekly goal is not presented as a
-daily score, and an unlogged metric is never rendered as zero. A care flag is
-still the entire evening message.
+daily score, and an unlogged metric is never rendered as zero.
 
 ### Notifications you set by talking — the AI writes the rule, the cron sends it
 

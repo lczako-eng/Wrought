@@ -13,10 +13,11 @@
 //
 // THE RULES IT INHERITS, none of which bend for being a new surface:
 //
-//   - A care flag is the ENTIRE message. On a lock screen "outranks everything"
-//     has to mean the sentence stops there; there is no room to bury it under a
-//     total, and a cheerful line above it is encouragement pointed at the exact
-//     harm the flags exist to prevent.
+//   - A care flag stops automated coaching, never the scheduled briefing
+//     itself. The founder was explicit after seeing a lock screen full of the
+//     same warning: the morning, midday and evening pushes are appointments,
+//     and replacing their facts with a warning means the product did not send
+//     the brief. The push keeps its facts and carries REVIEW secondarily.
 //   - It never tells anybody to eat less. Not "you have X left", not a deficit,
 //     not a ceiling. A phone at 7:30am is the worst possible place to start
 //     doing arithmetic about what is allowed.
@@ -28,12 +29,10 @@
 //     the facts set up. Anything beyond that is a lecture and will not be read.
 //   - Silence is a real answer. A brief with nothing to say sends nothing.
 
-import { spokenFlag } from './voice.js';
-
 // What the morning can usefully raise, hardest first. The order is the order of
 // consequence, not of cheerfulness: something that makes every other number
 // meaningless outranks a number.
-const MAX_LINES = 5;
+const MAX_LINES = 6;
 const GOAL_NAMES = {
   calories: 'calories', protein_g: 'protein', steps: 'steps',
   distance_km: 'distance', active_minutes: 'active minutes',
@@ -56,6 +55,69 @@ function goalExpectations(goals = []) {
     .filter(Boolean);
 }
 
+function careNote(flag) {
+  if (!flag) return null;
+  if (flag.flag === 'very_low_intake') {
+    const count = flag.evidence_dates?.length;
+    return count
+      ? `Record check: ${count} low-intake day${count === 1 ? '' : 's'} need review.`
+      : 'Record check: the low-intake history needs review.';
+  }
+  if (flag.flag === 'rapid_loss') return 'Care note: the recorded weight trend is moving unusually fast.';
+  if (flag.flag === 'no_rest') return 'Care note: the record shows no rest day in the last two weeks.';
+  return 'Care note: there is a health record item to review.';
+}
+
+function compactNumber(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return null;
+  if (n >= 1000 && n % 1000 === 0) return `${n / 1000}k`;
+  return Math.round(n).toLocaleString('en-US');
+}
+
+function compactGoal(goal) {
+  const value = compactNumber(goal?.target_value);
+  if (!value) return null;
+  if (goal.metric === 'calories') return `FUEL ${value} kcal`;
+  if (goal.metric === 'protein_g') return `PROTEIN ${value}g`;
+  if (goal.metric === 'steps') return `STEPS ${value}`;
+  return null;
+}
+
+/**
+ * The actual lock-screen shape for the morning appointment.
+ *
+ * The long `morningBrief` remains useful in email and a conversation. The
+ * phone needs the same four answers in a form that survives iOS truncation:
+ * yesterday's burn, today's deal, the live week, and the tap back into today's
+ * training choice. A care flag changes the title to REVIEW; it never replaces
+ * those answers again.
+ */
+export function morningNotification({ yesterdayBalance = null, goals = [], week = null, planned = null, flags = [] } = {}) {
+  const parts = [];
+  if (yesterdayBalance?.known && yesterdayBalance.calories_out) {
+    parts.push(`YDAY BURN ~${compactNumber(yesterdayBalance.calories_out)}`);
+  }
+  const deal = goals.map(compactGoal).filter(Boolean).slice(0, 3);
+  if (deal.length) parts.push(deal.join(' / '));
+  if (week?.target) parts.push(`WEEK ${week.done || 0}/${week.target}`);
+  else if (week) parts.push(`WEEK ${week.done || 0}`);
+  if (planned?.name && !week?.met) {
+    parts.push(`NEXT ${planned.name}${planned.est_minutes ? ` ${planned.est_minutes}m` : ''}`);
+  }
+  const action = 'TAP: WHAT ARE WE TRAINING?';
+  const detail = parts.join(' · ');
+  let body = detail ? `${detail} · ${action}` : action;
+  if (body.length > 160) {
+    const room = 160 - action.length - 4; // ellipsis plus the separator
+    body = `${detail.slice(0, room)}… · ${action}`;
+  }
+  return {
+    title: flags.length ? 'WROUGHT · MORNING BRIEF · REVIEW' : 'WROUGHT · MORNING BRIEF',
+    body,
+  };
+}
+
 /**
  * The morning message, or null to send nothing.
  *
@@ -73,11 +135,6 @@ export function morningBrief({
   facts = {}, flags = [], yesterdayBalance = null, week = null,
   goals = [], goalsToSet = null, yesterday = null, readiness = null, planned = null,
 } = {}) {
-  // THE FLAG IS THE WHOLE MESSAGE. Same rule as the spoken answer and the
-  // nightly read, and it is the one line in this file that must never grow a
-  // clause after it.
-  if (flags.length) return { text: spokenFlag(flags[0]), kind: 'care_flag', only: true };
-
   const lines = [];
 
   // 1. YESTERDAY'S COMPLETED BURN, not a projection of today at breakfast.
@@ -139,12 +196,19 @@ export function morningBrief({
       : 'Tap to keep or change the goals, then choose today\'s training — or a rest day.');
   }
 
+  // The record review stays visible, but it does not take the appointment
+  // hostage. It is last and deliberately factual: the notification title also
+  // says REVIEW, while every number above remains the briefing the person set.
+  const review = careNote(flags[0]);
+  if (review) lines.push(review);
+
   if (!lines.length) return null;
 
   return {
     text: lines.slice(0, MAX_LINES).join(' '),
     kind: 'morning',
     only: false,
+    care: !!flags.length,
   };
 }
 
@@ -178,7 +242,8 @@ const OPENERS = {
     'Gym bro — morning. Using the Wrought connector, give me my morning brief: yesterday\'s computed ' +
     'calories burned, my current goals and expectations, and where I stand in this week\'s training target. ' +
     'Ask whether I want to keep or change any of it, then ask what I want to train today. Wait for my ' +
-    'answer before changing a goal or choosing or building today\'s training plan.',
+    'answer before changing a goal or choosing or building today\'s training plan. If Wrought has a care ' +
+    'note, mention it after the briefing; never replace the briefing with it.',
   // The midday opener ASKS, because the founder's midday is an assessment the
   // AI takes, not a report it reads out: it exists to collect the half-day —
   // what has been eaten, how the day feels — and the assistant's first act is
@@ -187,7 +252,8 @@ const OPENERS = {
   midday:
     'Gym bro — midday check-in. Using the Wrought connector: I\'ll tell you what ' +
     "I've eaten so far and how the day is going — log it, then tell me where I " +
-    'stand against my targets and what the afternoon needs.',
+    'stand against my targets and what the afternoon needs. If Wrought has a care note, mention it after ' +
+    'the check-in; never replace the check-in with it.',
 };
 
 function careOpener(flag = {}) {
@@ -222,13 +288,10 @@ export function careReviewLink(opens, flag) {
 
 /**
  * The midday line — where the day stands while an afternoon can still act on
- * it. Same silences as the morning: a care flag is the whole message (the
- * caller handles that before composing), nothing ever says "eat less" or
- * quotes what is "left", and a day with nothing to say sends nothing.
+ * it. A care flag remains a secondary record note rather than replacing the
+ * appointment; nothing ever says "eat less" or quotes what is "left".
  */
 export function middayBrief({ facts = {}, flags = [], scored = [] } = {}) {
-  if (flags.length) return { text: spokenFlag(flags[0]), kind: 'care_flag', only: true };
-
   const lines = [];
   const food = facts.food || {};
 
@@ -251,7 +314,19 @@ export function middayBrief({ facts = {}, flags = [], scored = [] } = {}) {
     lines.push(`${g.goal}: ${Math.round(g.percent || 0)}% with the afternoon to go.`);
   }
 
-  return { text: lines.slice(0, 2).join(' '), kind: 'midday', only: false };
+  const notificationText = lines.slice(0, 2).join(' ');
+  const review = careNote(flags[0]);
+  if (review) lines.push(review);
+
+  return {
+    text: lines.slice(0, 3).join(' '),
+    // The lock screen is the appointment, not the review. The title can mark
+    // REVIEW; the repeated low-intake count stays out of the pop-up body.
+    notification_text: notificationText,
+    kind: 'midday',
+    only: false,
+    care: !!flags.length,
+  };
 }
 
 /**
@@ -260,27 +335,6 @@ export function middayBrief({ facts = {}, flags = [], scored = [] } = {}) {
  * Separated from the message so the decision is testable without composing
  * anything, and so the cron's half-hour granularity lives in exactly one place.
  */
-/**
- * Should a care-flag-only message be held back because the identical sentence
- * already reached the lock screen today?
- *
- * The founder's screenshot was six copies of the same flag across three
- * evenings — "always the same bullshit three times a day". The flag doctrine
- * does not bend: it outranks everything, it is the entire message, and it goes
- * out every day it stands. What this adds is only that the SAME SENTENCE is
- * delivered once per day rather than at every check-in.
- *
- * Pure, and deliberately narrow — this is the one place in the product where
- * suppressing a delivery is the dangerous direction, so both conditions must
- * hold before anything is held back:
- *   - same local day (never across days: a standing flag is said again tomorrow)
- *   - EXACT same text (a new flag, or a count that moved, always goes out)
- */
-export function flagRepeat({ text, sentOn = null, sentText = null, today = null }) {
-  if (!text || !today) return false;
-  return sentOn === today && sentText === text;
-}
-
 export function morningDue({ hour, minute, morningHour, morningMinute = 0, sentOn = null, today = null }) {
   // Null is off, and off is the default. Nothing here starts notifying somebody
   // because the product decided it knew best.

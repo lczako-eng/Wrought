@@ -28,10 +28,10 @@ import {
   dayFacts, rangeFacts, summariseRange, scoreGoals, careFlags, writeVerdict,
 } from './lib/wrought.js';
 import { sendPush, vapidConfigured } from './lib/push.js';
-import { careNotification, eveningNotification, eveningReceipt, plainBrief, spokenFlag } from './lib/voice.js';
+import { eveningNotification, eveningReceipt, plainBrief } from './lib/voice.js';
 import { energyBalance, weekSoFar, goalsToSet } from './lib/training.js';
 import { dueAlerts } from './lib/alerts.js';
-import { careReviewLink, morningBrief, middayBrief, morningDue, morningLink, flagRepeat } from './lib/morning.js';
+import { morningBrief, morningNotification, middayBrief, morningDue, morningLink } from './lib/morning.js';
 
 const SEND_HOUR = 20;
 
@@ -162,23 +162,13 @@ async function email(to, subject, text) {
 async function push(userId, profile, out) {
   const flag = out.flags?.[0] || null;
   const care = !!flag;
-  let opens = null;
-  if (care) {
-    const { data } = await supabase.from('wrought_profile')
-      .select('morning_opens').eq('user_id', userId).maybeSingle()
-      .then(r => (r.error ? { data: null } : r), () => ({ data: null }));
-    opens = data?.morning_opens || null;
-  }
-  const notice = care ? careNotification(flag) : null;
   return deliver(userId, profile, {
-    title: care ? notice.title : 'WROUGHT · DAY CLOSED',
-    // A care flag is still the whole notification. Every ordinary close uses
-    // the computed scoreboard, with the old sentence only as a safe fallback
-    // for an older stored brief shape.
-    body: care ? notice.body
-      : (out.facts?.notification_body || firstSentence(out.verdict)),
+    title: care ? 'WROUGHT · DAY CLOSED · REVIEW' : 'WROUGHT · DAY CLOSED',
+    // The scheduled close is the receipt somebody asked for. A care flag may
+    // annotate its title, but it can never replace the scorecard again.
+    body: out.facts?.notification_body || firstSentence(out.facts?.goal_receipt || out.verdict),
     tag: `wrought-${out.date}`,
-    url: care ? careReviewLink(opens, flag) : '/app.html#daily-close',
+    url: '/app.html#daily-close',
   });
 }
 
@@ -253,42 +243,6 @@ async function middayColumnsExist() {
   return middayReady;
 }
 
-// ── A care flag is said once a day, not at every check-in ───────────────────
-//
-// The flag doctrine holds untouched: it outranks everything, it is the entire
-// message wherever it appears, and it goes out every day it stands. But the
-// morning, the midday and the evening each carry it as their whole message, so
-// one standing flag became the identical sentence three times a day — and a
-// repeated identical notification trains dismissal, which for a care flag is
-// as dangerous as losing it. flagRepeat (pure, in lib/morning.js) holds back
-// only an EXACT repeat on the SAME local day; the columns are 022 and are
-// probed like every other door, so an un-migrated database keeps the old
-// behaviour rather than throwing.
-let flagOnceReady = null;
-async function flagColumnsExist() {
-  if (flagOnceReady !== null) return flagOnceReady;
-  const { error } = await supabase.from('wrought_profile')
-    .select('flag_sent_on', { head: true }).limit(1);
-  flagOnceReady = !error;
-  return flagOnceReady;
-}
-
-async function flagAlreadyToday(userId, text, date) {
-  if (!(await flagColumnsExist())) return false;
-  const { data } = await supabase.from('wrought_profile')
-    .select('flag_sent_on, flag_sent_text').eq('user_id', userId).maybeSingle();
-  return flagRepeat({ text, sentOn: data?.flag_sent_on, sentText: data?.flag_sent_text, today: date });
-}
-
-// Stamped only when a flag-only message actually delivered — same rule as
-// every other sent_on in this file. Marking it on a failed send would make the
-// one day a phone was off the day the flag went quiet.
-async function stampFlag(userId, text, date) {
-  if (!(await flagColumnsExist())) return;
-  await supabase.from('wrought_profile')
-    .update({ flag_sent_on: date, flag_sent_text: text }).eq('user_id', userId);
-}
-
 // The founder's second check-in: where the day stands while there is still an
 // afternoon to act on it. Same guards as the morning — probed columns, once a
 // day, stamped only on success, a failure here never costs the evening read.
@@ -323,26 +277,15 @@ async function runMidday(userId, profile, now) {
   const out = middayBrief({ facts: day, flags, scored });
   if (!out?.text) return 0;
 
-  // A flag-only midday whose exact sentence already delivered today is done for
-  // the day — the flag is on the lock screen, and a second identical copy only
-  // teaches the thumb to swipe it away. Stamped as sent so nothing retries.
-  if (out.only && await flagAlreadyToday(userId, out.text, date)) {
-    await supabase.from('wrought_profile')
-      .update({ midday_sent_on: date }).eq('user_id', userId);
-    return 0;
-  }
-
-  const notice = out.only ? careNotification(flags[0]) : null;
   const sent = await deliver(userId, profile, {
-    title: notice?.title || 'WROUGHT',
-    body: notice?.body || out.text,
+    title: flags.length ? 'WROUGHT · MIDDAY BRIEF · REVIEW' : 'WROUGHT · MIDDAY BRIEF',
+    body: out.notification_text.length > 160 ? `${out.notification_text.slice(0, 157)}…` : out.notification_text,
     tag: `wrought-midday-${date}`,
-    url: out.only ? careReviewLink(mo?.morning_opens, flags[0]) : morningLink(mo?.morning_opens, 'midday'),
+    url: morningLink(mo?.morning_opens, 'midday'),
   });
   if (sent) {
     await supabase.from('wrought_profile')
       .update({ midday_sent_on: date }).eq('user_id', userId);
-    if (out.only) await stampFlag(userId, out.text, date);
   }
   return sent ? 1 : 0;
 }
@@ -425,28 +368,16 @@ async function runMorning(userId, profile, now) {
   // muted permanently, and muted never comes back on.
   if (!out) return 0;
 
-  // The same flag sentence is not re-delivered within a day. In practice the
-  // morning is usually the FIRST delivery of the day, so this bites when the
-  // evening already carried the flag late yesterday and a midnight boundary
-  // has not passed in their zone — and, mostly, it protects the later
-  // check-ins below and in the handler from repeating the morning's.
-  if (out.only && await flagAlreadyToday(userId, out.text, date)) {
-    await supabase.from('wrought_profile')
-      .update({ morning_sent_on: date }).eq('user_id', userId);
-    return 0;
-  }
-
-  const notice = out.only ? careNotification(flags[0]) : null;
+  const notice = morningNotification({ yesterdayBalance, goals, week, planned: dueRoutine, flags });
   const sent = await deliver(userId, profile, {
-    title: notice?.title || 'WROUGHT',
-    body: notice?.body || out.text,
+    title: notice.title,
+    body: notice.body,
     tag: `wrought-morning-${date}`,
     // Tapping it opens the assistant with the day's opener pre-filled — the
     // one legal bridge across MCP's no-push rule, because the person's tap is
-    // what carries the words. A care flag gets its OWN review opener — never
-    // the start-my-day coaching prompt — so the tap can resolve incomplete
-    // logging without putting goals or training beside the warning.
-    url: out.only ? careReviewLink(mo?.morning_opens, flags[0]) : morningLink(mo?.morning_opens),
+    // what carries the words. The scheduled briefing always opens the briefing
+    // conversation; a record review can be mentioned after it, never instead.
+    url: morningLink(mo?.morning_opens),
   });
 
   // STAMPED ONLY ON SUCCESS, exactly like an alert's last_sent_on. Marking it
@@ -455,7 +386,6 @@ async function runMorning(userId, profile, now) {
   if (sent) {
     await supabase.from('wrought_profile')
       .update({ morning_sent_on: date }).eq('user_id', userId);
-    if (out.only) await stampFlag(userId, out.text, date);
   }
   return sent ? 1 : 0;
 }
@@ -580,20 +510,11 @@ export const handler = async () => {
       // a nag, and a nightly nag is how a product gets muted forever.
       if (!out.logged) continue;
 
-      // A flag-only evening whose exact sentence already delivered today — at
-      // the morning brief, usually — is done. The flag reached the lock screen
-      // today; the identical copy at night is what teaches the thumb to
-      // dismiss it. A flag whose wording moved still goes out.
-      const flagText = out.flags?.length ? spokenFlag(out.flags[0]) : null;
-      const flagOnly = !!flagText && out.verdict === flagText;
-      if (flagOnly && await flagAlreadyToday(userId, flagText, out.date)) { skipped++; continue; }
-
       const { data: auth } = await supabase.auth.admin.getUserById(userId);
       const mailedThis = await email(auth?.user?.email, `Wrought — ${out.date}`, out.verdict);
       if (mailedThis) mailed++;
       const pushedThis = await push(userId, profile, out);
       pushed += pushedThis;
-      if (flagOnly && (mailedThis || pushedThis)) await stampFlag(userId, flagText, out.date);
     } catch {
       skipped++;
     }

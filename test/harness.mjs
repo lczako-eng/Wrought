@@ -2378,7 +2378,8 @@ await test('the notification never writes its own words', () => {
   const sw = readFileSync(new URL('../public/sw.js', import.meta.url), 'utf8');
   const nightly = readFileSync(new URL('../netlify/functions/brief-nightly.js', import.meta.url), 'utf8');
   assert.match(sw, /data\.body \|\|/);
-  assert.match(nightly, /firstSentence\(out\.verdict\)/);
+  assert.match(nightly, /out\.facts\?\.notification_body \|\| firstSentence\(out\.facts\?\.goal_receipt \|\| out\.verdict\)/,
+    'the push is no longer relaying a computed brief shape');
 });
 
 await test('the send hour is the user\'s own, not ours', () => {
@@ -8412,10 +8413,10 @@ await test('the lock screen is a complete computed scoreboard, not a clipped par
   assert.match(nightly, /WROUGHT · DAY CLOSED/);
   assert.match(nightly, /out\.facts\?\.notification_body/);
   assert.match(nightly, /'\/app\.html#daily-close'/);
-  assert.match(nightly, /care \? notice\.body/,
-    'a care flag can be mixed into the ordinary scorecard');
-  assert.match(nightly, /careNotification\(flag\)/,
-    'the care notification has no dedicated lock-screen shape');
+  assert.doesNotMatch(nightly, /care \? notice\.body|careNotification\(flag\)/,
+    'a care warning can still replace the ordinary scorecard');
+  assert.match(nightly, /care \? 'WROUGHT · DAY CLOSED · REVIEW'/,
+    'the care review is not kept as a secondary title annotation');
 });
 
 await test('tapping the close opens one polished receipt, even when the app is already open', () => {
@@ -10318,9 +10319,17 @@ await test('the midday check-in exists, with the same guards as the morning', as
   assert.match(cron, /runMidday/, 'nothing sends the midday check-in');
   assert.match(cron, /midday_sent_on: date/, 'midday is not stamped once a day');
   const { middayBrief } = await import('../netlify/functions/lib/morning.js');
-  // A care flag is the entire message, everywhere, always.
-  const flagged = middayBrief({ flags: [{ kind: 'low_intake' }], facts: { food: { meals: 3, calories: 900 } } });
-  assert.ok(flagged.only, 'a care flag does not silence the midday check-in');
+  // A care flag annotates the check-in; it never turns the afternoon
+  // appointment into the same warning the morning already showed.
+  const flagged = middayBrief({
+    flags: [{ flag: 'very_low_intake', evidence_dates: ['2026-08-09', '2026-08-11'] }],
+    facts: { food: { meals: 3, calories: 900 } },
+  });
+  assert.equal(flagged.only, false, 'the midday check-in still collapses into a care-only warning');
+  assert.match(flagged.text, /Roughly 900 in so far/, 'the live afternoon position disappeared');
+  assert.match(flagged.text, /2 low-intake days need review/, 'the secondary review note disappeared');
+  assert.doesNotMatch(flagged.notification_text, /low-intake|1,200|doctor/i,
+    'the five-days-under-1,200 warning is still the midday pop-up body');
   // An at_most goal is never cheered toward its ceiling.
   const out = middayBrief({ facts: { food: { meals: 2, calories: 1200 } },
     scored: [{ goal: 'Calories', metric: 'calories', scored: true, target: 3083, direction: 'at_most', percent: 40, hit: false },
@@ -10618,7 +10627,7 @@ await test('every standing choice has a home where it pops up again', () => {
 
 group('The morning briefing');
 
-const { morningBrief, morningDue, flagRepeat } = await import('../netlify/functions/lib/morning.js');
+const { morningBrief, morningNotification, morningDue } = await import('../netlify/functions/lib/morning.js');
 
 await test('the morning is a briefing, not last night\'s verdict moved', () => {
   // "Every day at 7:30 morning brief, that is the start, as a pop-up as well."
@@ -10661,21 +10670,38 @@ await test('the morning is a briefing, not last night\'s verdict moved', () => {
   assert.equal(morningBrief({ facts: {}, flags: [] }), null);
 });
 
-await test('a care flag is the entire morning message', () => {
-  // On a lock screen "outranks everything" has to mean the sentence STOPS
-  // there. A cheerful line above it is encouragement pointed straight at the
-  // harm the flags exist to prevent.
+await test('a care flag never replaces the morning appointment again', () => {
+  // The founder's lock screen was full of a record warning and contained none
+  // of the briefing he had scheduled. Safety may annotate the appointment; it
+  // cannot hijack yesterday's burn, the live week, or today's choice.
   const out = morningBrief({
-    flags: [{ kind: 'low_intake', severity: 'high' }],
+    flags: [{ flag: 'very_low_intake', evidence_dates: ['2026-08-09', '2026-08-11', '2026-08-13'] }],
     week: { say: 'One session in, three to go.', target: 4, met: false, impossible: false },
     goalsToSet: { missing: ['a daily calorie target'] },
     yesterday: { logged: true },
     yesterdayBalance: { known: true, calories_out: 3800 },
   });
-  assert.ok(out.only, 'the flag is not marked as the whole message');
-  assert.ok(!/three to go/.test(out.text), 'coaching survived a care flag');
-  assert.ok(!/target/.test(out.text), 'a setup prompt survived a care flag');
-  assert.ok(!/3800|3,800/.test(out.text), 'a figure survived a care flag');
+  assert.equal(out.only, false, 'the scheduled brief was still converted into a flag-only push');
+  assert.match(out.text, /three to go/, 'the live training week disappeared behind the care flag');
+  assert.match(out.text, /3,800/, 'yesterday\'s burn disappeared behind the care flag');
+  assert.match(out.text, /3 low-intake days need review/, 'the review vanished instead of becoming secondary');
+
+  const notice = morningNotification({
+    yesterdayBalance: { known: true, calories_out: 3421 },
+    goals: [
+      { metric: 'calories', target_value: 2600 },
+      { metric: 'protein_g', target_value: 180 },
+      { metric: 'steps', target_value: 10000 },
+    ],
+    week: { done: 1, target: 4, met: false },
+    planned: { name: 'Leg day', est_minutes: 45 },
+    flags: [{ flag: 'very_low_intake' }],
+  });
+  assert.equal(notice.title, 'WROUGHT · MORNING BRIEF · REVIEW');
+  for (const fact of ['YDAY BURN ~3,421', 'FUEL 2,600', 'PROTEIN 180g', 'STEPS 10k', 'WEEK 1/4', 'NEXT Leg day 45m', 'WHAT ARE WE TRAINING']) {
+    assert.ok(notice.body.includes(fact), `the morning pop-up lost "${fact}"`);
+  }
+  assert.ok(notice.body.length <= 160, `the morning lock-screen body is ${notice.body.length} characters`);
 });
 
 await test('the morning reports yesterday\'s burn and never tells anybody to eat less', () => {
@@ -10741,35 +10767,15 @@ await test('the evening read honours the half hour too — the 8:01-and-8:30 dou
     'the hour-only match is still there beside the slot decision');
 });
 
-await test('a care flag is said every day it stands, and never three times a day', () => {
-  const today = '2026-08-26';
-  const text = '3 of the last 5 logged days came in under 1,200 kcal.';
-
-  // The dangerous direction is suppression, so every one of these must SEND:
-  // nothing on file, a different day, a different sentence, and a missing text.
-  assert.equal(flagRepeat({ text, today }), false, 'held back with nothing on file');
-  assert.equal(flagRepeat({ text, today, sentOn: '2026-08-25', sentText: text }), false,
-    'a standing flag was not said again the next day');
-  assert.equal(flagRepeat({ text, today, sentOn: today, sentText: '4 of the last 5 logged days came in under 1,200 kcal.' }), false,
-    'a flag whose wording moved was suppressed — an escalation must always go out');
-  assert.equal(flagRepeat({ text: null, today, sentOn: today, sentText: text }), false);
-
-  // The one case that holds back: the EXACT sentence, the SAME local day.
-  assert.equal(flagRepeat({ text, today, sentOn: today, sentText: text }), true,
-    'the identical flag sentence went out twice in one day');
-
-  // And the sender is actually wired to it, on all three check-ins — the
-  // morning, the midday and the evening each carry the flag as their entire
-  // message, which is exactly how one flag became three identical pushes.
+await test('morning, midday and evening remain three different scheduled briefs under a care flag', () => {
   const cron = readFileSync(new URL('../netlify/functions/brief-nightly.js', import.meta.url), 'utf8');
-  assert.ok((cron.match(/await flagAlreadyToday\(/g) || []).length >= 3,
-    'a check-in delivers the flag without asking whether today already carried it');
-  assert.ok((cron.match(/await stampFlag\(/g) || []).length >= 3,
-    'a check-in delivers the flag without stamping the delivery');
-  // Stamped only on a delivery that happened — the evening stamps behind its
-  // own send results, never unconditionally.
-  assert.match(cron, /if \(flagOnly && \(mailedThis \|\| pushedThis\)\) await stampFlag/,
-    'the evening stamps the flag as sent without a successful send');
+  assert.doesNotMatch(cron, /flagAlreadyToday|flagOnly|careNotification\(/,
+    'a scheduled briefing can still collapse into the same care-only message');
+  for (const title of ['MORNING BRIEF', 'MIDDAY BRIEF', 'DAY CLOSED']) {
+    assert.ok(cron.includes(title), `${title} has no distinct scheduled push`);
+  }
+  assert.match(cron, /body: out\.facts\?\.notification_body/,
+    'the evening scorecard is still replaced by the flag verdict');
 });
 
 await test('the morning brief degrades rather than breaking a database without 019', () => {
@@ -10825,9 +10831,8 @@ await test('tapping the morning brief opens the assistant with the day already a
   assert.equal(morningLink(undefined), '/app.html');
   assert.equal(morningLink(null), '/app.html');
 
-  // A care flag remains the whole message, but it is no longer a dead-end
-  // dashboard link. It opens a DIFFERENT prompt that asks about the record and
-  // cannot proceed to the normal brief unless the flag actually clears.
+  // The explicit care-review door remains available, but the scheduled
+  // morning push no longer uses it INSTEAD of the morning conversation.
   const care = careReviewLink('chatgpt', {
     flag: 'very_low_intake', evidence_dates: ['2026-08-09', '2026-08-13'],
   });
@@ -10841,8 +10846,10 @@ await test('tapping the morning brief opens the assistant with the day already a
     'the care-review link carries the normal start-my-day coaching prompt');
 
   const cron = readFileSync(new URL('../netlify/functions/brief-nightly.js', import.meta.url), 'utf8');
-  assert.match(cron, /out\.only \? careReviewLink\(/,
-    'a care-flag morning is still a dead-end app link');
+  assert.doesNotMatch(cron, /out\.only \? careReviewLink\(/,
+    'a care flag still redirects the scheduled morning away from its briefing');
+  assert.match(cron, /url: morningLink\(mo\?\.morning_opens\)/,
+    'the morning push no longer opens the selected assistant');
 
   // And the sw click handler must be able to open a cross-origin URL — a
   // same-origin filter here would silently turn the whole feature into a
@@ -10874,9 +10881,11 @@ await test('the morning says what is planned, and only when it should', async ()
   assert.ok(!/Up next/.test(strained.text), 'the plan overrides the body\'s veto');
   assert.match(strained.text, /lighter/);
 
-  // And a care flag is still the entire message.
-  const flagged = morningBrief({ planned, flags: [{ kind: 'low_intake' }] });
-  assert.ok(flagged.only && !/Up next|What do you want/.test(flagged.text), 'a plan line survived a care flag');
+  // A care note never erases the scheduled choice again.
+  const flagged = morningBrief({ planned, flags: [{ flag: 'very_low_intake' }] });
+  assert.equal(flagged.only, false);
+  assert.match(flagged.text, /Up next: S-Tier Training List/, 'the training choice disappeared behind a care note');
+  assert.match(flagged.text, /Record check/, 'the record review disappeared completely');
 });
 
 await test('the scheduled morning computes the completed day, not today\'s projection', () => {
