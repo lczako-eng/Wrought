@@ -8374,6 +8374,25 @@ await test('the nightly hour is theirs to move', () => {
 
 group('Charts — the trend, the target, and the gaps');
 
+await test('today keeps a fourteen-day pulse without changing the selected range', () => {
+  // The dashboard opens on 1d because today is the question. That must not
+  // strip every graph off the first signed-in screen: recent was already read
+  // for care and the training week, so four compact lines can travel without a
+  // second database round trip or a second arithmetic implementation.
+  const api = readFileSync(new URL('../netlify/functions/api-progress.js', import.meta.url), 'utf8');
+  const app = page('app.html');
+  assert.match(api, /const overviewDays = recent\.days\.slice\(-14\)/);
+  assert.match(api, /seven_day_average: means\[means\.length - 1\]/);
+  assert.match(api, /overviewMetric\('calories', 'Fuel'/);
+  assert.match(api, /overviewMetric\('protein_g', 'Protein'/);
+  assert.match(api, /overviewMetric\('steps', 'Steps'/);
+  assert.match(api, /key: 'training', label: 'Training'/);
+  assert.match(app, /function momentumPanel\(d\)/);
+  assert.match(app, /The shape behind today\./);
+  assert.match(app, /p\.value != null && Number\.isFinite/,
+    'a missing graph point can be coerced into a zero-value plunge');
+});
+
 await test('a chart draws the mean as well as the days', () => {
   // One day's calories is salt, sleep and memory. Somebody reading the spikes
   // is reading noise, so the seven-day mean rides alongside — the same

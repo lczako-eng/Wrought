@@ -328,6 +328,49 @@ export const handler = async (event) => {
 
   const flags    = careFlags(recent, profile);
 
+  // THE ONE-DAY VIEW STILL NEEDS CONTEXT. Opening on today is right — it is
+  // the question somebody has now — but it left every graph behind the 7d
+  // button and made the signed-in product look flatter than the page that sold
+  // it. This compact fourteen-day pulse is computed from the recent range we
+  // already fetched for care, the week and recovery, so it costs no extra read
+  // and never turns the browser into a second arithmetic engine.
+  const overviewDays = recent.days.slice(-14);
+  const overviewMetric = (key, label, unit, target = null, values = overviewDays.map(d => d[key])) => {
+    const means = trailingMean(values, 7);
+    const latest = [...values].reverse().find(v => v != null) ?? null;
+    return {
+      key, label, unit, target,
+      latest,
+      seven_day_average: means[means.length - 1] ?? null,
+      points: overviewDays.map((d, i) => ({ date: d.date, value: values[i] ?? null })),
+    };
+  };
+  const overviewSessions = rolling(overviewDays.map(d => (d.sessions > 0 ? 1 : 0)), 7, 'sum');
+  const overview = {
+    label: 'Last 14 days',
+    metrics: [
+      overviewMetric('calories', 'Fuel', 'kcal',
+        goals.find(g => g.metric === 'calories' && g.cadence === 'daily')?.target_value ?? null,
+        overviewDays.map(d => d.calories)),
+      overviewMetric('protein_g', 'Protein', 'g',
+        goals.find(g => g.metric === 'protein_g' && g.cadence === 'daily')?.target_value ?? null,
+        overviewDays.map(d => d.protein_g)),
+      overviewMetric('steps', 'Steps', '',
+        goals.find(g => g.metric === 'steps' && g.cadence === 'daily')?.target_value ?? null,
+        overviewDays.map(d => d.steps)),
+      {
+        key: 'training', label: 'Training', unit: 'sessions/wk',
+        target: profile.train_days || null,
+        latest: overviewSessions[overviewSessions.length - 1] ?? null,
+        seven_day_average: null,
+        points: overviewDays.map((d, i) => ({
+          date: d.date,
+          value: i >= 6 ? overviewSessions[i] : null,
+        })),
+      },
+    ],
+  };
+
   // The month laid out as squares, both halves of the sum on each one. Totals
   // count logged days only — see lib/calendar.js for why that is load-bearing
   // rather than fussy.
@@ -750,6 +793,7 @@ export const handler = async (event) => {
         activity_level: profile.activity_level ?? null,
         weight_kg: weightKg,
       },
+      overview,
       series: {
         weight:   range.days.map(d => ({ date: d.date, value: w(d.weight_kg) })),
         calories: range.days.map(d => ({ date: d.date, value: d.calories })),
