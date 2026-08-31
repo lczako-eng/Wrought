@@ -3,11 +3,12 @@
 //
 // This is the difference between a tool and a habit. A brief you have to
 // remember to request is one you request twice and then forget exists. A brief
-// that turns up at ten o'clock is the thing you end the day with.
+// that turns up at the chosen evening hour is the thing you end the day with.
 //
-// Runs HOURLY, not nightly, which looks wrong until you remember that "10pm"
-// is a different instant for every user. The function wakes up every hour and
-// serves only the people for whom it is currently 22:00 where they stand — the
+// Runs HOURLY, not nightly, which looks wrong until you remember that an
+// evening hour is a different instant for every user. The function wakes up every hour and
+// serves only the people for whom it is currently their chosen hour where they
+// stand (20:00 by default) — the
 // same reason local_date is stored rather than derived.
 //
 // Delivery is deliberately plural. MCP cannot push: the protocol is strictly
@@ -27,12 +28,12 @@ import {
   dayFacts, rangeFacts, summariseRange, scoreGoals, careFlags, writeVerdict,
 } from './lib/wrought.js';
 import { sendPush, vapidConfigured } from './lib/push.js';
-import { plainBrief, spokenFlag } from './lib/voice.js';
+import { eveningReceipt, plainBrief, spokenFlag } from './lib/voice.js';
 import { energyBalance, weekSoFar, goalsToSet } from './lib/training.js';
 import { dueAlerts } from './lib/alerts.js';
 import { morningBrief, middayBrief, morningDue, morningLink, flagRepeat } from './lib/morning.js';
 
-const SEND_HOUR = 22;
+const SEND_HOUR = 20;
 
 // Everyone who has logged anything in the last fortnight. A dormant account
 // does not need a nightly email about a week that did not happen.
@@ -61,7 +62,8 @@ export async function buildBriefFor(userId, now = new Date()) {
 
   const facts = {
     date, kind: 'evening', units: profile.units,
-    food: day.food, training: day.training, body: day.body, device: day.device,
+    food: day.food, training: day.training, activity: day.activity,
+    body: day.body, device: day.device,
     thirty_days: {
       adherence_pct: summary.adherence_pct,
       calories_avg: summary.calories_avg,
@@ -73,10 +75,46 @@ export async function buildBriefFor(userId, now = new Date()) {
     },
     streak: { current: summary.current_streak, longest: summary.longest_streak },
     goals: scoreGoals(goals, day, summary, profile),
+    training_week: weekSoFar(range.days, { today: date, target: profile.train_days || null }),
   };
 
-  let verdict = await writeVerdict({ facts, profile, goals, memory, flags, kind: 'evening' });
-  let written = !!verdict;
+  // The eight-o'clock brief is a receipt of what TODAY contributed to the
+  // goals. Compute it before asking for prose so it leads every delivery and
+  // remains identical with or without an OpenAI key.
+  const weightKg = day.body.weight_kg
+    ?? [...range.days].reverse().find(d => d.date <= date && d.weight_kg != null)?.weight_kg
+    ?? null;
+  const balance = energyBalance({
+    profile, weightKg,
+    caloriesIn: day.food.calories,
+    activeCalories: day.device.active_calories,
+    foodEstimated: day.food.estimated,
+    workouts: day.training.entries,
+    activities: day.activity.entries,
+    deviceResting: day.device.resting_calories,
+  });
+  facts.logged = day.logged;
+  facts.balance = balance.known ? {
+    calories_in: balance.calories_in,
+    calories_out: balance.calories_out,
+    net: balance.net,
+    direction: balance.direction,
+  } : { known: false, missing: balance.missing || [] };
+  facts.goal_receipt = eveningReceipt({ facts, balance });
+
+  const writtenVerdict = flags.length
+    ? null
+    : await writeVerdict({ facts, profile, goals, memory, flags, kind: 'evening' });
+  const written = !!writtenVerdict;
+  let verdict;
+
+  if (flags.length) {
+    // A care flag is still the whole message. The goal receipt does not become
+    // a cheerful preamble to the one sentence that must stop coaching.
+    verdict = plainBrief({ facts, flags, balance });
+  } else if (facts.goal_receipt && writtenVerdict) {
+    verdict = `${facts.goal_receipt} ${writtenVerdict}`;
+  }
 
   // WITHOUT A KEY THIS CHANNEL WAS SIMPLY DEAD. writeVerdict returns null with
   // no OPENAI_API_KEY, the send loop skipped on a null verdict, and so the one
@@ -84,18 +122,7 @@ export async function buildBriefFor(userId, now = new Date()) {
   // exactly the reason the founder did not want to pay for a key in the first
   // place. The computed version is not as good as the written one. It is
   // enormously better than nothing, and it is facts rather than opinion.
-  if (!verdict) {
-    const bal = energyBalance({
-      profile, weightKg: day.body.weight_kg,
-      caloriesIn: day.food.calories,
-      activeCalories: day.device.active_calories,
-      foodEstimated: day.food.estimated,
-      workouts: day.training.entries,
-      activities: day.activity.entries,
-      deviceResting: day.device.resting_calories,
-    });
-    verdict = plainBrief({ facts, flags, balance: bal });
-  }
+  if (!verdict) verdict = plainBrief({ facts, flags, balance });
 
   if (verdict && written) {
     await supabase.from('wrought_briefs').upsert(
@@ -311,6 +338,7 @@ async function runMorning(userId, profile, now) {
 
   const date = localDateFor(profile.timezone, now);
   const minutes = localMinutesFor(profile.timezone, now);
+  const yesterdayDate = addDays(date, -1);
 
   // Read the three morning columns on their own. profile came from getProfile,
   // which does not select them — and adding them there would put every caller
@@ -336,8 +364,9 @@ async function runMorning(userId, profile, now) {
   // Everything here comes from the same computed facts the dashboard and the
   // connector read. Nothing in this file does arithmetic — a third mouth
   // relaying numbers computed once, which is the doctrine everywhere else.
-  const [day, recent, goals, dueRoutine] = await Promise.all([
+  const [day, yesterday, recent, goals, dueRoutine] = await Promise.all([
     dayFacts(userId, profile, date),
+    dayFacts(userId, profile, yesterdayDate),
     rangeFacts(userId, profile, addDays(date, -29), date),
     getGoals(userId),
     // The workout most due — the longest-rested active routine, which is the
@@ -350,21 +379,24 @@ async function runMorning(userId, profile, now) {
       .order('last_used_on', { ascending: true, nullsFirst: true })
       .limit(1).maybeSingle().then(r => r.data || null),
   ]);
-  const yesterday = recent.days.find(d => d.date === addDays(date, -1)) || null;
-
   const flags = careFlags(recent, profile);
   const week = weekSoFar(recent.days, { today: date, target: profile.train_days || null });
 
-  // The same call buildBriefFor makes, so the morning and the evening cannot
-  // quote two different burns for the same day.
-  const balance = energyBalance({
-    profile, weightKg: day.body.weight_kg,
-    caloriesIn: day.food.calories,
-    activeCalories: day.device.active_calories,
-    foodEstimated: day.food.estimated,
-    workouts: day.training.entries,
-    activities: day.activity.entries,
-    deviceResting: day.device.resting_calories,
+  // The morning closes YESTERDAY. The former code fed today's barely started
+  // record into this calculation and announced a whole-day projection instead
+  // of answering what was burned. Use the last weight known by yesterday so a
+  // normal non-weigh-in day still computes without borrowing a future reading.
+  const yesterdayWeight = yesterday.body.weight_kg
+    ?? [...recent.days].reverse().find(d => d.date <= yesterdayDate && d.weight_kg != null)?.weight_kg
+    ?? null;
+  const yesterdayBalance = energyBalance({
+    profile, weightKg: yesterdayWeight,
+    caloriesIn: yesterday.food.calories,
+    activeCalories: yesterday.device.active_calories,
+    foodEstimated: yesterday.food.estimated,
+    workouts: yesterday.training.entries,
+    activities: yesterday.activity.entries,
+    deviceResting: yesterday.device.resting_calories,
   });
 
   // targets stays null on purpose: the morning states the GAP and never a
@@ -372,7 +404,7 @@ async function runMorning(userId, profile, now) {
   // decision already taken, which is the invented-2,600 failure with a
   // notification wrapped around it. set_goal is where a number gets committed.
   const out = morningBrief({
-    facts: day, flags, balance, week, yesterday, planned: dueRoutine,
+    facts: day, flags, yesterdayBalance, week, goals, yesterday, planned: dueRoutine,
     goalsToSet: goalsToSet({ goals, targets: null, stepsAvg: null }),
   });
   // Nothing worth saying sends nothing. A morning nag is how a product gets
@@ -495,7 +527,7 @@ export const handler = async () => {
     try { morninged += await runMorning(userId, profile, now); } catch { /* the evening still runs */ }
     try { morninged += await runMidday(userId, profile, now); } catch { /* the evening still runs */ }
 
-    // Only the people for whom it is actually ten o'clock right now.
+    // Only the people for whom it is actually their evening-brief hour now.
     // Their hour, not ours. Somebody who trains at five in the morning wants
     // the read at a different time than somebody who eats at nine at night, and
     // a notification at the wrong hour is how notifications get turned off for

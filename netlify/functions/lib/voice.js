@@ -127,37 +127,105 @@ export function spokenLog({ written = [], parsed = false, text = '' } = {}) {
  * praise, no instruction. A number and its direction is worth a notification.
  * An invented sentence is not.
  */
+const GOAL_LABELS = {
+  calories: 'calories',
+  protein_g: 'protein',
+  steps: 'steps',
+  workout_days: 'training',
+  distance_km: 'distance',
+  active_minutes: 'active minutes',
+  sleep_minutes: 'sleep',
+  weight_kg: 'weight',
+};
+
+const compactNumber = value => {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return null;
+  return (Math.round(n * 10) / 10).toLocaleString('en-US');
+};
+
+// The deterministic close of the day: what actually went on the record, then
+// where those facts put the goals. This leads the evening brief whether or not
+// an OpenAI key exists, so the lock screen can never be an AI's impression of
+// the day while the dashboard is holding exact computed numbers.
+export function eveningReceipt({ facts = {}, balance = null } = {}) {
+  const actions = [];
+  const food = facts.food || {};
+  const training = facts.training || {};
+  const activity = facts.activity || {};
+  const device = facts.device || {};
+
+  if (training.sessions) {
+    actions.push(`${training.sessions} workout${training.sessions === 1 ? '' : 's'}` +
+      (training.minutes ? ` (${Math.round(training.minutes)} min)` : ''));
+  }
+  if (activity.count) {
+    actions.push(`${activity.count} work/activity entr${activity.count === 1 ? 'y' : 'ies'}` +
+      (activity.minutes ? ` (${Math.round(activity.minutes)} min on task)` : ''));
+  }
+  if (device.steps != null) actions.push(`${Math.round(device.steps).toLocaleString('en-US')} steps`);
+  if (food.meals) {
+    actions.push(food.meals_uncounted === food.meals
+      ? `${food.meals} food entr${food.meals === 1 ? 'y' : 'ies'} with macros still unknown`
+      : `roughly ${Math.round(food.calories).toLocaleString('en-US')} kcal in and ${Math.round(food.protein_g).toLocaleString('en-US')}g protein`);
+  }
+  if (balance?.known && (facts.logged || actions.length)) {
+    actions.push(`about ${Math.round(balance.calories_out).toLocaleString('en-US')} kcal burned`);
+  }
+
+  // workout_days is read from weekSoFar below. Weekly scores in scoreGoals use
+  // a range summary, so they are not evidence of what THIS day contributed.
+  // Daily goals only appear when the matching fact was actually recorded: a
+  // stray note must never turn an unlogged intake into "0 / target".
+  const hasTodayEvidence = g => {
+    switch (g.metric) {
+      // COUNTED meals, not merely logged ones. A day of macros-unknown entries
+      // sums to 0 kcal/0g in dayFacts, so `food.meals > 0` would score it as
+      // "0 / target" — the confidently-wrong zero this file's own comment
+      // forbids, and worse on an at_most ceiling, where 0 reads as "under it".
+      // The actions line above already draws this exact distinction with
+      // `meals_uncounted === meals`; the goals line has to draw it too.
+      case 'calories':
+      case 'protein_g': return (food.meals || 0) > (food.meals_uncounted || 0);
+      case 'steps': return device.steps != null;
+      case 'distance_km': return device.distance_km != null;
+      case 'active_minutes': return device.active_minutes != null;
+      case 'sleep_minutes': return device.sleep_minutes != null;
+      case 'weight_kg': return facts.body?.weight_kg != null;
+      default: return false;
+    }
+  };
+  const goals = (facts.goals || []).filter(g =>
+    g.scored && g.metric !== 'workout_days' && g.cadence !== 'weekly' && hasTodayEvidence(g));
+  const goalLines = goals.map(g => {
+    const actual = compactNumber(g.actual);
+    const target = compactNumber(g.target);
+    if (actual == null || target == null) return null;
+    const unit = g.unit ? ` ${g.unit}` : '';
+    return `${GOAL_LABELS[g.metric] || g.goal || g.metric}: ${actual}/${target}${unit}`;
+  }).filter(Boolean);
+
+  const lines = [];
+  if (actions.length) lines.push(`Today: ${actions.join('; ')}.`);
+  if (goalLines.length) lines.push(`Against your goals: ${goalLines.join('; ')}.`);
+  if (facts.training_week?.say) {
+    lines.push(`Training week: ${facts.training_week.say}`);
+  }
+  return lines.join(' ') || null;
+}
+
 export function plainBrief({ facts = {}, flags = [], balance = null } = {}) {
   // Care flags outrank everything, and in a notification that has to mean the
   // message IS the flag — there is no room to bury it under a total.
   if (flags.length) return spokenFlag(flags[0]);
 
-  const lines = [];
-  const food = facts.food || {};
-  const training = facts.training || {};
-  const device = facts.device || {};
-
-  if (balance?.known) {
-    const net = Math.round(Number(balance.net) || 0);
-    lines.push(`Roughly ${Math.round(balance.calories_in)} in against about ${Math.round(balance.calories_out)} out — ` +
-      (net < -150 ? `${Math.abs(net)} down on the day.` : net > 150 ? `${net} over.` : 'about level.'));
-  } else if (food.meals) {
-    lines.push(food.meals_uncounted === food.meals
-      ? `${food.meals} thing${food.meals === 1 ? '' : 's'} logged with no macros on them yet.`
-      : `Roughly ${Math.round(food.calories)} kcal and ${Math.round(food.protein_g)}g of protein.`);
-  }
-
-  if (training.sessions) lines.push(training.say);
-  if (device.steps) lines.push(`${Math.round(device.steps).toLocaleString('en-US')} steps.`);
-
-  const week = facts.training_week;
-  if (week?.say && week.target) lines.push(week.say);
+  const receipt = eveningReceipt({ facts, balance });
 
   // Nothing logged is not worth waking somebody up for. A nightly nag is how a
   // product gets muted for good, and muted is permanent.
-  if (!lines.length) return null;
+  if (!receipt) return null;
 
-  return lines.join(' ') + ' Estimates, as always — ask WROUGHT for the read.';
+  return `${receipt} Estimates are labelled — ask WROUGHT for the full read.`;
 }
 
 /**

@@ -2398,6 +2398,60 @@ it away: **never say "everything you have logged with me"** — the conversation
 is not the record, the two are routinely different, and that difference is the
 thing the person actually needs told.
 
+### The morning brief closes yesterday, restates the deal, then asks
+
+`lib/morning.js` + the morning pass in `brief-nightly.js`. The founder's shape
+is exact: *"this is what you burned yesterday; this is where you are in the
+game; you trained this many times this week; what do you wanna train today?"*
+
+The old morning got two of those ideas near the screen and missed the point.
+It fed **today's barely started record** to `energyBalance()` and announced a
+whole-day projection, while yesterday's intake was only a fallback after every
+other line. It also presented the longest-rested routine as a static plan. That
+is a status notification, not a morning conversation.
+
+The sequence is now load-bearing:
+
+- **Yesterday's completed burn first**, computed from yesterday's food,
+  workouts, work, device active energy and device resting energy. It is still
+  said as *about* — calories out remains an estimate even when a watch supplied
+  part of it — and an unrecorded day never receives a made-up historical total.
+- **The current goals and expectations next**, read from the active goal rows,
+  never inferred on the lock screen. This is the deal the person is following
+  today, not a score for a day that has barely started. No target means no
+  invented number; it says what still needs setting instead.
+- **The training week always states its position**, including when the target
+  is met. Hiding the count after success makes the figure behave like a nag
+  that only appears while somebody is behind.
+- **The last line is the tap back into the conversation.** A due saved routine
+  is offered as *up next*, never assigned. Otherwise rest is named as a
+  first-class answer. The whole push is the hyperlink. It opens the saved
+  destination — ChatGPT, Claude or the app — and the assistant asks whether to
+  keep or change the goals before asking what they want to train. It explicitly
+  waits before changing a target or choosing/building the session. The human
+  tap remains the legal bridge across MCP's request/response boundary.
+
+A care flag is still the entire notification and stops this sequence before
+the first line. Safety did not become a preamble just because the brief became
+interactive.
+
+### The evening brief is today's receipt against the goals
+
+The default close is **20:00 in the person's timezone**; an hour they explicitly
+set still wins. The first part is deterministic and comes from the same server
+facts as the dashboard: workouts and minutes, physical work and time on task,
+steps, food and protein, computed burn, each evidenced daily goal as
+actual/target, and the live training-week count. It says exactly what went on
+the record that day and what those facts did against the expectations stated in
+the morning.
+
+That receipt leads whether an OpenAI key exists or not. When a key exists, the
+written verdict may add at most two short sentences of interpretation; it may
+not recompute, replace or repeat the receipt, and it does not plan tomorrow —
+the next morning owns that conversation. A weekly goal is not presented as a
+daily score, and an unlogged metric is never rendered as zero. A care flag is
+still the entire evening message.
+
 ### Notifications you set by talking — the AI writes the rule, the cron sends it
 
 `018_wrought_alerts.sql` + `lib/alerts.js` + `set_alert` / `my_alerts` /
