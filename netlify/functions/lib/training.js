@@ -232,7 +232,14 @@ export const ACTIVITY = {
 // most likely to be logging by hand was the person whose training counted for
 // zero. Net of resting, same as work: the hour is already being billed by the
 // daily resting burn.
-const TRAINING_MET = { strength: 5.0, cardio: 7.0, mobility: 2.8 };
+// A SPORT IS NOT A STRENGTH SESSION. Squash, five-a-side, tennis, a pickup
+// game — the parser files these as kind 'sport', and until this line they fell
+// through to the strength MET (5.0), which under-prices a hard sport by a
+// third or more. Understating a burn is the dangerous direction: it tells
+// somebody they have less room than they do. 7.0 is the conservative middle of
+// the racket/field-sport band (squash alone runs 7-12), and a watch still
+// overrides it whenever one measured the session.
+const TRAINING_MET = { strength: 5.0, cardio: 7.0, mobility: 2.8, sport: 7.0 };
 
 // A DISTANCE PRICES A WALK. The founder, told his fair walking counted zero
 // without a time on it: "why do I have to put a time to it? Give me a generic
