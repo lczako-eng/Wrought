@@ -1179,6 +1179,21 @@ function dayTotal(day) {
       ? 'These look like the same thing logged more than once. ASK whether it was one meal counted twice or genuinely eaten twice. If it was counted twice, call undo_last with a match naming it — a duplicated meal is a duplicated ENTRY, not an inflated sum. NEVER subtract it in prose and NEVER quote a corrected total while the extra row is still on the record: that leaves the number right in the conversation and wrong in the log, which is the worst of both.'
       : undefined,
     check: 'These items ARE the day. If they mention food that is not in this list, it was never logged — call log for it NOW, then read this again. Never add it up in prose, never quote a range, and never fill a gap you noticed with arithmetic instead of a write. And never say "everything you have logged WITH ME": your conversation is not the record and the two are routinely different — this list is the record, and the difference between them is exactly what the person needs told.',
+    // THIS IS THE EATING HALF ONLY. When the day also holds training, work or a
+    // watch reading, "where am I at including activity" cannot be answered from
+    // here — the burn and the steps live in energy_balance. Surfaced on the
+    // tool result (the one surface the model cannot skip) because the failure
+    // it names happened in production: a 40-minute squash and 8,587 steps were
+    // on the record, and the reply came back "~1,030 calories" with no burn
+    // and no steps, because only the food total was fetched.
+    also_today: (day.training?.sessions || day.activity?.count || day.device?.steps)
+      ? {
+          note: 'This total is FOOD ONLY. The day also has activity on the record — call energy_balance for the full picture (calories in, resting burn, the workout priced in, active calories and steps from the watch, and the net). NEVER answer "where am I at including activity", "my net", "my steps" or "am I up or down" from this food total, and NEVER say a workout has no burn: the server always computes one.',
+          workouts: day.training?.sessions || 0,
+          activities: day.activity?.count || 0,
+          steps: day.device?.steps ?? null,
+        }
+      : undefined,
   };
 }
 
