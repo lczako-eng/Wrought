@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>WROUGHT — open your morning</title>
+<link rel="icon" href="/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/icon-180.png">
+<style>
+  :root{--bg:#14110F;--panel:#1B1614;--panel2:#241D1A;--line:#2E2622;
+    --text:#F4EFE9;--muted:#9A8D84;--dim:#675D57;--ember:#F26419;--ash:#B8320C}
+  *{box-sizing:border-box}
+  html,body{margin:0}
+  body{background:var(--bg);color:var(--text);min-height:100vh;
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    -webkit-font-smoothing:antialiased;display:flex;flex-direction:column;
+    padding:26px 20px calc(26px + env(safe-area-inset-bottom));gap:18px;max-width:520px;margin:0 auto}
+  .mark{font-family:Rockwell,"Roboto Slab","Bookman Old Style","Iowan Old Style",Georgia,serif;
+    font-weight:700;letter-spacing:.05em;font-size:17px;text-transform:uppercase;color:var(--text)}
+  h1{font-size:19px;line-height:1.35;margin:2px 0 0;font-weight:650}
+  .lead{color:var(--muted);font-size:14px;line-height:1.5;margin:0}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:14px;
+    padding:16px;font-size:15px;line-height:1.55;color:var(--text);white-space:pre-wrap;word-break:break-word}
+  .go{display:block;text-align:center;background:var(--ember);color:#14110F;
+    text-decoration:none;font-weight:750;font-size:17px;padding:16px;border-radius:13px;
+    letter-spacing:.01em}
+  .go:active{background:var(--ash)}
+  .copy{display:block;width:100%;text-align:center;background:var(--panel2);
+    color:var(--text);border:1px solid var(--line);font-weight:600;font-size:15px;
+    padding:13px;border-radius:12px;cursor:pointer}
+  .copy.done{border-color:#3d6b46;background:#16211a}
+  .note{color:var(--dim);font-size:12.5px;line-height:1.5;margin:0}
+  .foot{margin-top:auto}
+  a.dash{color:var(--muted);font-size:13px;text-decoration:none}
+</style>
+</head>
+<body>
+  <div class="mark">WROUGHT</div>
+  <h1 id="head">Your morning check-in</h1>
+  <p class="lead" id="lead">Tap below to pick it up with your assistant.</p>
+
+  <div class="card" id="opener">Loading…</div>
+
+  <a class="go" id="go" href="#" rel="noopener">Open</a>
+  <button class="copy" id="copy" type="button">Copy the opener</button>
+  <p class="note" id="hint"></p>
+
+  <div class="foot">
+    <a class="dash" href="/app.html">Open the Wrought dashboard instead →</a>
+  </div>
+
+<script>
+  (function () {
+    var p = new URLSearchParams(location.search);
+    var to = (p.get('to') || 'chatgpt').toLowerCase();
+    var prompt = p.get('q') || '';
+
+    var names = { chatgpt: 'ChatGPT', claude: 'Claude' };
+    var name = names[to] || 'ChatGPT';
+
+    // Build the assistant URL. chatgpt.com / claude.ai are the destinations the
+    // person actually chose. On iOS a real tap on this link is the ONLY context
+    // that can hand off to the installed app — a scripted navigation cannot, and
+    // a service worker's openWindow lands in a logged-out browser tab. So we do
+    // not auto-redirect: we hand the person a button to press.
+    function assistantUrl() {
+      var q = encodeURIComponent(prompt);
+      if (to === 'claude') return 'https://claude.ai/new?q=' + q;
+      return 'https://chatgpt.com/?q=' + q;
+    }
+
+    var go = document.getElementById('go');
+    go.textContent = 'Open ' + name;
+    go.href = assistantUrl();
+
+    document.getElementById('opener').textContent = prompt || 'Open your assistant and ask for your morning brief.';
+    document.getElementById('lead').textContent =
+      'Tap below to pick your day up with ' + name + '.';
+    // Honest about the one thing the platform will not do: the app cannot be
+    // handed a prefilled message, so the opener is here to read or paste.
+    document.getElementById('hint').textContent =
+      'If ' + name + ' opens without the message already typed, tap Copy and paste it in.';
+
+    var copy = document.getElementById('copy');
+    copy.addEventListener('click', function () {
+      function ok() { copy.textContent = 'Copied — paste it into ' + name; copy.classList.add('done'); }
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(prompt).then(ok, select);
+      } else { select(); }
+      function select() {
+        // No clipboard permission: put it on screen to select by hand rather
+        // than failing silently.
+        var el = document.getElementById('opener');
+        var r = document.createRange(); r.selectNodeContents(el);
+        var s = window.getSelection(); s.removeAllRanges(); s.addRange(r);
+        copy.textContent = 'Selected — hold to copy';
+      }
+    });
+  })();
+</script>
+</body>
+</html>

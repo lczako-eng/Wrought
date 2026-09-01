@@ -265,12 +265,27 @@ function careOpener(flag = {}) {
     'otherwise explain the safety hold plainly and stop there.';
 }
 
-export function morningLink(opens, which = 'morning') {
-  const q = encodeURIComponent(OPENERS[which] || OPENERS.morning);
-  if (opens === 'chatgpt') return `https://chatgpt.com/?q=${q}`;
-  if (opens === 'claude') return `https://claude.ai/new?q=${q}`;
+/**
+ * The notification cannot open the assistant's APP with the day's opener
+ * already typed — the ChatGPT app takes no prefilled prompt (an open OpenAI
+ * request), and a service worker's openWindow lands a raw chatgpt.com URL in a
+ * logged-out browser tab, which is the dead end the founder hit. So the tap
+ * goes to OUR launcher instead: same-origin, so it opens inside the installed
+ * Wrought app with no login wall, and there it hands the person a real
+ * button — the one gesture iOS will actually hand off to the assistant's app —
+ * plus the opener to read or paste. The launcher builds the chatgpt.com /
+ * claude.ai URL itself.
+ */
+function bridge(opens, prompt) {
+  if (opens === 'chatgpt' || opens === 'claude') {
+    return `/go.html?to=${opens}&q=${encodeURIComponent(prompt)}`;
+  }
   // The dashboard is the one destination every account verifiably has.
   return '/app.html';
+}
+
+export function morningLink(opens, which = 'morning') {
+  return bridge(opens, OPENERS[which] || OPENERS.morning);
 }
 
 /**
@@ -280,9 +295,7 @@ export function morningLink(opens, which = 'morning') {
  * record whether the diary was incomplete, without fabricating what was eaten.
  */
 export function careReviewLink(opens, flag) {
-  const q = encodeURIComponent(careOpener(flag));
-  if (opens === 'chatgpt') return `https://chatgpt.com/?q=${q}`;
-  if (opens === 'claude') return `https://claude.ai/new?q=${q}`;
+  if (opens === 'chatgpt' || opens === 'claude') return bridge(opens, careOpener(flag));
   return '/app.html#care-review';
 }
 

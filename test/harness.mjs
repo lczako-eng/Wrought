@@ -10862,9 +10862,13 @@ await test('tapping the morning brief opens the assistant with the day already a
   // into the assistant. Nothing reaches the AI until they choose to tap.
   const { careReviewLink, morningLink } = await import('../netlify/functions/lib/morning.js');
 
+  // The tap no longer opens chatgpt.com directly — a raw third-party URL from a
+  // service worker lands in a logged-out browser tab (the dead end the founder
+  // hit). It opens OUR same-origin launcher, which carries the destination and
+  // the opener and hands off from a real button press.
   const gpt = morningLink('chatgpt');
-  assert.match(gpt, /^https:\/\/chatgpt\.com\/\?q=/);
-  const opener = decodeURIComponent(gpt.split('?q=')[1]);
+  assert.match(gpt, /^\/go\.html\?to=chatgpt&q=/, 'the morning tap bypasses the launcher');
+  const opener = decodeURIComponent(new URLSearchParams(gpt.split('?')[1]).get('q'));
   // The opener has to work for a model that reads nothing else: "gym bro" and
   // "morning" are phrasebook triggers for `brief`, and Wrought is named
   // outright so a chat without the connector fails as "turn it on", not
@@ -10882,7 +10886,7 @@ await test('tapping the morning brief opens the assistant with the day already a
   // arriving as though the person asked for it.
   assert.ok(!/\d/.test(opener), 'the opener carries a number');
 
-  assert.match(morningLink('claude'), /^https:\/\/claude\.ai\/new\?q=/);
+  assert.match(morningLink('claude'), /^\/go\.html\?to=claude&q=/);
   // The dashboard is the one destination every account verifiably has.
   assert.equal(morningLink('app'), '/app.html');
   assert.equal(morningLink(undefined), '/app.html');
@@ -10893,8 +10897,8 @@ await test('tapping the morning brief opens the assistant with the day already a
   const care = careReviewLink('chatgpt', {
     flag: 'very_low_intake', evidence_dates: ['2026-08-09', '2026-08-13'],
   });
-  assert.match(care, /^https:\/\/chatgpt\.com\/\?q=/);
-  const carePrompt = decodeURIComponent(care.split('?q=')[1]);
+  assert.match(care, /^\/go\.html\?to=chatgpt&q=/);
+  const carePrompt = decodeURIComponent(new URLSearchParams(care.split('?')[1]).get('q'));
   assert.match(carePrompt, /2026-08-09, 2026-08-13/);
   assert.match(carePrompt, /review_intake_days/);
   assert.match(carePrompt, /do not invent meals or calories/i);
@@ -10915,6 +10919,20 @@ await test('tapping the morning brief opens the assistant with the day already a
   assert.match(sw, /clients\.openWindow\(target\)/, 'the click handler cannot open the payload url');
   assert.ok(!/startsWith\('\/'\)|same-origin/.test(sw.slice(sw.indexOf('notificationclick'))),
     'the click handler filters to same-origin and the assistant link dies silently');
+
+  // The launcher the tap now lands on. It is the bridge across the iOS gap: the
+  // notification opens it (same-origin, so no logged-out browser tab), and it
+  // hands off to the assistant from a real button press.
+  const go = readFileSync(new URL('../public/go.html', import.meta.url), 'utf8');
+  assert.match(go, /https:\/\/chatgpt\.com\/\?q=/, 'the launcher cannot open ChatGPT');
+  assert.match(go, /https:\/\/claude\.ai\/new\?q=/, 'the launcher cannot open Claude');
+  assert.match(go, /URLSearchParams/, 'the launcher does not read the destination and opener from its own URL');
+  // It must work with no account — it opens for a person who is not signed in
+  // to the browser, so it can never gate on a session or fetch one.
+  assert.ok(!/\/api\//.test(go) && !/supabase/i.test(go),
+    'the launcher makes a request and stops being a no-login bridge');
+  // The opener is offered to paste, because the app cannot be handed a prompt.
+  assert.match(go, /clipboard/, 'the launcher drops the copy-the-opener fallback');
 });
 
 await test('the morning says what is planned, and only when it should', async () => {
