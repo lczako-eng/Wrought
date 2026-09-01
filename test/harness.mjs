@@ -4845,6 +4845,14 @@ await test('a missing meal is a missing ENTRY, never a missing sum', () => {
   const log = TOOLS.find(t => t.name === 'log').description;
   assert.match(log, /the moment food is MENTIONED/);
   assert.match(log, /the next thing you do is call this, never arithmetic/);
+  // THE ESTIMATE-WITHOUT-LOGGING LOOPHOLE, closed. "Small goulash ~250, two
+  // sourdough ~260, running total ~510" written in prose with nothing logged,
+  // then "only when you asked". If a figure or a running total is stated, log
+  // must have been called that same turn.
+  assert.match(log, /IF YOU ESTIMATE A MEAL'S CALORIES IN YOUR REPLY.*MUST HAVE CALLED THIS IN THE SAME TURN/s);
+  assert.match(log, /only when you asked/);
+  assert.match(SERVER_INSTRUCTIONS, /THE ESTIMATE YOU WROTE IN YOUR REPLY MUST BE IN THE RECORD/);
+  assert.match(SERVER_INSTRUCTIONS, /"Did you log it\?" should always already be yes/);
   const day = TOOLS.find(t => t.name === 'get_day').description;
   assert.match(day, /ONE computed figure, never a range/);
   assert.match(day, /rather than adding it up in prose/);
