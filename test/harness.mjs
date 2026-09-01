@@ -3286,6 +3286,24 @@ await test('the icon is served cross-origin or a listing renders nothing', () =>
   assert.match(iconBlock, /Access-Control-Allow-Origin = "\*"/);
 });
 
+await test('steps are read from the watch, never asked for', () => {
+  // ChatGPT answered "plus my steps" with "what's your step count today?" —
+  // while the watch had already put 8,587 on the record. "You should know
+  // that you're connected." Asking a connected person for data the connector
+  // holds is the failure; the sheet and the tool both forbid it now.
+  assert.match(SERVER_INSTRUCTIONS, /STEPS AND EVERY WATCH READING ARE READ, NEVER ASKED FOR/);
+  assert.match(SERVER_INSTRUCTIONS, /NEVER ask them for their step count/);
+  assert.match(SERVER_INSTRUCTIONS, /you should know that you're connected/i);
+  // The one legitimate "no steps": the tool returned none because the watch
+  // has not synced — say so, still never ask them to count.
+  assert.match(SERVER_INSTRUCTIONS, /watch has not synced today/i);
+  // Braces on the tool: the energy_balance description carries the same ban.
+  const mcp = readFileSync(new URL('../netlify/functions/mcp.js', import.meta.url), 'utf8');
+  const eb = mcp.slice(mcp.indexOf("name: 'energy_balance'"), mcp.indexOf("name: 'energy_balance'") + 1400);
+  assert.match(eb, /NEVER ask the user for their step count/);
+  assert.match(eb, /plus my steps/i);
+});
+
 group('Addressed by name means the question is for WROUGHT');
 
 await test('the nicknames are all mapped, not just some of them', () => {
