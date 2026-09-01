@@ -13,7 +13,7 @@
 // yesterday's numbers with confidence, so anything carrying data is network
 // first and only falls back to cache when the network genuinely fails.
 
-const SHELL = 'wrought-shell-v3';
+const SHELL = 'wrought-shell-v4';
 
 // Only the frame: markup, icons, manifest. No API responses ever.
 const SHELL_FILES = [
@@ -21,6 +21,10 @@ const SHELL_FILES = [
   '/index.html',
   '/app.html',
   '/connect.html',
+  // The morning notification opens this launcher — it carries no data, so it is
+  // pure shell, and a tap that fails to load on bad wifi is the whole feature
+  // gone. Precached so it opens even offline.
+  '/go.html',
   '/icon.svg',
   '/icon-192.png',
   '/icon-512.png',
