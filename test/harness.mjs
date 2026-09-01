@@ -6080,6 +6080,25 @@ await test('the math is written out, and a burn gap is never the model\'s to fil
   assert.match(r.note, /range of your own/);
 });
 
+await test('a sport is priced as a sport, not fumbled to strength', () => {
+  // "40 minutes of squash" logged as kind 'sport' fell through to the strength
+  // MET (5.0) and, worse, ChatGPT then said Wrought gave no burn at all. The
+  // server always has a number from minutes + bodyweight, and a sport is not a
+  // bench press — under-pricing it is the dangerous direction.
+  const sport = trainingBurn([{ summary: 'played 40 minutes of squash', detail: { kind: 'sport', minutes: 40 } }], 150);
+  const e = sport.entries[0];
+  assert.equal(e.source, 'estimate');
+  // (7.0 − 1) × 150kg × (40/60) × 1.05 ≈ 630 — never zero, and above the
+  // strength reading it used to fall back to.
+  assert.equal(e.kcal, Math.round((7.0 - 1) * 150 * (40 / 60) * 1.05));
+  const asStrength = trainingBurn([{ summary: 'lift', detail: { kind: 'strength', minutes: 40 } }], 150);
+  assert.ok(e.kcal > asStrength.entries[0].kcal, 'a sport is priced no higher than strength');
+  // And the phrasebook now routes "including activity" to the tool that has
+  // the burn and the steps, instead of a food-only answer.
+  assert.match(SERVER_INSTRUCTIONS, /INCLUDING ACTIVITY.*energy_balance|energy_balance.*INCLUDING ACTIVITY/is);
+  assert.match(SERVER_INSTRUCTIONS, /there is always a number/);
+});
+
 await test('a distance prices a walk — generic in, generic out, never zero', () => {
   // "Why do I have to put a time to it? It's just a generic thing — give me a
   // generic when I say something generic." Right for movement in a way it
