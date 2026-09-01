@@ -4850,6 +4850,18 @@ await test('every item carries its own calories, and the total sits underneath',
     assert.match(total, new RegExp(`${f}: e\\.${f}`), `items drop ${f}`);
   }
 
+  // THE FOOD TOTAL POINTS AT THE FULL PICTURE when the day has activity. A
+  // 40-min squash and 8,587 steps were on the record and the reply came back
+  // "~1,030 calories" with no burn and no steps, because only the food total
+  // was fetched. The tool result — the surface the model cannot skip — now
+  // steers "including activity" to energy_balance, and only when there is
+  // activity to point at.
+  assert.match(total, /also_today:/, 'the food total never points at the activity half');
+  assert.match(total, /day\.training\?\.sessions \|\| day\.activity\?\.count \|\| day\.device\?\.steps/,
+    'the pointer is not gated on the day actually having activity');
+  assert.match(total, /NEVER answer "where am I at including activity"/);
+  assert.match(total, /the server always computes one/);
+
   // The thing just logged comes back with its own figures — and they are read
   // off the STORED row, not echoed from the arguments. A model reciting its own
   // input back proves nothing landed, which is the failure this whole area of
