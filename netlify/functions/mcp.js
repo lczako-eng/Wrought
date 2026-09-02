@@ -55,6 +55,7 @@ import {
 import { PROGRAMMES, GOALS, MOVEMENTS, movementsFor, pickProgramme, buildProgramme, buildBlock, blockPosition, BLOCK_LENGTHS } from './lib/library.js';
 import { FOCUSES, FOCUS_NAMES, focusFrom, designSession, designQuestions, designNote, STYLES, styleFrom } from './lib/design.js';
 import { styleRoutine } from './lib/style_routines.js';
+import { pickDue } from './lib/morning.js';
 import { resolvePlace, placeEquipment, listPlaces, bumpPlace, applyPlaces, sessionsCanCarryPlace, PLACE_KINDS } from './lib/places.js';
 import { dayReceipt } from './lib/receipt.js';
 
@@ -3813,9 +3814,14 @@ async function endSession(args, user) {
       };
     }
   } else {
-    const { data: routines } = await supabase.from('wrought_routines')
-      .select('name, last_used_on').eq('user_id', user.id).eq('active', true)
-      .order('last_used_on', { ascending: true, nullsFirst: true }).limit(1);
+    // Same picker as the morning brief, so the close of one session and the
+    // next morning cannot name two different workouts. Prefers what has been
+    // run — a shelf of never-run written sessions must not jump the queue.
+    const { data: allRoutines } = await supabase.from('wrought_routines')
+      .select('name, est_minutes, times_used, last_used_on, created_at')
+      .eq('user_id', user.id).eq('active', true);
+    const due = pickDue(allRoutines || []);
+    const routines = due ? [{ name: due.name, last_used_on: null }] : [];
     if (routines?.length) {
       nextWorkout = { source: 'rotation', name: routines[0].name,
         say: `${routines[0].name} is the longest-rested routine — likely next.` };
