@@ -29,7 +29,7 @@ import {
 } from './lib/wrought.js';
 import { sendPush, vapidConfigured } from './lib/push.js';
 import { eveningNotification, eveningReceipt, plainBrief } from './lib/voice.js';
-import { energyBalance, weekSoFar, goalsToSet } from './lib/training.js';
+import { energyBalance, weekSoFar, weekTargets, goalsToSet } from './lib/training.js';
 import { dueAlerts } from './lib/alerts.js';
 import { morningBrief, morningNotification, middayBrief, morningDue, morningLink } from './lib/morning.js';
 
@@ -75,7 +75,7 @@ export async function buildBriefFor(userId, now = new Date()) {
     },
     streak: { current: summary.current_streak, longest: summary.longest_streak },
     goals: scoreGoals(goals, day, summary, profile),
-    training_week: weekSoFar(range.days, { today: date, target: profile.train_days || null }),
+    training_week: weekSoFar(range.days, { today: date, ...weekTargets(profile) }),
   };
 
   // The eight-o'clock brief is a receipt of what TODAY contributed to the
@@ -337,7 +337,7 @@ async function runMorning(userId, profile, now) {
       .limit(1).maybeSingle().then(r => r.data || null),
   ]);
   const flags = careFlags(recent, profile, { openDate: date });
-  const week = weekSoFar(recent.days, { today: date, target: profile.train_days || null });
+  const week = weekSoFar(recent.days, { today: date, ...weekTargets(profile) });
 
   // The morning closes YESTERDAY. The former code fed today's barely started
   // record into this calculation and announced a whole-day projection instead
@@ -415,7 +415,7 @@ async function runAlerts(userId, profile, now) {
   // the same window the dashboard gives it, never off today alone.
   const flags = careFlags(recent, profile, { openDate: date });
 
-  const week = weekSoFar(recent.days, { today: date, target: profile.train_days || null });
+  const week = weekSoFar(recent.days, { today: date, ...weekTargets(profile) });
 
   const lastWeigh = recent.days.filter(d => d.weight_kg != null).slice(-1)[0] || null;
   const lastWeighDays = lastWeigh

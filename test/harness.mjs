@@ -1,3 +1,4 @@
+import { readdirSync as readdirSyncTop } from 'node:fs';
 // test/harness.mjs
 // Local protocol + arithmetic harness. `npm test`.
 //
@@ -29,7 +30,10 @@ import { activityBurn, activityTotal, matchActivity, ACTIVITIES, EFFORTS } from 
 import { eventTimestamp } from '../netlify/functions/lib/wrought.js';
 import { warmupFor, sessionProgress } from '../netlify/functions/lib/warmup.js';
 import { formWatch, cardioProgress } from '../netlify/functions/lib/form.js';
-import { INTAKE, intakeState } from '../netlify/functions/lib/intake.js';
+import { INTAKE, intakeState, askLine } from '../netlify/functions/lib/intake.js';
+// Under a second name, because one test destructures INTAKE from the module
+// again inside its own block and that shadows this one for the whole block.
+const INTAKE_ALL = INTAKE;
 import { weeklyVolume, SET_BAND } from '../netlify/functions/lib/volume.js';
 import { dueAlerts, describeAlert, suggestAlerts, ALERT_KINDS, QUIET_BEFORE, QUIET_AFTER, CARRY_HOURS } from '../netlify/functions/lib/alerts.js';
 import { parseQuickAdd } from '../netlify/functions/lib/quickadd.js';
@@ -4939,11 +4943,15 @@ await test('a gate that only refuses is a dead end', () => {
   });
   const g = intakeGate(st);
 
-  // Four, ready to ask — not the whole list, which is a form, and not none,
-  // which is what leaves the asking to a model that then writes one polite
-  // sentence and stops.
-  assert.equal(g.ask_now.length, 4);
-  assert.ok(g.remaining.length > 4, 'this account is not actually short of answers');
+  // ONE, ready to ask, with something to tap — not the whole list, which is a
+  // form, and not none, which is what leaves the asking to a model that then
+  // writes one polite sentence and stops. The founder's spec after the
+  // four-per-message version produced a screenshot of all fifteen dumped at
+  // once: "here is a question; after you answer it, then it saves it."
+  assert.equal(g.ask_now.length, 1);
+  assert.ok(g.question, 'the gate carries no question object');
+  assert.equal(g.answer_with, 'answer_setup');
+  assert.ok(g.remaining.length > 1, 'this account is not actually short of answers');
 
   // THEY ARE IN THE SECOND PERSON. The `asks` forms are written for a MODEL to
   // read — "what they are actually after" — and reading one of those to a
@@ -4951,18 +4959,58 @@ await test('a gate that only refuses is a dead end', () => {
   for (const q of g.ask_now) {
     assert.ok(!/\bthey\b|\bthem\b|\btheir\b/i.test(q), `"${q}" is written about them, not to them`);
   }
-  // And they are in `say` too, so even a relay that reads nothing else moves
-  // the setup forward by four instead of announcing itself.
-  for (const q of g.ask_now) assert.ok(g.say.includes(q), `"${q}" is not in the spoken line`);
+  // And it is in `say` too, with its options, so even a relay that reads
+  // nothing else asks the question instead of announcing itself.
+  assert.ok(g.say.includes(g.question.line), 'the question line is not in the spoken line');
   assert.match(g.say, /then the workout/, 'nothing says why they are being asked');
-  assert.match(g.note, /ASK THE QUESTIONS IN ask_now, IN THIS MESSAGE/);
+  assert.match(g.note, /ASK EXACTLY THE ONE QUESTION IN question\.line, IN THIS MESSAGE/);
+  // Never the list — a model that never holds the list cannot dump it.
+  assert.match(g.note, /NEVER list the remaining questions/);
+  // The screen door is named on the refusal.
+  assert.match(g.say, /wrought\.fit\/app\.html#setup/);
 
-  // Every one of the 25 has both forms, or a question turns up unsaid.
+  // A choice question comes with numbered options a person can answer "2" to.
+  const choice = INTAKE_ALL.find(i => i.gate && i.kind === 'choice');
+  const line = askLine(choice);
+  assert.match(line, /1 · .+ {2}2 · /, `"${line}" is not a numbered menu`);
+
+  // Every one has both forms, or a question turns up unsaid.
   const { INTAKE } = intakeModule;
   for (const i of INTAKE) {
     assert.ok(i.ask, `"${i.key}" has no spoken form`);
     assert.ok(!/\bthey\b|\btheir\b/i.test(i.ask), `"${i.key}" is asked in the third person`);
   }
+  // THE GATE IS ONLY WHAT BUILDING A WORKOUT NEEDS. The founder, after the
+  // gate blocked a mat workout over alcohol and takeaway questions: "a lot of
+  // that stuff is kind of irrelevant, so I don't see why it's stopping you
+  // from getting a workout." Food habits, sleep, medication and sports are
+  // worth knowing and never in the way.
+  for (const k of ['alcohol', 'cooking', 'weak_spot', 'sleep', 'medication', 'conditions', 'sports', 'lifts', 'dietary', 'bluntness', 'brief_hour', 'timezone', 'goal_weight']) {
+    assert.ok(!INTAKE.find(i => i.key === k)?.gate, `"${k}" stands between somebody and a workout`);
+  }
+  // And what does gate is what a session is actually built from — including
+  // the commitment the notifications read.
+  for (const k of ['height_cm', 'birth_year', 'sex', 'weight', 'activity_level', 'limitations', 'intent', 'plan_pace', 'plan_push', 'strength_per_week', 'cardio_per_week', 'minutes_per_week', 'training_age', 'equipment']) {
+    assert.ok(INTAKE.find(i => i.key === k)?.gate, `"${k}" does not gate a workout`);
+  }
+  // Every gating question can be answered by tapping or typing one thing:
+  // a choice has options, a number has a unit or a hint, a list has quick
+  // picks, and a text question that can be "none" says so.
+  for (const i of INTAKE.filter(x => x.gate)) {
+    if (i.kind === 'choice') assert.ok(i.options?.length >= 2, `"${i.key}" is a choice with nothing to choose`);
+    else if (i.kind === 'number') assert.ok(i.unit || i.hint || i.quick, `"${i.key}" is a number with no unit or hint`);
+    else if (i.kind === 'list') assert.ok(i.quick?.length, `"${i.key}" is a list with no quick picks`);
+    else assert.ok(i.none && i.none_fact, `"${i.key}" is free text at the gate with no "none"`);
+  }
+  // A gate with only in-passing questions open is no gate at all.
+  const onlySoft = intakeState({
+    profile: { height_cm: 190, birth_year: 1982, sex: 'male', activity_level: 'moderate', plan_pace: 'steady', plan_push: 'normal',
+               strength_per_week: 3, cardio_per_week: 2, minutes_per_week: 240, training_age: 'intermediate', equipment: ['full gym'] },
+    goals: [], memory: [{ category: 'health', fact: 'no injuries' }], weightKg: 149.7, intent: 'recomp',
+  });
+  assert.equal(onlySoft.complete, false, 'the in-passing questions are not being tracked at all');
+  assert.equal(onlySoft.gate.complete, true);
+  assert.equal(intakeGate(onlySoft), null, 'alcohol intake is stopping a workout');
 
   // The words he actually used reach the door at all.
   for (const p of ['I want to do a workout', 'I wanna do a workout', "let's do a workout"]) {
@@ -4984,8 +5032,10 @@ await test('an unfinished questionnaire stops every door that BUILDS training', 
   assert.equal(gate.setup_required, true);
   assert.ok(gate.remaining.length > 0);
   assert.match(gate.note, /do NOT build, suggest or start a workout/);
-  // It ASKS rather than only announcing itself.
-  assert.equal(gate.ask_now.length, 4);
+  // It ASKS rather than only announcing itself — one question, saved by the
+  // tool that returns the next.
+  assert.equal(gate.ask_now.length, 1);
+  assert.match(gate.note, /call answer_setup/);
   // Loose answers are allowed and "none" closes a question — both said, or the
   // model interrogates people into precision they never offered.
   assert.match(gate.note, /"lose weight AND build muscle" is recomp/);
@@ -5037,10 +5087,11 @@ await test('an unfinished questionnaire stops every door that BUILDS training', 
 await test('a finished questionnaire opens the gate, and capture is never behind it', () => {
   const done = intakeState({
     profile: { height_cm: 190, birth_year: 1982, sex: 'male', activity_level: 'moderate',
-               plan_pace: 'steady', plan_push: 'normal', train_days: 4, training_age: 'intermediate',
+               plan_pace: 'steady', plan_push: 'normal', train_days: 5, training_age: 'intermediate',
+               strength_per_week: 3, cardio_per_week: 2, minutes_per_week: 240,
                equipment: ['full gym'], dietary: ['none'], bluntness: 'brutal', brief_hour: 21,
                timezone: 'America/Toronto' },
-    goals: [{ metric: 'weight_kg', direction: 'at_most' }],
+    goals: [{ metric: 'weight_kg', direction: 'at_most', target_value: 120 }],
     memory: [
       { category: 'training', fact: 'runs most mornings' },
       { category: 'lifts', fact: 'benches around 235' },
@@ -5133,7 +5184,7 @@ await test('the targets gate — no further until goals are set, and the link is
   // server-side, drawn as one line on the no-calorie-target panel. A gate
   // nobody can see is indistinguishable from a product that never asks.
   const api = readFileSync(new URL('../netlify/functions/api-progress.js', import.meta.url), 'utf8');
-  assert.match(api, /targets_gate: !!\(setup\.complete/, 'the dashboard is not told about the targets gate');
+  assert.match(api, /targets_gate: !!\(setup\.gate\.complete/, 'the dashboard is not told about the targets gate');
   assert.match(api, /&& !everCalGoal/, 'the dashboard gate ignores the dropped-target pass');
   assert.match(api, /&& !flags\.length/, 'the dashboard gate ignores the care-flag suspension');
   const appSrc = readFileSync(new URL('../public/app.html', import.meta.url), 'utf8');
@@ -5212,7 +5263,166 @@ await test('the questionnaire is visible on the dashboard, not only inside a ref
   const src = page('app.html');
   assert.match(src, /function setupPanel\(/);
   assert.match(src, /out\.push\(setupPanel\(d\)\);/);
-  assert.match(src, /Workouts unlock when this is finished/);
+  assert.match(src, /Workouts unlock when these \$\{su\.of\} are answered/);
+  // THE PANEL IS A FORM, NOT A LIST TO COPY FROM. "Can you defer the GPT to
+  // the app to manually fill it in? Multiple choice, yes or no." Options are
+  // buttons, a number is one box, and every answer posts through the same
+  // door the assistant writes through.
+  assert.match(src, /class="say sq-opt/, 'options are not tappable');
+  assert.match(src, /api-setup/, 'the panel does not save to the setup door');
+  assert.match(src, /sq-none/, '"none" is not a button');
+  // Counted on the GATE — fourteen — not the whole list, so the heading and
+  // the refusal agree about how far there is to go.
+  assert.match(api, /answered: setup\.gate\.known, of: setup\.gate\.total/);
+  // Reachable by the link the gate hands out.
+  assert.match(src, /location\.hash === '#setup'/, 'the #setup link lands nowhere');
+  // Never in the demo — a form there collects real answers into a screen
+  // that discards them.
+  assert.match(src, /if \(!su \|\| DEMO\) return '';/);
+});
+
+group('The questionnaire, one answer at a time — and the commitment it ends on');
+
+await test('an answer is read, never guessed: numbers, menus, units and "none"', async () => {
+  const { parseAnswer } = await import('../netlify/functions/lib/setup.js');
+  const q = k => INTAKE_ALL.find(i => i.key === k);
+
+  // Height in whatever they said it in, stored in centimetres.
+  assert.equal(parseAnswer(q('height_cm'), "6'3").value, 190.5);
+  assert.equal(parseAnswer(q('height_cm'), '190').value, 190);
+  assert.equal(parseAnswer(q('height_cm'), '190 cm').value, 190);
+  assert.equal(parseAnswer(q('height_cm'), '75 in').value, 190.5);
+  assert.equal(parseAnswer(q('height_cm'), 'tall').ok, false);
+  // Weight with its unit, refused outside 20–400 kg.
+  assert.equal(parseAnswer(q('weight'), '330 lb').value, 149.69);
+  assert.equal(parseAnswer(q('weight'), '84').value, 84);
+  assert.equal(parseAnswer(q('weight'), '9').ok, false);
+  // A menu answered by number OR by word OR loosely.
+  assert.equal(parseAnswer(q('plan_pace'), '3').value, 'aggressive');
+  assert.equal(parseAnswer(q('plan_pace'), 'aggressive').value, 'aggressive');
+  assert.equal(parseAnswer(q('intent'), 'lose weight and build muscle').value, 'recomp');
+  assert.equal(parseAnswer(q('intent'), '2').value, 'gain');
+  assert.equal(parseAnswer(q('training_age'), 'a couple of years').value, 'advanced');
+  // THE COUNT IS THE COUNT. "3" to "how many strength sessions" is three, not
+  // the third option (which would be two) — the exact value wins before a
+  // menu position. Verified to fail on the position-first order.
+  assert.equal(parseAnswer(q('strength_per_week'), '3').value, 3);
+  assert.equal(parseAnswer(q('strength_per_week'), '0').value, 0);
+  assert.equal(parseAnswer(q('cardio_per_week'), 'two').value, 2);
+  assert.equal(parseAnswer(q('minutes_per_week'), '3 hours').value, 180);
+  assert.equal(parseAnswer(q('minutes_per_week'), '180').value, 180);
+  assert.equal(parseAnswer(q('minutes_per_week'), '4').value, 240);
+  // "None" closes a question with a stated fact, never a blank.
+  const none = parseAnswer(q('limitations'), 'none');
+  assert.equal(none.none, true);
+  assert.ok(q('limitations').none_fact, 'no stated fact for "none"');
+  // A list, split as typed.
+  assert.deepEqual(parseAnswer(q('equipment'), 'dumbbells, bands and a bench').value, ['dumbbells', 'bands', 'a bench']);
+  // An unknown key is refused, not silently filed.
+  assert.equal(parseAnswer(null, 'x').ok, false);
+});
+
+await test('the website door and the tool share one writer', () => {
+  const api = readFileSync(new URL('../netlify/functions/api-setup.js', import.meta.url), 'utf8');
+  const mcp = readFileSync(new URL('../netlify/functions/mcp.js', import.meta.url), 'utf8');
+  assert.match(api, /applyAnswers/);
+  assert.ok(!/\.from\('wrought_profile'\)|\.from\('wrought_memory'\)|\.from\('wrought_goals'\)/.test(api),
+    'api-setup writes on its own instead of through lib/setup.js');
+  const fn = mcp.slice(mcp.indexOf('async function answerSetup('), mcp.indexOf('\nasync function ', mcp.indexOf('async function answerSetup(') + 10));
+  assert.match(fn, /applyAnswers\(user\.id, answers\)/);
+  assert.ok(!/\.from\('wrought_profile'\)/.test(fn), 'answer_setup writes on its own');
+  // Registered, and named on the sheet and the gate.
+  assert.match(mcp, /answer_setup: answerSetup,/);
+  assert.match(mcp, /name: 'answer_setup'/);
+  assert.match(SERVER_INSTRUCTIONS, /call answer_setup with the key and their words/);
+  assert.match(SERVER_INSTRUCTIONS, /THE GATE IS ONLY WHAT BUILDING A WORKOUT NEEDS/);
+  // The result carries the NEXT question — the one surface a model cannot skip.
+  assert.match(fn, /question: q,/);
+  assert.match(fn, /complete: true,/);
+  // The saved list is read back off the record, never echoed from the args.
+  assert.match(fn, /saved: out\.saved/);
+  // Belt on the tool: the rule rides its own description.
+  const desc = mcp.slice(mcp.indexOf("name: 'answer_setup'"), mcp.indexOf("name: 'answer_setup'") + 2500);
+  assert.match(desc, /returns the NEXT question/);
+  assert.match(desc, /never say an answer is saved unless it came back in saved/);
+  assert.match(desc, /food habits, sleep and medication are picked up in passing and never asked at the gate/);
+});
+
+await test('the week is read against the commitment, and a short week is said, never counted down', async () => {
+  const { weekSoFar, commitmentRead } = await import('../netlify/functions/lib/training.js');
+  // Wednesday 2026-09-02. Mon: strength. Tue: run.
+  const days = [
+    { date: '2026-08-31', sessions: 1, strength_sessions: 1, cardio_sessions: 0, minutes: 50 },
+    { date: '2026-09-01', sessions: 1, strength_sessions: 0, cardio_sessions: 1, minutes: 30 },
+    { date: '2026-09-02', sessions: 0, strength_sessions: 0, cardio_sessions: 0, minutes: 0 },
+  ];
+  const w = weekSoFar(days, { today: '2026-09-02', target: 5, strength: 3, cardio: 2, minutes: 240 });
+  assert.equal(w.done, 2);
+  assert.equal(w.commitment.strength.done, 1);
+  assert.equal(w.commitment.cardio.done, 1);
+  assert.equal(w.commitment.minutes.done, 80);
+  assert.match(w.commitment.say, /strength 1 of 3, stamina 1 of 2, minutes 80 of 240/);
+  assert.match(w.say, /strength 1 of 3/, 'the commitment is not in the spoken week');
+  // Nothing committed → nothing read against, and the old shape is untouched.
+  assert.equal(weekSoFar(days, { today: '2026-09-02', target: 5 }).commitment, undefined);
+  // A met side is said as met; a whole met week is said once.
+  const met = commitmentRead(days.slice(0, 2), { strength: 1, cardio: 1, daysLeft: 4 });
+  assert.match(met.say, /strength 1 of 1 — met, stamina 1 of 1 — met\. The week is met\./);
+  // AN IMPOSSIBLE SIDE IS STATED, NEVER COUNTED DOWN TO ZERO. Saturday with
+  // four strength sessions still needed and one day left.
+  const short = commitmentRead(days.slice(0, 2), { strength: 5, cardio: 1, daysLeft: 1 });
+  assert.match(short.say, /finish short on strength/);
+  assert.match(short.say, /next week starts at zero/);
+  for (const bad of ['fail', 'lazy', 'only', 'just', 'should', 'must', 'behind', 'excuse', 'slack']) {
+    assert.ok(!new RegExp(`\\b${bad}\\b`, 'i').test(short.say), `"${bad}" scolds`);
+  }
+  // A session with no type is counted and named, never assigned by guess.
+  const untyped = commitmentRead([{ date: '2026-08-31', sessions: 2, strength_sessions: 1, cardio_sessions: 0, minutes: 60 }], { strength: 3, daysLeft: 4 });
+  assert.equal(untyped.untyped, 1);
+  assert.match(untyped.say, /1 session not marked strength or stamina/);
+  // The day rollup types a session from its stamp, or from its shape.
+  const { rangeFacts: _rf } = await import('../netlify/functions/lib/wrought.js');
+  const src = readFileSync(new URL('../netlify/functions/lib/wrought.js', import.meta.url), 'utf8');
+  assert.match(src, /k === 'strength' \|\| \(!k && \(e\.detail\?\.exercises \|\| \[\]\)\.length\)/);
+  assert.match(src, /k === 'cardio' \|\| k === 'sport'/);
+  // Every caller reads the same four numbers off the profile.
+  for (const f of ['mcp.js', 'brief-nightly.js', 'api-progress.js', 'api-voice.js']) {
+    const s = readFileSync(new URL(`../netlify/functions/${f}`, import.meta.url), 'utf8');
+    assert.ok(!/weekSoFar\([^)]*target: profile\.train_days/.test(s), `${f} still passes train_days alone`);
+    assert.match(s, /\.\.\.weekTargets\(profile\)/, `${f} does not read the commitment`);
+  }
+});
+
+await test('the mid-week check reads the commitment, once, on the day they chose, and never under a flag', () => {
+  const week = {
+    done: 2, target: 5, days_left: 4,
+    commitment: { met: false, say: 'strength 1 of 3, stamina 1 of 2, minutes 80 of 240.' },
+  };
+  const rule = { id: 'w', kind: 'week_check', at_hour: 18, days: [3], last_sent_on: null, active: true };
+  const base = { rules: [rule], week, hour: 18, weekday: 3, date: '2026-09-02', flags: [] };
+  const [out] = dueAlerts(base);
+  assert.ok(out, 'the mid-week check did not fire on its day and hour');
+  assert.equal(out.kind, 'week_check');
+  assert.match(out.body, /strength 1 of 3, stamina 1 of 2, minutes 80 of 240\. 4 days left\./);
+  // Not on another weekday, not twice in a day, silent with nothing committed.
+  assert.equal(dueAlerts({ ...base, weekday: 4 }).length, 0, 'fired on the wrong day');
+  assert.equal(dueAlerts({ ...base, rules: [{ ...rule, last_sent_on: '2026-09-02' }] }).length, 0, 'fired twice');
+  assert.equal(dueAlerts({ ...base, week: { ...week, commitment: null } }).length, 0, 'fired with nothing to read against');
+  // A CARE FLAG SILENCES IT. A read of the training week is coaching.
+  assert.equal(dueAlerts({ ...base, flags: [{ flag: 'very_low_intake' }] }).length, 0, 'the mid-week check talks over a care flag');
+  // Their own words still outrank it.
+  const custom = { id: 'c', kind: 'custom', at_hour: 18, text: 'stretch', last_sent_on: null, active: true };
+  assert.equal(dueAlerts({ ...base, rules: [rule, custom] })[0].kind, 'custom');
+  // Offered only once there is a commitment to read against — never on by itself.
+  assert.ok(!suggestAlerts({}).options.some(o => o.kind === 'week_check'));
+  const offered = suggestAlerts({ commitment: true }).options.find(o => o.kind === 'week_check');
+  assert.ok(offered, 'not offered');
+  assert.deepEqual(offered.days, [3]);
+  assert.match(suggestAlerts({ commitment: true }).note, /OFFER these, never switch them on/);
+  assert.ok(ALERT_KINDS.week_check.why);
+  // A database without 023 answers with the migration by name, never a stack.
+  const mcp = readFileSync(new URL('../netlify/functions/mcp.js', import.meta.url), 'utf8');
+  assert.match(mcp, /check constraint[\s\S]{0,300}023_wrought_commitment\.sql/);
 });
 
 group('The bridge, as an adversarial review left it');
@@ -10019,8 +10229,18 @@ await test('the alert kinds the writer accepts are the kinds the database allows
   // The VALID_TYPES lesson, one table along: a writer that accepts more than
   // the check constraint fails at the database, and one that accepts less
   // silently drops a feature. Both are invisible in review.
-  const sql = readFileSync(new URL('../schema/018_wrought_alerts.sql', import.meta.url), 'utf8');
-  const check = sql.slice(sql.lastIndexOf('wrought_alerts_kind_valid'));
+  // The constraint is REPLACED by later migrations (023 adds week_check), so
+  // the truth is the last definition in migration order, not 018's.
+  const files = readdirSyncTop(new URL('../schema/', import.meta.url))
+    .filter(f => /^\d{3}_.*\.sql$/.test(f)).sort();
+  let check = null;
+  for (const f of files) {
+    const sql = readFileSync(new URL(`../schema/${f}`, import.meta.url), 'utf8');
+    if (sql.includes('add constraint wrought_alerts_kind_valid')) {
+      check = sql.slice(sql.lastIndexOf('add constraint wrought_alerts_kind_valid'));
+    }
+  }
+  assert.ok(check, 'no migration defines wrought_alerts_kind_valid');
   const allowed = [...check.slice(0, check.indexOf(';')).matchAll(/'([a-z_]+)'/g)].map(m => m[1]);
   assert.deepEqual(Object.keys(ALERT_KINDS).sort(), [...new Set(allowed)].sort(),
     'ALERT_KINDS and the check constraint disagree');

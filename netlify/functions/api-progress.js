@@ -13,7 +13,7 @@ import {
   rangeFacts, summariseRange, dayFacts, careFlags, scoreGoals, duplicateItems, duplicateExtra, supabase,
 } from './lib/wrought.js';
 import { orderInsight, earnedRoom, energyBalance, exerciseKey, deviceMatrix, weekdayPattern, focusCall, lastSession,
-         weekSoFar, readiness, targetOptions, estimatedMax, liftTrend, readMovement, backfillDerivedSets, goalsToSet } from './lib/training.js';
+         weekSoFar, weekTargets, readiness, targetOptions, estimatedMax, liftTrend, readMovement, backfillDerivedSets, goalsToSet } from './lib/training.js';
 import { weeklyVolume } from './lib/volume.js';
 import { planRead } from './lib/plan.js';
 import { intakeState } from './lib/intake.js';
@@ -545,7 +545,7 @@ export const handler = async (event) => {
 
   // The expectation, on the table rather than in a notification. Sessions never
   // roll over and a missed week is information, never a debt — see weekSoFar.
-  const trainingWeek = weekSoFar(recent.days, { today: to, target: profile.train_days || null });
+  const trainingWeek = weekSoFar(recent.days, { today: to, ...weekTargets(profile) });
 
   // The body's veto, read against their own fortnight. It only ever SOFTENS:
   // "ready" means train as planned and nothing more.
@@ -639,14 +639,22 @@ export const handler = async (event) => {
       // waits on it. The same state the tools gate on, so the screen and the
       // refusal can never disagree.
       setup: {
-        answered: setup.known, of: setup.total, complete: setup.complete,
-        remaining: setup.still_unknown,
+        // THE GATE IS WHAT THE PANEL COUNTS. `answered / of` used to be all
+        // twenty-five, so the screen said "9 of 25" while the tools were
+        // waiting on the fourteen that matter. Same numbers as the refusal now.
+        answered: setup.gate.known, of: setup.gate.total, complete: setup.gate.complete,
+        remaining: setup.gate.remaining,
+        known_all: setup.known, of_all: setup.total,
+        // Every question with its options and what is on file, so the panel
+        // is a form that can be filled in rather than a list to copy from.
+        questions: setup.questions,
+        setup_url: setup.setup_url,
         // The targets gate, made visible — a gate nobody can see is
         // indistinguishable from a product that never asks. True only in the
         // exact state the tools refuse in: questionnaire done, a calorie
         // target NEVER chosen (a dropped one is "none" and passes), no care
         // flag standing.
-        targets_gate: !!(setup.complete
+        targets_gate: !!(setup.gate.complete
           && !goals.some(g => g.metric === 'calories' && g.cadence === 'daily')
           && !everCalGoal
           && !flags.length),

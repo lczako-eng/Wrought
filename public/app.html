@@ -1087,6 +1087,15 @@ table.matrix td.rh.cold { color: var(--heat-3); }
 }
 .say:hover, .say:focus-visible { border-color: var(--heat-3); outline: none; }
 .say.copied { background: var(--heat-1); border-color: var(--heat-3); color: var(--heat-5); }
+/* The setup form. A chosen option looks chosen; a box is one box. */
+.say.on { background: var(--heat-1); border-color: var(--heat-3); color: var(--heat-5); }
+.sq { margin: 12px 0 0; }
+.sq .q { margin: 0 0 6px; font-weight: 600; }
+.sq-row { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin-top: 6px; }
+.sq-in { flex: 1 1 140px; min-width: 0; max-width: 100%; }
+.sq-unit { flex: 0 0 auto; }
+.sq-more { margin-top: 14px; }
+.sq-more > summary { cursor: pointer; color: var(--muted); font-size: 13px; }
 
 /* The max, given the room it deserves — it is the question a training log
    exists to answer, and it was a footnote. */
@@ -4952,7 +4961,7 @@ function demoData() {
       resting_burn: 1770, missing: null,
     },
     no_target_set: null,
-    setup: { answered: 25, of: 25, complete: true, remaining: [] },
+    setup: { answered: 14, of: 14, complete: true, remaining: [], questions: [] },
     nudge: { kind: 'week_behind', priority: 7, push: 'normal',
       say: '3 of 4 this week with 2 days left. Still comfortably doable — want a session?' },
     training_week: { week_start: series[Math.max(0, N - 1)].date, done: 3, target: 4, days_left: 2,
@@ -5692,6 +5701,7 @@ function wireGuide() {
     peeking = false; stopGuide();
     $('app').hidden = true; $('gate').hidden = false;
   });
+  wireSetup();
   document.querySelectorAll('.say[data-say]').forEach(b => b.addEventListener('click', async () => {
     try {
       await navigator.clipboard.writeText(b.dataset.say);
@@ -5717,20 +5727,117 @@ function wireGuide() {
 // lives in the tools; THIS is where somebody can see it: what is answered,
 // what is left, and the exact words to say to close each one. A gate nobody
 // can see is indistinguishable from a product that never asks.
+// THE FORM THE FOUNDER ASKED FOR. "Can you defer the GPT to the app to
+// manually fill it in? Make it as easy as possible — multiple choice, yes or
+// no." Every question the server sends carries its options, so this is
+// buttons where it can be and one box where it must be. Each answer saves the
+// moment it is tapped, through the SAME write path the assistant uses, and the
+// panel redraws off the record — so a question this screen shows as answered
+// is one the assistant stops asking.
+//
+// Only the fourteen that gate a workout are counted in the heading. The rest
+// sit under "optional": worth knowing, never in the way of a session.
 function setupPanel(d) {
   const su = d.setup;
-  if (!su || su.complete) return '';
-  const pct = Math.round((su.answered / su.of) * 100);
-  return `<section class="panel" id="intake-panel">
-    <h2>Getting to know you · ${su.answered} of ${su.of}</h2>
-    <div class="progbar"><i style="width:${pct}%"></i></div>
-    <p class="sub">Workouts unlock when this is finished — WROUGHT will not build a plan for a
-    stranger. ${gptLink('Gym bro \u2014 set me up properly. Run the full assessment, a few questions at a time; loose answers are fine and \u201cnone\u201d counts.', 'Finish it now')}
-    — one tap, and it walks the list a few questions at a time. Loose answers are fine, and "none" counts.</p>
-    <div class="says">${(su.remaining || []).slice(0, 8).map(q =>
-      `<button class="say" type="button" data-say="${esc(q)}">${esc(q)}</button>`).join('')}</div>
-    ${(su.remaining || []).length > 8 ? `<p class="sub dim">…and ${su.remaining.length - 8} more once those are in.</p>` : ''}
+  if (!su || DEMO) return '';
+  const qs = su.questions || [];
+  const gateOpen = qs.filter(q => q.gate && !q.known);
+  const optional = qs.filter(q => !q.gate && !q.known);
+  const done = qs.filter(q => q.known);
+  if (su.complete && !optional.length) return '';
+  const pct = su.of ? Math.round((su.answered / su.of) * 100) : 100;
+
+  const control = (q) => {
+    if (q.kind === 'choice' && q.options) {
+      return `<div class="says">${q.options.map(o =>
+        `<button class="say sq-opt${q.value != null && String(q.value) === String(o.v) ? ' on' : ''}" type="button" data-k="${esc(q.key)}" data-v="${esc(String(o.v))}">${esc(o.label)}</button>`).join('')}</div>`;
+    }
+    if (q.kind === 'number') {
+      const units = q.unit && q.alt_unit
+        ? `<select class="sq-unit" data-for="${esc(q.key)}"><option value="${esc(q.unit)}">${esc(q.unit)}</option><option value="${esc(q.alt_unit)}">${esc(q.alt_unit)}</option></select>`
+        : '';
+      const quick = (q.quick || []).length
+        ? `<div class="says">${q.quick.map(v => `<button class="say sq-opt" type="button" data-k="${esc(q.key)}" data-v="${esc(String(v))}">${esc(String(v))}${q.unit === 'min' ? ' min' : ''}</button>`).join('')}</div>`
+        : '';
+      return `${quick}<div class="sq-row"><input class="sq-in" type="text" inputmode="decimal" data-for="${esc(q.key)}" placeholder="${esc(q.hint || '')}" value="${q.value != null ? esc(String(q.value)) : ''}">${units}<button class="ghost sq-save" type="button" data-k="${esc(q.key)}">Save</button></div>`;
+    }
+    if (q.kind === 'list') {
+      const quick = (q.quick || []).length
+        ? `<div class="says">${q.quick.map(v => `<button class="say sq-pick" type="button" data-k="${esc(q.key)}" data-v="${esc(v)}">${esc(v)}</button>`).join('')}</div>`
+        : '';
+      return `${quick}<div class="sq-row"><input class="sq-in" type="text" data-for="${esc(q.key)}" placeholder="tap above, or type — comma separated" value="${Array.isArray(q.value) ? esc(q.value.join(', ')) : ''}"><button class="ghost sq-save" type="button" data-k="${esc(q.key)}">Save</button>${q.none ? `<button class="ghost sq-none" type="button" data-k="${esc(q.key)}">None</button>` : ''}</div>`;
+    }
+    return `<div class="sq-row"><input class="sq-in" type="text" data-for="${esc(q.key)}" placeholder="${esc(q.hint || 'a few words')}" value="${q.value != null && typeof q.value !== 'object' ? esc(String(q.value)) : ''}"><button class="ghost sq-save" type="button" data-k="${esc(q.key)}">Save</button>${q.none ? `<button class="ghost sq-none" type="button" data-k="${esc(q.key)}">None</button>` : ''}</div>`;
+  };
+  const block = (q) => `<div class="sq" data-q="${esc(q.key)}"><p class="q">${esc(q.ask)}?</p>${control(q)}</div>`;
+
+  return `<section class="panel" id="setup">
+    <h2>${su.complete ? 'Getting to know you' : `Getting to know you · ${su.answered} of ${su.of}`}</h2>
+    ${su.complete ? '' : `<div class="progbar"><i style="width:${pct}%"></i></div>
+    <p class="sub">Workouts unlock when these ${su.of} are answered — WROUGHT will not build a plan for a
+    stranger. Tap an answer and it saves. Or ${gptLink('Gym bro — set me up. Ask me the setup questions one at a time and save each answer.', 'do it by talking')}.</p>`}
+    <p class="sub dim" id="sq-msg" hidden></p>
+    ${gateOpen.map(block).join('')}
+    ${optional.length ? `<details class="sq-more"><summary>Optional — helps the coaching, never blocks a workout · ${optional.length}</summary>${optional.map(block).join('')}</details>` : ''}
+    ${done.length ? `<details class="sq-more"><summary>Answered · ${done.length} — tap to change</summary>${done.map(block).join('')}</details>` : ''}
   </section>`;
+}
+
+async function saveSetup(answers) {
+  const msg = $('sq-msg');
+  const { data } = await sb.auth.getSession();
+  if (!data.session) {
+    if (msg) { msg.hidden = false; msg.textContent = 'Signed out. Sign in again and it will save.'; }
+    return;
+  }
+  if (msg) { msg.hidden = false; msg.textContent = 'Saving…'; }
+  const res = await fetch('/.netlify/functions/api-setup', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${data.session.access_token}` },
+    body: JSON.stringify({ answers }),
+  });
+  const out = await res.json().catch(() => ({}));
+  // Said by field, never a flat "could not save": a rejected answer names its
+  // box, and a column the database lacks is named with the migration.
+  if (!res.ok || (out.rejected || []).length || (out.not_saved || []).length) {
+    if (msg) { msg.hidden = false; msg.textContent = out.message || 'Could not save that.'; }
+    if (!res.ok) return;
+  }
+  refresh();
+}
+
+function wireSetup() {
+  const root = $('setup');
+  if (!root) return;
+  const val = k => root.querySelector(`.sq-in[data-for="${k}"]`)?.value?.trim() ?? '';
+  const unit = k => root.querySelector(`.sq-unit[data-for="${k}"]`)?.value ?? '';
+  root.querySelectorAll('.sq-opt').forEach(b => b.addEventListener('click', () =>
+    saveSetup([{ key: b.dataset.k, answer: b.dataset.v }])));
+  root.querySelectorAll('.sq-none').forEach(b => b.addEventListener('click', () =>
+    saveSetup([{ key: b.dataset.k, answer: 'none' }])));
+  // A quick pick on a list toggles into the box rather than saving on its own,
+  // because "dumbbells" alone is rarely the whole answer.
+  root.querySelectorAll('.sq-pick').forEach(b => b.addEventListener('click', () => {
+    const inp = root.querySelector(`.sq-in[data-for="${b.dataset.k}"]`);
+    if (!inp) return;
+    const have = inp.value.split(',').map(x => x.trim()).filter(Boolean);
+    const i = have.indexOf(b.dataset.v);
+    if (i >= 0) have.splice(i, 1); else have.push(b.dataset.v);
+    inp.value = have.join(', ');
+    b.classList.toggle('on', i < 0);
+  }));
+  root.querySelectorAll('.sq-save').forEach(b => b.addEventListener('click', () => {
+    const k = b.dataset.k;
+    const v = val(k);
+    if (!v) return;
+    const u = unit(k);
+    saveSetup([{ key: k, answer: u ? `${v} ${u}` : v }]);
+  }));
+  root.querySelectorAll('.sq-in').forEach(inp => inp.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter') return;
+    e.preventDefault();
+    root.querySelector(`.sq-save[data-k="${inp.dataset.for}"]`)?.click();
+  }));
 }
 
 // ── The plan, stated ───────────────────────────────────────────────────────
@@ -5896,7 +6003,7 @@ function wireCoachSetup() {
     honourTargetsAnchor($('content'));
   });
   $('go-intake')?.addEventListener('click', () => {
-    const el = document.getElementById('intake-panel');
+    const el = document.getElementById('setup');
     if (el) { el.classList.remove('folded'); el.scrollIntoView({ behavior: 'smooth', block: 'start' }); }
   });
 }
@@ -7284,6 +7391,7 @@ function stagger(root = $('content')) {
   makeFoldable(root);
   honourTargetsAnchor(root);
   honourDailyCloseAnchor(root);
+  honourSetupAnchor(root);
   wireCharts(root);
 }
 
@@ -7333,6 +7441,19 @@ function honourTargetsAnchor(root) {
   targetsAnchorPending = false;
   panel.classList.remove('folded');
   panel.querySelector('h2.fold')?.setAttribute('aria-expanded', 'true');
+  panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+// The link the gate hands out — wrought.fit/app.html#setup — lands on the
+// form, which only exists once the payload has drawn. Same shape as the
+// targets anchor: remembered at load, honoured on the first render that has
+// the panel, then forgotten.
+let setupAnchorPending = location.hash === '#setup';
+function honourSetupAnchor(root) {
+  if (!setupAnchorPending) return;
+  const panel = root.querySelector('#setup');
+  if (!panel) return;
+  setupAnchorPending = false;
   panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 

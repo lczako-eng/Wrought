@@ -101,6 +101,18 @@ export const ALERT_KINDS = {
     describe: (_t, h, text) => `at ${String(h).padStart(2, '0')}:00 — "${text}"`,
     why: 'Sent verbatim. Never rewritten, never coached on top of.',
   },
+  week_check: {
+    label: 'Mid-week check',
+    needs_hour: true,
+    describe: (_t, h) => `at ${String(h).padStart(2, '0')}:00 on the day you chose, where the training week stands against what you committed to`,
+    // The founder: "a halfway-during-the-week point telling you where you're
+    // at with any of this." It reads the commitment — strength sessions,
+    // stamina sessions, minutes — against the week so far. Not the daily
+    // `move` nag: this fires once, on a weekday they chose, whatever the
+    // numbers are, because the slow week is the one worth hearing about while
+    // there are still days in it.
+    why: 'A scheduled read of the training week against a commitment they stated. States each figure and stops — a short week is said as finishing short, never counted down, never scolded.',
+  },
 };
 
 /**
@@ -172,7 +184,7 @@ export function dueAlerts({ rules = [], day = null, balance = null, calorieTarge
   // ONE AT A TIME. Two notifications in the same hour is a lecture, and the
   // second one is never read. The order is the order of harm: something the
   // person explicitly asked for beats anything the server worked out.
-  const rank = { custom: 0, kitchen_closed: 1, goal_check: 2, goal_pace: 3, weigh_in: 4, intake_pace: 5, move: 6 };
+  const rank = { custom: 0, kitchen_closed: 1, week_check: 2, goal_check: 3, goal_pace: 4, weigh_in: 5, intake_pace: 6, move: 7 };
   out.sort((a, b) => (rank[a.kind] ?? 9) - (rank[b.kind] ?? 9));
   return out.slice(0, 1);
 }
@@ -285,6 +297,23 @@ function build(r, { day, balance, calorieTarget, week, lastWeighDays, flagged, h
       };
     }
 
+    case 'week_check': {
+      // A care flag silences coaching, and a read of the training week is
+      // coaching. Their own custom words survive a flag; this does not.
+      if (flagged) return null;
+      const c = week?.commitment;
+      if (!c) return null;   // nothing was committed to, so there is nothing to read against
+      // The line is the commitment read itself — computed once in weekSoFar,
+      // so the notification and the dashboard's training-week panel cannot
+      // quote different figures for the same Wednesday.
+      const left = num(week.days_left);
+      return {
+        title: c.met ? 'Week met' : 'Mid-week check',
+        body: c.say + (left != null && !c.met ? ` ${left} day${left === 1 ? '' : 's'} left.` : ''),
+        why: 'a scheduled read of the week against what they committed to',
+      };
+    }
+
     case 'weigh_in': {
       if (flagged) return null;
       const since = num(lastWeighDays);
@@ -332,8 +361,14 @@ export function describeAlert(r = {}) {
  * product never comes back on.
  */
 export function suggestAlerts({ hasCalorieTarget = false, trainDays = null, fasting = false,
-                                movementGoals = [] } = {}) {
+                                movementGoals = [], commitment = false } = {}) {
   const out = [];
+  // The mid-week read, only once there is a commitment to read against — a
+  // rule watching numbers nobody stated can never fire.
+  if (commitment) {
+    out.push({ kind: 'week_check', at_hour: 18, days: [3],
+      say: 'A Wednesday-evening read of the training week — strength, stamina and minutes against what you committed to — while there are still days to do something about it.' });
+  }
   if (hasCalorieTarget) {
     out.push({ kind: 'intake_pace', threshold: 0.8,
       say: 'A line when you hit 80% of your calories for the day — where you stand, not what is left.' });
