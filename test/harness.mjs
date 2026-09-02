@@ -10700,6 +10700,90 @@ await test('a famous name builds the style and says the provenance', () => {
   assert.match(src, /Never call it the named person/, 'the model is never told the endorsement rule');
 });
 
+await test('twenty-one lineages: named for the method, credited as a tradition, never a name or a trademark', () => {
+  // The founder: "the top biggest trainers in the world ever — I want twenty
+  // of them, Freddie Roach, Louie Simmons, Schwarzenegger — as our
+  // ambassadors, but we're gonna have to call it a style." And the right
+  // question: "if I copy their styles and put their name in it, will I get
+  // sued?" The method is not protectable; the NAME is, and a name on a paid
+  // product implies endorsement. So the rule is enforced in data:
+  const named = Object.entries(STYLES).filter(([, s]) => s.lineage);
+  assert.ok(named.length >= 21, `only ${named.length} lineages`);
+  for (const who of ['Freddie Roach', 'Louie Simmons', 'Arnold Schwarzenegger', "Cus D'Amato", 'Angelo Dundee',
+                     'Emanuel Steward', 'Boris Sheiko', 'Bill Starr', 'Mark Rippetoe', 'Jim Wendler', 'Charles Poliquin',
+                     'Tudor Bompa', 'Joe Weider', 'Vince Gironda', 'Arthur Jones', 'Mike Mentzer', 'Hany Rambod',
+                     'Pavel Tsatsouline', 'Dan John', 'Arthur Lydiard', 'Bill Bowerman']) {
+    assert.ok(named.some(([, s]) => s.lineage === who), `${who} is missing`);
+  }
+  const TRADEMARKS = /starting\s*strength|5\s*\/\s*3\s*\/\s*1|westside|fst.?7|heavy\s*duty|crossfit|kronk|nautilus/i;
+  for (const [key, s] of named) {
+    const surname = s.lineage.split(/\s+/).pop().replace(/[^a-z]/gi, '');
+    // THE STYLE'S NAME never carries the person or a trademark.
+    assert.ok(!new RegExp(surname, 'i').test(s.say), `${key}'s name carries "${surname}"`);
+    assert.ok(!TRADEMARKS.test(s.say), `${key}'s name is a trademark: "${s.say}"`);
+    // The person is credited as a TRADITION, and the provenance disclaims
+    // both the programme and the endorsement, in the style's own data.
+    assert.match(s.tradition, /^in the tradition of /, `${key} does not credit its lineage as a tradition`);
+    assert.match(s.provenance, /not (his|her|their|any named coach)/i, `${key} never says it is not their programme`);
+    assert.match(s.provenance, /not an endorsement/i, `${key} never disclaims endorsement`);
+    assert.match(s.provenance, /published|standard/i, `${key} never says where it comes from`);
+    // What it actually changes is said, so a style is never a label alone.
+    assert.ok(s.emphasis && s.emphasis.length > 20, `${key} has no emphasis line`);
+    assert.ok(s.discipline, `${key} has no discipline`);
+    // And the name people actually say reaches it.
+    assert.equal(styleFrom(`a ${s.lineage} style workout`), key, `"${s.lineage}" is not recognised`);
+  }
+  // The famous phrases route to the right lineage, and generic words still
+  // land on the generic shapes.
+  assert.equal(styleFrom('freddie roach style'), 'boxing_camp');
+  assert.equal(styleFrom('louie simmons'), 'conjugate');
+  assert.equal(styleFrom('westside'), 'conjugate');
+  assert.equal(styleFrom('a schwarzenegger workout'), 'golden_era');
+  assert.equal(styleFrom('boxing workout'), 'boxing_camp');
+  assert.equal(styleFrom('bodybuilding'), 'golden_era');
+  assert.equal(styleFrom('5/3/1'), 'submax_monthly');
+  assert.equal(styleFrom('HIT'), 'one_hard_set');
+  assert.equal(styleFrom('kettlebell'), 'never_to_failure');
+
+  // THE STYLES GENUINELY DIFFER, and never past a beginner's cap.
+  const adv = k => designSession({ focus: 'chest', minutes: 60, tier: 'advanced', equipment: ['full gym'], style: k });
+  // A finisher lands on the LAST lifting movement only.
+  const fin = adv('seven_set_finisher');
+  const lifting = fin.filter(e => e.sets != null);
+  assert.equal(lifting[lifting.length - 1].sets, 7);
+  assert.equal(lifting[lifting.length - 1].rest_s, 30);
+  assert.ok(lifting.slice(0, -1).every(e => e.sets === 4), 'the finisher spread to every movement');
+  assert.ok(designSession({ focus: 'chest', minutes: 60, tier: 'beginner', equipment: ['full gym'], style: 'seven_set_finisher' })
+    .every(e => e.sets == null || e.sets <= 3), 'a beginner got the seven-set finisher');
+  // A movement cap holds — four and out — and never raises the clock's ceiling.
+  assert.ok(designSession({ focus: 'full body', minutes: 90, tier: 'advanced', equipment: ['full gym'], style: 'easy_strength' }).length <= 4);
+  assert.equal(designSession({ focus: 'full body', minutes: 20, tier: 'advanced', equipment: ['full gym'], style: 'easy_strength' }).length, 3);
+  // A running style gives most of the clock to the long effort.
+  const base = designSession({ focus: 'conditioning', minutes: 60, tier: 'advanced', equipment: ['full gym'], style: 'aerobic_base' });
+  const cond = base.find(e => e.minutes != null);
+  assert.ok(cond && cond.minutes >= 40, `the aerobic base gave ${cond?.minutes} minutes to the long effort`);
+  // One hard set is one set.
+  assert.ok(adv('one_hard_set').every(e => e.sets == null || e.sets === 1));
+  // Every style, every tier: the beginner cap holds and no loads (the loop
+  // above already proves the latter across all of them).
+  for (const k of Object.keys(STYLES)) {
+    const b = designSession({ focus: 'full body', minutes: 60, tier: 'beginner', equipment: ['full gym'], style: k });
+    assert.ok(!b || b.every(e => e.sets == null || e.sets <= 3), `${k} overrode the beginner cap`);
+  }
+
+  // The response and the panel carry the tradition, and the panel groups by
+  // discipline so twenty-four rows read as a shelf rather than a scroll.
+  const src = readFileSync(new URL('../netlify/functions/mcp.js', import.meta.url), 'utf8');
+  assert.match(src, /tradition: STYLES\[style\]\.tradition/, 'the response never credits the lineage');
+  assert.match(src, /never their own programme, never an endorsement/, 'the tool description drops the rule');
+  const api = readFileSync(new URL('../netlify/functions/api-progress.js', import.meta.url), 'utf8');
+  assert.match(api, /lineage: v\.lineage \|\| null, tradition: v\.tradition \|\| null/, 'the dashboard is not sent the tradition');
+  const app = page('app.html');
+  assert.match(app, /class="stylegrp"/, 'the panel is not grouped by discipline');
+  assert.match(app, /class="lineage"/, 'the panel never shows the tradition');
+  assert.ok(!/ambassador/i.test(app) && !/ambassador/i.test(src), '"ambassador" made it into the product');
+});
+
 await test('the door people actually use asks which gym', () => {
   // "Next time I go to my gym it's gonna ask me which gym am I going to, or a
   // new one." design_workout asked; suggest_workout — where "I'm going to the

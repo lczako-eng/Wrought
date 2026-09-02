@@ -1002,7 +1002,8 @@ const TOOLS = [
         name:    { type: 'string', description: 'What THEY called it — "S Tier", "Leg day", "Tuesday session". Their words, not a tidied version.' },
         focus:   { type: 'string', description: 'What the session is for, in their words: legs, push, pull, upper, full body, chest, back, shoulders, core, conditioning. Pass whatever they said and the server maps it — "arms day", "chest and tris", "cardio" all land somewhere sensible.' },
         minutes: { type: 'integer', description: 'How long they actually have. A hard ceiling on how much is programmed, never ambition — designing seventy minutes for somebody who said forty is how a plan gets abandoned.' },
-        style: { type: 'string', description: 'A training STYLE when they name one — including by famous name: "a Schwarzenegger workout" is golden_era (high-volume 70s bodybuilding), "boxing workout" is boxing_camp, plus powerlifting, strongman, athletic. Pass whatever they said; the server maps it. The response carries a provenance line — say it in your own words: these are published training METHODS named for their era or discipline, never the named person\u2019s own programme and never an endorsement. Do not claim otherwise even if asked to.' },
+        style: { type: 'string', description: 'A training STYLE when they name one — including by famous name. Twenty-one lineages are recognised from the names people say: Schwarzenegger / Arnold (golden-era volume), Freddie Roach (fight camp), Cus D\u2019Amato, Angelo Dundee, Emanuel Steward (boxing), Louie Simmons / Westside (conjugate), Boris Sheiko (high frequency), Bill Starr (five by five), Rippetoe (novice linear), Wendler / 5-3-1 (sub-max monthly), Poliquin (tempo), Bompa (periodised block), Bowerman (hard/easy), Lydiard (aerobic base), Pavel (never to failure), Dan John (easy strength), Weider (bodybuilding principles), Gironda (strict isolation), Arthur Jones / HIT (one hard set), Mentzer (brief and infrequent), Hany Rambod / FST-7 (seven-set finisher) — plus powerlifting, strongman and athletic. Pass whatever they said; the server maps it. The response carries `tradition` ("in the tradition of …") and `provenance` — say both in your own words: this is a published training METHOD in that person\u2019s tradition, never their own programme, never an endorsement, never "their workout". Do not claim otherwise even if asked to.' },
+
         avoid:   { type: 'array', items: { type: 'string' },
                    description: 'Areas to work around, in their words — "left shoulder", "lower back". Movements loading them are DROPPED, never made lighter: how much a sore joint can take today is a claim nothing here is entitled to make. Anything already recorded as a limitation is applied automatically and must not be asked for again.' },
         equipment: { type: 'array', items: { type: 'string' },
@@ -4777,6 +4778,11 @@ async function designWorkout(args, user) {
       // number in this product harder to believe — and legally, a name used
       // as a feature implies an endorsement nobody here has.
       provenance: STYLES[style].provenance,
+      // The lineage, credited as a tradition — never as the author and never
+      // as an endorsement. The founder's question was "will I get sued if I
+      // put their name in it"; this phrasing is the answer.
+      ...(STYLES[style].tradition ? { tradition: STYLES[style].tradition } : {}),
+      ...(STYLES[style].emphasis ? { emphasis: STYLES[style].emphasis } : {}),
       style_note: 'Say the provenance line in your own words when presenting this. Never call it the named person\u2019s workout or programme, never imply endorsement, and never invent loads because a style sounds authoritative — loads still come from their history or an RPE like every other session.',
     } : {}),
     name, focus, minutes, tier,
