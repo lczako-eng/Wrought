@@ -18,6 +18,7 @@ import { weeklyVolume } from './lib/volume.js';
 import { planRead } from './lib/plan.js';
 import { intakeState } from './lib/intake.js';
 import { STYLES } from './lib/design.js';
+import { listPlaces } from './lib/places.js';
 import { formWatch, cardioProgress } from './lib/form.js';
 import { nextNudge } from './lib/prompt.js';
 import { blockPosition } from './lib/library.js';
@@ -524,7 +525,8 @@ export const handler = async (event) => {
   // and the honest answer was "inside a tool response" — a gate nobody can
   // SEE is indistinguishable from a product that never asks. This is the same
   // intakeState the training tools now stop on.
-  const memory = await getMemory(user.id);
+  // Places ride the same hop as memory — no new serial await.
+  const [memory, places] = await Promise.all([getMemory(user.id), listPlaces(user.id).catch(() => [])]);
 
   // THE COACH SETUP, as facts the page can draw. The founder, inventor of the
   // product: "honestly, I do not know how to use it." Every piece — push,
@@ -787,6 +789,8 @@ export const handler = async (event) => {
       // server's own list — the say and the honest provenance travel together,
       // because a style shown without its provenance is the wink the doctrine
       // forbids.
+      // Where they train, with what is at each — the record the coach builds to.
+      places: places.map(p => ({ name: p.name, kind: p.kind, equipment: p.equipment || [], last_used_on: p.last_used_on, times_used: p.times_used })),
       styles: Object.entries(STYLES).map(([key, v]) => ({
         key, say: v.say, provenance: v.provenance,
         lineage: v.lineage || null, tradition: v.tradition || null,

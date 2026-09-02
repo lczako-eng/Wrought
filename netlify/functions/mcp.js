@@ -55,6 +55,7 @@ import {
 import { PROGRAMMES, GOALS, MOVEMENTS, movementsFor, pickProgramme, buildProgramme, buildBlock, blockPosition, BLOCK_LENGTHS } from './lib/library.js';
 import { FOCUSES, FOCUS_NAMES, focusFrom, designSession, designQuestions, designNote, STYLES, styleFrom } from './lib/design.js';
 import { styleRoutine } from './lib/style_routines.js';
+import { resolvePlace, placeEquipment, listPlaces, bumpPlace, applyPlaces, sessionsCanCarryPlace, PLACE_KINDS } from './lib/places.js';
 import { dayReceipt } from './lib/receipt.js';
 
 // Newest first. The icons on serverInfo are only honoured by clients speaking
@@ -219,7 +220,9 @@ A PHOTOGRAPH OF A GYM IS AN EQUIPMENT LIST, AND IT IS SAVED AS EACH BATCH ARRIVE
 
 "I'M GOING TO THE GYM" IS AN OPENING — ANSWER IT WITH ONE QUESTION AND A SUGGESTION, NEVER A BLANK. When somebody says they are heading to the gym, going to train, or asks what they should do, do not silently start a session and do not ask three things. Reply with ONE short line that already contains a proposal: what is most overdue from their log, and how long you are assuming. "Chest hasn't been hit in nine days — 45 minutes on push? Or say what you fancy." Then start_session on their answer, or immediately if they say yes.
 
-Say the readiness line FIRST if it is not "ready" — the body's veto belongs before the plan, not after it. If the profile has no train_days or equipment, that is the moment for the one-question baseline instead. And "I'm at the home gym" or a named place means pass THAT equipment, recalled from memory, not the default.
+Say the readiness line FIRST if it is not "ready" — the body's veto belongs before the plan, not after it. If the profile has no train_days or equipment, that is the moment for the one-question baseline instead. And "I'm at the home gym" or a named place means pass place to the training tool — it builds to that place's kit from the record, never from memory or a guess.
+
+WHERE THEY TRAIN IS PART OF THE RECORD. A place is a ROW (add_gym / my_gyms), never a sentence you remember for them: the founder "added a few gyms" to an assistant that saved none of them, and the record held zero. The moment a place is named — "there's a new gym near work", "I'm at GoodLife", "going for a walk at the park", "training in the garage" — it goes on the record: pass place on suggest_workout, start_session and design_workout, and place on a workout in log ("walk at the park" is a workout with a place). A place on file builds to its kit. A NEW gym is added on the way and asked ONCE, in one clause, what is there — never a form, never guessed, never blocking the session; until the kit is known the session is built for the main gym's equipment and the response says so. A park or a trail is never asked for kit. NEVER say a gym is added unless add_gym returned it in on_file.
 
 CHANGING A TARGET IS ONE CALL AND NO DISCUSSION. "Switch my goal to 12,000 steps" is set_goal with metric steps and target 12000 — the server retires the old steps goal itself, so never create a second one and never ask whether they want to keep the old. "Drop the steps one" is drop_goal. Both are maintenance; neither gets a remark about commitment or a question about why.
 
@@ -396,6 +399,7 @@ const TOOLS = [
               },
               estimated:  { type: 'boolean', description: 'True if ANY number in detail was inferred rather than stated by the user. Macros you worked out from a description or a photo are always estimated. This is what lets the product say "roughly" instead of presenting a guess as a fact.' },
               time_hint:  { type: 'string', description: '"HH:MM" 24h local time if they said when, else omit. ALWAYS set it when catching a conversation up after the fact — filing a whole day at the catch-up minute makes it read as one meal to the day card, the eating window and every average built on it.' },
+              place:      { type: 'string', description: 'For a workout: WHERE it happened, when they said — "walk at the park" → "the park"; "trained at GoodLife" → "GoodLife". Kept on the record and added as a place on file the first time it is named. Omit when no place was said.' },
             },
             required: ['event_type', 'summary'],
           },
@@ -482,6 +486,7 @@ const TOOLS = [
         minutes:   { type: 'integer', description: 'Time available. Defaults to their usual session length.' },
         focus:     { type: 'string',  description: 'Optional. If they asked for something specific — "legs", "upper", "conditioning", "something easy".' },
         equipment: { type: 'string',  description: 'Optional override — "hotel gym", "just dumbbells", "nothing, I\'m in a room".' },
+        place:     { type: 'string',  description: 'WHERE they are, when they said — "at the home gym", "GoodLife", "the park". A place on file builds to its kit; a new gym is added and asked for its kit once; a park needs no kit. Pass the name they used.' },
       },
     },
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: false },
@@ -497,6 +502,7 @@ const TOOLS = [
         focus:     { type: 'string',  description: 'If no saved routine: what they want to train — "legs", "upper", "conditioning", "full body".' },
         minutes:   { type: 'integer', description: 'Time available. The session is cut to fit rather than being abandoned halfway.' },
         equipment: { type: 'string',  description: 'Override for today — "hotel gym", "just dumbbells", "nothing, I am in a room".' },
+        place:     { type: 'string',  description: 'WHERE this session is — "at the home gym", "GoodLife", "the park". Stored on the session and stamped on the workout. A new place is added on the way; a new gym is asked for its kit once.' },
         aim:       { type: 'string',  description: 'What THIS session is for, in their own words — "chase the top set on incline, it has stalled", "get through it, I slept badly", "beat 92.5 for 6". A session with a stated aim is training; one without is exercise, and the difference is whether there is anything to judge it against afterwards. NEVER invent one: if they did not say, leave it out and the session starts anyway, and the response asks for it in one clause.' },
       },
     },
@@ -1009,6 +1015,7 @@ const TOOLS = [
                    description: 'Areas to work around, in their words — "left shoulder", "lower back". Movements loading them are DROPPED, never made lighter: how much a sore joint can take today is a claim nothing here is entitled to make. Anything already recorded as a limitation is applied automatically and must not be asked for again.' },
         equipment: { type: 'array', items: { type: 'string' },
                      description: 'Only if this session is somewhere other than their usual gym. Their profile equipment is used otherwise.' },
+        place:     { type: 'string', description: 'WHERE it will be done, when they said — a place on file builds to its kit; a new one is added.' },
       },
       required: ['name'],
     },
@@ -1113,6 +1120,36 @@ const TOOLS = [
       properties: { category: { type: 'string', enum: ['injury','preference','schedule','context','general'] } },
     },
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+  },
+  {
+    name: 'add_gym',
+    title: 'Add a place they train — a gym, the garage, the park',
+    description: 'Records WHERE somebody trains, with what is there. Call it the FIRST time a place is named — "there\'s a new gym near work", "I joined GoodLife", "I\'ve got a bench and dumbbells in the garage", "the hotel has a small gym" — and whenever they list a gym\'s kit or send photos of it (you read the photos; pass what is standing in them as equipment). More than one place is normal. NEVER say a gym is added without calling this: the founder "added a few gyms" to an assistant that wrote none of them down, and the record held zero. A gym with no kit is asked ONCE what is there, in one clause, never as a form; a park or a trail is never asked. From then on "I\'m at <place>" on suggest_workout, start_session or design_workout builds to THAT kit.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        name:      { type: 'string', description: 'What they call it — "GoodLife on Main", "the garage", "Trinity Bellwoods park", "hotel gym".' },
+        equipment: { type: 'array', items: { type: 'string' }, description: 'What is there, in their words — "squat rack", "dumbbells to 50lb", "cables", "treadmill". Omit for a park. Replaces the list on file when given.' },
+        kind:      { type: 'string', enum: ['gym','home','outdoor','travel','other'], description: 'Inferred from the name when omitted — a park is outdoor, a garage is home, a hotel is travel.' },
+        notes:     { type: 'string', description: 'Anything worth remembering — "busy after 5", "no chalk allowed".' },
+      },
+      required: ['name'],
+    },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+  },
+  {
+    name: 'my_gyms',
+    title: 'Where they train, and what is at each',
+    description: 'Every place on file with its kit and when it was last used. "What gyms do I have", "where do I train", "what\'s at the home gym". Read this BEFORE building a session when more than one place is on file, and pass the one they are at.',
+    inputSchema: { type: 'object', properties: {} },
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+  },
+  {
+    name: 'drop_gym',
+    title: 'Remove a place',
+    description: 'Retires a place they no longer train at — "I cancelled that gym", "we moved". Never a negotiation. Its sessions stay on the record.',
+    inputSchema: { type: 'object', properties: { name: { type: 'string' } }, required: ['name'] },
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
   },
 ];
 
@@ -1271,6 +1308,9 @@ async function log(args, user) {
     : await parseLog(text, profile);
   const structuredBy = supplied ? 'client' : parsed ? 'server' : 'none';
 
+  // WHERE A WORKOUT HAPPENED travels into the record and adds the place the
+  // first time it is named. "Walk at the park" is a workout with a place.
+  const placesTouched = await applyPlaces(user.id, events, localDateFor(profile.timezone));
   const written = await insertEvents(user.id, profile, events, { rawInput: text });
   // A type the database has not been taught yet is stored as a note rather
   // than losing the whole call — which used to take the food down with it.
@@ -1312,6 +1352,12 @@ async function log(args, user) {
     // never echoed from the arguments — the figures here are what the record
     // holds, which is what makes reading them out a confirmation rather than
     // a repetition.
+    // A place named on a workout is now on file — said, so "added" is a
+    // claim the record supports rather than a sentence in the chat.
+    ...(placesTouched.length ? {
+      places: placesTouched.map(p => ({ name: p.place.name, kind: p.place.kind, created: p.created, ask_kit: p.ask_kit })),
+      ...(placesTouched.some(p => p.ask_kit) ? { place_note: `${placesTouched.filter(p => p.ask_kit).map(p => p.place.name).join(', ')} is on file with no kit — ask in ONE clause what is there and call add_gym with it. Never a form.` } : {}),
+    } : {}),
     recorded: written.map(e => ({
       id: e.id, type: e.event_type, summary: e.summary, estimated: e.estimated,
       ...itemNumbers(e.detail || {}),
@@ -2043,6 +2089,73 @@ async function setPlan(args, user) {
          (held ? ` ${held}` : ''),
     note: 'Confirm it in one line and move on. NO remark about commitment, no asking why, no warning that they are backing off — a plan somebody keeps missing is a plan set wrong, and easing it to what they will really do is the right call, not a retreat. If they went aggressive, say plainly that it will be hungrier and that protein and lifting matter more now, and leave it there.',
     next_actions: ['my_plan to hear the whole thing back', 'brief — it scores the new targets from tonight'],
+  };
+}
+
+// ── Where they train ───────────────────────────────────────────────────────
+// A place is a row, not a sentence. The founder "added a few gyms" to an
+// assistant that saved none of them; the tool reads the list back off the
+// record so "added" is a claim the record supports.
+async function addGym(args, user) {
+  const profile = await getProfile(user.id);
+  const r = await resolvePlace(user.id, args.name, {
+    equipment: args.equipment ?? null, kind: args.kind || null, notes: args.notes || null,
+  });
+  if (!r) return { error: 'A name is required.' };
+  if (r.unavailable) return { error: 'migration_missing', say: 'Places need schema/024_wrought_places.sql run in Supabase first. Nothing was stored.' };
+  if (r.error) return { error: r.error };
+  const on_file = await listPlaces(user.id);
+  return {
+    place: r.place, created: r.created, on_file: on_file.map(p => ({ name: p.name, kind: p.kind, equipment: p.equipment })),
+    say: `${r.say} ${on_file.length} place${on_file.length === 1 ? '' : 's'} on file: ${on_file.map(p => p.name).join(', ')}.`,
+    note: r.ask_kit
+      ? 'Ask in ONE clause what is there — "what have they got: rack, dumbbells, cables?" — then call add_gym again with the kit. Never a form, and never guess a gym\'s equipment. The main gym\'s kit is on the profile; this is a second place.'
+      : 'Confirm in a few words. From now on "I\'m at <this place>" builds to its kit — pass place on suggest_workout, start_session or design_workout.',
+    equipment_for_sessions: placeEquipment(r.place, profile),
+  };
+}
+
+async function myGyms(_args, user) {
+  const profile = await getProfile(user.id);
+  const places = await listPlaces(user.id);
+  const memGyms = (await getMemory(user.id, 'gym')).map(m => m.fact);
+  return {
+    main_gym_equipment: profile.equipment || null,
+    places: places.map(p => ({ name: p.name, kind: p.kind, equipment: p.equipment, last_used_on: p.last_used_on, times_used: p.times_used, notes: p.notes })),
+    ...(memGyms.length ? { unstructured_gyms: memGyms, note_unstructured: 'These were remembered as sentences before places existed. Offer once to add each with add_gym so its kit is on file.' } : {}),
+    say: places.length
+      ? `${places.length} place${places.length === 1 ? '' : 's'}: ${places.map(p => `${p.name} (${p.kind}${p.equipment?.length ? `, ${p.equipment.length} items` : p.kind === 'outdoor' ? '' : ', no kit listed'})`).join('; ')}. Main gym kit on the profile: ${(profile.equipment || []).join(', ') || 'none listed'}.`
+      : `No places on file yet. The main gym's kit on the profile: ${(profile.equipment || []).join(', ') || 'none listed'}.`,
+    note: 'When they say where they are, pass place to the training tool. A place with no kit listed is asked once, in one clause.',
+  };
+}
+
+async function dropGym(args, user) {
+  const places = await listPlaces(user.id);
+  const wanted = String(args.name || '').trim().toLowerCase();
+  const hit = places.find(p => p.name.toLowerCase() === wanted) || places.find(p => p.name.toLowerCase().includes(wanted) && wanted.length > 2);
+  if (!hit) return { error: 'no_match', say: `Nothing on file called "${args.name}". Places: ${places.map(p => p.name).join(', ') || 'none'}.` };
+  const { error } = await supabase.from('wrought_places').update({ active: false }).eq('id', hit.id).eq('user_id', user.id);
+  if (error) return { error: error.message };
+  return { dropped: hit.name, say: `${hit.name} removed. Its sessions stay on the record.`, note: 'No comment on why.' };
+}
+
+// Resolve "at <place>" for a training tool: the place row (created if new),
+// the equipment to build for, and the one-clause ask when a new gym has no
+// kit. Never blocks — a session that arrives beats one still being specified.
+async function placeForSession(userId, profile, args, today) {
+  if (!args.place) return null;
+  const r = await resolvePlace(userId, args.place);
+  if (!r || r.unavailable || r.error) return r?.unavailable ? { unavailable: true, name: r.name } : null;
+  if (r.place && today) await bumpPlace(r.place.id, today);
+  return {
+    place: r.place, created: r.created, ask_kit: r.ask_kit,
+    equipment: placeEquipment(r.place, profile),
+    say: r.say,
+    note: r.ask_kit
+      ? `${r.place.name} has no kit on file, so this is built for the main gym's equipment. Ask in ONE clause what is actually there and call add_gym with it — never a form, never guessed, never blocking the session.`
+      : r.place.kind === 'outdoor' ? `Built for ${r.place.name}: bodyweight and the ground. No kit question.`
+      : `Built to what is on file at ${r.place.name}.`,
   };
 }
 
@@ -2802,6 +2915,10 @@ async function suggestWorkout(args, user) {
 
   const lastSession = [...range.days].reverse().find(d => d.sessions > 0);
 
+  // WHERE THEY ARE, when they said. A place on file builds to its kit; a new
+  // gym is added on the way and asked for its kit once; a park needs none.
+  const at = await placeForSession(user.id, profile, args, today);
+
   const state = {
     trained_today: range.days[range.days.length - 1]?.sessions > 0,
     days_since_last_session: lastSession ? daysBetween(lastSession.date, today) : null,
@@ -2810,7 +2927,7 @@ async function suggestWorkout(args, user) {
     sessions_per_week: summary.sessions_per_week,
     neglected: summary.matrix.neglected,
     days_since_each_muscle: staleness,
-    equipment: args.equipment || profile.equipment || ['unknown'],
+    equipment: args.equipment || at?.equipment || profile.equipment || ['unknown'],
     minutes_available: args.minutes || null,
     target_days_per_week: profile.train_days || null,
     training_age: profile.training_age || null,
@@ -2910,7 +3027,9 @@ No preamble, no disclaimers, no warm-up boilerplate unless it matters for a name
   return {
     state,
     session,
-    ...(gymsOnFile.length && !args.equipment ? {
+    ...(at?.place ? { place: { name: at.place.name, kind: at.place.kind, created: at.created }, place_note: at.note } : {}),
+    ...(at?.unavailable ? { place_not_stored: `"${at.name}" could not be stored — places need schema/024_wrought_places.sql run.` } : {}),
+    ...(gymsOnFile.length && !args.equipment && !at ? {
       gyms_on_file: gymsOnFile,
       gym_note: 'This is built for their MAIN gym\u2019s equipment. More than one gym is on file — ask in ONE clause which they are at (or somewhere new), and if it is not the main one, call suggest_workout again passing that gym\u2019s inventory as equipment. Never hold the session hostage to the answer.',
     } : {}),
@@ -3100,11 +3219,17 @@ async function startSession(args, user) {
   const aim = String(args.aim || '').trim().slice(0, 300) || null;
   const canAim = await sessionsCanCarryAim();
 
+  // WHERE THIS SESSION IS. Stored on the session (when 024 has run) so the
+  // finaliser stamps it on the workout; a new place is added on the way.
+  const at = await placeForSession(user.id, profile, args, today);
+  const canPlace = at?.place ? await sessionsCanCarryPlace() : false;
+
   const { data: session, error } = await supabase.from('wrought_sessions').insert([{
     user_id: user.id, routine_id: routine?.id || null,
     block_id: running?.id || null,
     name, kind, plan, cursor_index: 0, local_date: today,
     ...(canAim && aim ? { aim } : {}),
+    ...(canPlace ? { place: at.place.name } : {}),
   }]).select('id').single();
   if (error) return { error: error.message };
 
@@ -4724,7 +4849,12 @@ async function designWorkout(args, user) {
   const tier = profile.training_age === 'beginner' ? 'beginner'
              : profile.training_age === 'advanced' ? 'advanced' : 'intermediate';
   const limitations = memory.filter(m => m.category === 'health').map(m => m.fact);
-  const gyms = memory.filter(m => m.category === 'gym').map(m => m.fact);
+  // Places on file first (rows), then anything remembered as a sentence
+  // before places existed. Not asked at all when they said where they are.
+  const gyms = args.place ? [] : [
+    ...(await listPlaces(user.id)).filter(p => p.kind !== 'outdoor').map(p => p.name),
+    ...memory.filter(m => m.category === 'gym').map(m => m.fact),
+  ];
   // A famous name is a STYLE ask. "Schwarzenegger workout" is golden-era
   // volume; "boxing workout" is a camp's conditioning shape. Recognised from
   // either field, because people put it wherever it comes out.
@@ -4757,7 +4887,8 @@ async function designWorkout(args, user) {
   }
 
   const avoid = [...(Array.isArray(args.avoid) ? args.avoid : []), ...limitations];
-  const equipment = args.equipment?.length ? args.equipment : profile.equipment;
+  const at = await placeForSession(user.id, profile, args, null);
+  const equipment = args.equipment?.length ? args.equipment : (at?.equipment || profile.equipment);
   const exercises = designSession({ focus, minutes, tier, equipment, avoid, style });
 
   if (!exercises) {
@@ -5091,6 +5222,9 @@ const IMPL = {
   my_plan: myPlan,
   set_plan: setPlan,
   answer_setup: answerSetup,
+  add_gym: addGym,
+  my_gyms: myGyms,
+  drop_gym: dropGym,
   log_activity: logActivity,
   structure_entries: structureEntries,
   undo_last: undoLast,

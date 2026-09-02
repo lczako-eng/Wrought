@@ -37,6 +37,7 @@ import { supabase, insertEvents, localDateFor } from './wrought.js';
 import { sessionTotals, sessionsCanCarryAim, exerciseKey } from './training.js';
 import { sessionProgress } from './warmup.js';
 import { sessionEffort, splitWork, windowedActive } from './effort.js';
+import { sessionsCanCarryPlace } from './places.js';
 
 // How long a gap means the session is over rather than resting. Real sets sit
 // minutes apart; four hours is not a rest, it is somebody who left. Generous on
@@ -158,6 +159,13 @@ export async function finaliseSession(userId, profile, session,
       .select('aim').eq('id', session.id).maybeSingle();
     aim = row?.aim || null;
   }
+  // WHERE it happened, same shape: fetched only when 024 has run.
+  let place = session.place ?? null;
+  if (place == null && await sessionsCanCarryPlace()) {
+    const { data: row } = await supabase.from('wrought_sessions')
+      .select('place').eq('id', session.id).maybeSingle();
+    place = row?.place || null;
+  }
 
   // WHAT IT COST, MEASURED — and the cardio counted apart from the lifting.
   //
@@ -211,6 +219,7 @@ export async function finaliseSession(userId, profile, session,
       })),
       volume_kg: totals.volume_kg,
       session_id: session.id,
+      ...(place ? { place } : {}),
       // WHAT THIS SESSION WAS FOR, in their own words, kept on the record.
       // It was asked for at the start and, until now, read once by a model in
       // one turn and then lost — so the log could say what was lifted and
@@ -385,6 +394,8 @@ export function workoutList(sessions = [], events = [], { today = null, limit = 
       avg_hr: d.avg_hr ?? null,
       max_hr: d.max_hr ?? null,
       session_id: d.session_id || null,
+      // Where it happened, when it was said.
+      place: d.place || null,
       // Where it came from, because "why is this not in my log" is answered
       // completely differently for a watch and for a dictated sentence.
       source: e.source && e.source !== 'agent' ? 'device' : 'logged',
@@ -403,6 +414,7 @@ export function workoutList(sessions = [], events = [], { today = null, limit = 
         ? Math.max(1, Math.round((new Date(s.ended_at) - new Date(s.started_at)) / 60000)) : null,
       distance_km: null, calories: null, avg_hr: null, max_hr: null,
       session_id: s.id,
+      place: s.place || null,
       source: 'logged',
     });
   }
