@@ -1099,6 +1099,11 @@ table.matrix td.rh.cold { color: var(--heat-3); }
 .vint { display: inline-block; font-size: 10.5px; letter-spacing: .08em; text-transform: uppercase; padding: 1px 6px; border-radius: 6px; border: 1px solid var(--line); margin-right: 4px; color: var(--muted); }
 .vint.calm { border-color: #3d6b46; color: #8fc79a; }
 .vint.demanding, .vint.relentless { border-color: var(--heat-3); color: var(--heat-5); }
+/* Athlete markers: a direction, never a warning colour. */
+.chip.trend.good, .chip.good { border-color: #3d6b46; color: #8fc79a; }
+.chip.trend.off { border-color: var(--heat-3); color: var(--heat-5); }
+.recs { margin: 4px 0 10px; padding-left: 0; list-style: none; }
+.recs li { margin: 6px 0; line-height: 1.4; }
 .sq { margin: 12px 0 0; }
 .sq .q { margin: 0 0 6px; font-weight: 600; }
 .sq-row { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin-top: 6px; }
@@ -3793,6 +3798,7 @@ function renderTrainer(d) {
       <p class="caveat">${esc(d.say)}</p></section>
       ${notConnectedCallout()}
       ${routinesPanel({ routines: trainerRoutinesFull.length ? trainerRoutinesFull : (d.routines?.length ? d.routines : trainerRoutines) }, { editable: true })}
+      ${athletePanel(lastPayload || {})}
       ${traditionsPanel({ traditions: lastPayload?.traditions, routines: trainerRoutinesFull })}
       ${placesPanel({ places: lastPayload?.places })}
       ${stylesPanel({ styles: lastPayload?.styles })}`;
@@ -5958,6 +5964,37 @@ function gptLink(prompt, label) {
 // comes from the SERVER so it cannot drift from what design_workout actually
 // recognises, and the provenance rides every card — a style shown without its
 // honest line is the wink the doctrine forbids.
+// THE ATHLETE TRACK — markers as trends, tests as bests, and what to work on.
+// The founder: "a trainer for competitive sports… more sensors, VO2 max and
+// sprint time… these are the ones I recommend you work on. It should
+// analyse." Drawn only on that track; nothing here is medical, and the
+// caution is printed on the panel every time.
+function athletePanel(d) {
+  if (DEMO) return '';
+  const a = d?.athlete;
+  if (!a) return '';
+  const arrow = m => m.trend === 'up' ? '↑' : m.trend === 'down' ? '↓' : m.trend === 'flat' ? '→' : '·';
+  const tone = m => m.good == null ? '' : m.good ? ' good' : ' off';
+  const markers = (a.markers || []).map(m => m.missing
+    ? `<div class="planrow style"><span class="lbl">${esc(m.say)}<span class="emph">Not on record — ${esc(m.how)}.</span></span><span class="chip">missing</span></div>`
+    : `<div class="planrow style"><span class="lbl">${esc(m.say)}<span class="emph">${esc(m.line)}</span></span><span class="chip trend${tone(m)}">${arrow(m)} ${m.latest}${m.unit === 'ml/kg/min' ? '' : ' ' + esc(m.unit)}</span></div>`).join('');
+  const tests = (a.tests || []).map(t => t.missing
+    ? `<div class="planrow style"><span class="lbl">${esc(t.say)}<span class="emph">Not logged yet — ${esc(t.how)}.</span></span><span class="chip">—</span></div>`
+    : `<div class="planrow style"><span class="lbl">${esc(t.say)}<span class="emph">${esc(t.line)}</span></span><span class="chip${t.is_best ? ' good' : ''}">${t.is_best ? 'best' : `${t.off_best_pct}% off`}</span></div>`).join('');
+  const recs = (a.recommendations || []).map((r, i) => `<li><b>${i + 1}.</b> ${esc(r.say)}</li>`).join('');
+  return `<section class="panel" id="athlete">
+    <h2>Athlete${a.sport ? ` · ${esc(a.sport)}` : ''}</h2>
+    ${recs ? `<p class="sub"><b>Work on:</b></p><ol class="recs">${recs}</ol>` : `<p class="sub">${esc(a.say)}</p>`}
+    ${a.commitment_recommended ? `<p class="sub">${esc(a.commitment_recommended.say)} ${gptLink('Gym bro — set my athlete commitment: two strength, two stamina, one speed session a week, about five hours. Then set the Wednesday check.', 'Set it')}</p>` : ''}
+    <h3 class="stylegrp">Markers · this month against last</h3>
+    <div class="planrows">${markers}</div>
+    <h3 class="stylegrp">Tests · your bests</h3>
+    <div class="planrows">${tests}</div>
+    <p class="sub dim">${esc(a.not_medical)}</p>
+    ${gptLink('Gym bro — athlete report. What should I work on this week?', 'Ask for the read')}
+  </section>`;
+}
+
 // THE TRADITION WORKOUTS, AS A LIST YOU CAN TAKE FROM. The founder: "this
 // should be added as a list somewhere in the app or webpage so that people
 // know what's going on with this, and it should be totally customisable —

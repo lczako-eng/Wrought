@@ -134,7 +134,7 @@ export const ALERT_KINDS = {
  */
 export function dueAlerts({ rules = [], day = null, balance = null, calorieTarget = null,
                             week = null, lastWeighDays = null, flags = [], hour = 12,
-                            weekday = 0, date = null, scored = [] } = {}) {
+                            weekday = 0, date = null, scored = [], athlete = null } = {}) {
   const out = [];
   // A CARE FLAG OUTRANKS EVERYTHING, including the cheerful ones. Coaching
   // stops; their own reminders are not coaching and are left alone.
@@ -176,7 +176,7 @@ export function dueAlerts({ rules = [], day = null, balance = null, calorieTarge
     }
 
     const built = build(r, {
-      day, balance, calorieTarget, week, lastWeighDays, flagged, hour, scored,
+      day, balance, calorieTarget, week, lastWeighDays, flagged, hour, scored, athlete,
     });
     if (built) out.push({ id: r.id, kind: r.kind, ...built });
   }
@@ -189,7 +189,7 @@ export function dueAlerts({ rules = [], day = null, balance = null, calorieTarge
   return out.slice(0, 1);
 }
 
-function build(r, { day, balance, calorieTarget, week, lastWeighDays, flagged, hour, scored = [] }) {
+function build(r, { day, balance, calorieTarget, week, lastWeighDays, flagged, hour, scored = [], athlete = null }) {
   switch (r.kind) {
     case 'custom': {
       const text = String(r.text || '').trim();
@@ -307,9 +307,13 @@ function build(r, { day, balance, calorieTarget, week, lastWeighDays, flagged, h
       // so the notification and the dashboard's training-week panel cannot
       // quote different figures for the same Wednesday.
       const left = num(week.days_left);
+      // On the athlete track the check also says the one thing to work on —
+      // "these are the ones I recommend you work on" — from the same read the
+      // brief carries. One line, its evidence inside it, never a second push.
+      const workOn = athlete?.top?.say ? ` ${athlete.top.say}` : '';
       return {
         title: c.met ? 'Week met' : 'Mid-week check',
-        body: c.say + (left != null && !c.met ? ` ${left} day${left === 1 ? '' : 's'} left.` : ''),
+        body: c.say + (left != null && !c.met ? ` ${left} day${left === 1 ? '' : 's'} left.` : '') + workOn,
         why: 'a scheduled read of the week against what they committed to',
       };
     }
@@ -361,13 +365,15 @@ export function describeAlert(r = {}) {
  * product never comes back on.
  */
 export function suggestAlerts({ hasCalorieTarget = false, trainDays = null, fasting = false,
-                                movementGoals = [], commitment = false } = {}) {
+                                movementGoals = [], commitment = false, athlete = false } = {}) {
   const out = [];
   // The mid-week read, only once there is a commitment to read against — a
   // rule watching numbers nobody stated can never fire.
   if (commitment) {
     out.push({ kind: 'week_check', at_hour: 18, days: [3],
-      say: 'A Wednesday-evening read of the training week — strength, stamina and minutes against what you committed to — while there are still days to do something about it.' });
+      say: athlete
+        ? 'A Wednesday-evening read of the training week against your five-a-week commitment, with the one thing to work on — engine, speed, strength or recovery — from your markers and tests.'
+        : 'A Wednesday-evening read of the training week — strength, stamina and minutes against what you committed to — while there are still days to do something about it.' });
   }
   if (hasCalorieTarget) {
     out.push({ kind: 'intake_pace', threshold: 0.8,

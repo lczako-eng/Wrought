@@ -134,6 +134,7 @@ export function morningNotification({ yesterdayBalance = null, goals = [], week 
 export function morningBrief({
   facts = {}, flags = [], yesterdayBalance = null, week = null,
   goals = [], goalsToSet = null, yesterday = null, readiness = null, planned = null,
+  athlete = null,
 } = {}) {
   const lines = [];
 
@@ -164,6 +165,12 @@ export function morningBrief({
   //    into a nag that only appears while somebody is behind.
   if (week?.say) {
     lines.push(week.say);
+  }
+  // 3b. THE ATHLETE'S ONE THING TO WORK ON, on that track only — the same read
+  //     the mid-week check and the brief carry. One line, evidence inside it.
+  //     A care flag silences it below with everything else that coaches.
+  if (athlete?.top?.say && !flags.length) {
+    lines.push(athlete.top.say);
   }
 
   // 4. THE BODY'S VETO, when there is one. It only ever softens; it never turns

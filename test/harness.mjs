@@ -5092,7 +5092,7 @@ await test('a finished questionnaire opens the gate, and capture is never behind
                plan_pace: 'steady', plan_push: 'normal', train_days: 5, training_age: 'intermediate',
                strength_per_week: 3, cardio_per_week: 2, minutes_per_week: 240,
                equipment: ['full gym'], dietary: ['none'], bluntness: 'brutal', brief_hour: 21,
-               timezone: 'America/Toronto' },
+               timezone: 'America/Toronto', sport: 'none' },
     goals: [{ metric: 'weight_kg', direction: 'at_most', target_value: 120 }],
     memory: [
       { category: 'training', fact: 'runs most mornings' },
@@ -10835,6 +10835,131 @@ await test('every style has a voice — a register that changes delivery and not
   assert.match(api, /voice: v\.voice \? \{ register: v\.voice\.register/, 'the dashboard is not sent the voice');
 });
 
+group('The athlete track — sensors as trends, tests as bests, one thing to work on');
+
+await test('markers are trends against their own record, tests are bests, and nothing is invented', async () => {
+  const { markerRead, testRead, parseTestValue, MARKERS, TESTS } = await import('../netlify/functions/lib/athlete.js');
+  const today = '2026-09-02';
+  const row = (metric, d, value) => ({ metric, value, unit: MARKERS[metric]?.unit || TESTS[metric]?.unit, local_date: d });
+  // A month against a month, needing samples on both sides.
+  const vo2 = [
+    ...['2026-07-10', '2026-07-18', '2026-07-26', '2026-08-01'].map(d => row('vo2max', d, 40)),
+    ...['2026-08-10', '2026-08-18', '2026-08-26', '2026-09-01'].map(d => row('vo2max', d, 42)),
+  ];
+  const m = markerRead('vo2max', vo2, today);
+  assert.equal(m.trend, 'up'); assert.equal(m.good, true); assert.equal(m.month_avg, 42); assert.equal(m.prior_avg, 40);
+  assert.match(m.line, /the right direction/);
+  // Lower is better for resting HR: up is the wrong direction.
+  const rhr = [...['2026-07-10', '2026-07-18', '2026-07-26'].map(d => row('resting_hr', d, 58)), ...['2026-08-10', '2026-08-18', '2026-08-26'].map(d => row('resting_hr', d, 62))];
+  const r = markerRead('resting_hr', rhr, today);
+  assert.equal(r.trend, 'up'); assert.equal(r.good, false);
+  // One reading is a reading, not a trend.
+  const one = markerRead('hrv', [row('hrv', '2026-09-01', 45)], today);
+  assert.equal(one.trend, 'not_enough'); assert.match(one.line, /a trend needs a month on each side/);
+  // Missing says how it arrives — never a number.
+  const miss = markerRead('hr_recovery', [], today);
+  assert.equal(miss.missing, true); assert.match(miss.how, /watch/);
+  // A test is a best: lower for a sprint, higher for a jump.
+  const sprint = testRead('sprint_40m_s', [row('sprint_40m_s', '2026-08-01', 5.4), row('sprint_40m_s', '2026-08-20', 5.1), row('sprint_40m_s', '2026-09-01', 5.3)]);
+  assert.equal(sprint.best, 5.1); assert.equal(sprint.is_best, false); assert.equal(sprint.off_best_pct, 3.9);
+  const jump = testRead('vertical_jump_cm', [row('vertical_jump_cm', '2026-08-01', 55), row('vertical_jump_cm', '2026-09-01', 58)]);
+  assert.equal(jump.best, 58); assert.equal(jump.is_best, true); assert.match(jump.line, /your best of 2/);
+  // Spoken results parse: minutes and seconds, inches to centimetres.
+  assert.equal(parseTestValue('run_5k_s', '24:10'), 1450);
+  assert.equal(parseTestValue('run_1mile_s', '7:40'), 460);
+  assert.equal(parseTestValue('sprint_40m_s', '5.2 seconds'), 5.2);
+  assert.equal(parseTestValue('vertical_jump_cm', '23 inches'), 58.4);
+  assert.equal(parseTestValue('plank_hold_s', '2 min'), 120);
+  assert.equal(parseTestValue('beep_test_level', '11.4'), 11.4);
+});
+
+await test('the read recommends at most three things, recovery first and only ever lighter, never medical', async () => {
+  const { athleteRead, ATHLETE_COMMITMENT, NOT_MEDICAL } = await import('../netlify/functions/lib/athlete.js');
+  const today = '2026-09-02';
+  const row = (metric, d, value) => ({ metric, value, local_date: d });
+  const falling = [...['2026-07-10', '2026-07-18', '2026-07-26'].map(d => row('hrv', d, 60)), ...['2026-08-10', '2026-08-18', '2026-08-26'].map(d => row('hrv', d, 50))];
+  const week = { days_left: 4, commitment: { strength: { done: 0, target: 2 }, cardio: { done: 0, target: 3 }, met: false, say: '' } };
+  const profile = { track: 'athlete', sport: 'hockey', strength_per_week: 2, cardio_per_week: 3, train_days: 5 };
+  const out = athleteRead({ rows: falling, week, days: [], profile, today });
+  // Recovery leads, and it softens.
+  assert.equal(out.recommendations[0].key, 'recovery');
+  assert.match(out.recommendations[0].say, /lighter, not more/);
+  assert.ok(!/push through|harder/i.test(out.recommendations[0].say));
+  assert.ok(out.recommendations.length <= 3);
+  assert.match(out.say, /^Work on: Recovery/);
+  // Never medical, anywhere in what is said.
+  const text = JSON.stringify(out);
+  assert.ok(!/\b(diagnos|arrhythm|cardiac|disease|condition|your heart is)\b/i.test(text), 'the read talks like a clinic');
+  assert.equal(out.not_medical, NOT_MEDICAL);
+  // No commitment on file: the five a week is OFFERED, never set.
+  const fresh = athleteRead({ rows: [], week: null, days: [], profile: { track: 'athlete' }, today });
+  assert.deepEqual(fresh.commitment_recommended, ATHLETE_COMMITMENT);
+  assert.match(fresh.commitment_recommended.say, /Say yes to set it/);
+  assert.match(fresh.note, /OFFERED/);
+  // No markers and no tests: the one thing to work on is to run a test — and
+  // nothing in the line is a number nobody measured.
+  assert.match(fresh.say, /^Work on: Speed: no sprint or jump test on record yet/);
+  assert.ok(!/\d+\s*(ml|bpm|ms)\b/.test(fresh.say));
+  assert.ok(fresh.markers.every(m => m.missing) && fresh.tests.every(t => t.missing));
+  // Speed with no test on record asks for one.
+  assert.ok(fresh.recommendations.some(r => r.key === 'speed' && /no sprint or jump test/.test(r.say)));
+  // A met week with markers moving the right way: nothing is behind.
+  const rising = [...['2026-07-10', '2026-07-18', '2026-07-26'].map(d => row('vo2max', d, 40)), ...['2026-08-10', '2026-08-18', '2026-08-26'].map(d => row('vo2max', d, 43)), row('sprint_40m_s', '2026-08-30', 5.1)];
+  const good = athleteRead({ rows: rising, week: { days_left: 2, commitment: { strength: { done: 2, target: 2 }, cardio: { done: 3, target: 3 }, met: true, say: '' } }, days: [], profile, today });
+  assert.equal(good.recommendations.length, 0, `still recommending: ${good.recommendations.map(r => r.key)}`);
+  assert.match(good.say, /Nothing is behind/);
+});
+
+await test('the athlete read rides the brief, the morning, the mid-week check and the dashboard — on that track only', () => {
+  const mcp = readFileSync(new URL('../netlify/functions/mcp.js', import.meta.url), 'utf8');
+  for (const t of ['log_test', 'athlete_report']) {
+    assert.match(mcp, new RegExp(`name: '${t}'`), `${t} is not a tool`);
+    assert.match(mcp, new RegExp(`${t}: `), `${t} is not wired`);
+  }
+  // Off the track it costs nothing and carries nothing.
+  assert.match(mcp, /if \(profile\.track !== 'athlete'\) return null;/, 'the read runs for everyone');
+  assert.match(mcp, /athlete: await athleteFor\(user\.id, profile, date/, 'the brief never carries the read');
+  // A re-told test replaces rather than doubles — the dedupe index, used.
+  assert.match(mcp, /onConflict: 'user_id,source,metric,measured_at'/, 'a re-logged test doubles');
+  assert.match(mcp, /source_ref: `test:\$\{date\}:\$\{test\}`/);
+  // set_plan takes the track and the sport, and OFFERS the commitment.
+  assert.match(mcp, /track: *\{ type: 'string', enum: \['general','athlete'\]/);
+  assert.match(mcp, /commitment_recommended: offer/, 'switching on the track never offers the five a week');
+  assert.ok(!/patch\.strength_per_week = ATHLETE_COMMITMENT/.test(mcp), 'the commitment is set silently');
+  // The sheet.
+  assert.match(SERVER_INSTRUCTIONS, /THE ATHLETE TRACK — a trainer for competitive sport/);
+  assert.match(SERVER_INSTRUCTIONS, /THE COMMITMENT IS OFFERED, NEVER SET/);
+  assert.match(SERVER_INSTRUCTIONS, /NOTHING HERE IS MEDICAL/);
+  assert.match(SERVER_INSTRUCTIONS, /only ever means LIGHTER this week, never push through/);
+  // The mid-week check says the one thing to work on, and the morning too.
+  const alerts = readFileSync(new URL('../netlify/functions/lib/alerts.js', import.meta.url), 'utf8');
+  assert.match(alerts, /const workOn = athlete\?\.top\?\.say \? ` \$\{athlete\.top\.say\}` : '';/);
+  const rule = { id: 'w', kind: 'week_check', at_hour: 18, days: [3], last_sent_on: null, active: true };
+  const week = { done: 2, target: 5, days_left: 4, commitment: { met: false, say: 'strength 1 of 2, stamina 1 of 3.' } };
+  const [out] = dueAlerts({ rules: [rule], week, hour: 18, weekday: 3, date: '2026-09-02', flags: [], athlete: { top: { say: 'Work on: Engine: 1 of 3 stamina sessions this week.' } } });
+  assert.match(out.body, /strength 1 of 2, stamina 1 of 3\. 4 days left\. Work on: Engine/);
+  assert.equal(dueAlerts({ rules: [rule], week, hour: 18, weekday: 3, date: '2026-09-02', flags: [{ flag: 'very_low_intake' }], athlete: { top: { say: 'x' } } }).length, 0, 'the athlete line talks over a care flag');
+  const morning = readFileSync(new URL('../netlify/functions/lib/morning.js', import.meta.url), 'utf8');
+  assert.match(morning, /if \(athlete\?\.top\?\.say && !flags\.length\)/, 'the morning line ignores a care flag');
+  const cron = readFileSync(new URL('../netlify/functions/brief-nightly.js', import.meta.url), 'utf8');
+  assert.equal((cron.match(/profile\.track === 'athlete'/g) || []).length, 2, 'the cron reads athletes on one pass but not the other');
+  // The dashboard: a panel only on the track, with the caution printed.
+  const api = readFileSync(new URL('../netlify/functions/api-progress.js', import.meta.url), 'utf8');
+  assert.match(api, /athlete: profile\.track === 'athlete'/);
+  assert.match(api, /profile\.track === 'athlete' \? athleteRows\(user\.id/, 'athlete rows cost a serial hop or run for everyone');
+  const app = page('app.html');
+  assert.match(app, /function athletePanel\(/);
+  assert.match(app, /\$\{esc\(a\.not_medical\)\}/, 'the panel drops the caution');
+  assert.match(app, /if \(DEMO\) return '';\n  const a = d\?\.athlete;\n  if \(!a\) return '';/, 'the panel draws off the track');
+  // The in-passing question: a sport puts them on the track; "none" is general.
+  const setup = readFileSync(new URL('../netlify/functions/lib/setup.js', import.meta.url), 'utf8');
+  assert.match(setup, /patch\.track = r\.none \? 'general' : 'athlete'/);
+  assert.ok(!INTAKE_ALL.find(i => i.key === 'sport').gate, 'the sport question blocks a workout');
+  // The kinds the code accepts are the kinds the database allows.
+  const sql = readFileSync(new URL('../schema/025_wrought_athlete.sql', import.meta.url), 'utf8');
+  assert.match(sql, /check \(track in \('general','athlete'\)\)/);
+});
+
 await test('twenty-one written sessions — one per tradition, every field free of a load', async () => {
   // "Build the 21 — what you think their exact workouts would be — and put it
   // into our database." A fully written session per lineage. The rule that
@@ -11031,7 +11156,7 @@ await test('every training door takes a place, the log stamps it, and the record
   assert.match(app, /No kit listed yet/, 'a blind gym is not named as blind');
   const api = readFileSync(new URL('../netlify/functions/api-progress.js', import.meta.url), 'utf8');
   assert.match(api, /places: places\.map/, 'the dashboard is never sent the places');
-  assert.match(api, /Promise\.all\(\[getMemory\(user\.id\), listPlaces\(user\.id\)/, 'places cost a serial hop');
+  assert.match(api, /Promise\.all\(\[\s*getMemory\(user\.id\), listPlaces\(user\.id\)/, 'places cost a serial hop');
 });
 
 await test('the door people actually use asks which gym', () => {

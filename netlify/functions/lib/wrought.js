@@ -229,6 +229,7 @@ const DEFAULT_PROFILE = {
   timezone: 'America/Toronto', units: 'metric', height_cm: null, birth_year: null,
   sex: null, training_age: null, equipment: null, train_days: null, dietary: null,
   strength_per_week: null, cardio_per_week: null, minutes_per_week: null,
+  track: 'general', sport: null,
   bluntness: 'honest', notes: null,
 };
 

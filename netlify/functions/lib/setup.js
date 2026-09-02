@@ -26,7 +26,7 @@ const NONE = /^\s*(none|no|nothing|nope|nah|n\/a|no injuries|nothing to work aro
 // and REPORTED, never thrown: a schema change and the code depending on it do
 // not ship together, and a save that loses the whole patch because one column
 // is missing is the regression this file's own doctrine names.
-const COMMITMENT_COLS = ['strength_per_week', 'cardio_per_week', 'minutes_per_week'];
+const COMMITMENT_COLS = ['strength_per_week', 'cardio_per_week', 'minutes_per_week', 'track', 'sport'];
 
 /**
  * Read one answer against its question. Pure.
@@ -232,6 +232,9 @@ export async function applyAnswers(userId, answers) {
         else if (item.key === 'plan_push' && !PUSH[r.value]) { rejected.push({ key, why: 'light, normal or relentless' }); continue; }
         else if (item.key === 'activity_level' && !(r.value in ACTIVITY)) { rejected.push({ key, why: 'one of the four' }); continue; }
         else patch[item.key] = r.value;
+        // A sport puts them on the athlete track; "none" is the general track.
+        // Either answer closes the question.
+        if (item.key === 'sport') { patch.track = r.none ? 'general' : 'athlete'; if (r.none) patch.sport = 'none'; }
         saved.push({ key: item.key, value: patch[item.key], display: r.display });
         break;
       }
