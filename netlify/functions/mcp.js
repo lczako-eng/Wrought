@@ -56,6 +56,7 @@ import { PROGRAMMES, GOALS, MOVEMENTS, movementsFor, pickProgramme, buildProgram
 import { FOCUSES, FOCUS_NAMES, focusFrom, designSession, designQuestions, designNote, STYLES, styleFrom } from './lib/design.js';
 import { styleRoutine } from './lib/style_routines.js';
 import { pickDue } from './lib/morning.js';
+import { athleteRows, athleteRead, TESTS, parseTestValue, ATHLETE_COMMITMENT } from './lib/athlete.js';
 import { resolvePlace, placeEquipment, listPlaces, bumpPlace, applyPlaces, sessionsCanCarryPlace, PLACE_KINDS } from './lib/places.js';
 import { dayReceipt } from './lib/receipt.js';
 
@@ -280,6 +281,8 @@ WHAT THEY TOLD THE PHONE IS STILL WAITING FOR YOU. On an iPhone they can say "he
 "GYM BRO" IS A REGISTER, NOT A LICENCE. If they ask in that voice, answer in it — short, loud, no hedging, no corporate softness. It changes the DELIVERY and nothing else. Every number still comes from the tools, the honesty rules still hold, nothing about their body is ever mentioned, and a care flag silences the whole register instantly and completely. A persona is never a reason to say something the plain version would not say.
 
 A STYLE HAS A VOICE, AND THE SAME RULES BIND IT. When a session is built in a tradition (design_workout with a style) or run from one of the tradition workouts, the response carries "voice": a register — attitude, intensity (calm / steady / demanding / relentless), example lines between sets, what it does on a miss, what it never does. Coach that session in it: a corner man counts the clock down, a high-intensity coach wants one set and silence, an easy-strength coach sends them home. Adapt the lines, never recite them, and NEVER claim to be the person — it is a coaching register in that tradition, not an impersonation, and no surname is ever spoken as the voice. It changes delivery only: a demanding voice never adds a plate or a set, a calm one never removes one, every load still comes from log_set, nothing about their body is ever said, and a care flag silences every voice exactly as it silences gym bro. The person's own bluntness setting still governs verdicts about food and the week; the voice governs the session.
+
+THE ATHLETE TRACK — a trainer for competitive sport. When somebody trains FOR something ("I play hockey", "I want to be an athlete", "competitive", "make me faster"), set_plan with track "athlete" and their sport. From then on every brief carries an "athlete" block and athlete_report gives the whole read: the watch's performance markers — VO2 max, resting heart rate, HRV, one-minute heart-rate recovery, walking heart rate — as THIS MONTH AGAINST LAST, the tests they run and tell you about (log_test: a 40 m sprint, a vertical jump, a 5k, a mile, the beep test) kept as bests, the week against the five-a-week commitment, and at most three recommendations — "these are the ones I recommend you work on" — each with its evidence: recovery first (and it only ever means LIGHTER this week, never push through), then the engine, speed, strength, consistency. Say the top one in one line, then stop. THE COMMITMENT IS OFFERED, NEVER SET: five a week — two strength, two stamina, one speed — is a recommendation until they say yes or give their own numbers; then set_plan writes it and the Wednesday check (set_alert week_check) and the morning brief carry "work on" every week. NOTHING HERE IS MEDICAL: VO2 max, HRV and heart rate are training signals read as trends against their own record — never a diagnosis, never "your heart", never a reassurance either; a number that worries them is a doctor's question. A missing marker is said to be missing and HOW it arrives (a watch through Apple Health sends VO2 max, HRV, resting and recovery HR on its own; a test is one sentence to log); nothing is ever invented to fill it.
 
 THE BRIEF IS THE PRODUCT. Logging is table stakes — a hundred apps log. What nobody has is a thing that reads the whole week back to you honestly. When the user opens with anything resembling "how am I doing", "what's the damage", "morning", or asks about progress, call brief and lead with it. Do not ask which metrics they care about; show the read, then let them dig.
 
@@ -803,6 +806,8 @@ const TOOLS = [
         strength_per_week: { type: 'integer', description: 'Muscle-building sessions a week they will honestly do (0-14). "Make it four lifting days".' },
         cardio_per_week:   { type: 'integer', description: 'Stamina sessions a week — running, cycling, rowing, sport (0-14). "Two runs a week".' },
         minutes_per_week:  { type: 'integer', description: 'Minutes of training a week, in total, they will commit to (0-3000). "Three hours a week" is 180.' },
+        track:             { type: 'string', enum: ['general','athlete'], description: 'The athlete track: "I train for a sport", "I want to be an athlete", "competitive". Turns on the performance read — VO2 max, HRV, recovery, logged tests — and the what-to-work-on line in every brief. The response OFFERS a five-a-week commitment; set it only on a yes.' },
+        sport:             { type: 'string', description: 'What they train for, in their words — "hockey", "5k", "boxing". Naming a sport puts them on the athlete track.' },
       },
     },
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
@@ -1122,6 +1127,28 @@ const TOOLS = [
       type: 'object',
       properties: { category: { type: 'string', enum: ['injury','preference','schedule','context','general'] } },
     },
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+  },
+  {
+    name: 'log_test',
+    title: 'Record a performance test — a sprint, a jump, a timed run',
+    description: 'THE ATHLETE TRACK\'S OWN LOG. Records a test only a person can run and tell you about: "40 metres in 5.2", "vertical jump 58 cm", "5k in 24:10", "mile 7:40", "beep test 11.4", "plank 2 minutes". Call it the moment they say one — in passing counts. It is kept as a best and a trend beside the watch\'s markers (VO2 max, HRV, resting and recovery heart rate), and the reply says where it stands against their best. Never estimate a result; never convert a workout into a test.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        test:  { type: 'string', enum: ['sprint_40m_s','sprint_100m_s','run_1mile_s','run_5k_s','vertical_jump_cm','broad_jump_cm','beep_test_level','plank_hold_s'] },
+        value: { type: 'string', description: 'What they said — "5.2", "24:10", "58 cm", "23 inches", "11.4". The server parses it into seconds, centimetres or a level.' },
+        date:  { type: 'string', description: 'YYYY-MM-DD if it was not today.' },
+      },
+      required: ['test', 'value'],
+    },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+  },
+  {
+    name: 'athlete_report',
+    title: 'The athlete read — markers, tests, and what to work on',
+    description: 'For somebody on the athlete track: every performance marker the watch sends (VO2 max, resting HR, HRV, one-minute heart-rate recovery, walking HR) read as this month against last, every logged test with its best, the week against the five-a-week commitment, and at most three recommendations — "these are the ones I recommend you work on" — each with its evidence. "How am I doing as an athlete", "what should I work on", "where is my VO2 max", "am I getting faster". Nothing here is medical: the markers are training signals read as trends, never a diagnosis. A missing marker says how it arrives; nothing is invented.',
+    inputSchema: { type: 'object', properties: {} },
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   },
   {
@@ -1934,6 +1961,7 @@ async function myAlerts(_args, user) {
     hasCalorieTarget: goals.some(g => g.metric === 'calories' && g.cadence === 'daily'),
     trainDays: profile.train_days || null,
     commitment: profile.strength_per_week != null || profile.cardio_per_week != null || profile.minutes_per_week != null,
+    athlete: profile.track === 'athlete',
     fasting: true,
     // Only goals they have actually set — a rule watching a target that does
     // not exist can never fire, and offering one is offering a dead switch.
@@ -2034,6 +2062,14 @@ async function setPlan(args, user) {
     if (!Number.isFinite(v) || v < 0 || v > hi) return { error: `${what} has to be between 0 and ${hi}.` };
     patch[k] = v;
   }
+  // THE ATHLETE TRACK. Switching it on offers the five-a-week commitment; it
+  // never sets it. Their sport is kept in their words.
+  if (args.track != null) {
+    if (!['general', 'athlete'].includes(args.track)) return { error: 'track is "general" or "athlete".' };
+    patch.track = args.track;
+  }
+  if (args.sport != null) patch.sport = String(args.sport).trim().slice(0, 80) || null;
+  if (patch.sport && args.track == null) patch.track = 'athlete';
   if (patch.strength_per_week != null || patch.cardio_per_week != null) {
     const cur = await getProfile(user.id);
     const s = patch.strength_per_week ?? cur.strength_per_week;
@@ -2050,6 +2086,8 @@ async function setPlan(args, user) {
   const changed = [];
   if (patch.plan_pace) changed.push(`pace is ${patch.plan_pace} — ${PACES[patch.plan_pace].say}`);
   if (patch.plan_push) changed.push(`pushing is ${patch.plan_push} — ${PUSH[patch.plan_push].say}`);
+  if (patch.track) changed.push(patch.track === 'athlete' ? `athlete track${patch.sport ? ` for ${patch.sport}` : ''}` : 'general track');
+  else if (patch.sport) changed.push(`sport: ${patch.sport}`);
   if (patch.strength_per_week != null) changed.push(`${patch.strength_per_week} strength session${patch.strength_per_week === 1 ? '' : 's'} a week`);
   if (patch.cardio_per_week != null) changed.push(`${patch.cardio_per_week} stamina session${patch.cardio_per_week === 1 ? '' : 's'} a week`);
   if (patch.minutes_per_week != null) changed.push(`${patch.minutes_per_week} minutes a week`);
@@ -2083,16 +2121,76 @@ async function setPlan(args, user) {
     }
   }
 
+  // Switched onto the athlete track with no commitment set: OFFER the five a
+  // week. Never written here — their number, once they say so.
+  const cur2 = patch.track === 'athlete' ? await getProfile(user.id) : null;
+  const offer = cur2 && cur2.strength_per_week == null && cur2.cardio_per_week == null ? ATHLETE_COMMITMENT : null;
+
   return {
     changed: patch,
     ...(retargeted ? { targets: retargeted } : {}),
     ...(held ? { held } : {}),
-    say: `Changed — ${changed.join('; ')}.` +
+    ...(offer ? { commitment_recommended: offer, offer_note: 'Offer it in one line. Set it with set_plan (strength_per_week, cardio_per_week, minutes_per_week) only on a yes or their own numbers. Then offer the Wednesday check (set_alert week_check) once.' } : {}),
+    say: `Changed — ${changed.join('; ')}.` + (offer ? ` ${offer.say}` : '') +
          (retargeted ? ` Targets moved with it: about ${retargeted.calories_per_day} kcal and ${retargeted.protein_g_per_day}g protein a day, on pace for roughly ${Math.abs(retargeted.projected_kg_per_week)}kg a week.` : '') +
          (held ? ` ${held}` : ''),
     note: 'Confirm it in one line and move on. NO remark about commitment, no asking why, no warning that they are backing off — a plan somebody keeps missing is a plan set wrong, and easing it to what they will really do is the right call, not a retreat. If they went aggressive, say plainly that it will be hungrier and that protein and lifting matter more now, and leave it there.',
     next_actions: ['my_plan to hear the whole thing back', 'brief — it scores the new targets from tonight'],
   };
+}
+
+// ── The athlete track ──────────────────────────────────────────────────────
+// The performance sensors read as trends, the tests kept as bests, and the
+// one thing to work on — computed in lib/athlete.js, carried on brief, the
+// morning, the mid-week check and the dashboard. Runs only for accounts on
+// the athlete track: it costs a metrics query and is noise for anyone else.
+async function athleteFor(userId, profile, today, { week = null, days = [] } = {}) {
+  if (profile.track !== 'athlete') return null;
+  const rows = await athleteRows(userId, addDays(today, -90));
+  return athleteRead({ rows, week, days, profile, today });
+}
+
+async function logTest(args, user) {
+  const profile = await getProfile(user.id);
+  const test = String(args.test || '');
+  if (!TESTS[test]) return { error: 'unknown_test', say: `Not a test I keep. The options: ${Object.keys(TESTS).join(', ')}.` };
+  const value = parseTestValue(test, args.value);
+  if (value == null || !(value > 0)) return { error: 'unreadable', say: `Could not read "${args.value}" as a ${TESTS[test].say}. Say it plainly — "5.2 seconds", "24:10", "58 cm".` };
+  const date = /^\d{4}-\d{2}-\d{2}$/.test(String(args.date || '')) ? args.date : localDateFor(profile.timezone);
+  // Noon on the day, and the dedupe index (user, source, metric, measured_at)
+  // makes a re-told result on the same day REPLACE rather than double.
+  const row = {
+    user_id: user.id, metric: test, value, unit: TESTS[test].unit,
+    measured_at: `${date}T12:00:00Z`, local_date: date, source: 'manual', source_ref: `test:${date}:${test}`,
+  };
+  const { error } = await supabase.from('wrought_metrics').upsert(row, { onConflict: 'user_id,source,metric,measured_at' });
+  if (error) return { error: error.message };
+  const rows = await athleteRows(user.id, addDays(date, -365));
+  const read = athleteRead({ rows, profile, today: date });
+  const t = read.tests.find(x => x.test === test);
+  return {
+    logged: { test, value, unit: TESTS[test].unit, date },
+    result: t,
+    say: `${t.line}${t.is_best && t.count > 1 ? ' New best.' : ''}`,
+    note: 'Say the line. A best is stated as a fact, never praised; a worse result is stated, never explained — fresh legs, sleep and a warm-up are the usual reasons and none is known from here.',
+    next_actions: ['athlete_report for the whole read'],
+  };
+}
+
+async function athleteReport(_args, user) {
+  const profile = await getProfile(user.id);
+  const today = localDateFor(profile.timezone);
+  const range = await rangeFacts(user.id, profile, addDays(today, -27), today);
+  const week = weekSoFar(range.days, { today, ...weekTargets(profile) });
+  const rows = await athleteRows(user.id, addDays(today, -90));
+  const read = athleteRead({ rows, week, days: range.days, profile, today });
+  if (profile.track !== 'athlete') {
+    return {
+      ...read,
+      track_note: 'They are not on the athlete track. Offer it in one line — set_plan with track "athlete" and their sport — and only switch it on if they say so. The read above runs either way from whatever is on record.',
+    };
+  }
+  return read;
 }
 
 // The voice a live session speaks in, read off its routine's name: a session
@@ -2513,6 +2611,11 @@ async function brief(args, user) {
     // first, so "prompt me into training" has to mean this number being already
     // on the table every single time they talk.
     training_week: weekSoFar(range.days, { today: date, ...weekTargets(profile) }),
+    // The athlete read, for accounts on that track: markers as trends, tests
+    // as bests, and the one thing to work on. Null for everyone else.
+    athlete: await athleteFor(user.id, profile, date, {
+      week: weekSoFar(range.days, { today: date, ...weekTargets(profile) }), days: range.days,
+    }),
     readiness: readiness({ days: range.days, today: date }),
     // Running, riding and swimming, read as a progression. A best is worth
     // saying out loud on the day it happens — it is the entire reason somebody
@@ -5250,6 +5353,8 @@ const IMPL = {
   my_plan: myPlan,
   set_plan: setPlan,
   answer_setup: answerSetup,
+  log_test: logTest,
+  athlete_report: athleteReport,
   add_gym: addGym,
   my_gyms: myGyms,
   drop_gym: dropGym,

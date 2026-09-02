@@ -1591,6 +1591,55 @@ overstates the burn in the direction that tells somebody they have room to
 eat. Two or more rows for the day (sub-daily granularity) or the labelled
 estimate stands. Verified to bite.
 
+### The athlete track — sensors as trends, tests as bests, one thing to work on
+
+`025_wrought_athlete.sql` + `lib/athlete.js` + `log_test` / `athlete_report`
++ `track` / `sport` on `set_plan` + the *Athlete* panel. The founder: *"as a
+trainer for competitive sports, that should have a version where we take more
+sensors — VO2 max, sprint time and stuff like that. This should have a plan to
+build you like a super athlete, and your reminders should reflect all this:
+you should be working out five times a week, these are the ones I recommend
+you work on. It should analyse."*
+
+Everything the watch sends was already stored — VO2 max, resting HR, HRV,
+one-minute HR recovery, walking HR, the six-minute walk — and nothing read it
+as a trend or turned it into a recommendation. Now:
+
+- **Markers are THIS MONTH AGAINST LAST**, needing three samples on each
+  side; one reading is a reading, not a trend. Each marker knows which
+  direction is the good one (VO2 up, resting HR down). A missing marker says
+  so and **how it arrives** — never a number in its place.
+- **Tests are bests.** `log_test` takes what a person can only run and tell
+  you — a 40 m sprint, a vertical jump, a 5k, a mile, the beep test, a plank —
+  parsed from *"24:10"* / *"23 inches"*, stored in `wrought_metrics` at noon
+  of the day with `source: manual`, so a re-told result **replaces** through
+  the dedupe index rather than doubling. Never estimated, never converted from
+  a workout.
+- **At most three recommendations, each with its evidence**, in a fixed
+  order: **recovery first, and it only ever means lighter this week** (a
+  falling HRV or rising resting HR must not be told to add a stamina session),
+  then engine (stamina sessions short, or VO2 flat/down), speed (no test, a
+  stale test, or well off the best), strength, consistency. `top.say` is the
+  one line — *"Work on: …"*.
+- **Nothing here is medical.** VO2 max, HRV and heart rate are training
+  signals read as trends against the person's own record — never a diagnosis,
+  never *"your heart"*, never a reassurance either. The caution rides every
+  response and is printed on the panel; a test greps the read for clinical
+  words.
+- **The commitment is OFFERED, never set.** Switching onto the track with no
+  commitment offers five a week — two strength, two stamina, one speed, about
+  five hours — and `set_plan` writes it only on a yes or their own numbers.
+  Then the Wednesday check and the morning brief carry *"work on"* every week.
+- **The reminders reflect it.** `week_check`'s body gains the top
+  recommendation; the morning brief gains the same line after the week's
+  position; `brief` carries the whole `athlete` block. All from ONE read, so
+  the notification, the brief and the panel cannot name different things. A
+  care flag silences the line everywhere.
+- **Off the track it costs nothing** — no metrics query, `athlete: null`,
+  no panel. A sport named in the in-passing questionnaire (*"none"* is a real
+  answer) puts somebody on the track; so does *"I play hockey"* through
+  `set_plan`. Applied to the live database through the connector.
+
 ### Every style has a voice — a register that changes delivery and nothing else
 
 `lib/voices.js`, merged onto `STYLES`, carried as `voice` on `design_workout`

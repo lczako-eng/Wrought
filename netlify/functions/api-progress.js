@@ -20,6 +20,7 @@ import { intakeState } from './lib/intake.js';
 import { STYLES } from './lib/design.js';
 import { listPlaces } from './lib/places.js';
 import { STYLE_ROUTINES } from './lib/style_routines.js';
+import { athleteRows, athleteRead } from './lib/athlete.js';
 import { formWatch, cardioProgress } from './lib/form.js';
 import { nextNudge } from './lib/prompt.js';
 import { blockPosition } from './lib/library.js';
@@ -527,7 +528,11 @@ export const handler = async (event) => {
   // SEE is indistinguishable from a product that never asks. This is the same
   // intakeState the training tools now stop on.
   // Places ride the same hop as memory — no new serial await.
-  const [memory, places] = await Promise.all([getMemory(user.id), listPlaces(user.id).catch(() => [])]);
+  // The athlete rows ride the same hop, and only for that track.
+  const [memory, places, athleteRowsAll] = await Promise.all([
+    getMemory(user.id), listPlaces(user.id).catch(() => []),
+    profile.track === 'athlete' ? athleteRows(user.id, addDays(to, -90)).catch(() => []) : Promise.resolve([]),
+  ]);
 
   // THE COACH SETUP, as facts the page can draw. The founder, inventor of the
   // product: "honestly, I do not know how to use it." Every piece — push,
@@ -800,6 +805,12 @@ export const handler = async (event) => {
         emphasis: STYLES[key]?.emphasis || null,
         voice: STYLES[key]?.voice ? { register: STYLES[key].voice.register, intensity: STYLES[key].voice.intensity, attitude: STYLES[key].voice.attitude } : null,
       })),
+      // The athlete read — markers as trends, tests as bests, what to work on.
+      // Null off the track; the panel stays away rather than drawing an empty
+      // clinic.
+      athlete: profile.track === 'athlete'
+        ? athleteRead({ rows: athleteRowsAll, week: trainingWeek, days: recent.days, profile, today: to })
+        : null,
       // Where they train, with what is at each — the record the coach builds to.
       places: places.map(p => ({ name: p.name, kind: p.kind, equipment: p.equipment || [], last_used_on: p.last_used_on, times_used: p.times_used })),
       styles: Object.entries(STYLES).map(([key, v]) => ({

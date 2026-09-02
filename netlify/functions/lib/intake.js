@@ -151,6 +151,9 @@ export const INTAKE = [
     ask: 'What kit have you actually got access to', asks: 'what kit they actually have access to' },
 
   // ── Picked up in passing — never at the gate ────────────────────────────
+  { key: 'sport', where: 'profile', kind: 'text', ...YESNO_NONE,
+    ask: 'Do you train for a sport — which one', asks: 'whether they train for a sport, and which — "none" is a real answer',
+    hint: 'hockey, 5k, boxing', none_fact: 'Not training for a sport' },
   { key: 'goal_weight', where: 'goal', kind: 'text',
     ask: 'Have you got a weight in mind, and by when', asks: 'whether they have a weight in mind, and by when' },
   { key: 'sports', where: 'memory', category: 'training', kind: 'text', ...YESNO_NONE,
@@ -211,6 +214,8 @@ const HAS = {
   cardio_per_week: p => p.profile?.cardio_per_week != null,
   minutes_per_week: p => p.profile?.minutes_per_week != null,
   training_age: p => !!p.profile?.training_age,
+  // Answered once the track has been chosen either way — "none" is general.
+  sport: p => !!p.profile?.sport || p.profile?.track === 'athlete',
   equipment: p => Array.isArray(p.profile?.equipment) && p.profile.equipment.length > 0,
   dietary: p => Array.isArray(p.profile?.dietary) && p.profile.dietary.length > 0,
   // Bluntness has a default, so it only counts as answered once they changed

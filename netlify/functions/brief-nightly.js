@@ -32,6 +32,7 @@ import { eveningNotification, eveningReceipt, plainBrief } from './lib/voice.js'
 import { energyBalance, weekSoFar, weekTargets, goalsToSet } from './lib/training.js';
 import { dueAlerts } from './lib/alerts.js';
 import { morningBrief, morningNotification, middayBrief, morningDue, morningLink, pickDue } from './lib/morning.js';
+import { athleteRows, athleteRead } from './lib/athlete.js';
 
 const SEND_HOUR = 20;
 
@@ -344,6 +345,11 @@ async function runMorning(userId, profile, now) {
   const flags = careFlags(recent, profile, { openDate: date });
   const week = weekSoFar(recent.days, { today: date, ...weekTargets(profile) });
 
+  // The athlete's "work on" line rides the morning too — the same read.
+  const athlete = profile.track === 'athlete'
+    ? athleteRead({ rows: await athleteRows(userId, addDays(date, -90)), week, days: recent.days, profile, today: date })
+    : null;
+
   // The morning closes YESTERDAY. The former code fed today's barely started
   // record into this calculation and announced a whole-day projection instead
   // of answering what was burned. Use the last weight known by yesterday so a
@@ -368,6 +374,7 @@ async function runMorning(userId, profile, now) {
   const out = morningBrief({
     facts: day, flags, yesterdayBalance, week, goals, yesterday, planned: dueRoutine,
     goalsToSet: goalsToSet({ goals, targets: null, stepsAvg: null }),
+    athlete,
   });
   // Nothing worth saying sends nothing. A morning nag is how a product gets
   // muted permanently, and muted never comes back on.
@@ -422,6 +429,13 @@ async function runAlerts(userId, profile, now) {
 
   const week = weekSoFar(recent.days, { today: date, ...weekTargets(profile) });
 
+  // The athlete read, only for that track: one metrics query, the same read
+  // the brief and the dashboard carry, so the mid-week check cannot name a
+  // different thing to work on.
+  const athlete = profile.track === 'athlete'
+    ? athleteRead({ rows: await athleteRows(userId, addDays(date, -90)), week, days: recent.days, profile, today: date })
+    : null;
+
   const lastWeigh = recent.days.filter(d => d.weight_kg != null).slice(-1)[0] || null;
   const lastWeighDays = lastWeigh
     ? Math.round((new Date(`${date}T00:00:00Z`) - new Date(`${lastWeigh.date}T00:00:00Z`)) / 86400000)
@@ -434,7 +448,7 @@ async function runAlerts(userId, profile, now) {
   const due = dueAlerts({
     rules, day, scored,
     calorieTarget: calGoal?.target_value != null ? Number(calGoal.target_value) : null,
-    week, lastWeighDays, flags,
+    week, lastWeighDays, flags, athlete,
     hour, weekday: new Date(`${date}T12:00:00Z`).getUTCDay(), date,
   });
   if (!due.length) return 0;
