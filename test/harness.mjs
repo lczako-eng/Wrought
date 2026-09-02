@@ -10786,6 +10786,55 @@ await test('twenty-one lineages: named for the method, credited as a tradition, 
   assert.ok(!/ambassador/i.test(app) && !/ambassador/i.test(src), '"ambassador" made it into the product');
 });
 
+await test('every style has a voice — a register that changes delivery and nothing else', async () => {
+  // "Each coach's style should reflect their attitude, their aggressiveness
+  // and so forth." The gym-bro rules, with a tradition's name on: delivery
+  // only, never a plate, never the body, never the person.
+  const { STYLE_VOICES, INTENSITIES } = await import('../netlify/functions/lib/voices.js');
+  for (const [key, st] of Object.entries(STYLES)) {
+    const vo = st.voice;
+    assert.ok(vo, `${key} has no voice`);
+    assert.ok(vo.register && vo.attitude && vo.on_a_miss && vo.never, `${key}'s voice is missing a part`);
+    assert.ok(INTENSITIES.includes(vo.intensity), `${key} has an unknown intensity "${vo.intensity}"`);
+    assert.ok(vo.between_sets?.length >= 2, `${key} has no lines between sets`);
+    assert.match(vo.honesty, /not an impersonation/, `${key}'s voice never disclaims impersonation`);
+    const text = JSON.stringify(vo);
+    // NOT AN IMPERSONATION: no voice line carries the person's surname, and
+    // none says "I am".
+    if (st.lineage) {
+      const surname = st.lineage.split(/\s+/).pop().replace(/[^a-z]/gi, '');
+      assert.ok(!new RegExp(`\\b${surname}\\b`, 'i').test(text), `${key}'s voice names ${surname}`);
+    }
+    assert.ok(!/\bI am [A-Z]/.test(text), `${key}'s voice claims to be somebody`);
+    // NEVER A PLATE: a voice may not add load or sets, however demanding.
+    assert.ok(!/add (a |another )?(plate|set|weight|rep)|go heavier|put more on/i.test(vo.between_sets.join(' ') + vo.on_a_miss),
+      `${key}'s voice adds load or sets`);
+    // NEVER CRUEL: no body, no shaming.
+    assert.ok(!/\b(fat|skinny|weak|pathetic|lazy|useless|loser|soft)\b/i.test(text), `${key}'s voice is cruel`);
+    assert.ok(!/\d+\s*(kg|lb)\b/i.test(text), `${key}'s voice names a weight`);
+  }
+  assert.equal(Object.keys(STYLE_VOICES).length, Object.keys(STYLES).length, 'a voice has no style, or a style no voice');
+
+  // Carried where it matters: on the designed session, and between the sets
+  // of a session run from a tradition workout — read off the routine's name.
+  const mcp = readFileSync(new URL('../netlify/functions/mcp.js', import.meta.url), 'utf8');
+  assert.match(mcp, /voice: STYLES\[style\]\.voice/, 'design_workout never carries the voice');
+  assert.match(mcp, /\.\.\.\(sessionVoice\(session\) \? \{ voice: sessionVoice\(session\) \} : \{\}\)/, 'log_set never carries the voice');
+  assert.equal(styleFrom('Fight camp (Freddie Roach tradition)'), 'boxing_camp', 'a tradition workout\'s name does not find its voice');
+  assert.equal(styleFrom('Golden-era chest and back (Arnold Schwarzenegger tradition)'), 'golden_era');
+  assert.equal(styleFrom('Leg day'), null, 'a plain routine got a voice');
+  // The rule rides the sheet and the tool note: delivery only, care flag silences.
+  assert.match(SERVER_INSTRUCTIONS, /A STYLE HAS A VOICE, AND THE SAME RULES BIND IT/);
+  assert.match(SERVER_INSTRUCTIONS, /a care flag silences every voice exactly as it silences gym bro/);
+  assert.match(mcp, /never claiming to be the person/);
+  // And the website shows the attitude, so picking a style is picking a coach
+  // with eyes open.
+  const app = page('app.html');
+  assert.match(app, /class="vint \$\{esc\(st\.voice\.intensity\)\}"/, 'the styles panel never shows the intensity');
+  const api = readFileSync(new URL('../netlify/functions/api-progress.js', import.meta.url), 'utf8');
+  assert.match(api, /voice: v\.voice \? \{ register: v\.voice\.register/, 'the dashboard is not sent the voice');
+});
+
 await test('twenty-one written sessions — one per tradition, every field free of a load', async () => {
   // "Build the 21 — what you think their exact workouts would be — and put it
   // into our database." A fully written session per lineage. The rule that

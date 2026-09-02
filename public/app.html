@@ -1094,6 +1094,11 @@ table.matrix td.rh.cold { color: var(--heat-3); }
 .planrow.style .lbl { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .planrow.style .lineage { font-size: 12.5px; color: var(--muted); font-weight: 400; }
 .planrow.style .emph { font-size: 12px; color: var(--dim); font-weight: 400; }
+.planrow.style .voice { font-size: 12px; color: var(--muted); font-weight: 400; margin-top: 2px; }
+/* Intensity as a small stamp — a word, never a warning colour. */
+.vint { display: inline-block; font-size: 10.5px; letter-spacing: .08em; text-transform: uppercase; padding: 1px 6px; border-radius: 6px; border: 1px solid var(--line); margin-right: 4px; color: var(--muted); }
+.vint.calm { border-color: #3d6b46; color: #8fc79a; }
+.vint.demanding, .vint.relentless { border-color: var(--heat-3); color: var(--heat-5); }
 .sq { margin: 12px 0 0; }
 .sq .q { margin: 0 0 6px; font-weight: 600; }
 .sq-row { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin-top: 6px; }
@@ -5982,6 +5987,7 @@ function traditionsPanel(d) {
         <span class="chip${inUse ? ' on' : ''}">${inUse ? 'in your workouts' : `${t.est_minutes || '?'} min`}</span>
       </summary>
       <div class="rbody">
+        ${t.voice ? `<p class="sub"><b class="vint ${esc(t.voice.intensity)}">${esc(t.voice.intensity)}</b> ${esc(t.voice.register)} — ${esc(t.voice.attitude)}</p>` : ''}
         <p class="rnotes">${esc(t.notes || '')}</p>
         <div class="rmvs">${(t.exercises || []).map(m => `<div class="rmv"><div class="rmv-body">
           <span class="rmvn">${esc(m.name)}${m.detail ? `<em>${esc(m.detail)}</em>` : ''}</span>
@@ -6066,9 +6072,13 @@ function stylesPanel(d) {
     if (g) g.items.push(st); else groups.push({ name: st.discipline || 'Other', items: [st] });
   }
   const trad = st => st.tradition || `in the tradition of ${st.lineage}`;
+  // The voice: register and intensity, one line of attitude. What the coach
+  // sounds like once this style is picked — never the person, never a plate.
+  const voiceLine = st => st.voice
+    ? `<span class="voice"><b class="vint ${esc(st.voice.intensity)}">${esc(st.voice.intensity)}</b> ${esc(st.voice.register)} — ${esc(st.voice.attitude)}</span>` : '';
   const row = st => `<div class="planrow style">
-      <span class="lbl">${esc(st.say)}${st.lineage ? `<span class="lineage">${esc(trad(st))}</span>` : ''}${st.emphasis ? `<span class="emph">${esc(st.emphasis)}</span>` : ''}</span>
-      ${gptLink(`Gym bro — design me a ${st.say} workout${st.lineage ? ` (${trad(st)})` : ''} for my gym, about 45 minutes, and offer to save it.`, 'Build it')}
+      <span class="lbl">${esc(st.say)}${st.lineage ? `<span class="lineage">${esc(trad(st))}</span>` : ''}${st.emphasis ? `<span class="emph">${esc(st.emphasis)}</span>` : ''}${voiceLine(st)}</span>
+      ${gptLink(`Gym bro — design me a ${st.say} workout${st.lineage ? ` (${trad(st)})` : ''} for my gym, about 45 minutes, coach it in that style's voice, and offer to save it.`, 'Build it')}
     </div>`;
   return `<section class="panel">
     <h2>Trainer styles</h2>

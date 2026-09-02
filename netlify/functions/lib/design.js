@@ -39,6 +39,7 @@
 //   that is a doctor's question and this is not a medical device.
 
 import { PATTERNS, movementsFor } from './library.js';
+import { STYLE_VOICES } from './voices.js';
 
 // The shapes a single session actually comes in, as people name them. Ordered
 // within each: the biggest, most technical thing first while they are fresh,
@@ -341,6 +342,11 @@ export const STYLES = {
 // The names, in the order they are shown. Named lineages first within each
 // discipline, the unnamed generic shapes after.
 export const STYLE_DISCIPLINES = [...new Set(Object.values(STYLES).map(s => s.discipline))];
+
+// How each style TALKS between the sets — attitude, intensity, the register
+// the trainer standing there uses. Kept in lib/voices.js so this file stays
+// about the session's shape; merged here so a style is one object.
+for (const [key, voice] of Object.entries(STYLE_VOICES)) if (STYLES[key]) STYLES[key].voice = voice;
 
 export function styleFrom(text) {
   const t = String(text || '').trim();
