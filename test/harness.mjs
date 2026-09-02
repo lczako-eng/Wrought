@@ -10784,6 +10784,58 @@ await test('twenty-one lineages: named for the method, credited as a tradition, 
   assert.ok(!/ambassador/i.test(app) && !/ambassador/i.test(src), '"ambassador" made it into the product');
 });
 
+await test('twenty-one written sessions — one per tradition, every field free of a load', async () => {
+  // "Build the 21 — what you think their exact workouts would be — and put it
+  // into our database." A fully written session per lineage. The rule that
+  // matters most: a written session from a famous tradition is the single
+  // most tempting place to put a working weight, because it would read as
+  // pedigree rather than invention.
+  const { STYLE_ROUTINES, styleRoutine } = await import('../netlify/functions/lib/style_routines.js');
+  const { normaliseMovement } = await import('../netlify/functions/lib/training.js');
+  const named = Object.entries(STYLES).filter(([, s]) => s.lineage).map(([k]) => k);
+  for (const k of named) assert.ok(STYLE_ROUTINES[k], `${k} has no written session`);
+  assert.equal(Object.keys(STYLE_ROUTINES).length, named.length, 'a written session has no style');
+
+  const MUSCLES = new Set(['legs', 'glutes', 'core', 'back', 'chest', 'shoulders', 'arms', 'full body']);
+  for (const [k, r] of Object.entries(STYLE_ROUTINES)) {
+    assert.ok(r.name && r.notes && r.exercises?.length >= 4, `${k} is not a full session`);
+    assert.ok(['strength', 'cardio', 'sport', 'mobility', 'hybrid'].includes(r.kind), `${k} has an invalid kind`);
+    assert.ok(['beginner', 'intermediate', 'advanced'].includes(r.tier), `${k} has an invalid tier`);
+    assert.ok(r.est_minutes >= 25 && r.est_minutes <= 90, `${k} is ${r.est_minutes} minutes`);
+    // Named as a TRADITION, and the write-up disclaims the programme and the
+    // endorsement in its own words — the same rule as the style it belongs to.
+    assert.match(r.name, /tradition\)$/, `${k}'s name does not say "tradition"`);
+    assert.match(r.notes, /^In the tradition of /, `${k}'s write-up does not open with the tradition`);
+    assert.match(r.notes, /not his programme/i, `${k}'s write-up never says it is not his programme`);
+    assert.match(r.notes, /not an endorsement/i, `${k}'s write-up never disclaims endorsement`);
+    assert.match(r.notes, /No loads are written here/, `${k}'s write-up never says loads come from the rack`);
+    // NOT ONE LOAD ANYWHERE — in a field or in the words.
+    const text = JSON.stringify(r);
+    assert.ok(!/\d+\s*(kg|lb|lbs|pounds?|kilos?)\b/i.test(text), `${k} names a weight: ${text.match(/\d+\s*(kg|lb|lbs|pounds?|kilos?)\b/i)?.[0]}`);
+    for (const e of r.exercises) {
+      assert.equal(e.load_kg ?? null, null, `${k}: ${e.name} carries a load`);
+      // Every movement is either counted or timed, never both and never neither.
+      const counted = e.sets != null && e.reps != null, timedOne = e.minutes != null;
+      assert.ok(counted !== timedOne, `${k}: ${e.name} is ${counted && timedOne ? 'both counted and timed' : 'neither counted nor timed'}`);
+      // And the muscles use the library's words, so the weekly dose counts it.
+      assert.ok(e.muscles?.length, `${k}: ${e.name} names no muscles`);
+      for (const m of e.muscles) assert.ok(MUSCLES.has(m), `${k}: ${e.name} uses an unknown muscle "${m}"`);
+      // Round-trips through the same normaliser save_routine uses, unchanged
+      // in the fields that matter — so what is seeded is what a save writes.
+      const n = normaliseMovement(e);
+      assert.equal(n.sets, e.sets); assert.equal(n.reps, e.reps); assert.equal(n.minutes, e.minutes);
+      assert.equal(n.load_kg, null);
+    }
+  }
+  assert.equal(styleRoutine('nope'), null);
+
+  // design_workout offers the written one beside the built one, and the
+  // instruction is to save it as-is — never rewritten, never with loads.
+  const src = readFileSync(new URL('../netlify/functions/mcp.js', import.meta.url), 'utf8');
+  assert.match(src, /written: styleRoutine\(style\)/, 'the written session never reaches the response');
+  assert.match(src, /do not rewrite it, do not add loads/);
+});
+
 await test('the door people actually use asks which gym', () => {
   // "Next time I go to my gym it's gonna ask me which gym am I going to, or a
   // new one." design_workout asked; suggest_workout — where "I'm going to the

@@ -54,6 +54,7 @@ import {
 } from './lib/training.js';
 import { PROGRAMMES, GOALS, MOVEMENTS, movementsFor, pickProgramme, buildProgramme, buildBlock, blockPosition, BLOCK_LENGTHS } from './lib/library.js';
 import { FOCUSES, FOCUS_NAMES, focusFrom, designSession, designQuestions, designNote, STYLES, styleFrom } from './lib/design.js';
+import { styleRoutine } from './lib/style_routines.js';
 import { dayReceipt } from './lib/receipt.js';
 
 // Newest first. The icons on serverInfo are only honoured by clients speaking
@@ -4783,6 +4784,16 @@ async function designWorkout(args, user) {
       // put their name in it"; this phrasing is the answer.
       ...(STYLES[style].tradition ? { tradition: STYLES[style].tradition } : {}),
       ...(STYLES[style].emphasis ? { emphasis: STYLES[style].emphasis } : {}),
+      // THE WRITTEN SESSION IN THIS TRADITION, beside the one built to their
+      // gym. The founder asked for "their exact workouts"; this is a session
+      // composed from the published methodology, fully written — movements,
+      // sets, reps, rests, and a write-up that says how that tradition runs
+      // it — with no loads anywhere, like everything else here. Offer it as
+      // the alternative and save it with save_routine as-is if they want it.
+      ...(styleRoutine(style) ? {
+        written: styleRoutine(style),
+        written_note: 'A complete written session in this tradition, as an alternative to the one built above. If they would rather have the written one, call save_routine with its name, exercises and notes exactly as given — do not rewrite it, do not add loads.',
+      } : {}),
       style_note: 'Say the provenance line in your own words when presenting this. Never call it the named person\u2019s workout or programme, never imply endorsement, and never invent loads because a style sounds authoritative — loads still come from their history or an RPE like every other session.',
     } : {}),
     name, focus, minutes, tier,
