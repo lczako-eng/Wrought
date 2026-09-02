@@ -31,7 +31,7 @@ import { sendPush, vapidConfigured } from './lib/push.js';
 import { eveningNotification, eveningReceipt, plainBrief } from './lib/voice.js';
 import { energyBalance, weekSoFar, weekTargets, goalsToSet } from './lib/training.js';
 import { dueAlerts } from './lib/alerts.js';
-import { morningBrief, morningNotification, middayBrief, morningDue, morningLink } from './lib/morning.js';
+import { morningBrief, morningNotification, middayBrief, morningDue, morningLink, pickDue } from './lib/morning.js';
 
 const SEND_HOUR = 20;
 
@@ -330,11 +330,16 @@ async function runMorning(userId, profile, now) {
     // same answer end_session gives for "what's next". Blocks are not consulted
     // here yet; when they are, the block's own next session must win, and the
     // note in morningBrief's line stays true either way.
+    // ALL of them, picked in code: the old query took the longest-rested row
+    // with nulls first, so the day the twenty-one tradition sessions were
+    // seeded (never run, last_used_on null) the morning would have offered
+    // "Up next: Fight camp" to a man whose workout is S-Tier. pickDue prefers
+    // what has actually been run, and carries the count so the brief can say
+    // "or one of your N saved workouts".
     supabase.from('wrought_routines')
-      .select('name, est_minutes')
+      .select('name, est_minutes, times_used, last_used_on, created_at')
       .eq('user_id', userId).eq('active', true)
-      .order('last_used_on', { ascending: true, nullsFirst: true })
-      .limit(1).maybeSingle().then(r => r.data || null),
+      .then(r => pickDue(r.data || [])),
   ]);
   const flags = careFlags(recent, profile, { openDate: date });
   const week = weekSoFar(recent.days, { today: date, ...weekTargets(profile) });

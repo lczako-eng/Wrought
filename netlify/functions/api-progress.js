@@ -19,6 +19,7 @@ import { planRead } from './lib/plan.js';
 import { intakeState } from './lib/intake.js';
 import { STYLES } from './lib/design.js';
 import { listPlaces } from './lib/places.js';
+import { STYLE_ROUTINES } from './lib/style_routines.js';
 import { formWatch, cardioProgress } from './lib/form.js';
 import { nextNudge } from './lib/prompt.js';
 import { blockPosition } from './lib/library.js';
@@ -789,6 +790,15 @@ export const handler = async (event) => {
       // server's own list — the say and the honest provenance travel together,
       // because a style shown without its provenance is the wink the doctrine
       // forbids.
+      // The twenty-one written sessions, one per tradition, so the website can
+      // LIST them — "so people know what's going on with this" — and add or
+      // take one out of their own workouts in a tap. Same data the tools carry.
+      traditions: Object.entries(STYLE_ROUTINES).map(([key, r]) => ({
+        key, name: r.name, kind: r.kind, tier: r.tier, est_minutes: r.est_minutes,
+        notes: r.notes, exercises: r.exercises,
+        lineage: STYLES[key]?.lineage || null, discipline: STYLES[key]?.discipline || null,
+        emphasis: STYLES[key]?.emphasis || null,
+      })),
       // Where they train, with what is at each — the record the coach builds to.
       places: places.map(p => ({ name: p.name, kind: p.kind, equipment: p.equipment || [], last_used_on: p.last_used_on, times_used: p.times_used })),
       styles: Object.entries(STYLES).map(([key, v]) => ({

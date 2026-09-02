@@ -4072,8 +4072,10 @@ await test('the end of one workout names the next one', () => {
   assert.match(fn, /training_week: week/);
   // A finished block is said out loud — the only reward the structure had.
   assert.match(fn, /block_complete/);
-  // No block → the longest-rested routine, so rotation still has a pointer.
-  assert.match(fn, /ascending: true, nullsFirst: true/);
+  // No block → the routine most due, picked by the SAME function the morning
+  // uses (prefers what has been run; never-run written sessions do not jump
+  // the queue), so the close of one session and the next morning agree.
+  assert.match(fn, /const due = pickDue\(allRoutines \|\| \[\]\);/);
   assert.match(SERVER_INSTRUCTIONS, /WHEN THE SESSION ENDS, NAME THE NEXT ONE/);
 });
 
@@ -10834,6 +10836,71 @@ await test('twenty-one written sessions — one per tradition, every field free 
   const src = readFileSync(new URL('../netlify/functions/mcp.js', import.meta.url), 'utf8');
   assert.match(src, /written: styleRoutine\(style\)/, 'the written session never reaches the response');
   assert.match(src, /do not rewrite it, do not add loads/);
+});
+
+group('The tradition workouts, on the shelf and in the morning');
+
+await test('up next prefers what has been run — a shelf of written sessions never jumps the queue', async () => {
+  // The day the twenty-one were seeded, the old pick (longest rested, nulls
+  // first) would have offered "Up next: Fight camp" to a man whose workout is
+  // S-Tier. Never-run routines only come up when nothing has ever been run.
+  const { pickDue } = await import('../netlify/functions/lib/morning.js');
+  const seeded = Array.from({ length: 21 }, (_, i) => ({ name: `Tradition ${i}`, times_used: 0, last_used_on: null, created_at: `2026-09-02T00:00:0${i % 10}Z` }));
+  const mine = { name: 'S-Tier Training List', est_minutes: 50, times_used: 12, last_used_on: '2026-08-30', created_at: '2026-07-01T00:00:00Z' };
+  const pick = pickDue([...seeded, mine]);
+  assert.equal(pick.name, 'S-Tier Training List', `offered ${pick.name}`);
+  assert.equal(pick.saved_count, 22);
+  assert.equal(pick.est_minutes, 50);
+  // Among run routines, the longest rested wins.
+  const two = pickDue([mine, { name: 'Leg day', times_used: 3, last_used_on: '2026-08-20' }, ...seeded]);
+  assert.equal(two.name, 'Leg day');
+  // Nothing ever run: the oldest saved one, so a brand-new account still gets an offer.
+  assert.equal(pickDue(seeded).name, 'Tradition 0');
+  assert.equal(pickDue([]), null);
+  // The brief says the shelf exists and the tap chooses; the opener lists them.
+  const { morningBrief } = await import('../netlify/functions/lib/morning.js');
+  const out = morningBrief({ planned: { name: 'S-Tier Training List', est_minutes: 50, saved_count: 22 }, week: { say: 'One in.', target: 3, met: false } });
+  assert.match(out.text, /Up next: S-Tier Training List, about 50 min\. Or one of your 22 saved workouts — tap to choose\./);
+  const one = morningBrief({ planned: { name: 'Leg day', saved_count: 1 }, week: { say: 'One in.', target: 3, met: false } });
+  assert.match(one.text, /Up next: Leg day\. Tap to keep or change the plan\./, 'a single routine is offered as a list');
+  // Read off the opener as sent (the source splits the sentence across two
+  // string literals, so grepping the file would miss it).
+  const { morningLink: ml } = await import('../netlify/functions/lib/morning.js');
+  const opener = decodeURIComponent(new URLSearchParams(ml('chatgpt').split('?')[1]).get('q'));
+  assert.match(opener, /list my saved workouts by name from list_routines/, 'the opener never lists the saved workouts');
+  assert.match(opener, /a rest day is fine/, 'rest stopped being a real answer');
+  // Both readers of "what is next" use the one picker.
+  const cron = readFileSync(new URL('../netlify/functions/brief-nightly.js', import.meta.url), 'utf8');
+  assert.match(cron, /\.then\(r => pickDue\(r\.data \|\| \[\]\)\)/, 'the morning still takes the nulls-first row');
+  assert.ok(!/nullsFirst: true/.test(cron), 'the morning still orders nulls first');
+  const mcp = readFileSync(new URL('../netlify/functions/mcp.js', import.meta.url), 'utf8');
+  assert.match(mcp, /const due = pickDue\(allRoutines \|\| \[\]\);/, 'end_session picks differently from the morning');
+  assert.ok(!/from\('wrought_routines'\)[\s\S]{0,200}nullsFirst: true/.test(mcp), 'a nulls-first routine pick survives in mcp.js');
+});
+
+await test('the twenty-one are a list on the website, added or taken out in a tap through the one door', () => {
+  // "This should be added as a list somewhere in the app or webpage so that
+  // people know what's going on with this, and it should be totally
+  // customisable — add and subtract workouts."
+  const api = readFileSync(new URL('../netlify/functions/api-progress.js', import.meta.url), 'utf8');
+  assert.match(api, /traditions: Object\.entries\(STYLE_ROUTINES\)/, 'the dashboard is never sent the shelf');
+  assert.match(api, /notes: r\.notes, exercises: r\.exercises/, 'the shelf is sent without the write-up or the movements');
+  const app = page('app.html');
+  assert.match(app, /function traditionsPanel\(/, 'no shelf panel');
+  assert.match(app, /traditionsPanel\(\{ traditions: lastPayload\?\.traditions, routines: trainerRoutinesFull \}\)/, 'the shelf is never drawn');
+  // Add and take out go through routineAction — the SAME door as every other
+  // workout write — never a second writer.
+  const wire = app.slice(app.indexOf('function wireTraditions()'), app.indexOf('// Where they train, with what is at each.'));
+  assert.match(wire, /routineAction\(\{ action: 'create'/, 'adding does not use the create door');
+  assert.match(wire, /routineAction\(\{ action: 'toggle'/, 'taking out does not retire through the door');
+  assert.ok(!/fetch\(/.test(wire), 'the shelf has a fetch of its own');
+  // Taking out RETIRES (put back in one tap); delete stays where it asks first.
+  assert.match(app, /Take out of my workouts/);
+  assert.match(app, /Put back in my workouts/);
+  assert.ok(!/trad-del/.test(app), 'the shelf deletes for good');
+  // Never in the demo, and no weight anywhere on the shelf's rows.
+  assert.match(app.slice(app.indexOf('function traditionsPanel(')), /^[\s\S]{0,120}if \(DEMO\) return '';/);
+  assert.ok(!/sayLoad\(m\.load_kg\)/.test(app.slice(app.indexOf('function traditionsPanel('), app.indexOf('function wireTraditions()'))), 'the shelf shows a load');
 });
 
 group('Where they train — a place is a row, not a sentence');

@@ -191,8 +191,13 @@ export function morningBrief({
   //    its prompt. A saved workout is an option, not a command, and rest stays
   //    a first-class answer even when the weekly target is already met.
   if (lines.length || planned?.name) {
+    // The saved list is offered as a LIST, not only as one pick. The founder:
+    // "this should go in your morning brief… so people know what's going on
+    // with this." The count is said and the tap opens the assistant asking
+    // which one — the pick stays an option, never a command.
+    const others = Number(planned?.saved_count) > 1 ? ` Or one of your ${planned.saved_count} saved workouts — tap to choose.` : '';
     lines.push(planned?.name && !week?.met && !heldBack
-      ? `Up next: ${planned.name}${planned.est_minutes ? `, about ${planned.est_minutes} min` : ''}. Tap to keep or change the plan.`
+      ? `Up next: ${planned.name}${planned.est_minutes ? `, about ${planned.est_minutes} min` : ''}.${others || ' Tap to keep or change the plan.'}`
       : 'Tap to keep or change the goals, then choose today\'s training — or a rest day.');
   }
 
@@ -241,7 +246,8 @@ const OPENERS = {
   morning:
     'Gym bro — morning. Using the Wrought connector, give me my morning brief: yesterday\'s computed ' +
     'calories burned, my current goals and expectations, and where I stand in this week\'s training target. ' +
-    'Ask whether I want to keep or change any of it, then ask what I want to train today. Wait for my ' +
+    'Ask whether I want to keep or change any of it, then ask what I want to train today — list my saved ' +
+    'workouts by name from list_routines (the one due first), and say a rest day is fine. Wait for my ' +
     'answer before changing a goal or choosing or building today\'s training plan. If Wrought has a care ' +
     'note, mention it after the briefing; never replace the briefing with it.',
   // The midday opener ASKS, because the founder's midday is an assessment the
@@ -282,6 +288,28 @@ function bridge(opens, prompt) {
   }
   // The dashboard is the one destination every account verifiably has.
   return '/app.html';
+}
+
+/**
+ * Which saved workout is "up next", and how many there are to choose from.
+ *
+ * Pure. Prefers what has actually been RUN: the longest-rested among the
+ * routines with a run on record. Only when nothing has ever been run does a
+ * never-run one get offered, oldest first. Without this, seeding a shelf of
+ * written sessions (never run, last_used_on null) would make the morning
+ * offer a stranger's workout ahead of the one somebody does every week.
+ */
+export function pickDue(routines = []) {
+  const live = (routines || []).filter(r => r && r.name);
+  if (!live.length) return null;
+  const run = live.filter(r => (r.times_used || 0) > 0 || r.last_used_on);
+  const pool = run.length ? run : live;
+  const pick = [...pool].sort((a, b) => {
+    const da = a.last_used_on || '', db = b.last_used_on || '';
+    if (da !== db) return da < db ? -1 : 1;                 // longest rested first ('' sorts first)
+    return String(a.created_at || '').localeCompare(String(b.created_at || ''));
+  })[0];
+  return { name: pick.name, est_minutes: pick.est_minutes ?? null, saved_count: live.length };
 }
 
 export function morningLink(opens, which = 'morning') {

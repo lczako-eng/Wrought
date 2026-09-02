@@ -3788,6 +3788,7 @@ function renderTrainer(d) {
       <p class="caveat">${esc(d.say)}</p></section>
       ${notConnectedCallout()}
       ${routinesPanel({ routines: trainerRoutinesFull.length ? trainerRoutinesFull : (d.routines?.length ? d.routines : trainerRoutines) }, { editable: true })}
+      ${traditionsPanel({ traditions: lastPayload?.traditions, routines: trainerRoutinesFull })}
       ${placesPanel({ places: lastPayload?.places })}
       ${stylesPanel({ styles: lastPayload?.styles })}`;
     wireRoutines();
@@ -4079,6 +4080,7 @@ function wireSwipe() {
 }
 
 function wireRoutines() {
+  wireTraditions();
   wireSwipe();
   $('gotoacct')?.addEventListener('click', (e) => {
     e.preventDefault();
@@ -5951,6 +5953,83 @@ function gptLink(prompt, label) {
 // comes from the SERVER so it cannot drift from what design_workout actually
 // recognises, and the provenance rides every card — a style shown without its
 // honest line is the wink the doctrine forbids.
+// THE TRADITION WORKOUTS, AS A LIST YOU CAN TAKE FROM. The founder: "this
+// should be added as a list somewhere in the app or webpage so that people
+// know what's going on with this, and it should be totally customisable —
+// add and subtract workouts." Each of the twenty-one is shown with its
+// write-up and movements; one tap puts it in your saved workouts (through
+// the same create door as any workout), one tap takes it back out (retires
+// it — history kept). Once it is yours, it is yours to edit like any other:
+// the Saved workouts panel above is where movements get added and removed.
+function traditionsPanel(d) {
+  if (DEMO) return '';
+  const list = d?.traditions || [];
+  if (!list.length) return '';
+  const mine = d?.routines || [];
+  const byName = name => mine.find(r => r.name.toLowerCase() === name.toLowerCase());
+  const groups = [];
+  for (const t of list) {
+    const g = groups.find(x => x.name === (t.discipline || 'Other'));
+    if (g) g.items.push(t); else groups.push({ name: t.discipline || 'Other', items: [t] });
+  }
+  const howMuch = m => m.sets && m.reps ? `${m.sets}×${esc(String(m.reps))}` : m.minutes ? `${m.minutes} min` : '';
+  const row = t => {
+    const have = byName(t.name);
+    const inUse = have && have.active !== false;
+    return `<details class="rout trad">
+      <summary>
+        <span class="rn">${esc(t.name)}</span>
+        <span class="chip${inUse ? ' on' : ''}">${inUse ? 'in your workouts' : `${t.est_minutes || '?'} min`}</span>
+      </summary>
+      <div class="rbody">
+        <p class="rnotes">${esc(t.notes || '')}</p>
+        <div class="rmvs">${(t.exercises || []).map(m => `<div class="rmv"><div class="rmv-body">
+          <span class="rmvn">${esc(m.name)}${m.detail ? `<em>${esc(m.detail)}</em>` : ''}</span>
+          <b>${howMuch(m) || '—'}</b></div></div>`).join('')}</div>
+        <div class="rfoot">
+          ${inUse
+            ? `<button class="linky trad-rm" type="button" data-rid="${esc(have.id)}" data-name="${esc(t.name)}">Take out of my workouts</button>`
+            : have
+              ? `<button class="ghost trad-back" type="button" data-rid="${esc(have.id)}">Put back in my workouts</button>`
+              : `<button class="ghost trad-add" type="button" data-key="${esc(t.key)}">Add to my workouts</button>`}
+          ${gptLink(`Gym bro — start my "${t.name}" workout.`, 'Start it')}
+        </div>
+      </div>
+    </details>`;
+  };
+  return `<section class="panel" id="traditions">
+    <h2>Tradition workouts</h2>
+    <p class="sub">Twenty-one written sessions, one in each tradition — the movements, the sets, and a
+    write-up on how that tradition runs it. Add the ones you want to your own list; take them out again
+    any time. Nothing here carries a weight: the rack works every load out from your own history.</p>
+    ${groups.map(g => `<h3 class="stylegrp">${esc(g.name)}</h3><div class="routs">${g.items.map(row).join('')}</div>`).join('')}
+  </section>`;
+}
+
+function wireTraditions() {
+  const root = $('traditions');
+  if (!root) return;
+  const trad = key => (lastPayload?.traditions || []).find(t => t.key === key);
+  root.querySelectorAll('.trad-add').forEach(b => b.addEventListener('click', async () => {
+    const t = trad(b.dataset.key);
+    if (!t) return;
+    b.disabled = true; b.textContent = 'Adding…';
+    // The same create door as any workout — never a second writer.
+    await routineAction({ action: 'create', name: t.name, kind: t.kind, tier: t.tier,
+      exercises: t.exercises, notes: t.notes, est_minutes: t.est_minutes });
+  }));
+  // Taking one out RETIRES it — history kept, put back in one tap. Deleting
+  // for good stays on the Saved workouts panel, where it still asks first.
+  root.querySelectorAll('.trad-rm').forEach(b => b.addEventListener('click', async () => {
+    b.disabled = true; b.textContent = 'Taking out…';
+    await routineAction({ action: 'toggle', id: b.dataset.rid, active: false });
+  }));
+  root.querySelectorAll('.trad-back').forEach(b => b.addEventListener('click', async () => {
+    b.disabled = true; b.textContent = 'Putting back…';
+    await routineAction({ action: 'toggle', id: b.dataset.rid, active: true });
+  }));
+}
+
 // Where they train, with what is at each. The founder "added a few gyms" to
 // an assistant that saved none of them — so the places are ROWS now, and this
 // is where somebody can see what is on file and what each place has. A gym

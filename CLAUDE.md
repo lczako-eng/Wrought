@@ -1591,6 +1591,33 @@ overstates the burn in the direction that tells somebody they have room to
 eat. Two or more rows for the day (sub-daily granularity) or the labelled
 estimate stands. Verified to bite.
 
+### The shelf — the twenty-one listed, taken from in a tap, and in the morning
+
+The founder: *"this should go in your morning brief, and this should be added
+as a list somewhere in the app or webpage so that people know what's going on
+with this — and it should be totally customisable, add and subtract workouts."*
+
+- **A *Tradition workouts* panel on the Trainer tab** lists all twenty-one
+  with the write-up and the movements, grouped by discipline. *Add to my
+  workouts* goes through `routineAction({ action: 'create' })` — the same door
+  as every other workout — and *Take out* RETIRES it (put back in one tap;
+  delete stays on the Saved-workouts panel where it asks first). Once added it
+  is theirs to edit like any other saved workout. `api-progress` sends
+  `traditions` from `STYLE_ROUTINES`, so the website and the tools carry one
+  list. Never in the demo.
+- **The morning brief names the shelf**: *"Up next: S-Tier, about 50 min. Or
+  one of your 22 saved workouts — tap to choose."* The opener asks the
+  assistant to list them by name from `list_routines`, due one first, rest
+  day a real answer.
+- **`pickDue()` — the seeding exposed a real bug.** Both the morning and
+  `end_session` picked *"up next"* as the longest-rested routine with nulls
+  first, so the day the twenty-one landed (never run, `last_used_on` null)
+  the morning would have offered *"Up next: Fight camp"* to a man whose
+  workout is S-Tier. The picker now prefers what has actually been RUN,
+  longest rested among those; never-run routines are offered only when
+  nothing has ever been run. One pure function, both readers, tested to fail
+  on the nulls-first order.
+
 ### Where they train — a place is a row, not a sentence
 
 `024_wrought_places.sql` + `lib/places.js` + `add_gym` / `my_gyms` /
