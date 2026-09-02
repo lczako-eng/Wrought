@@ -29,13 +29,14 @@ import { pendingVoice } from './lib/voice.js';
 import { activityBurn, EFFORTS } from './lib/activity.js';
 import { warmupFor, cooldownFor, sessionProgress } from './lib/warmup.js';
 import { formWatch, cardioProgress } from './lib/form.js';
-import { intakeState, intakeGate } from './lib/intake.js';
+import { intakeState, intakeGate, SETUP_URL } from './lib/intake.js';
+import { applyAnswers, setupState } from './lib/setup.js';
 import { weeklyVolume } from './lib/volume.js';
 import { ALERT_KINDS, describeAlert, suggestAlerts } from './lib/alerts.js';
 import { planRead } from './lib/plan.js';
 import { guideRead } from './lib/guide.js';
 import { nextNudge, nudgeNote } from './lib/prompt.js';
-import { setBodyGoal, setMetricGoal, retireGoalsFor, SET_TARGETS_URL } from './lib/goals.js';
+import { setBodyGoal, setMetricGoal, retireGoalsFor, intentFrom, SET_TARGETS_URL } from './lib/goals.js';
 import { ROUTING_HABIT } from './lib/wrought.js';
 import { preflight } from './lib/preflight.js';
 import { finaliseSession, closeStaleSessions, recordSet } from './lib/session.js';
@@ -45,7 +46,7 @@ import { nutritionTotals, composition, macroMatrix, yearOverYear } from './lib/n
 import {
   exerciseKey, lastPerformance, progressionCall, TIERS,
   restingBurn, energyBalance, planFromRoutine, sessionTotals, earnedRoom,
-  orderPlan, orderInsight, deviceMatrix, weekdayPattern, weekSoFar, goalCall, baselineFromClaim, readiness, nextSetLoad,
+  orderPlan, orderInsight, deviceMatrix, weekdayPattern, weekSoFar, weekTargets, goalCall, baselineFromClaim, readiness, nextSetLoad,
   normaliseMovement, readMovement, syncSetsFromWorkouts,
   ACTIVITY,
   targetOptions, goalsToSet,
@@ -130,7 +131,7 @@ TARGETS ARE FLEXIBLE AND CHANGING ONE IS NORMAL. "Make it 8,000" or "drop the st
 
 Every goal with a number is scored in every brief and drawn as a ring on the dashboard the moment it exists. A goal without a number cannot be scored, so attach one when they will give you one — and never invent it silently.
 
-THE QUESTIONNAIRE GATES BUILDING A WORKOUT, NOT RUNNING ONE. suggest_workout, design_workout, programmes, start_block, and start_session WITH NO ROUTINE NAMED will refuse with setup_required until the questionnaire is finished, and you must not work around them: no improvised sessions, no "quick workout while we set up", and never a plan of your own composed in prose. But STARTING A WORKOUT THEY ALREADY SAVED IS NEVER GATED — start_session with a routine name runs, and so does log_set, which opens an ad-hoc session on the first set. That is their own plan and their own record, not WROUGHT prescribing for a stranger. When the gate fires it carries can_run_now: offer those saved workouts BY NAME first, in one line, because they can train this minute. Run the questionnaire the response hands you conversationally — three or four questions per message, never the whole list, arithmetic five first, injuries next. Loose combined answers are fine ("lose weight AND build muscle" is recomp) and "none" is a real answer that closes its question — record it. Save every answer the moment it arrives (set_profile, set_goal, set_plan, remember), then call the training tool again in the same turn and hand over the workout without making them ask twice. CAPTURE IS NEVER GATED: food, weight, or training they already did gets logged immediately, questionnaire finished or not.
+THE QUESTIONNAIRE GATES BUILDING A WORKOUT, NOT RUNNING ONE. suggest_workout, design_workout, programmes, start_block, and start_session WITH NO ROUTINE NAMED will refuse with setup_required until the questionnaire is finished, and you must not work around them: no improvised sessions, no "quick workout while we set up", and never a plan of your own composed in prose. But STARTING A WORKOUT THEY ALREADY SAVED IS NEVER GATED — start_session with a routine name runs, and so does log_set, which opens an ad-hoc session on the first set. That is their own plan and their own record, not WROUGHT prescribing for a stranger. When the gate fires it carries can_run_now: offer those saved workouts BY NAME first, in one line, because they can train this minute. THE GATE IS ONLY WHAT BUILDING A WORKOUT NEEDS — fourteen things: the five facts, anything to work around, what they are after, pace, how hard to chase, strength sessions a week, stamina sessions a week, minutes a week, how long they have trained, the kit. Food habits, sleep, alcohol, medication and sports NEVER block a workout and are never asked at the gate. HOW IT IS ASKED: the refusal carries ONE question with numbered options — ask exactly that one, in that message, nothing else first. When they answer, call answer_setup with the key and their words; it SAVES the answer and returns the NEXT question. Ask that one. Repeat until answer_setup returns complete: true, then call the training tool again in the same turn and hand over the workout without making them ask twice. Never list the questions, never ask two, never say an answer is saved unless answer_setup returned it. "2" picks the second option, loose words are fine ("lose weight AND build muscle" is recomp), "none" is a real answer that closes its question. If they volunteer several answers at once, pass them all to answer_setup in one call. They can also finish it on one screen at https://wrought.fit/app.html#setup — offer that link once. "Set me up", "let's finish the questions", "what do you still need" = answer_setup with no answers. CAPTURE IS NEVER GATED: food, weight, or training they already did gets logged immediately, questionnaire finished or not.
 
 THE TARGETS GATE, one step behind the questionnaire. Once the questionnaire is done, the same building tools refuse with goals_required until a daily calorie target is set — maintain is a first-class answer, never the option for somebody who would not commit. The refusal carries the computed options and set_link, the goals page. ALWAYS render set_link as a tappable markdown hyperlink — [Open your goals](https://wrought.fit/app.html#targets) — whenever it appears, here or on any goals-shaped response: the founder has asked for that link more times than anything else in this product, and naming the page without linking it is a failure. Two ways through, both one step: they say a pace or maintain (call set_goal, then the training tool again in the same turn), or they tap the link and set it on the dashboard. A care flag suspends this gate entirely, and saved routines and logging are never touched by it.
 
@@ -291,7 +292,7 @@ EVERY CALORIE TARGET IS PRICED OFF BASAL, NEVER A LIFESTYLE MULTIPLIER. The foun
 
 THE PLAN IS REMEMBERED, NOT RE-ASKED. Once set it lives on the account: intent, pace, push, days a week, and the targets computed from them. Never ask again what plan somebody is on — read my_plan. When they change it, set_plan recomputes the calorie and protein targets in the same call, so a new pace can never stand beside an old number, and the change takes effect from that moment. Anything they ask about calories from then on is answered FROM the plan.
 
-TWENTY THINGS ARE WORTH KNOWING AND YOU MAY ASK ONE. get_profile carries an intake block: what is known about them, what is not, and ask_next. The five that block arithmetic get asked together, once, the first time a number needs them. EVERYTHING ELSE IS PICKED UP IN PASSING, one at a time, only when the conversation has already walked into it — somebody mentioning a sore knee is the moment to ask about injuries, and no other moment is. Never work through the list, never present it as a form, never say a list exists, and never ask two in one turn. Over a fortnight of ordinary use it fills itself in; a twenty-question interview at the start is how health apps get abandoned before they hold anything. The one exception is somebody asking to be set up properly — then walk the whole thing, because they asked for it.
+TWENTY THINGS ARE WORTH KNOWING AND YOU MAY ASK ONE. get_profile carries an intake block: what is known about them, what is not, and ask_next. The five that block arithmetic get asked together, once, the first time a number needs them. EVERYTHING ELSE IS PICKED UP IN PASSING, one at a time, only when the conversation has already walked into it — somebody mentioning a sore knee is the moment to ask about injuries, and no other moment is. Never work through the list, never present it as a form, never say a list exists, and never ask two in one turn. Over a fortnight of ordinary use it fills itself in; a twenty-question interview at the start is how health apps get abandoned before they hold anything. The one exception is somebody asking to be set up properly — then walk the whole thing, because they asked for it, through answer_setup one question at a time. The fourteen that gate a workout are a different matter: those are asked at the gate, one per message, and saved by answer_setup.
 
 NEVER STATE A CALORIE TARGET YOU DID NOT GET FROM A TOOL. This is the single most important rule here and it has already been broken in production. Asked "how many am I allowed today at my weight", with no goal on file, the answer given was "around 2,500-2,700, I'd set your working target at 2,600". Nothing set 2,600. It was invented, it was stated as a recommendation, and it was several hundred calories BELOW what the paced arithmetic actually produces for that person — under even the most aggressive setting this product will apply. That is how a health product hurts somebody, and it looks exactly like being helpful.
 
@@ -730,8 +731,8 @@ const TOOLS = [
     inputSchema: {
       type: 'object',
       properties: {
-        kind:      { type: 'string', enum: ['intake_pace','goal_pace','goal_check','kitchen_closed','move','weigh_in','custom'],
-                     description: 'Which rule. Use custom for anything that is not one of the named four — a fast starting, a supplement, a stretch, anything they said.' },
+        kind:      { type: 'string', enum: ['intake_pace','goal_pace','goal_check','kitchen_closed','move','weigh_in','custom','week_check'],
+                     description: 'Which rule. week_check is the mid-week read of the training week — strength sessions, stamina sessions and minutes against what they committed to in setup — on a weekday they choose (days, default Wednesday = [3]) at an hour they choose; "halfway through the week tell me where I\'m at". Use custom for anything that is not one of the named kinds — a fast starting, a supplement, a stretch, anything they said.' },
         at_hour:   { type: 'integer', description: 'Hour in THEIR timezone, 0-23. Required for every kind except intake_pace. "Nine at night" is 21, "half eight in the morning" is 8 — this takes whole hours only, so round to the hour they meant.' },
         threshold: { type: 'number',  description: 'For intake_pace and goal_pace: the proportion of the target to fire at. 0.8 means 80%. Defaults to 0.8.' },
         metric:    { type: 'string', enum: ['steps','active_calories','distance_km','active_minutes'],
@@ -788,10 +789,36 @@ const TOOLS = [
                       description: 'How fast the body goal is paced. Every pace floors intake at 1,200 and stays under the loss rate WROUGHT warns about — aggressive is the fast end of safe, not a different set of rules.' },
         push:       { type: 'string', enum: ['light','normal','relentless'],
                       description: 'How hard to bring training up unprompted. Changes no number. Separate from bluntness on purpose — somebody can want the truth flat and still not want chasing every evening.' },
-        train_days: { type: 'integer', description: 'Sessions a week they will honestly do. Their real number, never an aspirational one.' },
+        train_days: { type: 'integer', description: 'Sessions a week they will honestly do. Their real number, never an aspirational one. If strength_per_week and cardio_per_week are both known, this is their sum and is set automatically.' },
+        strength_per_week: { type: 'integer', description: 'Muscle-building sessions a week they will honestly do (0-14). "Make it four lifting days".' },
+        cardio_per_week:   { type: 'integer', description: 'Stamina sessions a week — running, cycling, rowing, sport (0-14). "Two runs a week".' },
+        minutes_per_week:  { type: 'integer', description: 'Minutes of training a week, in total, they will commit to (0-3000). "Three hours a week" is 180.' },
       },
     },
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+  },
+  {
+    name: 'answer_setup',
+    title: 'Answer a setup question — and get the next one',
+    description: 'THE ONLY WAY THROUGH THE QUESTIONNAIRE. When any training tool returns setup_required, it carries ONE question with numbered options. Ask exactly that question. When they answer, call this with the key and what they said — "2" picks the second option, loose words are fine ("lose weight and build muscle" is recomp), "none" is a real answer that closes a question. It SAVES the answer to the record and returns the NEXT question: ask that one, and only that one. If they volunteer several answers in one message ("no injuries, my knee\'s a bit sore, I lift three days"), pass them ALL in answers in one call — it still hands back one question. Call it with no answers to get the next question ("let\'s finish the questions", "set me up", "what do you still need"). Never list the remaining questions, never say an answer is saved unless it came back in saved, and never build a workout until this returns complete: true — then call the training tool again in the same turn. Only the questions that building a workout needs are here (the five facts, anything to work around, the goal, pace, how hard to chase, strength and stamina sessions a week, minutes a week, how long they have trained, the kit); food habits, sleep and medication are picked up in passing and never asked at the gate. They can also do it on one screen at https://wrought.fit/app.html#setup.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        answers: {
+          type: 'array',
+          description: 'Every answer they gave, each as the question key and their words. Keys come from the question the gate returned (question.key).',
+          items: {
+            type: 'object',
+            properties: {
+              key:    { type: 'string', description: 'The question key: height_cm, birth_year, sex, weight, activity_level, limitations, intent, plan_pace, plan_push, strength_per_week, cardio_per_week, minutes_per_week, training_age, equipment — or one of the in-passing ones (goal_weight, sports, lifts, conditions, medication, sleep, dietary, cooking, alcohol, weak_spot, bluntness, brief_hour, timezone).' },
+              answer: { type: 'string', description: 'What they said, verbatim, or the option number.' },
+            },
+            required: ['key', 'answer'],
+          },
+        },
+      },
+    },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
   },
   {
     name: 'log_activity',
@@ -1702,11 +1729,9 @@ async function planFacts(userId) {
   const proGoal  = goals.find(g => g.metric === 'protein_g' && g.cadence === 'daily');
 
   // The intent is read off the goal that was actually set rather than stored
-  // twice — two copies of the same fact is two things to drift apart.
-  const intent = bodyGoal
-    ? (bodyGoal.direction === 'at_least' ? 'gain'
-       : /recomp/i.test(bodyGoal.goal || '') ? 'recomp' : 'lose')
-    : calGoal ? 'lose' : null;
+  // twice — two copies of the same fact is two things to drift apart. One
+  // derivation, shared with the setup door, in lib/goals.js.
+  const intent = intentFrom(goals);
 
   const pace = profile.plan_pace || null;
   const push = profile.plan_push || null;
@@ -1824,9 +1849,16 @@ async function setAlert(args, user) {
 }
 
 function alertError(error) {
-  return /does not exist|schema cache/i.test(error.message || '')
-    ? { error: 'migration_missing', say: 'Notifications need migration 018_wrought_alerts.sql to have been run.' }
-    : { error: error.message };
+  const m = error.message || '';
+  if (/does not exist|schema cache/i.test(m)) {
+    return { error: 'migration_missing', say: 'Notifications need migration 018_wrought_alerts.sql to have been run.' };
+  }
+  // A kind the code knows and the database's check constraint does not — the
+  // tolerant-writer-beside-a-stricter-constraint failure, said as a sentence.
+  if (/check constraint/i.test(m)) {
+    return { error: 'migration_missing', say: 'That kind of notification needs migration 023_wrought_commitment.sql to have been run. The rule was not stored.' };
+  }
+  return { error: m };
 }
 
 async function alertsFor(userId) {
@@ -1850,6 +1882,7 @@ async function myAlerts(_args, user) {
   const suggested = suggestAlerts({
     hasCalorieTarget: goals.some(g => g.metric === 'calories' && g.cadence === 'daily'),
     trainDays: profile.train_days || null,
+    commitment: profile.strength_per_week != null || profile.cardio_per_week != null || profile.minutes_per_week != null,
     fasting: true,
     // Only goals they have actually set — a rule watching a target that does
     // not exist can never fire, and offering one is offering a dead switch.
@@ -1941,8 +1974,23 @@ async function setPlan(args, user) {
     if (!Number.isFinite(d) || d < 1 || d > 14) return { error: 'Sessions a week has to be between 1 and 14.' };
     patch.train_days = d;
   }
+  // The commitment, in the terms the notifications read. Strength plus
+  // stamina IS the sessions-a-week number, so when both are known train_days
+  // is written from them rather than left to disagree.
+  for (const [k, hi, what] of [['strength_per_week', 14, 'Strength sessions a week'], ['cardio_per_week', 14, 'Stamina sessions a week'], ['minutes_per_week', 3000, 'Minutes a week']]) {
+    if (args[k] == null) continue;
+    const v = parseInt(args[k], 10);
+    if (!Number.isFinite(v) || v < 0 || v > hi) return { error: `${what} has to be between 0 and ${hi}.` };
+    patch[k] = v;
+  }
+  if (patch.strength_per_week != null || patch.cardio_per_week != null) {
+    const cur = await getProfile(user.id);
+    const s = patch.strength_per_week ?? cur.strength_per_week;
+    const c = patch.cardio_per_week ?? cur.cardio_per_week;
+    if (s != null && c != null) patch.train_days = Math.max(1, Math.min(14, s + c));
+  }
   if (!Object.keys(patch).length) {
-    return { error: 'Nothing to change — pass a pace, a push, or days a week.' };
+    return { error: 'Nothing to change — pass a pace, a push, days a week, or the strength / stamina / minutes commitment.' };
   }
 
   const saved = await savePlan(user.id, patch);
@@ -1951,6 +1999,9 @@ async function setPlan(args, user) {
   const changed = [];
   if (patch.plan_pace) changed.push(`pace is ${patch.plan_pace} — ${PACES[patch.plan_pace].say}`);
   if (patch.plan_push) changed.push(`pushing is ${patch.plan_push} — ${PUSH[patch.plan_push].say}`);
+  if (patch.strength_per_week != null) changed.push(`${patch.strength_per_week} strength session${patch.strength_per_week === 1 ? '' : 's'} a week`);
+  if (patch.cardio_per_week != null) changed.push(`${patch.cardio_per_week} stamina session${patch.cardio_per_week === 1 ? '' : 's'} a week`);
+  if (patch.minutes_per_week != null) changed.push(`${patch.minutes_per_week} minutes a week`);
   if (patch.train_days) changed.push(`${patch.train_days} sessions a week`);
 
   // A new pace with the old calorie target standing beside it is the same bug
@@ -1990,6 +2041,54 @@ async function setPlan(args, user) {
          (held ? ` ${held}` : ''),
     note: 'Confirm it in one line and move on. NO remark about commitment, no asking why, no warning that they are backing off — a plan somebody keeps missing is a plan set wrong, and easing it to what they will really do is the right call, not a retreat. If they went aggressive, say plainly that it will be hungrier and that protein and lifting matter more now, and leave it there.',
     next_actions: ['my_plan to hear the whole thing back', 'brief — it scores the new targets from tonight'],
+  };
+}
+
+// ── The questionnaire, one answer at a time ────────────────────────────────
+// The founder's spec, verbatim: "it should say OK you have outstanding
+// questions, let's finish this — so here is a question; after you answer it,
+// then it saves it." This is that loop, made structural. Every answer is
+// written through lib/setup.js — the same path the website's form uses — and
+// the result carries the NEXT question, which is the one surface a model
+// cannot skip. It never holds the list, so it cannot dump the list.
+async function answerSetup(args, user) {
+  const answers = Array.isArray(args.answers) ? args.answers : [];
+  const out = answers.length
+    ? await applyAnswers(user.id, answers)
+    : { saved: [], rejected: [], not_saved: [], state: await setupState(user.id) };
+
+  const g = out.state.gate;
+  const q = g.next;
+
+  const savedLine = out.saved.length
+    ? `Saved: ${out.saved.map(s => `${s.key.replace(/_/g, ' ')} — ${s.display}`).join('; ')}. `
+    : '';
+  const rejectedLine = out.rejected.length
+    ? `Could not read ${out.rejected.map(r => `${r.key.replace(/_/g, ' ')} (needs ${r.why})`).join('; ')}. `
+    : '';
+  const notSavedLine = out.not_saved.length
+    ? `${out.not_saved.map(k => k.replace(/_/g, ' ')).join(', ')} could not be stored yet — the database needs schema/023_wrought_commitment.sql run. `
+    : '';
+
+  if (g.complete) {
+    return {
+      complete: true,
+      saved: out.saved, rejected: out.rejected, not_saved: out.not_saved,
+      answered: g.known, of: g.total,
+      say: `${savedLine}${rejectedLine}${notSavedLine}That is everything a workout needs. Building it now.`,
+      note: 'The gate is open. Call the training tool they originally asked for (suggest_workout, design_workout, start_session…) again IN THIS SAME TURN and hand over the workout — do not make them ask twice. If a mid-week check-in would suit them, offer it ONCE in one line ("want a Wednesday-evening read of how the week is going?") and set it with set_alert kind week_check only on a yes; nothing is switched on by itself. The in-passing questions (food habits, sleep, medication) are NOT part of this — never run them now.',
+      next_actions: ['the training tool they asked for, now', 'my_alerts to offer the mid-week check'],
+    };
+  }
+
+  return {
+    complete: false,
+    saved: out.saved, rejected: out.rejected, not_saved: out.not_saved,
+    answered: g.known, of: g.total, remaining: g.remaining.length,
+    question: q,
+    setup_url: SETUP_URL,
+    say: `${savedLine}${rejectedLine}${notSavedLine}${g.known} of ${g.total}. ${q.line}`,
+    note: `Ask EXACTLY the question in question.line, with its numbered options, and nothing else. Do not list what is left, do not recap what is saved beyond one clause. When they answer, call answer_setup again with question.key and their words. If an answer was rejected, ask that one again in the words of the reason. The website does the same thing on one screen at ${SETUP_URL} — offer that once as a markdown hyperlink if they seem to want it over, never every turn.`,
   };
 }
 
@@ -2284,7 +2383,7 @@ async function brief(args, user) {
     // The expectation, kept visible. The server cannot make the assistant speak
     // first, so "prompt me into training" has to mean this number being already
     // on the table every single time they talk.
-    training_week: weekSoFar(range.days, { today: date, target: profile.train_days }),
+    training_week: weekSoFar(range.days, { today: date, ...weekTargets(profile) }),
     readiness: readiness({ days: range.days, today: date }),
     // Running, riding and swimming, read as a progression. A best is worth
     // saying out loud on the day it happens — it is the entire reason somebody
@@ -3596,7 +3695,7 @@ async function endSession(args, user) {
     }
   }
   const range = await rangeFacts(user.id, profile, addDays(today, -13), today);
-  const week = weekSoFar(range.days, { today, target: profile.train_days });
+  const week = weekSoFar(range.days, { today, ...weekTargets(profile) });
 
   return {
     session: session.name,
@@ -4137,7 +4236,7 @@ async function nudgeFor(userId, profile, { day = null, goals = null } = {}) {
   const nudge = nextNudge({
     push: profile.plan_push || null,
     flags,
-    trainingWeek: weekSoFar(range.days, { today, target: profile.train_days || null }),
+    trainingWeek: weekSoFar(range.days, { today, ...weekTargets(profile) }),
     plan: planRead({ profile, goals: theGoals, weightKg }),
     day,
   });
@@ -4974,6 +5073,7 @@ const IMPL = {
   training_volume: trainingVolume,
   my_plan: myPlan,
   set_plan: setPlan,
+  answer_setup: answerSetup,
   log_activity: logActivity,
   structure_entries: structureEntries,
   undo_last: undoLast,

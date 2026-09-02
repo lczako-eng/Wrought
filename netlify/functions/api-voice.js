@@ -30,7 +30,7 @@ import {
   supabase, hashToken, getProfile, localDateFor, addDays,
   dayFacts, rangeFacts, careFlags, parseLog, insertEvents,
 } from './lib/wrought.js';
-import { energyBalance, weekSoFar } from './lib/training.js';
+import { energyBalance, weekSoFar, weekTargets } from './lib/training.js';
 import { spokenBrief, spokenLog } from './lib/voice.js';
 import { allowed } from './lib/membership.js';
 
@@ -127,7 +127,7 @@ export const handler = async (event) => {
       deviceExpected: Date.now() - lastSync < 3 * 86400000,
     });
     const flags = careFlags(range, profile, { openDate: today });
-    const week  = weekSoFar(range.days, { today, target: profile.train_days });
+    const week  = weekSoFar(range.days, { today, ...weekTargets(profile) });
 
     await supabase.from('wrought_ingest_keys')
       .update({ last_used_at: new Date().toISOString() }).eq('id', key.id);

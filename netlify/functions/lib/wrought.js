@@ -228,6 +228,7 @@ export const hashToken = t => createHash('sha256').update(t).digest('base64url')
 const DEFAULT_PROFILE = {
   timezone: 'America/Toronto', units: 'metric', height_cm: null, birth_year: null,
   sex: null, training_age: null, equipment: null, train_days: null, dietary: null,
+  strength_per_week: null, cardio_per_week: null, minutes_per_week: null,
   bluntness: 'honest', notes: null,
 };
 
@@ -571,6 +572,7 @@ export async function rangeFacts(userId, profile, fromDate, toDate) {
     if (!byDay.has(d)) byDay.set(d, {
       date: d, calories: 0, protein_g: 0, carbs_g: 0, fat_g: 0,
       meals: 0, sessions: 0, minutes: 0, volume_kg: 0,
+      strength_sessions: 0, cardio_sessions: 0,
       weights: [], steps: 0, sleep_minutes: 0, active_calories: 0,
       muscles: new Set(), logged: false, food_log_complete: null,
     });
@@ -595,6 +597,13 @@ export async function rangeFacts(userId, profile, fromDate, toDate) {
     if (e.event_type === 'workout') {
       day.sessions += 1;
       day.minutes  += num(e.detail?.minutes);
+      // Strength or stamina, for the commitment the week is read against.
+      // The stamp wins; without one the SHAPE of the record decides — sets
+      // and reps are lifting, a distance is cardio — and a session that is
+      // neither is counted as a session and named as untyped, never guessed.
+      const k = String(e.detail?.kind || '').toLowerCase();
+      if (k === 'strength' || (!k && (e.detail?.exercises || []).length)) day.strength_sessions += 1;
+      else if (k === 'cardio' || k === 'sport' || (!k && num(e.detail?.distance_km) > 0)) day.cardio_sessions += 1;
       day.volume_kg += (e.detail?.exercises || []).reduce((b, x) =>
         b + num(x.sets) * num(x.reps) * num(x.weight_kg), 0);
       for (const m of (e.detail?.muscles || [])) day.muscles.add(m);
@@ -626,6 +635,8 @@ export async function rangeFacts(userId, profile, fromDate, toDate) {
     meals: d.meals,
     food_log_complete: d.food_log_complete,
     sessions: d.sessions,
+    strength_sessions: d.strength_sessions,
+    cardio_sessions: d.cardio_sessions,
     minutes: d.minutes,
     volume_kg: Math.round(d.volume_kg) || null,
     weight_kg: d.weights.length

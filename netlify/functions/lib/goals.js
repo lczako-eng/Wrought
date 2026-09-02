@@ -29,6 +29,23 @@ import { supabase, getProfile, SET_TARGETS_URL } from './wrought.js';
 import { goalCall, PACES } from './training.js';
 
 /**
+ * The intent, read off the goal that was actually set rather than stored
+ * twice — two copies of the same fact is two things to drift apart. One
+ * derivation, used by the plan, the setup and the profile alike.
+ */
+export function intentFrom(goals = []) {
+  const bodyGoal = goals.find(g => g.metric === 'weight_kg');
+  const calGoal  = goals.find(g => g.metric === 'calories' && g.cadence === 'daily');
+  if (bodyGoal) {
+    if (bodyGoal.direction === 'at_least') return 'gain';
+    if (/recomp|lose fat and build/i.test(bodyGoal.goal || '')) return 'recomp';
+    if (/hold where|maintain/i.test(bodyGoal.goal || '')) return 'maintain';
+    return 'lose';
+  }
+  return calGoal ? 'lose' : null;
+}
+
+/**
  * Retire every active goal aiming at the same metric+cadence. Returns a human
  * summary of what was replaced, or null. Retired, never deleted — what
  * somebody used to aim at is part of the record.

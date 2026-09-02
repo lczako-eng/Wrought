@@ -1839,6 +1839,85 @@ is drawn precisely:
 - Asked in GROUPS of three or four at the gate (they asked for a workout; the
   fastest way through is to finish), one-at-a-time in-passing everywhere else.
 
+### The gate is fourteen questions, asked one at a time, saved by the tool that asks the next
+
+The founder, after the gate blocked a mat plyometrics add-on and ChatGPT dumped
+all fifteen remaining questions in one message: *"a lot of these questions
+should be focused more on training so we can build the notifications around it
+— how many muscle building workouts you want to do a week, how many stamina,
+how many minutes total you're willing to commit — and then your notification
+should reflect that, like a halfway-during-the-week point. A lot of that stuff
+there is kind of irrelevant, so I don't see why it's stopping you from getting
+a workout. Make it as easy as possible — multiple choice, yes or no. Or do it
+right through the GPT, one at a time: OK you have outstanding questions, let's
+finish this, here's a question; after you answer it, it saves it."*
+
+Three faults in one screenshot, one root: the gate demanded all twenty-five,
+handed the model four at a time to save through four different tools, and the
+model did what a model handed a list does — printed the list and claimed
+*"I'll get those locked in."* Nothing was written.
+
+- **The gate is only what building a workout needs — fourteen, not
+  twenty-five.** The five facts, anything to work around, what they are
+  after, pace, how hard to chase, strength sessions a week, stamina sessions
+  a week, minutes a week, how long they have trained, the kit. Alcohol,
+  takeaways, sleep, medication, sports, bluntness and the brief hour are still
+  tracked and still picked up in passing, and **none of them may ever stand
+  between somebody and a session.** `gate: true` on the item is the whole
+  rule; there is a test naming every key on each side.
+- **One question per message, with something to tap.** Every gating item
+  carries `options` (a numbered menu in the conversation, buttons on the
+  website), a unit and a hint for a number, quick picks for a list, and a
+  stated *none* fact for free text. `askLine()` renders the one line the
+  model says; *"2"* picks the second option, loose words work, *"none"*
+  closes the question. **The count is the count**: *"3"* to *"how many
+  strength sessions"* is three, not the third option — the exact value wins
+  before a menu position, and that ordering has a test that fails the other
+  way round.
+- **`answer_setup` is the loop, made structural.** It saves through
+  `lib/setup.js` and returns the NEXT question — the one surface a model
+  cannot skip. It never holds the list, so it cannot dump the list. Several
+  answers volunteered at once go in one call; it still hands back one
+  question. `complete: true` says to call the training tool again in the same
+  turn. The result's `saved` is read back off the record, and the rule is
+  stated on the sheet AND the tool: *never say an answer is saved unless it
+  came back in `saved`.* This overrides the earlier four-per-message rule, on
+  the founder's instruction.
+- **The website is the other door — a form, not a list to copy from.**
+  `api-setup.js` + the *Getting to know you* panel: buttons for a choice, one
+  box for a number with its unit, quick picks for the kit, *None* where it
+  applies. Each tap saves through the same `applyAnswers` and the panel
+  redraws off the record, so a question the screen shows as answered is one
+  the assistant stops asking. The heading counts the fourteen. The gate's
+  refusal carries `wrought.fit/app.html#setup`, which scrolls to the form.
+  Never in the demo.
+- **The commitment lives on the profile, and `train_days` is its sum.**
+  `023_wrought_commitment.sql` adds `strength_per_week`, `cardio_per_week`,
+  `minutes_per_week`. Columns rather than goal rows because they are siblings
+  of `train_days`, scored by `weekSoFar` against the Monday week — a fake goal
+  row each would draw three unscoreable rings. Strength plus stamina is
+  written to `train_days` in the same save, so every existing reader of the
+  weekly expectation keeps working. `weekTargets(profile)` is the one place
+  the four numbers are read, and a test asserts every `weekSoFar` caller uses
+  it. Saved through `set_plan` too.
+- **Sessions are typed from the stamp, or from the shape, never by guess.**
+  The day rollup counts `strength_sessions` and `cardio_sessions`: `kind`
+  wins; without one, sets and reps are lifting and a distance is cardio; a
+  session that is neither is counted in the total and *named* as untyped.
+- **`week_check` is the mid-week read.** A new alert kind, on a weekday they
+  choose (`days`, default Wednesday) at an hour they choose, whose body IS
+  `commitment.say` from `weekSoFar` — computed once, so the notification and
+  the training-week panel cannot quote different figures. A met side is said
+  as met; **an impossible side is said as finishing short, never counted
+  down**, and a test greps the line for scolding words. A care flag silences
+  it — a read of the training week is coaching. Offered by `suggestAlerts`
+  only once a commitment exists, never switched on by itself; the completed
+  setup offers it in one line and sets it only on a yes.
+- **Before 023 runs, nothing throws.** A commitment answer on an old database
+  is dropped from the save, reported as `not_saved` with the migration named,
+  and the rest of the patch lands; `set_alert` for `week_check` answers with
+  the migration by name on a check-constraint rejection.
+
 ### The targets gate — the second stop, and where the link actually rides
 
 The founder, after asking for the goals hyperlink "100 times": *"we're not
@@ -3629,7 +3708,7 @@ self-reporting scale removes the most-abandoned manual entry), then Strava.
    `003_wrought_training.sql`, `004_wrought_fasting.sql`,
    `005_wrought_activity.sql`, `006_wrought_identity.sql`, `007_wrought_push.sql`,
    `008_wrought_blocks.sql`, `009_wrought_photos.sql` and
-   `010_wrought_profile_web.sql`, `011_wrought_membership.sql`, `012_wrought_link_codes.sql`, `013_wrought_work.sql`, `014_wrought_plan.sql` `015_wrought_ingest_dedupe_fix.sql`, `016_wrought_set_source.sql` `017_wrought_session_aim.sql` and `018_wrought_alerts.sql` in Supabase. Full checklist in `docs/SETUP.md`.
+   `010_wrought_profile_web.sql`, `011_wrought_membership.sql`, `012_wrought_link_codes.sql`, `013_wrought_work.sql`, `014_wrought_plan.sql` `015_wrought_ingest_dedupe_fix.sql`, `016_wrought_set_source.sql` `017_wrought_session_aim.sql`, `018_wrought_alerts.sql` and `023_wrought_commitment.sql` in Supabase. Full checklist in `docs/SETUP.md`. (018 through 023 were applied through the Supabase connector from a session — `list_migrations` shows them by name — so a session with that connector can apply an additive migration itself rather than leaving it on this list.)
 3. Set env vars in Netlify: `SUPABASE_URL` (**no trailing slash** — Kong answers
    "Invalid path specified in request URL" and nothing says why),
    `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_ANON_KEY`,

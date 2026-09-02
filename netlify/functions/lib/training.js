@@ -1137,17 +1137,24 @@ export function sessionTotals(sets) {
 // people stop opening the app. And a missed week is never a debt — sessions do
 // not carry over, because a punishment schedule is how training dies. Same
 // doctrine as blockPosition, which refuses to let the calendar delete training.
-export function weekSoFar(days = [], { today, target = null } = {}) {
+export function weekSoFar(days = [], { today, target = null, strength = null, cardio = null, minutes = null } = {}) {
   if (!today) return null;
   const dow = (new Date(`${today}T00:00:00Z`).getUTCDay() + 6) % 7;   // Mon = 0
   const monday = new Date(`${today}T00:00:00Z`);
   monday.setUTCDate(monday.getUTCDate() - dow);
   const weekStart = monday.toISOString().slice(0, 10);
 
-  const done = days
-    .filter(d => d.date >= weekStart && d.date <= today)
-    .reduce((a, d) => a + (d.sessions || 0), 0);
+  const week = days.filter(d => d.date >= weekStart && d.date <= today);
+  const done = week.reduce((a, d) => a + (d.sessions || 0), 0);
   const daysLeft = 6 - dow;   // days remaining AFTER today
+
+  // THE COMMITMENT, read the way the person stated it. The founder: "how many
+  // muscle building workouts you want to do a week, how many stamina, how many
+  // minutes total — and then your notification should reflect that." Three
+  // counts against three agreed numbers, off the same days as `done`, so the
+  // total and its split cannot disagree. Untyped sessions are counted in the
+  // total and named here, never assigned to a side by guess.
+  const commitment = commitmentRead(week, { strength, cardio, minutes, daysLeft });
 
   const t = Number.isFinite(Number(target)) && Number(target) > 0 ? Number(target) : null;
   let say;
@@ -1169,7 +1176,70 @@ export function weekSoFar(days = [], { today, target = null } = {}) {
     target: t,
     days_left: daysLeft,
     met: t ? done >= t : null,
+    say: commitment ? `${say} ${commitment.say}` : say,
+    ...(commitment ? { commitment } : {}),
+  };
+}
+
+// Null stays null. Number(null) is 0, and a commitment nobody stated must not
+// read as a commitment to nothing.
+const n0 = v => (v == null || v === '' ? null : (Number.isFinite(Number(v)) && Number(v) >= 0 ? Number(v) : null));
+
+/**
+ * Strength, stamina and minutes this week against what was agreed. Null when
+ * nothing was agreed. The line states each figure and stops: a met side is
+ * said as met, an impossible side is said as finishing short — never a
+ * countdown, never a scolding word, because guilt is how training logs die.
+ */
+export function commitmentRead(week = [], { strength = null, cardio = null, minutes = null, daysLeft = 0 } = {}) {
+  const S = n0(strength), C = n0(cardio), M = n0(minutes);
+  if (S == null && C == null && M == null) return null;
+
+  const sDone = week.reduce((a, d) => a + (d.strength_sessions || 0), 0);
+  const cDone = week.reduce((a, d) => a + (d.cardio_sessions || 0), 0);
+  const total = week.reduce((a, d) => a + (d.sessions || 0), 0);
+  const mDone = week.reduce((a, d) => a + (d.minutes || 0), 0);
+  const untyped = Math.max(0, total - sDone - cDone);
+
+  const parts = [];
+  const side = (label, done, target, unit = '') => {
+    if (target == null) return;
+    if (done >= target) parts.push(`${label} ${done} of ${target}${unit} — met`);
+    else parts.push(`${label} ${done} of ${target}${unit}`);
+  };
+  side('strength', sDone, S);
+  side('stamina', cDone, C);
+  side('minutes', mDone, M, '');
+
+  // Sessions still needed on a side that has more needed than days left is
+  // a week that will finish short on that side. Said once, as a fact.
+  const short = [];
+  if (S != null && S - sDone > daysLeft) short.push('strength');
+  if (C != null && C - cDone > daysLeft) short.push('stamina');
+
+  const allMet = (S == null || sDone >= S) && (C == null || cDone >= C) && (M == null || mDone >= M);
+  let say = parts.join(', ') + '.';
+  if (untyped) say += ` ${untyped} session${untyped === 1 ? '' : 's'} not marked strength or stamina.`;
+  if (allMet) say += ' The week is met.';
+  else if (short.length) say += ` This week will finish short on ${short.join(' and ')}; next week starts at zero.`;
+
+  return {
+    strength: S != null ? { done: sDone, target: S, met: sDone >= S } : null,
+    cardio:   C != null ? { done: cDone, target: C, met: cDone >= C } : null,
+    minutes:  M != null ? { done: mDone, target: M, met: mDone >= M } : null,
+    untyped, met: allMet, short,
     say,
+  };
+}
+
+/** The weekly expectation off a profile, in one place, so every caller of
+ *  weekSoFar reads the same four numbers. */
+export function weekTargets(profile = {}) {
+  return {
+    target: profile.train_days || null,
+    strength: profile.strength_per_week ?? null,
+    cardio: profile.cardio_per_week ?? null,
+    minutes: profile.minutes_per_week ?? null,
   };
 }
 
