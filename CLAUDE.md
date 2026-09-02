@@ -1591,6 +1591,60 @@ overstates the burn in the direction that tells somebody they have room to
 eat. Two or more rows for the day (sub-daily granularity) or the labelled
 estimate stands. Verified to bite.
 
+### Twenty-one lineages — named for the method, credited as a tradition, never an ambassador
+
+`STYLES` in `lib/design.js`, the Trainer-styles panel, `design_workout`. The
+founder: *"what are the top biggest trainers in the world ever — I want twenty
+of them, Freddie Roach, Louie Simmons, Schwarzenegger — as kind of our
+ambassadors, but we're gonna have to call it a style."* And then the question
+that settled the shape: *"if I copy their styles and put their name in it, will
+I get sued?"*
+
+**The method is not protectable. The name is.** Nobody owns one hard set to
+failure or a max-effort day; anyone may train that way and say so. A person's
+name on a paid product implies their endorsement — right of publicity — and
+most of these people are alive and several actively protect their names. A
+handful of the method names are trademarks outright: Starting Strength, 5/3/1,
+Westside Barbell, FST-7, Heavy Duty. *"Ambassadors"* is exactly the word that
+would draw the letter. The founder chose the honest form in as many words:
+*"build it that way, like a tradition."*
+
+- **A style is named for its METHOD** — *Conjugate method*, *Fight camp*,
+  *One hard set*, *Aerobic base* — **recognised from the famous name people
+  actually say** (`match` carries the surname and the brand, because
+  recognising what somebody said is not the same as using it as ours), and
+  **credits the person as the lineage**: `tradition` reads *"in the tradition
+  of Louie Simmons' conjugate method…"*. Never the author, never an endorser,
+  never a face. `provenance` on every one says published methodology, *not
+  his programme and not an endorsement*. That is the ordinary, allowed way to
+  reference published work, and it is also the honesty doctrine this product
+  already runs on. **A test asserts no style's name contains a surname or a
+  trademark, that every lineage is credited as a tradition and disclaims both
+  programme and endorsement in its own data, and that the word "ambassador"
+  appears nowhere in the product.**
+- **The twenty-one**: Roach, D'Amato, Dundee, Steward (boxing); Simmons,
+  Sheiko, Starr, Rippetoe, Wendler (powerlifting); Poliquin, Bompa (strength
+  and conditioning); Bowerman, Lydiard (running); Tsatsouline, Dan John
+  (kettlebell and simplicity); Weider, Gironda, Jones, Mentzer, Rambod,
+  Schwarzenegger (bodybuilding). Plus the three unnamed generic shapes that
+  were already there. *"A lawsuit"* in the founder's dictation was Louie
+  Simmons.
+- **A style genuinely changes the session, and says what it changes.** Sets,
+  reps and rest as before, plus three shapes added for this list, each with a
+  test: a **finisher** that lands on the last lifting movement only (seven
+  sets on every movement is a different and much worse session), a
+  **movement cap** that can lower but never raise the clock's ceiling, and a
+  **long-conditioning share** so a running style gives most of the hour to one
+  steady effort. `emphasis` is one honest line about what the style does; where
+  a method is really about the WEEK — hard/easy days, periodised blocks, a base
+  built over months — the line says so and names the tool that owns the week
+  rather than pretending one session carries it. **The beginner cap holds for
+  every style**, and so does the no-loads rule the harness already runs across
+  all of them.
+- The panel groups by discipline, shows the tradition under the method and the
+  emphasis under that, and the *Build it* tap carries the tradition into the
+  ask. The response carries `tradition` and `emphasis` beside `provenance`.
+
 ### The trainer between the sets — words in, load out
 
 `lib/coach.js` + `felt` on `log_set`. The founder: *"we have to get like a

@@ -787,7 +787,11 @@ export const handler = async (event) => {
       // server's own list — the say and the honest provenance travel together,
       // because a style shown without its provenance is the wink the doctrine
       // forbids.
-      styles: Object.entries(STYLES).map(([key, v]) => ({ key, say: v.say, provenance: v.provenance })),
+      styles: Object.entries(STYLES).map(([key, v]) => ({
+        key, say: v.say, provenance: v.provenance,
+        lineage: v.lineage || null, tradition: v.tradition || null,
+        discipline: v.discipline || 'Other', emphasis: v.emphasis || null,
+      })),
       coach: {
         push_devices: pushSubs,
         morning: checkins?.morning_hour != null ? `${checkins.morning_hour}:${String(checkins.morning_minute || 0).padStart(2, '0')}` : null,

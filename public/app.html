@@ -1089,6 +1089,11 @@ table.matrix td.rh.cold { color: var(--heat-3); }
 .say.copied { background: var(--heat-1); border-color: var(--heat-3); color: var(--heat-5); }
 /* The setup form. A chosen option looks chosen; a box is one box. */
 .say.on { background: var(--heat-1); border-color: var(--heat-3); color: var(--heat-5); }
+/* Trainer styles: the method, the tradition under it, what it changes. */
+.stylegrp { margin: 14px 0 4px; font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+.planrow.style .lbl { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.planrow.style .lineage { font-size: 12.5px; color: var(--muted); font-weight: 400; }
+.planrow.style .emph { font-size: 12px; color: var(--dim); font-weight: 400; }
 .sq { margin: 12px 0 0; }
 .sq .q { margin: 0 0 6px; font-weight: 600; }
 .sq-row { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin-top: 6px; }
@@ -5945,18 +5950,30 @@ function gptLink(prompt, label) {
 // comes from the SERVER so it cannot drift from what design_workout actually
 // recognises, and the provenance rides every card — a style shown without its
 // honest line is the wink the doctrine forbids.
+// The twenty-one lineages, grouped by discipline. Each style is named for its
+// METHOD and credits the person as the tradition it comes from — never as the
+// author, never as an endorser. The founder asked whether he would get sued
+// for putting their names on it; this is the phrasing that keeps it a
+// truthful reference to published work rather than a claimed endorsement.
 function stylesPanel(d) {
   const list = d?.styles || [];
   if (!list.length) return '';
+  const groups = [];
+  for (const st of list) {
+    const g = groups.find(x => x.name === (st.discipline || 'Other'));
+    if (g) g.items.push(st); else groups.push({ name: st.discipline || 'Other', items: [st] });
+  }
+  const trad = st => st.tradition || `in the tradition of ${st.lineage}`;
+  const row = st => `<div class="planrow style">
+      <span class="lbl">${esc(st.say)}${st.lineage ? `<span class="lineage">${esc(trad(st))}</span>` : ''}${st.emphasis ? `<span class="emph">${esc(st.emphasis)}</span>` : ''}</span>
+      ${gptLink(`Gym bro — design me a ${st.say} workout${st.lineage ? ` (${trad(st)})` : ''} for my gym, about 45 minutes, and offer to save it.`, 'Build it')}
+    </div>`;
   return `<section class="panel">
     <h2>Trainer styles</h2>
-    <p class="sub">Real published methods, built to your gym and your tier — never a named
-    coach\u2019s programme, and never a weight it invented.</p>
-    <div class="planrows">${list.map(st => `<div class="planrow">
-      <span class="lbl">${esc(st.say)}</span>
-      ${gptLink(`Gym bro \u2014 design me a ${st.say} workout for my gym, about 45 minutes, and offer to save it.`, 'Build it')}
-    </div>`).join('')}</div>
-    <p class="sub dim">${esc(list[0] ? 'Named for the method, not the man \u2014 each one says where it actually comes from.' : '')}</p>
+    <p class="sub">Real published methods, built to your gym and your tier — each named for the
+    method and credited to the tradition it comes from. Never a named coach’s programme, never
+    an endorsement, and never a weight it invented.</p>
+    ${groups.map(g => `<h3 class="stylegrp">${esc(g.name)}</h3><div class="planrows">${g.items.map(row).join('')}</div>`).join('')}
   </section>`;
 }
 
