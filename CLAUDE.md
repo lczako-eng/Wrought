@@ -1591,6 +1591,48 @@ overstates the burn in the direction that tells somebody they have room to
 eat. Two or more rows for the day (sub-daily granularity) or the labelled
 estimate stands. Verified to bite.
 
+### Where they train — a place is a row, not a sentence
+
+`024_wrought_places.sql` + `lib/places.js` + `add_gym` / `my_gyms` /
+`drop_gym` + `place` on every training door and on a logged workout. The
+founder: *"when you're doing a workout — you could do it manually as well,
+like 'I'm going for a walk at the park'. But if there's a new gym and it
+recognises that you're working out somewhere else, it should add a new gym.
+Some of that coach should be ready in there, because I've added a few gyms
+already."*
+
+**He had added them — to ChatGPT, which said it saved them and wrote
+nothing.** The memory table on his account held zero gyms. A place kept as
+free text in `wrought_memory` (category `gym`, the earlier design) is a place
+the model has to parse back every time and a save nobody can check — the
+claimed-save failure with a gym's name on it.
+
+- **One row per place**: name, kind (`gym` / `home` / `outdoor` / `travel`),
+  equipment, times used, last used. Unique per name, case-insensitive.
+  `wrought_sessions.place` carries where a live session is; the finaliser
+  stamps it onto the workout event as `detail.place`; `workoutList` and the
+  day panels show *"at GoodLife"* on the row.
+- **A place named is a place recorded.** `place` on `suggest_workout`,
+  `start_session`, `design_workout` and on a workout in `log`. The first time
+  a name is said it becomes a row — nobody opens a settings screen to add a
+  gym. `add_gym` reads the list back off the record, so *"added"* is a claim
+  the record supports, and the never-claim rule rides the tool.
+- **A new gym is asked for its kit ONCE, in one clause, and never blocks.**
+  Until the kit is known the session is built for the main gym's equipment
+  and the response says so — building blind is the failure the founder named
+  (*never build a plan around a machine the photos did not show*). **An
+  outdoor place is never asked**: the park has no rack; a walk at the park is
+  a workout with a place, full stop. Kind is inferred from the name
+  (`kindFor`) and can be stated.
+- **Every door degrades before 024**: probed once per container, the tools
+  answer with the migration by name, sessions open without the column, and
+  the finaliser does not select it. Applied to the live database through the
+  connector.
+- The Trainer tab has a *Where you train* panel — each place, its kind, its
+  kit or *"no kit listed yet"*, and a one-tap *Train here*. Memory-era gym
+  sentences surface once in `my_gyms` as `unstructured_gyms` with an offer to
+  add each properly.
+
 ### Twenty-one lineages — named for the method, credited as a tradition, never an ambassador
 
 `STYLES` in `lib/design.js`, the Trainer-styles panel, `design_workout`. The
@@ -3762,7 +3804,7 @@ self-reporting scale removes the most-abandoned manual entry), then Strava.
    `003_wrought_training.sql`, `004_wrought_fasting.sql`,
    `005_wrought_activity.sql`, `006_wrought_identity.sql`, `007_wrought_push.sql`,
    `008_wrought_blocks.sql`, `009_wrought_photos.sql` and
-   `010_wrought_profile_web.sql`, `011_wrought_membership.sql`, `012_wrought_link_codes.sql`, `013_wrought_work.sql`, `014_wrought_plan.sql` `015_wrought_ingest_dedupe_fix.sql`, `016_wrought_set_source.sql` `017_wrought_session_aim.sql`, `018_wrought_alerts.sql` and `023_wrought_commitment.sql` in Supabase. Full checklist in `docs/SETUP.md`. (018 through 023 were applied through the Supabase connector from a session — `list_migrations` shows them by name — so a session with that connector can apply an additive migration itself rather than leaving it on this list.)
+   `010_wrought_profile_web.sql`, `011_wrought_membership.sql`, `012_wrought_link_codes.sql`, `013_wrought_work.sql`, `014_wrought_plan.sql` `015_wrought_ingest_dedupe_fix.sql`, `016_wrought_set_source.sql` `017_wrought_session_aim.sql`, `018_wrought_alerts.sql`, `023_wrought_commitment.sql` and `024_wrought_places.sql` in Supabase. Full checklist in `docs/SETUP.md`. (018 through 023 were applied through the Supabase connector from a session — `list_migrations` shows them by name — so a session with that connector can apply an additive migration itself rather than leaving it on this list.)
 3. Set env vars in Netlify: `SUPABASE_URL` (**no trailing slash** — Kong answers
    "Invalid path specified in request URL" and nothing says why),
    `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_ANON_KEY`,

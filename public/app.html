@@ -3788,6 +3788,7 @@ function renderTrainer(d) {
       <p class="caveat">${esc(d.say)}</p></section>
       ${notConnectedCallout()}
       ${routinesPanel({ routines: trainerRoutinesFull.length ? trainerRoutinesFull : (d.routines?.length ? d.routines : trainerRoutines) }, { editable: true })}
+      ${placesPanel({ places: lastPayload?.places })}
       ${stylesPanel({ styles: lastPayload?.styles })}`;
     wireRoutines();
     stagger();
@@ -5950,6 +5951,28 @@ function gptLink(prompt, label) {
 // comes from the SERVER so it cannot drift from what design_workout actually
 // recognises, and the provenance rides every card — a style shown without its
 // honest line is the wink the doctrine forbids.
+// Where they train, with what is at each. The founder "added a few gyms" to
+// an assistant that saved none of them — so the places are ROWS now, and this
+// is where somebody can see what is on file and what each place has. A gym
+// with no kit listed says so, because that is the gym the coach is building
+// blind for.
+function placesPanel(d) {
+  if (DEMO) return '';
+  const list = d?.places || [];
+  const KIND = { gym: 'gym', home: 'home', outdoor: 'outdoors', travel: 'away', other: 'place' };
+  const rows = list.map(p => `<div class="planrow style">
+      <span class="lbl">${esc(p.name)}<span class="lineage">${esc(KIND[p.kind] || p.kind)}${p.times_used ? ` · used ${p.times_used}×` : ''}${p.last_used_on ? ` · last ${esc(p.last_used_on)}` : ''}</span>
+        <span class="emph">${p.kind === 'outdoor' ? 'No kit needed.' : (p.equipment || []).length ? esc(p.equipment.join(', ')) : 'No kit listed yet — tell your assistant what is there.'}</span></span>
+      ${gptLink(`Gym bro — I'm at ${p.name} today, what should I train?`, 'Train here')}
+    </div>`).join('');
+  return `<section class="panel">
+    <h2>Where you train</h2>
+    <p class="sub">Every place on file and what is there. Say where you are — "I'm at the home gym", "walk at the park" — and it builds to that kit and files the session there. A new gym is added the first time you name it.</p>
+    ${rows ? `<div class="planrows">${rows}</div>` : '<p class="empty">No places on file yet. Tell your assistant "add my home gym — bench, dumbbells, bands" and it lands here.</p>'}
+    ${gptLink('Gym bro — add a new gym. Ask me what it is called and what kit it has.', 'Add a place')}
+  </section>`;
+}
+
 // The twenty-one lineages, grouped by discipline. Each style is named for its
 // METHOD and credits the person as the tradition it comes from — never as the
 // author, never as an endorser. The founder asked whether he would get sued
@@ -6589,6 +6612,7 @@ function trainingTodayPanel(d) {
       <span class="tkcount">${e.skipped ? 'skipped' : `${e.done}/${e.planned}`}</span>
     </li>`).join('')}</ul>` : '';
     return line(name, [
+      x.place ? `at ${x.place}` : null,
       x.minutes && !said('\\bmin\\b') ? `${x.minutes} min` : null,
       x.distance_km && !said('\\bkm\\b') ? `${x.distance_km} km` : null,
       x.calories ? `${Number(x.calories).toLocaleString()} kcal` : null,
@@ -8401,6 +8425,7 @@ function sessionsPanel(d) {
     const when = x.days_ago === 0 ? 'today' : x.days_ago === 1 ? 'yesterday'
                : x.days_ago != null ? `${x.days_ago}d ago` : esc(x.date || '');
     const nums = [
+      x.place ? `at ${x.place}` : null,
       x.minutes ? `${x.minutes} min` : null,
       x.distance_km ? `${x.distance_km} km` : null,
       x.calories ? `${Number(x.calories).toLocaleString()} kcal` : null,

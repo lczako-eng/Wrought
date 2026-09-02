@@ -10836,6 +10836,88 @@ await test('twenty-one written sessions — one per tradition, every field free 
   assert.match(src, /do not rewrite it, do not add loads/);
 });
 
+group('Where they train — a place is a row, not a sentence');
+
+await test('a place named is a place recorded, and a park is never asked for kit', async () => {
+  // The founder: "if there's a new gym and it recognises that you're working
+  // out somewhere else, it should add a new gym… I've added a few gyms
+  // already." He had — to an assistant that saved none. The record held zero.
+  const { kindFor, placeFromWords, cleanName, placeEquipment, PLACE_KINDS } = await import('../netlify/functions/lib/places.js');
+  // Kind from the name: the park has no rack, the garage is home, the hotel is away.
+  assert.equal(kindFor('Trinity Bellwoods park'), 'outdoor');
+  assert.equal(kindFor('the trail by the river'), 'outdoor');
+  assert.equal(kindFor('the garage'), 'home');
+  assert.equal(kindFor('home gym'), 'home');
+  assert.equal(kindFor('hotel gym'), 'travel');
+  assert.equal(kindFor('GoodLife on Main'), 'gym');
+  // The words people say carry the place.
+  assert.equal(placeFromWords('going for a walk at the park'), 'park');
+  assert.equal(placeFromWords('trained at GoodLife Main this morning'), 'GoodLife Main');
+  assert.equal(placeFromWords('did my S-tier in the garage'), 'garage');
+  assert.equal(placeFromWords('bench and rows, felt good'), null, 'a sentence with no place produced one');
+  assert.equal(cleanName('  the   Park '), 'Park');
+  // An outdoor place builds for bodyweight; a gym with kit builds to it; a
+  // gym without falls back to the main gym and SAYS so (the tool note).
+  assert.deepEqual(placeEquipment({ kind: 'outdoor', equipment: [] }, { equipment: ['full gym'] }), ['bodyweight only']);
+  assert.deepEqual(placeEquipment({ kind: 'gym', equipment: ['dumbbells', 'bands'] }, { equipment: ['full gym'] }), ['dumbbells', 'bands']);
+  assert.deepEqual(placeEquipment({ kind: 'gym', equipment: [] }, { equipment: ['full gym'] }), ['full gym']);
+  // The kinds the code accepts are the kinds the database allows.
+  const sql = readFileSync(new URL('../schema/024_wrought_places.sql', import.meta.url), 'utf8');
+  const check = sql.slice(sql.indexOf('wrought_places_kind_valid'));
+  const allowed = [...check.slice(0, check.indexOf(';')).matchAll(/'([a-z_]+)'/g)].map(m => m[1]);
+  assert.deepEqual([...PLACE_KINDS].sort(), [...new Set(allowed)].sort(), 'PLACE_KINDS and the check constraint disagree');
+});
+
+await test('every training door takes a place, the log stamps it, and the record shows it', () => {
+  const mcp = readFileSync(new URL('../netlify/functions/mcp.js', import.meta.url), 'utf8');
+  // The tools exist and are registered.
+  for (const t of ['add_gym', 'my_gyms', 'drop_gym']) {
+    assert.match(mcp, new RegExp(`name: '${t}'`), `${t} is not a tool`);
+    assert.match(mcp, new RegExp(`${t}: `), `${t} is not wired`);
+  }
+  // add_gym reads the list back off the record — "added" is a claim the
+  // record supports — and never claims a save it did not make.
+  const add = mcp.slice(mcp.indexOf('async function addGym('), mcp.indexOf('async function myGyms('));
+  assert.match(add, /const on_file = await listPlaces\(user\.id\)/, 'add_gym echoes instead of reading back');
+  assert.match(add, /migration_missing/, 'add_gym throws on an old database instead of saying so');
+  assert.match(mcp, /NEVER say a gym is added without calling this/, 'the never-claim rule is off the tool');
+  // Every builder takes `place`, and a new gym is asked ONCE and never blocks.
+  for (const fn of ['suggestWorkout', 'startSession', 'designWorkout']) {
+    const body = mcp.slice(mcp.indexOf(`async function ${fn}(`), mcp.indexOf('\nasync function ', mcp.indexOf(`async function ${fn}(`) + 10));
+    assert.match(body, /placeForSession\(user\.id, profile, args/, `${fn} ignores place`);
+  }
+  const pfs = mcp.slice(mcp.indexOf('async function placeForSession('), mcp.indexOf('// ── The questionnaire, one answer at a time'));
+  assert.match(pfs, /Ask in ONE clause what is actually there/, 'a new gym is not asked for its kit');
+  assert.match(pfs, /never blocking the session/, 'a new gym blocks the session');
+  assert.match(pfs, /No kit question/, 'an outdoor place is asked for kit');
+  // The session carries it (guarded — 024 may not have run), and the
+  // finaliser stamps it on the workout event.
+  assert.match(mcp, /\.\.\.\(canPlace \? \{ place: at\.place\.name \} : \{\}\)/, 'the session row never carries the place');
+  const sess = readFileSync(new URL('../netlify/functions/lib/session.js', import.meta.url), 'utf8');
+  assert.match(sess, /sessionsCanCarryPlace\(\)/, 'the finaliser reads the column unguarded');
+  assert.match(sess, /\.\.\.\(place \? \{ place \} : \{\}\)/, 'the workout event never carries the place');
+  assert.match(sess, /place: d\.place \|\| null/, 'workoutList drops the place');
+  // A workout logged in a sentence carries its place into the detail, and the
+  // stray top-level key never reaches insertEvents.
+  const log = mcp.slice(mcp.indexOf('\nasync function log('), mcp.indexOf('\nasync function log(') + 4000);
+  assert.ok(log.indexOf('applyPlaces(user.id, events') < log.indexOf('insertEvents(user.id, profile, events'), 'places are applied after the write');
+  const places = readFileSync(new URL('../netlify/functions/lib/places.js', import.meta.url), 'utf8');
+  assert.match(places, /const name = e\.place; delete e\.place;/, 'the top-level place key survives to insertEvents');
+  // The log schema and the sheet both carry the rule.
+  assert.match(mcp, /place:      \{ type: 'string', description: 'For a workout: WHERE it happened/, 'log has no place field');
+  assert.match(SERVER_INSTRUCTIONS, /WHERE THEY TRAIN IS PART OF THE RECORD/);
+  assert.match(SERVER_INSTRUCTIONS, /A park or a trail is never asked for kit/);
+  // And the dashboard shows it: on every workout row, and as a panel of places.
+  const app = page('app.html');
+  assert.match(app, /x\.place \? `at \$\{x\.place\}` : null/, 'workout rows never say where');
+  assert.match(app, /function placesPanel\(/, 'no places panel');
+  assert.match(app, /placesPanel\(\{ places: lastPayload\?\.places \}\)/, 'the places panel is never drawn');
+  assert.match(app, /No kit listed yet/, 'a blind gym is not named as blind');
+  const api = readFileSync(new URL('../netlify/functions/api-progress.js', import.meta.url), 'utf8');
+  assert.match(api, /places: places\.map/, 'the dashboard is never sent the places');
+  assert.match(api, /Promise\.all\(\[getMemory\(user\.id\), listPlaces\(user\.id\)/, 'places cost a serial hop');
+});
+
 await test('the door people actually use asks which gym', () => {
   // "Next time I go to my gym it's gonna ask me which gym am I going to, or a
   // new one." design_workout asked; suggest_workout — where "I'm going to the
