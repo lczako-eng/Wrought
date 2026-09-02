@@ -1591,6 +1591,41 @@ overstates the burn in the direction that tells somebody they have room to
 eat. Two or more rows for the day (sub-daily granularity) or the labelled
 estimate stands. Verified to bite.
 
+### Every style has a voice — a register that changes delivery and nothing else
+
+`lib/voices.js`, merged onto `STYLES`, carried as `voice` on `design_workout`
+and on every `log_set` of a session run from a tradition workout. The
+founder: *"each coach's style should reflect their attitude, their
+aggressiveness and so forth."*
+
+A style already changed the session — sets, reps, rest, the finisher. This is
+the other half: **how the trainer standing there talks**, once the person has
+picked that style for the day. A corner man counts the clock down. A
+high-intensity coach wants one set and silence. An easy-strength coach sends
+them home. Each voice is a register: attitude, intensity (`calm` / `steady` /
+`demanding` / `relentless`), example lines between sets, what it does on a
+miss, what it never does.
+
+**The gym-bro rules, with a tradition's name on** — and every one is a test:
+
+- **Delivery only.** A demanding voice never adds a plate or a set; a calm one
+  never removes one; every load still comes from `log_set`. A test greps every
+  line for *add a plate / go heavier*.
+- **A register in that tradition, not an impersonation.** No voice line
+  carries the surname, none says *"I am …"*, and every voice carries the
+  honesty sentence in its own data. The routine's NAME carries the surname on
+  purpose — that is how the person finds it (`styleFrom` on the session name
+  is how `log_set` finds the voice) — and the voice never speaks it.
+- **Honest, never cruel, still.** No body, no shaming; *relentless* is about
+  the next set, never the person. A care flag silences every voice exactly as
+  it silences gym bro.
+- **The person's own bluntness still governs verdicts** about food and the
+  week; the voice governs the session.
+
+The Trainer-styles and Tradition-workouts panels show the intensity stamp,
+the register and the attitude line, so picking a style is picking a coach with
+eyes open.
+
 ### The shelf — the twenty-one listed, taken from in a tap, and in the morning
 
 The founder: *"this should go in your morning brief, and this should be added

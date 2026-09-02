@@ -279,6 +279,8 @@ WHAT THEY TOLD THE PHONE IS STILL WAITING FOR YOU. On an iPhone they can say "he
 
 "GYM BRO" IS A REGISTER, NOT A LICENCE. If they ask in that voice, answer in it — short, loud, no hedging, no corporate softness. It changes the DELIVERY and nothing else. Every number still comes from the tools, the honesty rules still hold, nothing about their body is ever mentioned, and a care flag silences the whole register instantly and completely. A persona is never a reason to say something the plain version would not say.
 
+A STYLE HAS A VOICE, AND THE SAME RULES BIND IT. When a session is built in a tradition (design_workout with a style) or run from one of the tradition workouts, the response carries "voice": a register — attitude, intensity (calm / steady / demanding / relentless), example lines between sets, what it does on a miss, what it never does. Coach that session in it: a corner man counts the clock down, a high-intensity coach wants one set and silence, an easy-strength coach sends them home. Adapt the lines, never recite them, and NEVER claim to be the person — it is a coaching register in that tradition, not an impersonation, and no surname is ever spoken as the voice. It changes delivery only: a demanding voice never adds a plate or a set, a calm one never removes one, every load still comes from log_set, nothing about their body is ever said, and a care flag silences every voice exactly as it silences gym bro. The person's own bluntness setting still governs verdicts about food and the week; the voice governs the session.
+
 THE BRIEF IS THE PRODUCT. Logging is table stakes — a hundred apps log. What nobody has is a thing that reads the whole week back to you honestly. When the user opens with anything resembling "how am I doing", "what's the damage", "morning", or asks about progress, call brief and lead with it. Do not ask which metrics they care about; show the read, then let them dig.
 
 BE HONEST. This is the entire reason the product exists. The user explicitly asked for something that does not flatter them. If they ate 3,400 calories and called it a good day, say the number and say it was not. If they have not trained legs in three weeks, the matrix in progress will show it — say so plainly. Never inflate a bad week into a "solid effort". Never open with praise you have to reach for. Their profile carries a bluntness setting (gentle / honest / brutal) and the verdict is already written to it — do not soften what came back.
@@ -2093,6 +2095,17 @@ async function setPlan(args, user) {
   };
 }
 
+// The voice a live session speaks in, read off its routine's name: a session
+// started from "Fight camp (Freddie Roach tradition)" is coached in the
+// corner-man register. A plain "Leg day" has no voice and the ordinary
+// trainer lines stand. Names carry the surname on purpose (that is how the
+// person finds them); the VOICE never says it.
+function sessionVoice(session) {
+  const key = styleFrom(session?.name || '');
+  const voice = key ? STYLES[key]?.voice : null;
+  return voice ? { style: STYLES[key].say, ...voice } : null;
+}
+
 // ── Where they train ───────────────────────────────────────────────────────
 // A place is a row, not a sentence. The founder "added a few gyms" to an
 // assistant that saved none of them; the tool reads the list back off the
@@ -3274,6 +3287,8 @@ async function startSession(args, user) {
     // they did not say, and `aim_pending` asks once rather than inventing one.
     aim,
     aim_pending: !aim,
+    // The session's voice from the first set, when it is one of the traditions.
+    ...(sessionVoice({ name }) ? { voice: sessionVoice({ name }) } : {}),
     // The daily targets a notification can be a percentage of. Gone once set.
     ...(needGoals ? { goals_needed: needGoals } : {}),
     aim_saved: canAim ? undefined : 'This session\'s aim cannot be stored until migration 017 has been run, so it will not be on the record afterwards.',
@@ -3553,6 +3568,9 @@ async function logSet(args, user) {
           ...(effort.conflicted ? { conflicted: true, took: effort.took } : {}),
           basis: effort.basis }
       : { rpe: null, why: 'they did not say how it felt, so the load holds — an unreported effort never adds weight' },
+    // The session's VOICE, when the routine is one of the traditions: the
+    // register for the line between this set and the next. Delivery only.
+    ...(sessionVoice(session) ? { voice: sessionVoice(session) } : {}),
     ask_after: afterSet({ reps: args.reps ?? null, target: current.reps, hadEffort: effort.rpe != null }),
     ...(setNo === 1 && !moreSetsHere
       ? { ask_before: beforeSet({ exercise: nextExercise.name, setNumber: 1,
@@ -4921,6 +4939,10 @@ async function designWorkout(args, user) {
       // put their name in it"; this phrasing is the answer.
       ...(STYLES[style].tradition ? { tradition: STYLES[style].tradition } : {}),
       ...(STYLES[style].emphasis ? { emphasis: STYLES[style].emphasis } : {}),
+      // How the trainer talks during THIS session, once they picked the style.
+      // A register: delivery only — never a plate, never the body, silenced
+      // by a care flag like every other voice.
+      ...(STYLES[style].voice ? { voice: STYLES[style].voice, voice_note: 'Coach the session in this register — its attitude and intensity — adapting the example lines, never reciting them and never claiming to be the person. It changes DELIVERY only: every load still comes from the tools, no set or plate is ever added because the voice is demanding, nothing about their body is said, and a care flag silences it completely.' } : {}),
       // THE WRITTEN SESSION IN THIS TRADITION, beside the one built to their
       // gym. The founder asked for "their exact workouts"; this is a session
       // composed from the published methodology, fully written — movements,

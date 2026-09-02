@@ -798,6 +798,7 @@ export const handler = async (event) => {
         notes: r.notes, exercises: r.exercises,
         lineage: STYLES[key]?.lineage || null, discipline: STYLES[key]?.discipline || null,
         emphasis: STYLES[key]?.emphasis || null,
+        voice: STYLES[key]?.voice ? { register: STYLES[key].voice.register, intensity: STYLES[key].voice.intensity, attitude: STYLES[key].voice.attitude } : null,
       })),
       // Where they train, with what is at each — the record the coach builds to.
       places: places.map(p => ({ name: p.name, kind: p.kind, equipment: p.equipment || [], last_used_on: p.last_used_on, times_used: p.times_used })),
@@ -805,6 +806,7 @@ export const handler = async (event) => {
         key, say: v.say, provenance: v.provenance,
         lineage: v.lineage || null, tradition: v.tradition || null,
         discipline: v.discipline || 'Other', emphasis: v.emphasis || null,
+        voice: v.voice ? { register: v.voice.register, intensity: v.voice.intensity, attitude: v.voice.attitude } : null,
       })),
       coach: {
         push_devices: pushSubs,
