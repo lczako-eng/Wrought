@@ -621,6 +621,7 @@ export async function rangeFacts(userId, profile, fromDate, toDate) {
       strength_sessions: 0, cardio_sessions: 0,
       weights: [], steps: 0, sleep_minutes: 0, active_calories: 0,
       muscles: new Set(), logged: false, food_log_complete: null,
+      meal_times: [],
     });
     return byDay.get(d);
   };
@@ -636,6 +637,15 @@ export async function rangeFacts(userId, profile, fromDate, toDate) {
       day.carbs_g   += num(e.detail?.carbs_g);
       day.fat_g     += num(e.detail?.fat_g);
       day.meals     += 1;
+      // WHEN they ate, as minutes into their own day — the raw material of
+      // the when-you-eat read. The clock is the entry's own stamp: the time
+      // they said, or the minute it was filed, which the confirmation now
+      // reads back so a wrong one gets corrected rather than charted.
+      const at = e.occurred_at ? localMinutesFor(profile.timezone, new Date(e.occurred_at)) : null;
+      if (at != null) day.meal_times.push({
+        at, kcal: e.detail?.calories != null ? Math.round(num(e.detail.calories)) : null,
+        summary: String(e.summary || '').slice(0, 80), type: e.event_type,
+      });
     }
     if (e.event_type === 'note' && e.detail?.kind === 'intake_log_review') {
       day.food_log_complete = e.detail?.complete === true;
@@ -691,6 +701,7 @@ export async function rangeFacts(userId, profile, fromDate, toDate) {
     sleep_minutes: d.sleep_minutes || null,
     active_calories: Math.round(d.active_calories) || null,
     muscles: [...d.muscles],
+    meal_times: d.meal_times.sort((a, b) => a.at - b.at),
   }));
 
   return { from: fromDate, to: toDate, days };
