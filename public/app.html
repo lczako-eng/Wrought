@@ -6746,7 +6746,9 @@ function trainingTodayPanel(d) {
       x.place ? `at ${x.place}` : null,
       x.minutes && !said('\\bmin\\b') ? `${x.minutes} min` : null,
       x.distance_km && !said('\\bkm\\b') ? `${x.distance_km} km` : null,
-      x.calories ? `${Number(x.calories).toLocaleString()} kcal` : null,
+      // A session priced from its minutes says so; a watch-measured one does
+      // not need to — the label is the difference between the two.
+      x.calories ? `${Number(x.calories).toLocaleString()} kcal${x.calories_source === 'estimate' ? ', estimated' : ''}` : null,
       // The training spike, on the day it happened rather than three months on.
       (x.avg_hr ?? x.effort?.avg_hr) ? `${x.avg_hr ?? x.effort.avg_hr} bpm avg` : null,
       (x.max_hr ?? x.effort?.max_hr) ? `${x.max_hr ?? x.effort.max_hr} bpm peak` : null,
@@ -8610,7 +8612,7 @@ function sessionsPanel(d) {
       x.place ? `at ${x.place}` : null,
       x.minutes ? `${x.minutes} min` : null,
       x.distance_km ? `${x.distance_km} km` : null,
-      x.calories ? `${Number(x.calories).toLocaleString()} kcal` : null,
+      x.calories ? `${Number(x.calories).toLocaleString()} kcal${x.calories_source === 'estimate' ? ', estimated' : ''}` : null,
       x.avg_hr ? `${x.avg_hr} bpm avg` : null,
     ].filter(Boolean).join(' · ');
     return `<div class="wkrow">

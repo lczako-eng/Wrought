@@ -34,7 +34,7 @@
 // overstated burn is the number that tells somebody they have room to eat.
 
 import { supabase, insertEvents, localDateFor } from './wrought.js';
-import { sessionTotals, sessionsCanCarryAim, exerciseKey } from './training.js';
+import { sessionTotals, sessionsCanCarryAim, exerciseKey, sameLift, trainingBurn } from './training.js';
 import { sessionProgress } from './warmup.js';
 import { sessionEffort, splitWork, windowedActive } from './effort.js';
 import { sessionsCanCarryPlace } from './places.js';
@@ -48,6 +48,14 @@ const STALE_MS = 4 * 3600 * 1000;
 // And a session that never got a single set. Nothing to file, so nothing is
 // filed; it is only cleared out so it stops blocking the next one.
 const EMPTY_MS = 8 * 3600 * 1000;
+
+// How long after the last set "I'm done" is still the end of the SESSION
+// rather than the end of the evening. Somebody who closes it after the
+// cool-down stretches was training until then; somebody who closes it from
+// the sofa ninety minutes later was not, and billing the gap as training is
+// the overnight bug in a smaller hat — the founder's closed at 142 minutes for
+// a session that ran under an hour, and the calorie estimate scaled with it.
+export const CLOSE_GRACE_MS = 20 * 60 * 1000;
 
 /**
  * Is this session still being trained, or did somebody walk out of the gym?
@@ -125,7 +133,13 @@ export async function finaliseSession(userId, profile, session,
   // at now, because a session left open overnight would otherwise bill
   // fourteen hours. See the note at the top of the file.
   const lastSetAt = new Date(rows[rows.length - 1].logged_at).getTime();
-  const endAt = endedAt ? new Date(endedAt).getTime() : lastSetAt;
+  // Explicit "I'm done" ends it now — within a grace of the last set. Past
+  // that, the truest end available is the last set plus the grace, because
+  // the minutes price the burn and an overstated burn is the number that
+  // tells somebody they have room to eat.
+  const endAt = endedAt
+    ? Math.max(lastSetAt, Math.min(new Date(endedAt).getTime(), lastSetAt + CLOSE_GRACE_MS))
+    : lastSetAt;
   // Floor at one minute so a single-set session is not zero.
   const minutes = Math.max(1, Math.round((endAt - started) / 60000));
   const endedIso = new Date(endAt).toISOString();
@@ -174,7 +188,7 @@ export async function finaliseSession(userId, profile, session,
   // the other. "Officially start the heart rate" turns out to be a query, not
   // a feature: the window was always there.
   const dayOf = localDateFor(profile.timezone, new Date(endAt));
-  const [{ data: hr }, { data: activeRows }] = await Promise.all([
+  const [{ data: hr }, { data: activeRows }, { data: weighIn }] = await Promise.all([
     supabase.from('wrought_metrics')
       .select('value, measured_at').eq('user_id', userId).eq('metric', 'heart_rate')
       .gte('measured_at', session.started_at).lte('measured_at', endedIso)
@@ -186,6 +200,11 @@ export async function finaliseSession(userId, profile, session,
     supabase.from('wrought_metrics')
       .select('value, measured_at').eq('user_id', userId).eq('metric', 'active_calories')
       .eq('local_date', dayOf),
+    // The most recent weigh-in anywhere — a window is not a memory — so the
+    // session can be priced when the watch cannot vouch for it.
+    supabase.from('wrought_events')
+      .select('detail').eq('user_id', userId).eq('event_type', 'weight')
+      .order('occurred_at', { ascending: false }).limit(1),
   ]);
 
   // MEASURED BEATS ESTIMATED, when a measurement genuinely exists. The watch's
@@ -193,6 +212,25 @@ export async function finaliseSession(userId, profile, session,
   // trainingBurn counts it as a device figure and the hero stops saying
   // "estimated" about a session the watch actually saw.
   const watched = windowedActive(activeRows || [], session.started_at, endedIso);
+
+  // AND WHEN IT CANNOT, THE SESSION STILL CARRIES A FIGURE — its own, labelled.
+  //
+  // The founder closed a workout and asked how many calories it was; the
+  // answer was "I didn't add any — Wrought is treating the 764 from your
+  // device as the training component." The row had minutes and no figure, so
+  // the only number anywhere was the day's clamp. The same MET pricing
+  // trainingBurn runs for the day is run here ONCE, from the minutes and the
+  // weight on file, and stamped with its source so every reader — the day
+  // panel, the log, the receipt — shows the number and calls it an estimate.
+  const weightKg = Number(weighIn?.[0]?.detail?.value_kg) || null;
+  const priced = watched ? null
+    : trainingBurn([{ summary: session.name, detail: { kind: session.kind, minutes } }], weightKg);
+  const estimate = priced?.kcal > 0 ? priced.kcal : null;
+  const calories = watched
+    ? { kcal: watched.kcal, source: 'watch', minutes }
+    : estimate
+    ? { kcal: estimate, source: 'estimate', minutes }
+    : { kcal: 0, source: 'none', minutes, why: priced?.entries?.[0]?.why || 'no recent weigh-in' };
 
   const effort = sessionEffort({
     session: { ...session, ended_at: endedIso }, sets: rows, samples: hr || [],
@@ -212,7 +250,8 @@ export async function finaliseSession(userId, profile, session,
       (completion && completion.percent < 100 ? ` (${completion.percent}% of plan)` : ''),
     detail: {
       kind: session.kind, minutes, muscles,
-      ...(watched ? { calories: watched.kcal, calories_source: 'watch' } : {}),
+      ...(watched ? { calories: watched.kcal, calories_source: 'watch' }
+        : estimate ? { calories: estimate, calories_source: 'estimate' } : {}),
       exercises: totals.top_sets.map(t => ({
         name: t.exercise, sets: rows.filter(r => r.exercise === t.exercise).length,
         reps: t.reps, weight_kg: t.weight_kg,
@@ -254,6 +293,9 @@ export async function finaliseSession(userId, profile, session,
     // so a hand-closed session and a server-closed one go through identical
     // code and can never produce two different-looking rows.
     totals, rows, completion, effort, split, event_id: written?.id || null,
+    // What the session was worth, on its own — the number the person asks
+    // for at the close, apart from how the day then counts it.
+    calories,
     local_date: localDateFor(profile.timezone, new Date(endAt)),
   };
 }
@@ -345,7 +387,11 @@ export async function recordSet(userId, { session, current, plan = [], today,
  * finaliser then writes one event with everything.
  */
 export function foldPlan({ plan = [], sessionSets = [], exercises = [] }) {
+  // Keyed by the NAME as well as the key, because a re-told lift matches the
+  // logged one loosely (sameLift) — "seated row" beside "Seated row machine"
+  // — and the loose match needs words, not keys.
   const have = new Set(sessionSets.map(r => r.exercise_key));
+  const haveNames = [...new Set(sessionSets.map(r => r.exercise || r.exercise_key).filter(Boolean))];
   const planKeys = new Map(plan.map((e, i) => [e.key || exerciseKey(e.name), i]));
   const additions = [];
   const rows = [];
@@ -355,13 +401,24 @@ export function foldPlan({ plan = [], sessionSets = [], exercises = [] }) {
   for (const x of exercises.slice(0, 20)) {
     const name = String(x?.name || '').trim();
     if (!name) continue;
-    const key = exerciseKey(name);
-    if (have.has(key)) { skipped.push({ name, why: 'already logged set by set in this session' }); continue; }
+    let key = exerciseKey(name);
+    // Already on the record set by set, by key OR by the words of the name.
+    // A workout re-told after the fact names lifts the short way; the strict
+    // key kept them apart and the night read 14 sets for 9 done. Doubling is
+    // silent, so the loose match is the safe side here — and a skip is said.
+    if (have.has(key) || haveNames.some(h => sameLift(h, name))) {
+      skipped.push({ name, why: 'already logged set by set in this session' }); continue;
+    }
     const n = Math.min(Math.max(parseInt(x.sets, 10) || 1, 1), 10);
     const reps = x.reps != null ? Math.round(Number(x.reps)) || null : null;
     const kg = x.weight_kg != null ? Number(x.weight_kg) || null : null;
     const muscles = Array.isArray(x.muscles) ? x.muscles : [];
     let idx = planKeys.get(key);
+    if (idx == null) {
+      // A planned lift told the short way lands in its own slot, not a new one.
+      const slot = plan.find(e => e?.name && sameLift(e.name, name));
+      if (slot) { key = slot.key || exerciseKey(slot.name); idx = planKeys.get(key); }
+    }
     if (idx == null) {
       idx = nextIndex++;
       additions.push({
@@ -371,6 +428,7 @@ export function foldPlan({ plan = [], sessionSets = [], exercises = [] }) {
       planKeys.set(key, idx);
     }
     have.add(key);
+    haveNames.push(name);
     for (let s = 1; s <= n; s++) {
       rows.push({
         exercise: name.slice(0, 120), exercise_key: key, set_number: s, position: idx + 1,
@@ -389,7 +447,7 @@ export function foldPlan({ plan = [], sessionSets = [], exercises = [] }) {
  */
 export async function foldIntoSession(userId, session, exercises, { today, now = new Date().toISOString() } = {}) {
   const { data: sets, error: readErr } = await supabase.from('wrought_sets')
-    .select('exercise_key').eq('session_id', session.id);
+    .select('exercise, exercise_key').eq('session_id', session.id);
   if (readErr) return { error: readErr.message };
   const plan = Array.isArray(session.plan) ? session.plan : [];
   const { additions, rows, skipped } = foldPlan({ plan, sessionSets: sets || [], exercises });
@@ -484,6 +542,9 @@ export function workoutList(sessions = [], events = [], { today = null, limit = 
       minutes: d.minutes ?? null,
       distance_km: d.distance_km ?? null,
       calories: d.calories ?? null,
+      // So the list can say "estimated" beside a priced session and nothing
+      // beside a watch-measured one.
+      calories_source: d.calories_source ?? null,
       avg_hr: d.avg_hr ?? null,
       max_hr: d.max_hr ?? null,
       session_id: d.session_id || null,

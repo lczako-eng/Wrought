@@ -1570,6 +1570,57 @@ already aggregators — a strap, a ring or an oximeter that writes to either is
 carried with no new integration. That is the whole reason the hub was built
 wide.
 
+### "How many calories?" — the session had no figure, so the day's clamp was reported instead
+
+The founder closed a workout and asked what it was worth. ChatGPT: *"I didn't
+manually add any calories… Wrought is treating the 764 active calories from
+your device as the activity/training component."* — *"Fix this, should have
+something."* He is right, and the answer it gave is the vacuum failure again:
+the workout event carried `minutes: 142` and **no calorie figure**, so the
+only number in front of the model was the day's arithmetic, and it reported
+the clamp as though it were the session.
+
+- **A closed session now carries its own figure, labelled.** When the watch
+  cannot vouch for the window (`windowedActive` refuses a single daily-total
+  row, correctly), the finaliser prices the session ONCE — the same MET
+  pricing `trainingBurn` runs for the day, from the minutes and the most
+  recent weigh-in anywhere — and stamps `calories` with `calories_source:
+  'estimate'`. `trainingBurn` reads the stamp back as an estimate, never as
+  measured; otherwise the label written at the close would be erased on the
+  next read. Both workout lists say *", estimated"* beside it.
+- **`sessionWorth()` says the session first, the day second.** *"Worth
+  roughly 618 kcal — estimated from 59 minutes at your bodyweight, not
+  measured. It sits inside what your watch measured for the day; nothing is
+  stacked on top."* When the session's own figure exceeds the day, the clamp
+  is explained BESIDE the number rather than replacing it. The tool note
+  forbids answering "how many calories" with the day's total.
+- **"I'm done" from the sofa is not ninety minutes of training.** An explicit
+  close is honoured within twenty minutes of the last set, then the last set
+  plus the grace is the end. The founder's session closed at 142 minutes for
+  under an hour of lifting, and the estimate scaled with it.
+
+**Two more faults in the same row, both found by reading it.** The record
+held 14 sets for 9 done: ChatGPT re-told the whole session through `log` at
+the close with the lifts named the short way — *pec deck 2×16*, *seated row
+2×13* (the reps SUMMED), *incline treadmill* — beside rows logged set by set
+as *Pec-deck/chest fly*, *Seated row machine*, *Incline treadmill — incline
+12.5*. `exerciseKey` deliberately keeps those apart (over-splitting is the
+safe error for a LOAD), so the fold appended all three as new lifts.
+`sameLift()` is the fold's own matcher: equal keys, or every word of the
+shorter name inside the longer, never on one word (*row* is inside *seated
+row machine*), never across an added implement, angle or stance (*incline
+press* beside *incline dumbbell press*; *bench press* beside *incline bench
+press*). Doubling is silent; a skip is said in the answer, so the loose match
+is the safe side HERE and only here. And `'front squat'` was keyed to the
+back squat — the incline-press collision one lift along; it has its own key
+now. The other: `splitWork` had its own copy of the cardio pattern with
+*incline* and *row machine* in it, so an **incline barbell press and a seated
+row machine were filed as cardio** — *"6 cardio pieces"* for one treadmill,
+and the lifting volume lost both. One pattern now, the routine editor's
+`TIMED_MOVEMENT`, which had already learned those lessons. The founder's row
+was repaired by hand through the connector: five duplicate rows removed, nine
+sets, 59 minutes, 618 kcal estimated, filed at its last set.
+
 ### "Never estimate — you have the Apple Watch"
 
 Two halves, and the first is a presentation failure rather than an arithmetic
@@ -4053,7 +4104,7 @@ self-reporting scale removes the most-abandoned manual entry), then Strava.
 
 ## Conventions
 
-- `npm test` runs `test/harness.mjs` — 627 offline tests, no network, no database.
+- `npm test` runs `test/harness.mjs` — 702 offline tests, no network, no database.
   Run it before every push. It covers the JSON-RPC envelope (which fails as an
   uninformative "could not connect" inside ChatGPT) and all the arithmetic
   (which fails as a confidently wrong number in somebody's verdict).

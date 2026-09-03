@@ -50,7 +50,7 @@ import {
   normaliseMovement, readMovement, syncSetsFromWorkouts,
   ACTIVITY,
   targetOptions, goalsToSet,
-  PACES, PUSH, sessionsCanCarryAim,
+  PACES, PUSH, sessionsCanCarryAim, sessionWorth,
 } from './lib/training.js';
 import { PROGRAMMES, GOALS, MOVEMENTS, movementsFor, pickProgramme, buildProgramme, buildBlock, blockPosition, BLOCK_LENGTHS } from './lib/library.js';
 import { FOCUSES, FOCUS_NAMES, focusFrom, designSession, designQuestions, designNote, STYLES, styleFrom } from './lib/design.js';
@@ -4248,6 +4248,10 @@ async function endSession(args, user) {
 
   const day = await dayFacts(user.id, profile, today);
   const balance = await balanceFor(user.id, profile, today, day);
+  // WHAT IT WAS WORTH, on its own and then inside the day. The founder asked
+  // "how many calories?" at the close and was told the day's clamp instead —
+  // the session had no figure, so the model reported the only number it had.
+  const worth = sessionWorth(done.calories, balance);
 
   // What comes next, answered at the moment the question exists. "It should be
   // prompting us after we're done each workout — OK, this is the next workout."
@@ -4299,6 +4303,10 @@ async function endSession(args, user) {
     // inside it counted as its own statistic rather than blended into volume.
     ...(done.effort?.known ? { effort: done.effort } : {}),
     ...(done.split?.mixed ? { work_split: done.split } : {}),
+    // The session's own calorie figure, labelled, and how the day counts it —
+    // two facts, both said. "How many calories was that" is answered from
+    // here, never from the day's total and never from your own estimate.
+    calories: worth,
     day_so_far: { food: day.food.say, energy: balance.say },
     training_week: week,
     // The held stretches, offered where they belong and nowhere else.
@@ -4313,10 +4321,11 @@ async function endSession(args, user) {
                : 'some sets left on the table'}.`
            : '') +
          (beats.length ? ` Up on last time: ${beats.join('; ')}.` : '') +
+         ` ${worth.say}` +
          ` ${balance.say}` +
          (week ? ` ${week.say}` : '') +
          (nextWorkout?.say ? ` ${nextWorkout.say}` : ''),
-    note: 'If work_split is there, give the two numbers SEPARATELY — lifting volume and cardio minutes are different statistics and a blended total describes neither. If effort is there, it is a TRAINING statistic and nothing more: never read a heart rate as a sign of anything, never compare it to anybody else, and say the caveat once — a wrist moves with grip and cold hands as well as effort. State completion as a FACT, never a scolding — a half-done plan recorded honestly beats a finished one invented, and the skipped list is information about the plan, not the person. Lead with anything in beat_last_time — that is the only part of a session summary anyone actually cares about. OFFER THE COOLDOWN in one short line, with the holds named, and say they can skip it in the same breath — this is where static stretching belongs and the reason none of it was in the warm-up. Never insist and never repeat it: the record of the workout matters more than the stretching does, and a cool-down that becomes a chore is how somebody stops closing sessions. Close with next_workout: naming the next session at the end of this one is the only prompt this server can ever give.',
+    note: 'SAY WHAT THE SESSION WAS WORTH from `calories` — its own figure, labelled estimated or measured — and THEN how the day counts it. Never answer "how many calories" with the day\'s total or with "the watch\'s figure is the training component": that is the day\'s arithmetic, not the session\'s, and never a figure of your own. If work_split is there, give the two numbers SEPARATELY — lifting volume and cardio minutes are different statistics and a blended total describes neither. If effort is there, it is a TRAINING statistic and nothing more: never read a heart rate as a sign of anything, never compare it to anybody else, and say the caveat once — a wrist moves with grip and cold hands as well as effort. State completion as a FACT, never a scolding — a half-done plan recorded honestly beats a finished one invented, and the skipped list is information about the plan, not the person. Lead with anything in beat_last_time — that is the only part of a session summary anyone actually cares about. OFFER THE COOLDOWN in one short line, with the holds named, and say they can skip it in the same breath — this is where static stretching belongs and the reason none of it was in the warm-up. Never insist and never repeat it: the record of the workout matters more than the stretching does, and a cool-down that becomes a chore is how somebody stops closing sessions. Close with next_workout: naming the next session at the end of this one is the only prompt this server can ever give.',
     next_actions: ['log what they eat next', 'brief tonight for the full read'],
   };
 }

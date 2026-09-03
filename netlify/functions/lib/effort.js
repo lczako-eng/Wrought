@@ -28,6 +28,8 @@
 // alone. Nothing here diagnoses, and a heart rate is never read as a sign of
 // anything except how hard that set was.
 
+import { TIMED_MOVEMENT } from './training.js';
+
 const num = v => (Number.isFinite(Number(v)) ? Number(v) : null);
 const avg = xs => (xs.length ? Math.round(xs.reduce((a, b) => a + b, 0) / xs.length) : null);
 
@@ -115,9 +117,17 @@ export function sessionEffort({ session = null, sets = [], samples = [] } = {}) 
   };
 }
 
-// Movements measured in minutes rather than sets — the same test the routine
-// editor uses, kept in one place so a treadmill is a treadmill on every screen.
-const CARDIO_HINT = /\b(treadmill|walk(ing)?|run(ning)?|jog|bike|cycl|row(ing)? machine|erg|elliptical|stair|climber|ski\s?erg|swim|sled\s+(push|drag)|conditioning|cardio|incline)\b/i;
+// Movements measured in minutes rather than sets — the SAME pattern the
+// routine editor uses (TIMED_MOVEMENT), plus the conditioning kit a session
+// plan names and a routine rarely does. This used to be its own copy, and the
+// copy had "incline" and "row machine" in it: an INCLINE BARBELL PRESS and a
+// SEATED ROW MACHINE were filed as cardio, the lifting volume lost both, and
+// the founder's session read "6 cardio pieces" for one treadmill. The routine
+// normaliser had already learned that "row" is the front of every barbell row
+// and that a Farmer's walk is a loaded lift; a second regex is a second chance
+// to unlearn it.
+const CARDIO_HINT = new RegExp(
+  `${TIMED_MOVEMENT.source}|\\b(climber|sled\\s+(push|drag)|conditioning)\\b`, 'i');
 
 /**
  * A session split into the two kinds of work it actually contained.
