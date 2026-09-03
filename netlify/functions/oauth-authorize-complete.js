@@ -36,11 +36,11 @@ export const handler = async (event) => {
 
   const { access_token, client_id, redirect_uri, code_challenge, code_challenge_method } = body;
 
-  if (!access_token || !client_id || !redirect_uri || !code_challenge) {
+  if (!access_token || !client_id || !redirect_uri) {
     return { statusCode: 400, headers: CORS,
       body: JSON.stringify({ error: 'invalid_request', error_description: 'Missing required parameters.' }) };
   }
-  if ((code_challenge_method || 'S256') !== 'S256') {
+  if (code_challenge && (code_challenge_method || 'S256') !== 'S256') {
     return { statusCode: 400, headers: CORS,
       body: JSON.stringify({ error: 'invalid_request', error_description: 'Only S256 is supported.' }) };
   }
@@ -66,8 +66,7 @@ export const handler = async (event) => {
 
   // An open redirect here would hand somebody else's authorization code to an
   // attacker's server, so the URI must match one the client registered.
-  const { data: client } = await supabase.from('wrought_oauth_clients')
-    .select('client_id, redirect_uris').eq('client_id', client_id).maybeSingle();
+  const client = await loadClient(client_id);
 
   if (!client) {
     return { statusCode: 400, headers: CORS,
@@ -78,14 +77,23 @@ export const handler = async (event) => {
       body: JSON.stringify({ error: 'invalid_grant', error_description: 'redirect_uri does not match this client.' }) };
   }
 
+  // NO CHALLENGE IS ONLY ALLOWED FOR A CLIENT THAT CAN KEEP A SECRET. A public
+  // client without PKCE is an intercepted code away from somebody else's
+  // record; a confidential one proves itself at the token endpoint instead,
+  // and the code is marked so the token endpoint demands exactly that.
+  if (!code_challenge && !client.client_secret_hash) {
+    return { statusCode: 400, headers: CORS,
+      body: JSON.stringify({ error: 'invalid_request', error_description: 'code_challenge is required for a public client.' }) };
+  }
+
   const code = newToken();
   const { error } = await supabase.from('wrought_oauth_codes').insert([{
     code_hash: hashToken(code),
     client_id,
     user_id: userData.user.id,
     redirect_uri,
-    code_challenge,
-    challenge_method: 'S256',
+    code_challenge: code_challenge || CONFIDENTIAL_MARK,
+    challenge_method: code_challenge ? 'S256' : 'none',
     expires_at: new Date(Date.now() + CODE_TTL_SECONDS * 1000).toISOString(),
   }]);
 
@@ -96,3 +104,21 @@ export const handler = async (event) => {
 
   return { statusCode: 200, headers: CORS, body: JSON.stringify({ code }) };
 };
+
+// The stored challenge for a code minted to a confidential client — no PKCE,
+// so the token endpoint checks the client secret instead. The column is NOT
+// NULL and the token endpoint keys off this exact value.
+export const CONFIDENTIAL_MARK = 'confidential:client_secret';
+
+// The client row, with its secret hash where 028 has run and without it where
+// it has not — a select naming a column PostgREST does not know rejects the
+// whole query, and a connect that dies because a migration is pending is the
+// 017 lesson in the one place it would lock everybody out at once.
+export async function loadClient(clientId) {
+  const withSecret = await supabase.from('wrought_oauth_clients')
+    .select('client_id, redirect_uris, client_secret_hash').eq('client_id', clientId).maybeSingle();
+  if (!withSecret.error) return withSecret.data;
+  const { data } = await supabase.from('wrought_oauth_clients')
+    .select('client_id, redirect_uris').eq('client_id', clientId).maybeSingle();
+  return data ? { ...data, client_secret_hash: null } : null;
+}

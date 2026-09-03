@@ -4595,6 +4595,78 @@ await test('a target is never quoted without its maintenance', () => {
   assert.match(SERVER_INSTRUCTIONS, /NEVER "maintain"/);
 });
 
+await test('a custom ChatGPT reaches the same tools by Actions, with the sheet it will actually read', async () => {
+  // ChatGPT does not reliably show the MCP instruction sheet to its model;
+  // a custom GPT reads its own Instructions box every turn, capped at 8,000
+  // characters, and reaches Actions over plain HTTP with thirty operations
+  // of at most 300 characters each. Same server, one more door.
+  const { GPT_INSTRUCTIONS } = await import('../netlify/functions/lib/gpt_instructions.js');
+  assert.ok(GPT_INSTRUCTIONS.length <= 8000, `the GPT sheet is ${GPT_INSTRUCTIONS.length} chars — ChatGPT caps it at 8,000`);
+  // The rules that failed in production are on it, in the order they failed.
+  for (const rule of [/THE RECORD IS NOT THIS CONVERSATION/, /NUMBERS COME ONLY FROM ACTIONS/, /CAPTURE IN PASSING/, /never propose a figure/i, /Never say "everything you've logged with me"/, /jim bro/, /Roz/, /call_tool/, /care flag/i, /Not a medical device/]) {
+    assert.match(GPT_INSTRUCTIONS, rule, `the GPT sheet lost ${rule}`);
+  }
+  assert.ok(!/ambassador/i.test(GPT_INSTRUCTIONS));
+
+  const { openapi, ACTION_TOOLS, MAX_OPERATIONS, MAX_DESCRIPTION } = await import('../netlify/functions/actions.js');
+  const doc = openapi('https://wrought.fit');
+  const ops = Object.values(doc.paths).map(p => p.post);
+  assert.ok(ops.length <= MAX_OPERATIONS && MAX_OPERATIONS === 30, `${ops.length} operations — ChatGPT allows 30`);
+  for (const op of ops) {
+    assert.ok(op.description.length <= MAX_DESCRIPTION, `${op.operationId}'s description is ${op.description.length} chars`);
+    assert.deepEqual(op.security, [{ wrought_oauth: ['wrought'] }]);
+  }
+  // Every named tool exists, every tool is reachable one way or the other,
+  // and call_tool's enum is exactly the remainder.
+  const names = TOOLS.map(t => t.name);
+  for (const n of ACTION_TOOLS) assert.ok(names.includes(n), `${n} is not a tool`);
+  const rest = doc.paths['/actions/call_tool'].post.requestBody.content['application/json'].schema.properties.tool.enum;
+  assert.deepEqual(new Set([...ACTION_TOOLS, ...rest]), new Set(names));
+  assert.ok(ACTION_TOOLS.includes('log') && ACTION_TOOLS.includes('log_set') && ACTION_TOOLS.includes('get_profile') && ACTION_TOOLS.includes('brief'));
+  // The document points at the real OAuth endpoints, and the input schema is
+  // the tool's own, so the GPT and the connector argue over one shape.
+  const flow = doc.components.securitySchemes.wrought_oauth.flows.authorizationCode;
+  assert.equal(flow.authorizationUrl, 'https://wrought.fit/authorize.html');
+  assert.equal(flow.tokenUrl, 'https://wrought.fit/oauth/token');
+  assert.deepEqual(doc.paths['/actions/log'].post.requestBody.content['application/json'].schema, TOOLS.find(t => t.name === 'log').inputSchema);
+
+  // The function reimplements nothing: every call is handleRpc's tools/call,
+  // a tool error still answers 200 so the model reads say/note, and a
+  // transient auth failure is 503, never a sign-in.
+  const src = readFileSync(new URL('../netlify/functions/actions.js', import.meta.url), 'utf8');
+  assert.match(src, /handleRpc\(\{ jsonrpc: '2\.0', id: 1, method: 'tools\/call', params: \{ name, arguments: toolArgs \} \}, user\)/);
+  assert.match(src, /if \(rpc\?\.error\) return json\(200/);
+  assert.match(src, /instanceof AuthUnavailable\) return json\(503/);
+  assert.match(src, /'WWW-Authenticate'/);
+  assert.ok(!/from\('wrought_/.test(src), 'the actions door talks to the database itself');
+  const toml = readFileSync(new URL('../netlify.toml', import.meta.url), 'utf8');
+  assert.match(toml, /from = "\/actions\/\*"\s*\n\s*to = "\/\.netlify\/functions\/actions\/:splat"/);
+
+  // THE CONFIDENTIAL CLIENT. A GPT does not do PKCE; it presents a secret.
+  // The token endpoint demands exactly one of the two according to how the
+  // code was minted, a public client can never turn itself confidential, and
+  // a challenge-less authorization is refused for any client without a secret.
+  const tok = readFileSync(new URL('../netlify/functions/oauth-token.js', import.meta.url), 'utf8');
+  assert.match(tok, /if \(row\.code_challenge === CONFIDENTIAL_MARK\)/);
+  assert.match(tok, /if \(!secretMatches\(client, creds\.client_secret\)\)[\s\S]{0,80}invalid_client/);
+  assert.match(tok, /if \(!code_verifier\) return fail\(400, 'invalid_request', 'code_verifier is required\.'\)/);
+  assert.match(tok, /if \(!client\?\.client_secret_hash \|\| !secret\) return false/);
+  assert.match(tok, /timingSafeEqual/);
+  assert.match(tok, /client\?\.client_secret_hash && !secretMatches\(client, creds\.client_secret\)/, 'a confidential client must renew with its secret');
+  const auth = readFileSync(new URL('../netlify/functions/oauth-authorize-complete.js', import.meta.url), 'utf8');
+  assert.match(auth, /if \(!code_challenge && !client\.client_secret_hash\)[\s\S]{0,220}code_challenge is required for a public client/);
+  assert.match(auth, /code_challenge: code_challenge \|\| CONFIDENTIAL_MARK/);
+  const reg = readFileSync(new URL('../netlify/functions/oauth-register.js', import.meta.url), 'utf8');
+  assert.match(reg, /const confidential = method === 'client_secret_post' \|\| method === 'client_secret_basic'/);
+  assert.match(reg, /client_secret_hash: hashToken\(secret\)/);
+  assert.match(reg, /confidential_clients_not_installed/, 'a confidential registration on a database without 028 must refuse, never fall back to a public client');
+  const meta = readFileSync(new URL('../netlify/functions/oauth-metadata.js', import.meta.url), 'utf8');
+  assert.match(meta, /token_endpoint_auth_methods_supported: \['none', 'client_secret_post', 'client_secret_basic'\]/);
+  const sql = readFileSync(new URL('../schema/028_wrought_oauth_secret.sql', import.meta.url), 'utf8');
+  assert.match(sql, /add column if not exists client_secret_hash text;/);
+  assert.ok(fs.existsSync(new URL('../docs/CUSTOM_GPT.md', import.meta.url)), 'the setup steps are not written down');
+});
+
 await test('the record is checked against itself — named with a door each, never fixed on its own', async () => {
   // Every silent corruption of the last month — doubled sets, a meal with no
   // calories, a workout with no minutes, a shift filed as a session, a scale

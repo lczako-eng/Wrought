@@ -25,6 +25,15 @@
   to = "/.netlify/functions/config"
   status = 200
 
+# The same tools as plain HTTP for a custom ChatGPT's Actions — the door for
+# the client that does not read the MCP instruction sheet. One function; the
+# tool name is the last path segment, and openapi.json / instructions are
+# served from the same place so they can never describe a different server.
+[[redirects]]
+  from = "/actions/*"
+  to = "/.netlify/functions/actions/:splat"
+  status = 200
+
 # "Is this thing actually set up?" — one look instead of a tour of broken
 # screens. Presence only; never a value.
 [[redirects]]
