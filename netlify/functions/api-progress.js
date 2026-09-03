@@ -16,6 +16,7 @@ import { orderInsight, earnedRoom, energyBalance, exerciseKey, deviceMatrix, wee
          weekSoFar, weekTargets, readiness, targetOptions, estimatedMax, liftTrend, readMovement, backfillDerivedSets, goalsToSet, rekeySets } from './lib/training.js';
 import { weeklyVolume } from './lib/volume.js';
 import { planRead } from './lib/plan.js';
+import { calibration } from './lib/adapt.js';
 import { intakeState } from './lib/intake.js';
 import { STYLES } from './lib/design.js';
 import { listPlaces } from './lib/places.js';
@@ -648,6 +649,10 @@ export const handler = async (event) => {
       // The plan, stated. The target NEVER travels without its maintenance and
       // the weekly rate — a number alone is a rule handed down.
       plan,
+      // THE SCALE CORRECTS THE TARGET — the read, off the same thirty days the
+      // care flags get whatever the range buttons say. Offered on the plan
+      // panel with its working; applied only by a tap. Never by itself.
+      calibration: calibration({ days: recent.days, profile, goals, weightKg, today: to }),
       // The questionnaire: what is answered, what is not, and that training
       // waits on it. The same state the tools gate on, so the screen and the
       // refusal can never disagree.

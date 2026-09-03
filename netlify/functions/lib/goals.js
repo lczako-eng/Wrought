@@ -142,5 +142,33 @@ export async function setMetricGoal(userId, { metric, target, direction = 'at_le
   return { ok: true, row, replaced };
 }
 
+/**
+ * THE SCALE CORRECTS THE TARGET — the write half. Reads the last four weeks,
+ * runs the calibration, and if it suggests a move, retires the calorie goal
+ * and writes the corrected one. Protein and the body goal are untouched.
+ * Returns the read either way, so the caller can say why nothing moved.
+ */
+export async function applyCalibration(userId) {
+  const { rangeFacts, getGoals, localDateFor, addDays } = await import('./wrought.js');
+  const { calibration, calibratedGoalRow } = await import('./adapt.js');
+  const profile = await getProfile(userId);
+  const today = localDateFor(profile.timezone);
+  const [goals, range, recent] = await Promise.all([
+    getGoals(userId),
+    rangeFacts(userId, profile, addDays(today, -29), today),
+    supabase.from('wrought_events').select('detail').eq('user_id', userId).eq('event_type', 'weight')
+      .order('occurred_at', { ascending: false }).limit(1),
+  ]);
+  const weightKg = recent?.data?.[0]?.detail?.value_kg ?? null;
+  const cal = calibration({ days: range.days, profile, goals, weightKg, today });
+  if (!cal.known || cal.suggested_target == null) return { applied: false, calibration: cal };
+
+  const row = calibratedGoalRow(userId, cal);
+  const replaced = await retireGoalsFor(userId, 'calories', 'daily');
+  const { error } = await supabase.from('wrought_goals').insert([row]);
+  if (error) return { error: error.message, calibration: cal };
+  return { applied: true, from: cal.current_target, to: cal.suggested_target, replaced, calibration: cal };
+}
+
 // Re-exported from wrought.js so every consumer names the same door.
 export { SET_TARGETS_URL };
