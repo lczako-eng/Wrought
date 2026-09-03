@@ -4595,6 +4595,96 @@ await test('a target is never quoted without its maintenance', () => {
   assert.match(SERVER_INSTRUCTIONS, /NEVER "maintain"/);
 });
 
+await test('the record is checked against itself — named with a door each, never fixed on its own', async () => {
+  // Every silent corruption of the last month — doubled sets, a meal with no
+  // calories, a workout with no minutes, a shift filed as a session, a scale
+  // nobody stood on — was found by a person reading a row. One read names
+  // them, with ids and the way to fix each, and fixes nothing by itself.
+  const { recordCheck, duplicateSets, DUPLICATE_SET_WINDOW_MS } = await import('../netlify/functions/lib/integrity.js');
+  const t0 = Date.parse('2026-09-02T00:41:37Z');
+  const at = ms => new Date(t0 + ms).toISOString();
+  const sets = [
+    { id: 'a', exercise: 'Pec deck', exercise_key: 'pec deck', reps: 8, weight_kg: 81.6, session_id: 's1', local_date: '2026-09-02', logged_at: at(0), muscles: ['chest'] },
+    { id: 'b', exercise: 'Pec deck', exercise_key: 'pec deck', reps: 8, weight_kg: 81.6, session_id: 's1', local_date: '2026-09-02', logged_at: at(1200), muscles: ['chest'] },   // doubled — 1.2 s later
+    { id: 'c', exercise: 'Pec deck', exercise_key: 'pec deck', reps: 8, weight_kg: 81.6, session_id: 's1', local_date: '2026-09-02', logged_at: at(180000), muscles: ['chest'] }, // a real third set, 3 min later
+    { id: 'd', exercise: 'Bench press', exercise_key: 'bench press', reps: 6, weight_kg: 102, session_id: 's1', local_date: '2026-09-02', logged_at: at(400000), muscles: [] },
+  ];
+  const dup = duplicateSets(sets);
+  assert.equal(dup.length, 1);
+  assert.deepEqual(dup[0].extra_ids, ['b'], 'the real third set three minutes later was called a duplicate');
+  assert.equal(dup[0].kept_id, 'a');
+  assert.ok(DUPLICATE_SET_WINDOW_MS <= 10000, 'the window must stay seconds, never minutes');
+
+  const days = Array.from({ length: 30 }, (_, i) => ({ date: `2026-08-${String(i + 4).padStart(2, '0')}`.replace('2026-08-3', '2026-09-0'), logged: true, weight_kg: i === 2 ? 150 : null }));
+  const check = recordCheck({
+    days, sets,
+    workouts: [
+      { id: 'w1', local_date: '2026-09-01', summary: 'Chest and tris', detail: {} },                                   // no minutes
+      { id: 'w2', local_date: '2026-08-30', summary: 'Petting zoo', detail: { minutes: 360 }, source: 'agent' },       // a shift filed as a session
+      { id: 'w3', local_date: '2026-08-29', summary: 'Run', detail: { distance_km: 5 } },                             // priced from distance — fine
+      { id: 'w4', local_date: '2026-08-28', summary: 'Long ride', detail: { minutes: 200, calories: 900 }, source: 'wrought_ios' }, // a watch's own — fine
+    ],
+    food: [
+      { id: 'f1', event_type: 'food', local_date: '2026-09-01', summary: 'lunch', detail: {} },
+      { id: 'f2', event_type: 'food', local_date: '2026-09-01', summary: 'steak', detail: { calories: 700 } },
+    ],
+    todayDups: [{ summary: 'coffee', times: 2, ids: ['x', 'y'], likely: true }],
+    today: '2026-09-03',
+  });
+  const kinds = check.issues.map(i => i.kind);
+  assert.deepEqual(kinds, ['duplicate_sets', 'duplicate_food', 'workout_long', 'food_uncounted', 'workout_uncounted', 'weigh_in_gap', 'sets_no_muscle'], kinds.join(','));
+  assert.equal(check.clean, false);
+  assert.equal(check.count, 6, 'the muscle note is information, not an issue to act on');
+  const ds = check.issues.find(i => i.kind === 'duplicate_sets');
+  assert.deepEqual(ds.fix.ids, ['b']);
+  assert.match(ds.say, /landed twice within seconds/);
+  const wl = check.issues.find(i => i.kind === 'workout_long');
+  assert.deepEqual(wl.items.map(i => i.id), ['w2'], 'a watch-measured long ride is not a shift');
+  assert.match(wl.fix.web, /Log as work/);
+  const fu = check.issues.find(i => i.kind === 'food_uncounted');
+  assert.deepEqual(fu.items.map(i => i.id), ['f1']);
+  assert.match(fu.say, /counts for nothing/);
+  const wu = check.issues.find(i => i.kind === 'workout_uncounted');
+  assert.deepEqual(wu.items.map(i => i.id), ['w1'], 'a run with a distance is priced and must not be listed');
+  assert.match(check.issues.find(i => i.kind === 'weigh_in_gap').say, /days since the last weigh-in/);
+  // NEVER FIXED BY THE READ, never graded.
+  assert.match(check.note, /NEVER fix anything on your own/);
+  assert.ok(!/fail|lazy|sloppy|forgot/i.test(check.say), check.say);
+  const clean = recordCheck({ days: days.map(d => ({ ...d, weight_kg: d.weight_kg ?? (d.date === '2026-09-02' ? 149 : null) })), sets: sets.slice(3), workouts: [], food: [], todayDups: [], today: '2026-09-03' });
+  assert.equal(clean.clean, true);
+  assert.match(clean.say, /Nothing in the last month looks wrong/);
+
+  // WIRED: a tool that reads it and takes only named doubled sets off; the
+  // dashboard carries it off the thirty days; a panel with the doors; the
+  // website's drop is scoped to the person's own rows.
+  const mcp = readFileSync(new URL('../netlify/functions/mcp.js', import.meta.url), 'utf8');
+  assert.match(mcp, /name: 'record_check'/);
+  assert.match(mcp, /record_check: recordCheckTool/);
+  const rc = mcp.slice(mcp.indexOf('async function recordCheckTool('), mcp.indexOf('async function previousBest('));
+  assert.match(rc, /\.select\('id, exercise, reps, weight_kg'\)\.eq\('user_id', user\.id\)\.in\('id', ids\)/, 'ids are not checked against their own rows before the delete');
+  assert.match(rc, /todayDups: duplicateItems\(day\.log \|\| \[\]\)/);
+  const tool = mcp.slice(mcp.indexOf("name: 'record_check'"), mcp.indexOf("name: 'swap_exercise'"));
+  assert.match(tool, /IT NEVER FIXES ANYTHING ON ITS OWN/);
+  assert.match(tool, /destructiveHint: true/);
+  const prog = readFileSync(new URL('../netlify/functions/api-progress.js', import.meta.url), 'utf8');
+  assert.match(prog, /record_check: recordCheck\(\{/);
+  assert.match(prog, /sets: histSets\.filter\(s => s\.local_date >= addDays\(to, -29\)\)/);
+  // The rows it reads now carry what it needs — and `source`, which the
+  // workout list had been reading off a row that never carried it.
+  assert.match(prog, /\.select\('id, exercise, exercise_key, reps, weight_kg, rpe, position, set_number, muscles, session_id, local_date, note, logged_at'\)/);
+  assert.match(prog, /\.select\('id, source, local_date, summary, detail'\)\s*\.eq\('user_id', user\.id\)\.eq\('event_type', 'workout'\)/);
+  const api = readFileSync(new URL('../netlify/functions/api-log.js', import.meta.url), 'utf8');
+  assert.match(api, /payload\.action === 'drop_set'/);
+  assert.match(api, /from\('wrought_sets'\)\.delete\(\)\.eq\('user_id', user\.id\)\.eq\('id', id\)/);
+  const page = readFileSync(new URL('../public/app.html', import.meta.url), 'utf8');
+  assert.match(page, /function recordCheckPanel\(d\)/);
+  assert.match(page, /if \(!c \|\| c\.clean\) return '';/, 'a clean record must draw no panel');
+  assert.match(page, /out\.push\(recordCheckPanel\(d\)\)/);
+  assert.match(page, /data-dropset=/);
+  assert.match(page, /action: 'drop_set', id/);
+  assert.match(page, /confirm\('Remove this set\?/, 'the one destructive tap must ask first');
+});
+
 await test('a set ticked with no signal is kept, sent when it returns, and sent twice lands once', () => {
   // Gyms are basements. A tick that failed said "nothing was saved" and
   // handed the set back to the person to remember mid-workout. Now it is

@@ -1100,6 +1100,12 @@ table.matrix td.rh.cold { color: var(--heat-3); }
 .planrow.style .lineage { font-size: 12.5px; color: var(--muted); font-weight: 400; }
 .planrow.style .emph { font-size: 12px; color: var(--dim); font-weight: 400; }
 .planrow.style .voice { font-size: 12px; color: var(--muted); font-weight: 400; margin-top: 2px; }
+/* The record check: one issue per block, its rows underneath, a door each. */
+.rcissue { padding: 8px 0; border-top: 1px solid var(--line); }
+.rcissue:first-of-type { border-top: 0; }
+.rclist { margin: 4px 0 4px; padding-left: 18px; font-size: 13px; }
+.rclist li { margin: 4px 0; }
+.rclist .qadel { margin-left: 6px; }
 /* The scale's correction on the plan panel: a read, one tap, its caveat. */
 .calib { margin: 10px 0 4px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; }
 .calib .sub { margin: 0 0 6px; }
@@ -6826,6 +6832,8 @@ function wireQuickAdd() {
     b.addEventListener('click', () => setTargetTap(b.dataset.settarget, b.dataset.setpace || null)));
   document.querySelectorAll('[data-recal]').forEach(b =>
     b.addEventListener('click', () => recalibrateTap(b)));
+  document.querySelectorAll('[data-dropset]').forEach(b =>
+    b.addEventListener('click', () => dropSetTap(b.dataset.dropset, b)));
   document.querySelectorAll('[data-setsteps]').forEach(b =>
     b.addEventListener('click', () => setStepsTap(parseInt(b.dataset.setsteps, 10))));
 }
@@ -7009,6 +7017,60 @@ function trainingTodayPanel(d) {
       If it was work rather than training, tap <em>Log as work</em>: work is priced from hours on task and is not capped
       by what the watch saw.</p>` : ''}
   </section>`;
+}
+
+// THE RECORD, CHECKED AGAINST ITSELF. Doubled sets, meals and workouts that
+// count for nothing, a scale nobody has stood on — named with a door each.
+// Drawn only when there is something to say; a clean record gets no panel,
+// because a panel saying "nothing wrong" every day is one nobody reads on the
+// day it says otherwise. Computed in lib/integrity.js; the page fixes nothing
+// by itself.
+function recordCheckPanel(d) {
+  const c = d.record_check;
+  if (!c || c.clean) return '';
+  const chip = s => `<span class="chip ${s === 'wrong' ? 'off' : ''}">${esc(s === 'wrong' ? 'doubled' : s === 'ask' ? 'check' : s === 'gap' ? 'counts for nothing' : 'note')}</span>`;
+  const rows = c.issues.filter(i => i.severity !== 'info').map(i => {
+    const fixes = (i.items || []).slice(0, 6).map(it => {
+      if (i.kind === 'duplicate_sets') {
+        return `<li>${esc(it.what)} ${(it.extra_ids || []).map(id => DEMO ? '' :
+          `<button class="qadel" data-dropset="${esc(String(id))}" title="Remove this extra set">Remove the extra</button>`).join('')}</li>`;
+      }
+      if (i.kind === 'workout_long') {
+        return `<li>${esc(it.what)} ${it.id && !DEMO ? `<button class="qadel" data-refile="${esc(String(it.id))}" title="Price it from hours on task instead">Log as work</button>` : ''}</li>`;
+      }
+      return `<li>${esc(it.date ? `${it.date} — ` : '')}${esc(it.what)}</li>`;
+    }).join('');
+    return `<div class="rcissue">
+      <p class="sub">${chip(i.severity)} ${esc(i.say)}</p>
+      ${fixes ? `<ul class="rclist">${fixes}</ul>` : ''}
+      ${i.fix?.web ? `<p class="sub dim">Fix: ${esc(i.fix.web)}.</p>` : ''}
+    </div>`;
+  }).join('');
+  return `<section class="panel" id="recordcheck">
+    <h2>Record check</h2>
+    <p class="sub dim">What in the last month looks wrong or is counting for nothing. Nothing here is fixed for you — two coffees in a day is ordinary and a long hike is a real workout — so each one has its door.</p>
+    ${rows}
+  </section>`;
+}
+
+async function dropSetTap(id, btn) {
+  if (!confirm('Remove this set? It is the extra copy; the first one stays.')) return;
+  const { data } = sb ? await sb.auth.getSession() : { data: {} };
+  if (!data?.session) return;
+  if (btn) { btn.disabled = true; btn.textContent = 'Removing…'; }
+  try {
+    const res = await fetch('/.netlify/functions/api-log', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${data.session.access_token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'drop_set', id }),
+    });
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) { alert(body.say || body.error || 'Not removed.'); if (btn) { btn.disabled = false; btn.textContent = 'Remove the extra'; } return; }
+    refreshRecord();
+  } catch (e) {
+    alert(`Not removed: ${e?.message || e}`);
+    if (btn) { btn.disabled = false; btn.textContent = 'Remove the extra'; }
+  }
 }
 
 // ── Calendar ───────────────────────────────────────────────────────────────
@@ -7648,6 +7710,7 @@ function render(d) {
   // "you should be speaking to it underneath — what did you log today?"
   out.push(foodTodayPanel(d));
   out.push(trainingTodayPanel(d));
+  out.push(recordCheckPanel(d));
 
   // Directly under the day, because that is where the range buttons were doing
   // nothing. Null on the 1d view — a running total over one day is the hero

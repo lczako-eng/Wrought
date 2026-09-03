@@ -1691,6 +1691,34 @@ as a trend or turned it into a recommendation. Now:
   answer) puts somebody on the track; so does *"I play hockey"* through
   `set_plan`. Applied to the live database through the connector.
 
+### The record, checked against itself — named with a door each, never fixed on its own
+
+`lib/integrity.js` + the `record_check` tool + `record_check` on the
+dashboard + the *Record check* panel + `drop_set` on `/api/log`. Every silent
+corruption in the last month of this file — doubled sets from a re-told
+workout, a meal with no calories, a workout with no minutes, a shift filed as
+a session, a scale nobody stood on — was found by a person reading a row, and
+had sat in the record for days looking right. The repair sweeps say nothing
+when they run.
+
+- **One read over the last thirty days**, whatever the range buttons say: sets
+  that landed twice within five seconds (the lift record, the max and the
+  volume all count them), a meal on today's log twice, food with no calories
+  in the last fortnight, workouts with no minutes and no distance, a logged
+  "workout" over two and a half hours that may be a shift, a fortnight with no
+  weigh-in. Sets with no muscle are a note, never an issue.
+- **Never fixed by the read.** Two coffees in a day is ordinary, a long hike
+  is a real workout, and identical sets three minutes apart are training. It
+  asks, with ids and evidence, and names the door: *Remove the extra* (one
+  tap, asks first, the person's own rows only), *Log as work* (the existing
+  refile), a sentence to the assistant for the rest. The tool applies exactly
+  one fix on their word — `drop_set_ids` from its own last read.
+- **A clean record draws no panel.** A panel saying "nothing wrong" every day
+  is one nobody reads on the day it says otherwise.
+- **Found on the way in**: the workout list had been reading `e.source` off
+  a row that never carried it, so every workout from a watch was labelled as
+  logged by hand. The select carries `id` and `source` now.
+
 ### A set ticked with no signal — kept, sent when it returns, landed once
 
 `027_wrought_set_client_id.sql` + `clientId` on `recordSet` + the tick queue
@@ -4238,7 +4266,7 @@ self-reporting scale removes the most-abandoned manual entry), then Strava.
 
 ## Conventions
 
-- `npm test` runs `test/harness.mjs` — 707 offline tests, no network, no database.
+- `npm test` runs `test/harness.mjs` — 706 offline tests, no network, no database.
   Run it before every push. It covers the JSON-RPC envelope (which fails as an
   uninformative "could not connect" inside ChatGPT) and all the arithmetic
   (which fails as a confidently wrong number in somebody's verdict).

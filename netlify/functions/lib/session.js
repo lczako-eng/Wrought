@@ -566,6 +566,7 @@ export function workoutList(sessions = [], events = [], { today = null, limit = 
     const d = e.detail || {};
     if (d.session_id) fromSession.add(String(d.session_id));
     out.push({
+      id: e.id ?? null,
       name: e.summary || d.kind || 'Workout',
       kind: d.kind || 'workout',
       date: e.local_date,

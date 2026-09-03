@@ -132,6 +132,21 @@ export const handler = async (event) => {
     // the MET table against hours on task and bodyweight, which is the whole
     // reason log_activity exists. Trusting the old number here would smuggle a
     // guessed figure into the one place that is supposed to be computed.
+    // A SET THAT LANDED TWICE, taken off — the record check's one-tap door.
+    // Scoped to this user's own rows, one id at a time, and only ever a set:
+    // the lift record, the max and the volume all read wrought_sets, so an
+    // extra row here is a wrong number on three screens.
+    if (payload.action === 'drop_set') {
+      const id = String(payload.id || '').trim();
+      if (!id) return reply(400, { error: 'no_id' });
+      const { data: row } = await supabase.from('wrought_sets')
+        .select('id, exercise, reps, weight_kg').eq('user_id', user.id).eq('id', id).maybeSingle();
+      if (!row) return reply(404, { error: 'not_found', say: 'That set is not on your record.' });
+      const { error } = await supabase.from('wrought_sets').delete().eq('user_id', user.id).eq('id', id);
+      if (error) return reply(500, { error: 'not_removed', say: `Not removed: ${error.message}` });
+      return reply(200, { ok: true, removed: row, say: `Removed the extra ${row.exercise} set.` });
+    }
+
     if (payload.action === 'refile_as_work') {
       const id = String(payload.id || '').trim();
       if (!id) return reply(400, { error: 'no_id' });
