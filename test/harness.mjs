@@ -6853,6 +6853,94 @@ await test('the effort actually drives the load, and silence holds it', () => {
   assert.equal(at('done', 8).verdict, 'same');
 });
 
+const { wordsForRecord } = await import('../netlify/functions/lib/coach.js');
+
+await test('their words go on the row — felt as well as note, verbatim', () => {
+  // The founder's screenshot: "185 × 8, had room left — hold 185 for set 2".
+  // The row held 8 × 185, rpe null, note null. The felt words drove the load
+  // and were then DROPPED before the insert, so the one fact that explains
+  // the number six weeks later was never stored. "There could be a note on
+  // this that could be added for memory."
+  assert.equal(wordsForRecord({ felt: 'not too bad, had room left' }), 'not too bad, had room left');
+  assert.equal(wordsForRecord({ felt: 'had room left', note: 'shoulder pinched' }), 'had room left — shoulder pinched');
+  assert.equal(wordsForRecord({ felt: 'had room', note: 'had room' }), 'had room', 'the same words were stored twice');
+  assert.equal(wordsForRecord({ felt: 'had room', note: 'not too bad, had room' }), 'not too bad, had room', 'the shorter copy survived beside the longer');
+  assert.equal(wordsForRecord({}), null, 'nothing said must stay null — a real answer');
+
+  // AND "HAD ROOM LEFT" NOW READS AS AN EFFORT. Before, it matched nothing:
+  // the load held by silence, which looks identical to holding by reading
+  // and is not the same thing.
+  assert.equal(effortFromWords('not too bad, had room left').rpe, 8);
+  assert.equal(effortFromWords('had a bit of gas left').rpe, 8);
+  assert.equal(effortFromWords('plenty in the tank').rpe, 7);
+  assert.equal(effortFromWords('felt fine').rpe, 7);
+  // The struggle still beats the reassurance — the harder reading wins.
+  assert.equal(effortFromWords('started to struggle a bit. felt fine').rpe, 9);
+  // And a room remark about the ROOM is not an effort.
+  assert.equal(effortFromWords('the room was freezing').rpe, null);
+
+  // log_set stores BOTH fields on the row and reads the row back.
+  const mcp = readFileSync(new URL('../netlify/functions/mcp.js', import.meta.url), 'utf8');
+  const fn = mcp.slice(mcp.indexOf('async function logSet('), mcp.indexOf('async function rackNote('));
+  assert.match(fn, /wordsForRecord\(\{ felt: args\.felt, note: args\.note \}\)/, 'felt is dropped before the insert again');
+  assert.match(fn, /note: words,/);
+  assert.match(fn, /on_record: record/, 'the row is not read back');
+  assert.match(fn, /NOTHING THEY SAID about this set is on the record/);
+  assert.match(fn, /BODY_WORDS\.test\(record\.words\)/, 'words about a body are not flagged where they are said');
+
+  // recordSet hands the STORED row back — never the arguments echoed.
+  const sess = readFileSync(new URL('../netlify/functions/lib/session.js', import.meta.url), 'utf8');
+  const rs = sess.slice(sess.indexOf('export async function recordSet('), sess.indexOf('export async function closeStaleSessions('));
+  assert.match(rs, /\.select\('id, exercise, set_number, reps, weight_kg, rpe, note'\)\.single\(\)/);
+  assert.match(rs, /more_here: moreHere, row \}/);
+
+  // The note field says whose words it takes.
+  const t = TOOLS.find(x => x.name === 'log_set');
+  assert.match(t.inputSchema.properties.note.description, /THEIR words, never yours/);
+  assert.match(t.inputSchema.properties.note.description, /is not a note/);
+});
+
+await test('rack_note — the words that arrive after the set have a door back to the row', () => {
+  // log_set asks "how did that feel" and the answer comes a turn LATER, when
+  // the row is already written. Without a door back, the answer is read once
+  // by a model and gone when the chat closes.
+  const t = TOOLS.find(x => x.name === 'rack_note');
+  assert.ok(t, 'rack_note is missing');
+  assert.match(t.description, /VERBATIM/);
+  assert.match(t.description, /never convert them to a number/);
+  assert.match(t.description, /words_check/);
+  assert.ok(t.inputSchema.properties.words && t.inputSchema.properties.aim);
+  assert.equal(t.annotations.destructiveHint, false);
+
+  const mcp = readFileSync(new URL('../netlify/functions/mcp.js', import.meta.url), 'utf8');
+  const fn = mcp.slice(mcp.indexOf('async function rackNote('), mcp.indexOf('async function swapExercise('));
+  // It only ever ADDS: a number they gave is never overwritten by a reading from words.
+  assert.match(fn, /if \(set\.rpe == null && effort\.rpe != null\) patch\.rpe = effort\.rpe;/);
+  // The next load is computed from the set as it now reads, never hardcoded.
+  assert.match(fn, /nextSetLoad\(\{/);
+  assert.ok(!/verdict: 'same'/.test(fn), 'a hardcoded verdict crept in');
+  // The words are appended, never replacing what the row already held.
+  assert.match(fn, /wordsForRecord\(\{ felt: set\.note, note: words \}\)/);
+  // Body words are a doctor's question, flagged where they are said.
+  assert.match(fn, /BODY_WORDS\.test/);
+  assert.match(fn, /Never advise on it/);
+  // Read back off the record, and the claim is gated on it.
+  assert.match(fn, /out\.words_saved = !!row\.note/);
+  assert.match(fn, /never claim the words were kept unless on_record shows them/);
+
+  // The sheet names the door, and the rule about whose words they are.
+  assert.match(SERVER_INSTRUCTIONS, /rack_note/);
+  assert.match(SERVER_INSTRUCTIONS, /THE WORDS ARE THEIRS, NEVER YOURS/);
+
+  // start_session's note told the model to pass a late aim to end_session —
+  // which did not accept one. A promise on the sheet the code did not keep.
+  const end = TOOLS.find(x => x.name === 'end_session');
+  assert.ok(end.inputSchema.properties.aim, 'end_session was told to take an aim it did not accept');
+  const endFn = mcp.slice(mcp.indexOf('async function endSession('), mcp.indexOf('async function endSession(') + 4000);
+  assert.match(endFn, /lateAim/);
+  assert.match(endFn, /!session\.aim && await sessionsCanCarryAim\(\)/, 'a late aim must never overwrite one already stated');
+});
+
 await test('the between-sets questions are one line, and never offer harder on a bad day', () => {
   const fresh = beforeSet({ exercise: 'Bench press', setNumber: 1 });
   assert.match(fresh.ask, /a little harder, or a little softer/);

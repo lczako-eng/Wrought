@@ -27,7 +27,9 @@ const MIN_SESSIONS = 3;
 // Words people use about their own execution. Matched only to hand back what
 // they said — never to conclude anything from it, and never medically.
 const FORM_WORDS = /form|sloppy|rush|rushed|ugly|grind|grinding|bounce|bounced|cheat|swing|swung|arch|round|rounded|lost tightness|no control|technique/i;
-const BODY_WORDS = /pain|hurt|tweak|twinge|pull|pulled|strain|sharp|shoulder|knee|back|elbow|hip|wrist/i;
+// Exported so log_set can mark a set's words as a report about a body at the
+// moment they arrive — the doctor's question, flagged where it is said.
+export const BODY_WORDS = /pain|hurt|tweak|twinge|pull|pulled|strain|sharp|shoulder|knee|back|elbow|hip|wrist/i;
 
 /** One entry per exercise per session: the sets as they were performed, in order. */
 function bySession(sets = []) {
