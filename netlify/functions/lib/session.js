@@ -34,7 +34,7 @@
 // overstated burn is the number that tells somebody they have room to eat.
 
 import { supabase, insertEvents, localDateFor } from './wrought.js';
-import { sessionTotals, sessionsCanCarryAim, exerciseKey, sameLift, trainingBurn } from './training.js';
+import { sessionTotals, sessionsCanCarryAim, setsCanCarryClientId, exerciseKey, sameLift, trainingBurn } from './training.js';
 import { sessionProgress } from './warmup.js';
 import { sessionEffort, splitWork, windowedActive } from './effort.js';
 import { sessionsCanCarryPlace } from './places.js';
@@ -315,12 +315,31 @@ export async function finaliseSession(userId, profile, session,
 export async function recordSet(userId, { session, current, plan = [], today,
                                           reps = null, weightKg = null, rpe = null,
                                           note = null, exercise = null, skip = false,
-                                          setsDone = 0 }) {
+                                          setsDone = 0, clientId = null }) {
   let done = setsDone;
   // The row as STORED, handed back so the caller can read it out. Echoing the
   // arguments proves a write was composed, never that it landed — and the
   // words on a set are the field most often composed and least often checked.
   let row = null;
+
+  // A TICK SENT TWICE LANDS ONCE. The rack screen queues a set it could not
+  // send and retries when the signal returns; a retry whose first attempt
+  // actually landed (the response was what got lost) must find that row, not
+  // write a second one into the lift record. The id is the client's; the
+  // guarantee is the unique index from 027. Before 027 the id is dropped and
+  // the write goes ahead — a set that cannot be recorded is the worse failure.
+  const cid = clientId ? String(clientId).slice(0, 64) : null;
+  const canDedupe = cid ? await setsCanCarryClientId() : false;
+  if (cid && canDedupe) {
+    const { data: already } = await supabase.from('wrought_sets')
+      .select('id, exercise, set_number, reps, weight_kg, rpe, note')
+      .eq('user_id', userId).eq('client_id', cid).maybeSingle();
+    if (already) {
+      return { sets_done: done, cursor: session.cursor_index || 0,
+               finished: (session.cursor_index || 0) >= plan.length, more_here: true,
+               row: already, duplicate: true };
+    }
+  }
 
   if (skip) {
     done = current.sets ?? done;             // force the move on
@@ -328,6 +347,7 @@ export async function recordSet(userId, { session, current, plan = [], today,
     const name = exercise || current.name;
     const key  = exercise ? exerciseKey(exercise) : current.key;
     const { data: stored, error } = await supabase.from('wrought_sets').insert([{
+      ...(cid && canDedupe ? { client_id: cid } : {}),
       user_id: userId, session_id: session.id,
       exercise: name, exercise_key: key,
       set_number: done + 1,
@@ -341,6 +361,16 @@ export async function recordSet(userId, { session, current, plan = [], today,
       note: note ? String(note).slice(0, 500) : null,
       local_date: today,
     }]).select('id, exercise, set_number, reps, weight_kg, rpe, note').single();
+    // Two retries racing through the check above: the index catches the
+    // second, and it is answered as the duplicate it is rather than an error.
+    if (error && cid && /duplicate key|unique/i.test(error.message)) {
+      const { data: already } = await supabase.from('wrought_sets')
+        .select('id, exercise, set_number, reps, weight_kg, rpe, note')
+        .eq('user_id', userId).eq('client_id', cid).maybeSingle();
+      return { sets_done: done, cursor: session.cursor_index || 0,
+               finished: (session.cursor_index || 0) >= plan.length, more_here: true,
+               row: already || null, duplicate: true };
+    }
     if (error) return { error: error.message };
     row = stored || null;
     done += 1;

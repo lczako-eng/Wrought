@@ -121,6 +121,9 @@ export const handler = async (event) => {
         note: body.note ?? null,
         skip: action === 'skip',
         setsDone: (hereRows || []).length,
+        // The page's own id for this tick, so a set queued with no signal and
+        // sent again when it returns lands once. See recordSet.
+        clientId: body.client_id ?? null,
       });
       // A swallowed write here looks exactly like a tick that worked, on the
       // one screen somebody is using instead of talking.

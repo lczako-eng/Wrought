@@ -4595,6 +4595,53 @@ await test('a target is never quoted without its maintenance', () => {
   assert.match(SERVER_INSTRUCTIONS, /NEVER "maintain"/);
 });
 
+await test('a set ticked with no signal is kept, sent when it returns, and sent twice lands once', () => {
+  // Gyms are basements. A tick that failed said "nothing was saved" and
+  // handed the set back to the person to remember mid-workout. Now it is
+  // queued on the phone and sent in order when the network is back — and a
+  // retry whose first attempt actually landed finds that row, never a second.
+  const page = readFileSync(new URL('../public/app.html', import.meta.url), 'utf8');
+  assert.match(page, /const TICK_QUEUE_KEY = 'wrought_tick_queue'/);
+  assert.match(page, /async function flushTickQueue\(/);
+  assert.match(page, /window\.addEventListener\('online', \(\) => \{ flushTickQueue\(\); \}\)/);
+  // Every set tick carries an id minted on the page.
+  assert.match(page, /\{ action: 'set', reps: num\('tk-reps'\), weight: num\('tk-wt'\), rpe: num\('tk-rpe'\), client_id: mintTickId\(\) \}/);
+  // Only SETS queue: ending a session or moving the cursor blind is refused.
+  assert.match(page, /if \(action === 'set'\) \{\s*const q = readTickQueue\(\); q\.push\(\{ payload, at: Date\.now\(\) \}\)/);
+  assert.match(page, /No signal — that needs the server\. Sets still queue/);
+  // Oldest first, stopping at the first failure — the record keeps the order
+  // the sets happened in.
+  assert.match(page, /while \(q\.length\) \{\s*const item = q\[0\];/);
+  assert.match(page, /\} catch \{ break; \}/);
+  // The queue goes before a new tick and before the Trainer tab draws.
+  const tick = page.slice(page.indexOf('async function tickSet('), page.indexOf('async function tickSet(') + 1200);
+  assert.match(tick, /await flushTickQueue\(\{ quiet: true \}\)/);
+  const lt = page.slice(page.indexOf('async function loadTrainer('), page.indexOf('async function loadTrainer(') + 600);
+  assert.match(lt, /await flushTickQueue\(\{ quiet: true \}\)/);
+  assert.match(page, /\$\{tickQueueNotice\(\)\}/, 'the waiting count is not on the rack screen');
+
+  // The server side: the one write path takes the id, finds an earlier landing
+  // by it, and answers the duplicate as a duplicate — before AND after the
+  // insert, because two retries can race through the first check.
+  const ses = readFileSync(new URL('../netlify/functions/lib/session.js', import.meta.url), 'utf8');
+  const rs = ses.slice(ses.indexOf('export async function recordSet('), ses.indexOf('export function foldPlan('));
+  assert.match(rs, /clientId = null \}\)/);
+  assert.match(rs, /\.eq\('user_id', userId\)\.eq\('client_id', cid\)\.maybeSingle\(\)/);
+  assert.match(rs, /row: already, duplicate: true/);
+  assert.match(rs, /error && cid && \/duplicate key\|unique\/i\.test\(error\.message\)/);
+  // BEFORE 027 THE WRITE STILL GOES: the id is dropped rather than the set.
+  assert.match(rs, /const canDedupe = cid \? await setsCanCarryClientId\(\) : false/);
+  assert.match(rs, /\.\.\.\(cid && canDedupe \? \{ client_id: cid \} : \{\}\)/);
+  const api = readFileSync(new URL('../netlify/functions/api-session.js', import.meta.url), 'utf8');
+  assert.match(api, /clientId: body\.client_id \?\? null/);
+  // The migration: a nullable column and a unique index per user, so every
+  // set logged by voice (no id) is untouched — NULLs are distinct.
+  const sql = readFileSync(new URL('../schema/027_wrought_set_client_id.sql', import.meta.url), 'utf8');
+  assert.match(sql, /add column if not exists client_id text;/);
+  assert.match(sql, /create unique index if not exists wrought_sets_client_id_idx\s+on public\.wrought_sets \(user_id, client_id\)/);
+  assert.ok(!/where client_id is not null/i.test(sql), 'a partial unique index cannot be inferred by ON CONFLICT — the 015 lesson');
+});
+
 await test('the scale corrects the target — computed, stepped, floored, and never applied on its own', async () => {
   // Every surface said "the weekly weigh-in trend corrects the target, never
   // the other way round", and nothing did it. This is the arithmetic:
