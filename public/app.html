@@ -1100,6 +1100,11 @@ table.matrix td.rh.cold { color: var(--heat-3); }
 .planrow.style .lineage { font-size: 12.5px; color: var(--muted); font-weight: 400; }
 .planrow.style .emph { font-size: 12px; color: var(--dim); font-weight: 400; }
 .planrow.style .voice { font-size: 12px; color: var(--muted); font-weight: 400; margin-top: 2px; }
+/* The standing coach: a tag on the row, and the two actions kept together. */
+.planrow.style.iscoach { border-color: var(--heat-3); }
+.coachtag { display: inline-block; font-size: 10.5px; letter-spacing: .08em; text-transform: uppercase; padding: 1px 6px; border-radius: 6px; border: 1px solid var(--heat-3); color: var(--heat-5); margin-left: 6px; vertical-align: middle; }
+.styleacts { display: flex; flex-direction: column; gap: 6px; align-items: flex-end; flex-shrink: 0; }
+.styleacts .ghost { font-size: 12px; padding: 4px 8px; }
 /* Intensity as a small stamp — a word, never a warning colour. */
 .vint { display: inline-block; font-size: 10.5px; letter-spacing: .08em; text-transform: uppercase; padding: 1px 6px; border-radius: 6px; border: 1px solid var(--line); margin-right: 4px; color: var(--muted); }
 .vint.calm { border-color: #3d6b46; color: #8fc79a; }
@@ -3806,8 +3811,9 @@ function renderTrainer(d) {
       ${athletePanel(lastPayload || {})}
       ${traditionsPanel({ traditions: lastPayload?.traditions, routines: trainerRoutinesFull })}
       ${placesPanel({ places: lastPayload?.places })}
-      ${stylesPanel({ styles: lastPayload?.styles })}`;
+      ${stylesPanel({ styles: lastPayload?.styles, coach: lastPayload?.plan?.coach || null })}`;
     wireRoutines();
+    wireStyles();
     stagger();
     return;
   }
@@ -5888,6 +5894,10 @@ function planPanel(d) {
     p.pace ? ['Pace', esc(p.pace), true] : null,
     p.push ? ['Pushing', esc(p.push), true] : null,
     p.train_days ? ['Sessions', `${p.train_days} a week`] : null,
+    // The standing coach, when one is set — the tradition every built session
+    // comes in. Nothing is drawn when there is none: the plain trainer is a
+    // complete answer, not a missing one.
+    p.coach_say ? ['Coach', esc(p.coach_say)] : null,
   ].filter(Boolean);
 
   // Nothing set at all: say what is missing and where it gets set, rather than
@@ -6108,6 +6118,14 @@ function placesPanel(d) {
 function stylesPanel(d) {
   const list = d?.styles || [];
   if (!list.length) return '';
+  // THE STANDING COACH. One of these can be made the default: every session
+  // built from then on comes in that style and is coached in that voice,
+  // until it is changed here or in one sentence to the assistant. Never in
+  // the demo — a tap there would write a real preference into borrowed numbers.
+  const coach = d.coach || null;
+  const coachBtn = st => DEMO ? '' : (st.key === coach
+    ? `<button class="ghost style-off" type="button" data-key="${esc(st.key)}" title="Back to the plain trainer">Your coach · stop</button>`
+    : `<button class="ghost style-on" type="button" data-key="${esc(st.key)}" title="Every built session comes in this style until you change it">Make my coach</button>`);
   const groups = [];
   for (const st of list) {
     const g = groups.find(x => x.name === (st.discipline || 'Other'));
@@ -6118,17 +6136,51 @@ function stylesPanel(d) {
   // sounds like once this style is picked — never the person, never a plate.
   const voiceLine = st => st.voice
     ? `<span class="voice"><b class="vint ${esc(st.voice.intensity)}">${esc(st.voice.intensity)}</b> ${esc(st.voice.register)} — ${esc(st.voice.attitude)}</span>` : '';
-  const row = st => `<div class="planrow style">
-      <span class="lbl">${esc(st.say)}${st.lineage ? `<span class="lineage">${esc(trad(st))}</span>` : ''}${st.emphasis ? `<span class="emph">${esc(st.emphasis)}</span>` : ''}${voiceLine(st)}</span>
-      ${gptLink(`Gym bro — design me a ${st.say} workout${st.lineage ? ` (${trad(st)})` : ''} for my gym, about 45 minutes, coach it in that style's voice, and offer to save it.`, 'Build it')}
+  const row = st => `<div class="planrow style${st.key === coach ? ' iscoach' : ''}">
+      <span class="lbl">${esc(st.say)}${st.key === coach ? '<span class="coachtag">your coach</span>' : ''}${st.lineage ? `<span class="lineage">${esc(trad(st))}</span>` : ''}${st.emphasis ? `<span class="emph">${esc(st.emphasis)}</span>` : ''}${voiceLine(st)}</span>
+      <span class="styleacts">${coachBtn(st)}${gptLink(`Gym bro — design me a ${st.say} workout${st.lineage ? ` (${trad(st)})` : ''} for my gym, about 45 minutes, coach it in that style's voice, and offer to save it.`, 'Build it')}</span>
     </div>`;
-  return `<section class="panel">
+  return `<section class="panel" id="styles">
     <h2>Trainer styles</h2>
     <p class="sub">Real published methods, built to your gym and your tier — each named for the
     method and credited to the tradition it comes from. Never a named coach’s programme, never
     an endorsement, and never a weight it invented.</p>
+    <p class="sub dim">${coach
+      ? `Your standing coach is <strong>${esc((list.find(s => s.key === coach) || {}).say || coach)}</strong> — every session built from now on comes in that style and that voice. Stop it here, or say <em>"back to the plain trainer"</em>.`
+      : `Pick one as your coach and every session built from then on comes in that style and that voice, until you change it. Or say <em>"coach me like a boxer from now on"</em> to your assistant.`}</p>
     ${groups.map(g => `<h3 class="stylegrp">${esc(g.name)}</h3><div class="planrows">${g.items.map(row).join('')}</div>`).join('')}
   </section>`;
+}
+
+// Making a style the standing coach, or stopping it. Through the profile
+// door — the same column set_plan writes — so the panel and "what plan am I
+// on" cannot disagree about who is coaching. The plan on the warm payload is
+// patched so the panel redraws at once; the next refresh reads it off the
+// record like everything else.
+async function setCoach(key) {
+  const { data } = sb ? await sb.auth.getSession() : { data: {} };
+  if (!data?.session) return;
+  const res = await fetch('/.netlify/functions/api-profile', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${data.session.access_token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ coach_style: key }),
+  });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) { alert(body.message || body.error || 'That did not save.'); return; }
+  if (lastPayload) lastPayload.plan = { ...(lastPayload.plan || {}), coach: key };
+  if (view === 'trainer') loadTrainer();
+}
+function wireStyles() {
+  const root = $('styles');
+  if (!root) return;
+  root.querySelectorAll('.style-on').forEach(b => b.addEventListener('click', async () => {
+    b.disabled = true; b.textContent = 'Saving…';
+    await setCoach(b.dataset.key);
+  }));
+  root.querySelectorAll('.style-off').forEach(b => b.addEventListener('click', async () => {
+    b.disabled = true; b.textContent = 'Stopping…';
+    await setCoach(null);
+  }));
 }
 
 function coachSetupPanel(d) {

@@ -25,6 +25,7 @@
 // database work of its own, so both callers fetch the way they already fetch.
 
 import { restingBurn, PACES, PUSH } from './training.js';
+import { STYLES } from './design.js';
 
 /**
  * @param profile   the user's profile row
@@ -45,6 +46,11 @@ export function planRead({ profile = {}, goals = [], weightKg = null } = {}) {
 
   const pace = profile.plan_pace || null;
   const push = profile.plan_push || null;
+  // THE STANDING COACH. Optional and never in `missing`: the plain trainer is
+  // a complete answer, and demanding somebody pick a tradition before their
+  // first session is the setup interview the warm-up doctrine forbids.
+  const coach = profile.coach_style && STYLES[profile.coach_style] ? profile.coach_style : null;
+  const coachSt = coach ? STYLES[coach] : null;
 
   const missing = [];
   if (!intent) missing.push('what they are actually after — losing, gaining, or both at once');
@@ -72,6 +78,9 @@ export function planRead({ profile = {}, goals = [], weightKg = null } = {}) {
   if (profile.train_days) {
     lines.push(`Training ${profile.train_days} a week, at ${profile.tier || 'intermediate'} level.`);
   }
+  if (coachSt) {
+    lines.push(`Coach: ${coachSt.say}${coachSt.tradition ? `, ${coachSt.tradition}` : ''}.`);
+  }
   if (target) {
     // ABOVE BASAL IS NOT A SURPLUS. A target stored under the old
     // maintenance basis sits above basal, and calling that a "surplus" tells
@@ -94,6 +103,14 @@ export function planRead({ profile = {}, goals = [], weightKg = null } = {}) {
     push_say: push ? PUSH[push]?.say || null : null,
     train_days: profile.train_days || null,
     tier: profile.tier || null,
+    // The standing coach — the key, its name, the tradition it is credited
+    // to, and the register it talks in. Null is the plain trainer.
+    coach,
+    coach_say: coachSt?.say || null,
+    coach_tradition: coachSt?.tradition || null,
+    coach_voice: coachSt?.voice
+      ? { register: coachSt.voice.register, intensity: coachSt.voice.intensity, attitude: coachSt.voice.attitude }
+      : null,
     calorie_target: target,
     // The context that turns a number into a decision. Never quoted apart.
     // This is BASAL — see the comment above the computation.

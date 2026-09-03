@@ -4595,6 +4595,62 @@ await test('a target is never quoted without its maintenance', () => {
   assert.match(SERVER_INSTRUCTIONS, /NEVER "maintain"/);
 });
 
+await test('a standing coach — set once, every built session comes in that style, changed in one sentence', async () => {
+  // The founder: "where can I find them on the app or website and change it?"
+  // The twenty-one styles could be picked per session and never kept. One
+  // column on the plan; the plain trainer is a complete answer, never missing.
+  const { STYLES } = await import('../netlify/functions/lib/design.js');
+  const base = { height_cm: 190.5, birth_year: 1982, sex: 'male', activity_level: 'moderate', plan_pace: 'steady', plan_push: 'normal', train_days: 4 };
+  const withCoach = planRead({ profile: { ...base, coach_style: 'boxing_camp' }, goals: [], weightKg: 149.7 });
+  assert.equal(withCoach.coach, 'boxing_camp');
+  assert.equal(withCoach.coach_say, STYLES.boxing_camp.say);
+  assert.ok(withCoach.say.includes(`Coach: ${STYLES.boxing_camp.say}, in the tradition of`), withCoach.say);
+  assert.ok(withCoach.coach_voice?.register, 'the register rides with the coach');
+  // Optional: never in `missing`, and a key nothing recognises is no coach.
+  const plain = planRead({ profile: base, goals: [], weightKg: 149.7 });
+  assert.equal(plain.coach, null);
+  assert.ok(!(plain.missing || []).some(m => /coach|style/i.test(m)), 'a missing coach is demanded as setup');
+  assert.equal(planRead({ profile: { ...base, coach_style: 'nonsense' }, goals: [], weightKg: 149.7 }).coach, null);
+
+  const mcp = readFileSync(new URL('../netlify/functions/mcp.js', import.meta.url), 'utf8');
+  // set_plan takes it, by method name or famous name, and "none" clears it.
+  const sp = mcp.slice(mcp.indexOf('async function setPlan('), mcp.indexOf('// ── The athlete track'));
+  assert.match(sp, /patch\.coach_style = key/);
+  assert.match(sp, /\(none\|off\|plain\|default/);
+  assert.match(sp, /patch\.coach_style = null/);
+  assert.match(sp, /unknown_style/);
+  const spTool = mcp.slice(mcp.indexOf("name: 'set_plan'"), mcp.indexOf("name: 'answer_setup'"));
+  assert.match(spTool, /style:\s*\{ type: 'string'/);
+  assert.match(spTool, /STANDING coach/);
+  // design_workout falls back to it, and says which it was.
+  const dw = mcp.slice(mcp.indexOf('async function designWorkout('), mcp.indexOf('async function designWorkout(') + 9000);
+  assert.match(dw, /const standing = !named && profile\.coach_style && STYLES\[profile\.coach_style\]/);
+  assert.match(dw, /const style = named \|\| standing/);
+  assert.match(dw, /style_source: standing \? 'standing_coach' : 'named_today'/);
+  // The voice between sets falls back to it too, on every reader.
+  assert.match(mcp, /function sessionVoice\(session, profile = null\)/);
+  assert.equal((mcp.match(/sessionVoice\([^)]*, profile\)/g) || []).length, 6, 'a reader of the session voice does not pass the profile');
+  // Delivery only — the note on set_plan says so.
+  assert.match(sp, /changes DELIVERY and the shape of a built session only — never a load/);
+
+  // The website: a control on the styles panel, through the profile door, and
+  // the plan panel shows it. Never in the demo.
+  const page = readFileSync(new URL('../public/app.html', import.meta.url), 'utf8');
+  assert.match(page, /class="ghost style-on"/);
+  assert.match(page, /class="ghost style-off"/);
+  assert.match(page, /const coachBtn = st => DEMO \? ''/);
+  assert.match(page, /body: JSON\.stringify\(\{ coach_style: key \}\)/);
+  assert.match(page, /p\.coach_say \? \['Coach', esc\(p\.coach_say\)\]/);
+  const api = readFileSync(new URL('../netlify/functions/api-profile.js', import.meta.url), 'utf8');
+  assert.match(api, /if \('coach_style' in body\)/);
+  assert.match(api, /else if \(styleFrom\(String\(v\)\)\) patch\.coach_style = styleFrom\(String\(v\)\)/);
+  assert.match(api, /migration_026_not_run/);
+  // And the migration exists, adds exactly that column, and is nullable.
+  const sql = readFileSync(new URL('../schema/026_wrought_coach.sql', import.meta.url), 'utf8');
+  assert.match(sql, /add column if not exists coach_style text;/);
+  assert.ok(!/not null/i.test(sql), 'the plain trainer must stay a real (null) answer');
+});
+
 await test('the plan is readable on the website, not only through the assistant', () => {
   // It lived only inside the my_plan tool, so the plan was something you could
   // be TOLD and never somewhere you could go and LOOK — on the product whose
@@ -11297,7 +11353,7 @@ await test('every style has a voice — a register that changes delivery and not
   // of a session run from a tradition workout — read off the routine's name.
   const mcp = readFileSync(new URL('../netlify/functions/mcp.js', import.meta.url), 'utf8');
   assert.match(mcp, /voice: STYLES\[style\]\.voice/, 'design_workout never carries the voice');
-  assert.match(mcp, /\.\.\.\(sessionVoice\(session\) \? \{ voice: sessionVoice\(session\) \} : \{\}\)/, 'log_set never carries the voice');
+  assert.match(mcp, /\.\.\.\(sessionVoice\(session, profile\) \? \{ voice: sessionVoice\(session, profile\) \} : \{\}\)/, 'log_set never carries the voice');
   assert.equal(styleFrom('Fight camp (Freddie Roach tradition)'), 'boxing_camp', 'a tradition workout\'s name does not find its voice');
   assert.equal(styleFrom('Golden-era chest and back (Arnold Schwarzenegger tradition)'), 'golden_era');
   assert.equal(styleFrom('Leg day'), null, 'a plain routine got a voice');
@@ -11758,7 +11814,7 @@ await test('everywhere the app said tell-your-assistant is now one tap', () => {
   assert.match(code, /gptLink\('Gym bro \\u2014 set me up properly/, 'the assessment is still a phrase to retype');
   assert.match(code, /gptLink\('Gym bro \\u2014 I want to set my goals/, 'the goals invitation is still a phrase to retype');
   assert.match(code, /function stylesPanel/, 'the styles have no panel');
-  assert.match(code, /stylesPanel\(\{ styles: lastPayload\?\.styles \}\)/, 'the styles panel is never rendered on Trainer');
+  assert.match(code, /stylesPanel\(\{ styles: lastPayload\?\.styles, coach: lastPayload\?\.plan\?\.coach \|\| null \}\)/, 'the styles panel is never rendered on Trainer');
 
   // THE LIST COMES FROM THE SERVER, so the page cannot drift from what
   // design_workout actually recognises — and the provenance travels with it,
