@@ -1846,6 +1846,48 @@ methodology, not a live survey of any particular coach. Presenting textbook as
 insider knowledge is a small lie that makes the honest numbers harder to
 believe.
 
+### "Had room left" — the words that drove the load and were never kept
+
+`wordsForRecord()` in `lib/coach.js` + `on_record` / `words_check` on
+`log_set` + the `rack_note` tool. The founder's screenshot: ChatGPT read
+*"185 × 8, had room left — hold 185 for set 2"*, and he wrote underneath:
+*"Remember, there could be a note on this that could be added for memory."*
+The live row held **8 × 185, rpe null, note null.** Three faults, one
+screenshot:
+
+- **`felt` was dropped before the insert.** It drove the effort read and was
+  then discarded; only `note` reached the row. So the one fact that explains
+  the number six weeks later — how it felt — was structurally unstorable
+  through the field built to carry it. Both go on the row now, verbatim, felt
+  first, deduped when one is inside the other.
+- **"Had room left" matched nothing** in the effort table, so the load held
+  by SILENCE rather than by reading. From the outside the two are identical
+  and they are not the same thing: one is autoregulation, the other is the
+  absence of it. Room, gas, "plenty in the tank", "not too bad" and "felt
+  fine" read now; the harder reading still wins and a cold room is not an
+  effort.
+- **The answer to "how did that feel" arrives a turn AFTER the row is
+  written**, and there was no door back to it. `rack_note` attaches the words
+  to the set just done, fills an EMPTY reading from them (never overwriting a
+  number they gave), recomputes the next load from the set as it now reads,
+  and takes an aim answered after the session started. `end_session` also
+  accepts `aim` now — `start_session`'s note had been telling the model to
+  pass it there, and nothing read it. A promise on the sheet the code did not
+  keep.
+
+**The row is read back, and the result says when it holds nothing.** The
+notes ChatGPT was writing were its own paraphrases — *"Second set; got 6
+reps."* — the reps field restated, a row that says nothing. `on_record` is
+the stored row; `words_check` says in as many words when no words are on it,
+so a set they spoke about and a set they did not stop looking identical.
+Words about a body are flagged where they are said (`body_report`): a
+doctor's question, never a cue and never reassurance.
+
+**And 017 had never been applied live**, so every aim ever answered was
+dropped at the door with a warning only the model saw. Applied through the
+connector; the probe is cached per container, so a warm function keeps
+saying it cannot store an aim until it recycles.
+
 ### Gauging — the set that just happened decides the next one
 
 The founder, after logging a set and getting nothing back: *"it's not really
@@ -3915,7 +3957,7 @@ self-reporting scale removes the most-abandoned manual entry), then Strava.
    `003_wrought_training.sql`, `004_wrought_fasting.sql`,
    `005_wrought_activity.sql`, `006_wrought_identity.sql`, `007_wrought_push.sql`,
    `008_wrought_blocks.sql`, `009_wrought_photos.sql` and
-   `010_wrought_profile_web.sql`, `011_wrought_membership.sql`, `012_wrought_link_codes.sql`, `013_wrought_work.sql`, `014_wrought_plan.sql` `015_wrought_ingest_dedupe_fix.sql`, `016_wrought_set_source.sql` `017_wrought_session_aim.sql`, `018_wrought_alerts.sql`, `023_wrought_commitment.sql` and `024_wrought_places.sql` in Supabase. Full checklist in `docs/SETUP.md`. (018 through 023 were applied through the Supabase connector from a session — `list_migrations` shows them by name — so a session with that connector can apply an additive migration itself rather than leaving it on this list.)
+   `010_wrought_profile_web.sql`, `011_wrought_membership.sql`, `012_wrought_link_codes.sql`, `013_wrought_work.sql`, `014_wrought_plan.sql` `015_wrought_ingest_dedupe_fix.sql`, `016_wrought_set_source.sql` `017_wrought_session_aim.sql`, `018_wrought_alerts.sql`, `023_wrought_commitment.sql` and `024_wrought_places.sql` in Supabase. Full checklist in `docs/SETUP.md`. (017 and 018 through 025 were applied through the Supabase connector from a session — `list_migrations` shows them by name — so a session with that connector can apply an additive migration itself rather than leaving it on this list. 017 sat unapplied for weeks while the code degraded politely around it; check `/status` before assuming a column exists.)
 3. Set env vars in Netlify: `SUPABASE_URL` (**no trailing slash** — Kong answers
    "Invalid path specified in request URL" and nothing says why),
    `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_ANON_KEY`,

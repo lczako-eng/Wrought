@@ -28,7 +28,7 @@ import { allowed } from './lib/membership.js';
 import { pendingVoice } from './lib/voice.js';
 import { activityBurn, EFFORTS } from './lib/activity.js';
 import { warmupFor, cooldownFor, sessionProgress } from './lib/warmup.js';
-import { formWatch, cardioProgress } from './lib/form.js';
+import { formWatch, cardioProgress, BODY_WORDS } from './lib/form.js';
 import { intakeState, intakeGate, SETUP_URL } from './lib/intake.js';
 import { applyAnswers, setupState } from './lib/setup.js';
 import { weeklyVolume } from './lib/volume.js';
@@ -40,7 +40,7 @@ import { setBodyGoal, setMetricGoal, retireGoalsFor, intentFrom, SET_TARGETS_URL
 import { ROUTING_HABIT } from './lib/wrought.js';
 import { preflight } from './lib/preflight.js';
 import { finaliseSession, closeStaleSessions, recordSet } from './lib/session.js';
-import { effortFromWords, beforeSet, afterSet, methodsFor } from './lib/coach.js';
+import { effortFromWords, wordsForRecord, beforeSet, afterSet, methodsFor } from './lib/coach.js';
 import { PROVIDERS, providerSummary, recommendRoute } from './lib/providers.js';
 import { nutritionTotals, composition, macroMatrix, yearOverYear } from './lib/nutrition.js';
 import {
@@ -332,7 +332,7 @@ ROUTINES ARE HOW THIS SURVIVES MONTH TWO. When a session works, offer save_routi
 
 ROOM IS EARNED, NEVER TAKEN AWAY. earned_room looks at the whole week, and when someone has genuinely been under target it hands back a number and tells them to spend it — "you're about 1,400 under, that's a proper dinner out, go and have it." Deliver that warmly and without conditions: no "but", no "just be careful", no suggestion they bank it instead. A reward that gets hedged is not a reward, and the honest logging this depends on is worth far more than the calories. The reverse never happens: when somebody is OVER for the week, state it in one factual line and stop — never prescribe eating less, skipping a meal, or making up for yesterday unless they explicitly ask for a plan. The moment earned room has an opposite it becomes a punishment schedule, and that is the thing that turns a food log into a disorder. When a care flag is up the tool switches the whole frame off; respect that absolutely and never dangle food as a reward for having eaten little.
 
-NOTES AT THE RACK. Whatever they say mid-set — "left shoulder pinched", "grip went before the legs", "felt light today" — goes into log_set's note field VERBATIM. Never treat it as chatter to be replied to and dropped. It attaches to that exact set, and six weeks later it is the only thing that explains a plateau. If they mention pain more than once for the same joint, call remember so every future session honours it without being asked again.
+NOTES AT THE RACK. Whatever they say mid-set — "left shoulder pinched", "grip went before the legs", "felt light today" — goes into log_set's note field VERBATIM. Never treat it as chatter to be replied to and dropped. It attaches to that exact set, and six weeks later it is the only thing that explains a plateau. If they mention pain more than once for the same joint, call remember so every future session honours it without being asked again. THE WORDS ARE THEIRS, NEVER YOURS: felt and note are both stored on the set word for word, and "Second set; got 6 reps" is not a note — it is the reps field restated, and a row that holds only your paraphrase holds nothing. Every log_set answer carries on_record (exactly what the row holds) and words_check; when words_check says nothing is on the record and they DID say something, call rack_note with their words. WHAT THEY SAY AFTER THE SET IS LOGGED goes to rack_note as well — the answer to "how did that feel" ("not too bad, had room left"), a remark a set later, or the session's aim answered after it started. It attaches to the set just done; an effort in the words fills in the reading and the next load moves from it. Words that only live in the conversation are gone when the tab closes, and that is the exact thing this product exists to prevent.
 
 THE BIG PICTURE ON FOOD. nutrition answers the questions a daily total never can: how much sugar, how much meat, what a month looks like against a year. Three rules when relaying it. Composition is counted in MEALS and never in grams — "meat was in 71% of your meals" is honest, "you ate 4kg of meat" is a fabrication, because nobody described dinner precisely enough for a weight. Sugar is a subset of carbs, never additional to them. And never moralise a category: report the share and let them decide what it means. Year-over-year is the number nobody can get anywhere else, and it only exists because something has been quietly adding up — when it appears, lead with it.
 
@@ -526,11 +526,25 @@ const TOOLS = [
         felt:      { type: 'string',  description: 'WHAT THEY SAID ABOUT THE SET, VERBATIM — "with ease", "started to struggle a bit", "had two more in me", "barely got it". Do NOT convert this to a number: the server reads it against the reps-in-reserve scale, and this is the input that decides the next load. Pass their words exactly, including the vague ones; if they said nothing about effort, leave it out and the load holds, which is deliberate.' },
         rpe:       { type: 'number',  description: 'Only when they actually gave a number — "that was an 8", "RPE 9". Otherwise use `felt` and let the server read their words; a number you inferred yourself is a guess about how much weight goes on a bar.' },
         exercise:  { type: 'string',  description: 'Only if they did something other than what was prescribed — a swap or an extra lift.' },
-        note:      { type: 'string',  description: 'Anything they said at the rack — "left shoulder pinched", "grip went before the legs", "felt light today", "bar speed was slow". Pass it VERBATIM and never discard it as chatter. It attaches to this exact set, so six weeks later it is the thing that explains a plateau.' },
+        note:      { type: 'string',  description: 'Anything ELSE they said at the rack — "left shoulder pinched", "grip went before the legs", "bar speed was slow". Pass it VERBATIM and never discard it as chatter. THEIR words, never yours: "Second set; got 6 reps" is not a note, it is the reps field restated, and a note you composed is a row that says nothing. Both felt and note are stored on the set word for word; the answer\'s on_record shows exactly what the row holds.' },
         skip:      { type: 'boolean', description: 'True if they are skipping this exercise entirely and moving on.' },
       },
     },
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+  },
+  {
+    name: 'rack_note',
+    title: 'Attach what they said to the set just done — or the aim to the session',
+    description: 'For words that arrive AFTER the set was logged: the answer to "how did that feel" ("not too bad, had room left", "shoulder pinched on the last one", "that was a grinder"), or the aim answered after the session started ("chasing the top set on incline"). log_set has already written the row, so this attaches their words to it VERBATIM — a set with no words is a number with no explanation, and six weeks later the words are the only thing that explains a plateau. When the words carry an effort and the set had no reading, the server reads them and the next load moves accordingly; you never convert them to a number. Call it the moment they say something about the set, not at the end of the session; an unattached remark is gone when the chat closes. Whenever a log_set answer says words_check: nothing on the record and they DID say something, this is the fix.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        words:    { type: 'string', description: 'What they said about the set, exactly as they said it. Never paraphrased, never assessed.' },
+        aim:      { type: 'string', description: 'What THIS session is for, in their own words, when they answer after the session has already started. Never invented.' },
+        exercise: { type: 'string', description: 'Only if the remark is about a lift other than the last one logged.' },
+      },
+    },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   },
   {
     name: 'swap_exercise',
@@ -568,7 +582,10 @@ const TOOLS = [
     description: 'Closes the live session, files it in the training log so it appears in the brief and the matrix, and returns totals — sets, reps, volume moved, anything that beat last time — plus where the day now stands on food. Call when they say they are done, or when the plan runs out.',
     inputSchema: {
       type: 'object',
-      properties: { note: { type: 'string', description: 'Anything they said about how it went — "shoulder felt off", "best session in months".' } },
+      properties: {
+        note: { type: 'string', description: 'Anything they said about how it went — "shoulder felt off", "best session in months".' },
+        aim:  { type: 'string', description: 'What the session was for, in their own words, if it was only said after the session started and has not been passed to rack_note. Never invented.' },
+      },
     },
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
   },
@@ -3585,15 +3602,39 @@ async function logSet(args, user) {
   // ONE WRITE PATH, shared with the rack screen's tick — see recordSet in
   // lib/session.js. Two copies of this would drift, and the drift shows up as
   // the screen and the voice disagreeing about which exercise you are on.
-  // The note stays verbatim: "left shoulder pinched on the third set" is the
-  // whole reason a number went the way it did, and it is worthless paraphrased.
+  // THEIR WORDS GO ON THE ROW — `felt` as well as `note`. The felt words used
+  // to drive the effort and then be dropped, so "had room left" moved the
+  // next load and left no trace: the row said 8 × 185 and nothing about how.
+  // Verbatim, because "left shoulder pinched on the third set" is the whole
+  // reason a number went the way it did, and it is worthless paraphrased.
+  const words = wordsForRecord({ felt: args.felt, note: args.note });
   const wrote = await recordSet(user.id, {
     session, current, plan, today,
     reps: args.reps, weightKg: args.weight_kg, rpe: effort.rpe,
-    note: args.note, exercise: args.exercise, skip: !!args.skip,
+    note: words, exercise: args.exercise, skip: !!args.skip,
     setsDone,
   });
   if (wrote.error) return { error: wrote.error };
+
+  // WHAT THE ROW HOLDS, read back off the record — never echoed from the
+  // arguments. The words are the field a model most often composes and least
+  // often checks, so the answer says in as many words when the row has none:
+  // a set they spoke about and a set they did not look identical otherwise.
+  const record = wrote.row ? {
+    exercise: wrote.row.exercise, set: wrote.row.set_number,
+    reps: wrote.row.reps, weight_kg: wrote.row.weight_kg != null ? Number(wrote.row.weight_kg) : null,
+    rpe: wrote.row.rpe != null ? Number(wrote.row.rpe) : null,
+    words: wrote.row.note || null,
+  } : null;
+  const wordsCheck = args.skip ? undefined
+    : record?.words
+      ? `Their words on this set, on the record: "${record.words}".`
+      : 'NOTHING THEY SAID about this set is on the record. If they said anything — how it felt, a joint, the bar speed — call rack_note with their words now, verbatim. A set with no words is a number with no explanation.';
+  // Words about a body are a report, not a coaching cue — flagged where they
+  // are said, so the doctor's question is never answered as a form one.
+  const bodyReport = record?.words && BODY_WORDS.test(record.words)
+    ? 'These words read as a report about a BODY, not about execution. Never advise on it — not a stretch, not a cue, not reassurance; it is a doctor\'s question. If the same joint comes up again, call remember (category health) so every future session honours it unasked.'
+    : undefined;
 
   setsDone = wrote.sets_done;
   const cursor = wrote.cursor;
@@ -3609,6 +3650,8 @@ async function logSet(args, user) {
   if (finished) {
     return {
       recorded: true, session_complete: true,
+      on_record: record, words_check: wordsCheck,
+      ...(bodyReport ? { body_report: bodyReport } : {}),
       say: 'That is the plan finished.',
       note: 'Call end_session now to file it and give them the totals.',
       next_actions: ['end_session'],
@@ -3646,6 +3689,9 @@ async function logSet(args, user) {
 
   return {
     recorded: !args.skip,
+    on_record: record,
+    words_check: wordsCheck,
+    ...(bodyReport ? { body_report: bodyReport } : {}),
     // Said ONCE, as a fact, never as a correction. They did not do anything
     // wrong by not announcing a workout first.
     ...(autoStarted ? { auto_started: true } : {}),
@@ -3686,6 +3732,122 @@ async function logSet(args, user) {
     say: `${moreSetsHere ? 'Logged' : `${current.name} done`}. Rest ${nextExercise.rest_s}s, then ${nextExercise.name} set ${setNo} of ${nextExercise.sets}, ${nextExercise.reps} reps. ${load.say}`,
     note: (autoStarted ? 'A workout was opened automatically because they just started reporting sets — mention it in half a clause at most ("got you, workout started") and never as a correction. ' : '') + 'One or two lines only — they are standing in a gym holding a phone, not reading a report. THE LOAD IN up_next IS COMPUTED FROM THE SET THEY JUST DID — say it as given and never work out an adjustment yourself. Ask for the RPE or just "how did that feel" when they have not said: without it the weight can only ever hold, because reps alone cannot tell a comfortable eight from a grinding one. The so_far numbers are there for the rest gap: offer them if they ask or if the moment fits, never after every single set. The percentage in progress is computed — say it, never work one out yourself, and only when they ask or a milestone lands.',
     next_actions: ['log_set for the next set', 'end_session if they stop early'],
+  };
+}
+
+// THE WORDS THAT ARRIVE AFTER THE SET. log_set asks "how did that feel" and
+// the answer comes a turn later — by which time the row is written. Without
+// a door back to it, the answer is read once by a model, moves nothing on
+// the record, and is gone when the chat closes. The founder's screenshot:
+// "185 × 8, had room left — hold 185 for set 2", and the row held neither the
+// words nor a reading. This attaches them, verbatim, to the set just done,
+// and when they carry an effort the set had none of, the reading is filled
+// in and the next load computed from it. Same door for an aim answered after
+// the session started. It only ever ADDS: a reading they gave as a number is
+// never overwritten by one read from words.
+async function rackNote(args, user) {
+  const words = String(args.words || '').trim().slice(0, 500) || null;
+  const aim = String(args.aim || '').trim().slice(0, 300) || null;
+  if (!words && !aim) {
+    return { error: 'Pass their words about the set (words) or what the session is for (aim).' };
+  }
+
+  const profile = await getProfile(user.id);
+  const today = localDateFor(profile.timezone);
+  const { data: session } = await supabase.from('wrought_sessions')
+    .select('*').eq('user_id', user.id).eq('status', 'active').maybeSingle();
+
+  const out = {};
+  const said = [];
+
+  if (aim) {
+    if (!session) {
+      out.aim_saved = false;
+      out.aim_why = 'No workout is running, so there is no session to attach an aim to.';
+    } else if (!(await sessionsCanCarryAim())) {
+      out.aim_saved = false;
+      out.aim_why = 'The aim cannot be stored until migration 017 has been run.';
+    } else {
+      const { data: row, error } = await supabase.from('wrought_sessions')
+        .update({ aim }).eq('id', session.id).select('aim').single();
+      if (error) return { error: error.message };
+      out.aim = row?.aim || null;
+      out.aim_saved = !!row?.aim;
+      said.push(`Aim on the record: "${row.aim}".`);
+    }
+  }
+
+  if (words) {
+    // The set just done: the latest in the live session, else the latest
+    // today. A named lift narrows it, for "the rows felt heavy" said after a
+    // set of something else.
+    let q = supabase.from('wrought_sets')
+      .select('id, exercise, exercise_key, set_number, reps, weight_kg, rpe, note, session_id')
+      .eq('user_id', user.id).order('logged_at', { ascending: false }).limit(1);
+    q = session ? q.eq('session_id', session.id) : q.eq('local_date', today);
+    if (args.exercise) q = q.eq('exercise_key', exerciseKey(args.exercise));
+    const { data: rows, error: findErr } = await q;
+    if (findErr) return { error: findErr.message };
+    const set = rows?.[0];
+
+    if (!set) {
+      out.words_saved = false;
+      out.words_why = session
+        ? 'No set has been logged in this session yet — call log_set with the set, passing these words as felt.'
+        : 'No set is on the record today to attach this to — call log_set with the set, passing these words as felt.';
+    } else {
+      const effort = effortFromWords(words);
+      const patch = { note: wordsForRecord({ felt: set.note, note: words }) };
+      // An effort in the words fills an EMPTY reading and never overwrites a
+      // number they gave — the harder-reading rule, applied across turns.
+      if (set.rpe == null && effort.rpe != null) patch.rpe = effort.rpe;
+
+      const { data: row, error } = await supabase.from('wrought_sets')
+        .update(patch).eq('id', set.id)
+        .select('exercise, exercise_key, set_number, reps, weight_kg, rpe, note').single();
+      if (error) return { error: error.message };
+
+      out.on_record = {
+        exercise: row.exercise, set: row.set_number, reps: row.reps,
+        weight_kg: row.weight_kg != null ? Number(row.weight_kg) : null,
+        rpe: row.rpe != null ? Number(row.rpe) : null,
+        words: row.note || null,
+      };
+      out.words_saved = !!row.note;
+      out.effort_read = effort.rpe != null
+        ? { rpe: effort.rpe, rir: effort.rir, from: effort.matched,
+            ...(effort.conflicted ? { conflicted: true, took: effort.took } : {}),
+            applied: patch.rpe != null,
+            ...(patch.rpe == null ? { why: 'the set already had a reading they gave as a number, which stands' } : {}),
+            basis: effort.basis }
+        : { rpe: null, why: 'these words report no effort, so the reading and the load are unchanged' };
+      said.push(`On the record, ${row.exercise} set ${row.set_number}: "${row.note}".`);
+
+      // The next load, recomputed from the set as it now reads — only when the
+      // remark is about the lift still being done and there are sets to come.
+      if (session && patch.rpe != null) {
+        const plan = Array.isArray(session.plan) ? session.plan : [];
+        const current = plan[session.cursor_index] || null;
+        if (current && current.key === row.exercise_key && (current.sets == null || row.set_number < current.sets)) {
+          out.up_next_load = nextSetLoad({
+            weightKg: out.on_record.weight_kg, reps: out.on_record.reps, rpe: out.on_record.rpe,
+            targetReps: current.reps, key: current.key,
+            tier: plan[0]?.tier || 'intermediate',
+          });
+          said.push(out.up_next_load.say);
+        }
+      }
+
+      if (BODY_WORDS.test(row.note || '')) {
+        out.body_report = 'These words read as a report about a BODY, not about execution. Never advise on it — not a stretch, not a cue, not reassurance; it is a doctor\'s question. If the same joint comes up again, call remember (category health) so every future session honours it unasked.';
+      }
+    }
+  }
+
+  return {
+    ...out,
+    say: said.join(' ') || 'Nothing was attached.',
+    note: 'Half a clause at most — "got that down" — they are between sets. If up_next_load is here, say its load as given: it was computed from the set as it now reads. If words_saved is false, say so and take the set with log_set; never claim the words were kept unless on_record shows them.',
   };
 }
 
@@ -3861,6 +4023,16 @@ async function endSession(args, user) {
       say: 'No workout is running. If you just trained, tell me the sets and I will file them.',
       note: 'NOT a dead end. If they say they just trained, call log_set with each exercise — a session opens automatically on the first set. Never leave somebody who has just finished training with nothing recorded.',
       next_actions: ['log_set with what they did'] };
+  }
+
+  // An aim said after the session started, arriving only now. The old note
+  // told the model to pass it here and nothing read it — a promise on the
+  // sheet that the code did not keep. Stored before the finaliser stamps it.
+  const lateAim = String(args.aim || '').trim().slice(0, 300) || null;
+  if (lateAim && !session.aim && await sessionsCanCarryAim()) {
+    const { error: aimErr } = await supabase.from('wrought_sessions')
+      .update({ aim: lateAim }).eq('id', session.id);
+    if (!aimErr) session.aim = lateAim;
   }
 
   // The SAME finalisation the server performs on a session nobody closed, so
@@ -5332,6 +5504,7 @@ const IMPL = {
   suggest_workout: suggestWorkout,
   start_session: startSession,
   log_set: logSet,
+  rack_note: rackNote,
   swap_exercise: swapExercise,
   calibrate_lift: calibrateLift,
   end_session: endSession,

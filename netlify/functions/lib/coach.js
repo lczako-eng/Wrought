@@ -52,6 +52,19 @@ const EFFORT = [
   { re: /\b(grind(er|ing|ed)?|barely|scraped|just\s+got\s+it|ugly|slow(ed)?\s+down|stall(ed)?)\b/i,
     rpe: () => 9.5 },
 
+  // ROOM LEFT — the commonest thing anybody actually says about a set that
+  // went fine, and it was not in the table. "185 for 8, had room left" reached
+  // the record with no effort and no words: the load held by SILENCE rather
+  // than by reading, which looks identical from the outside and is not the
+  // same thing. Room is about two in reserve; "plenty" is more than that.
+  { re: /\b(plenty|lots|loads|heaps)\s+(left|more|in\s+(the\s+)?tank|of\s+room|of\s+gas|in\s+me)\b/i,
+    rpe: () => 7 },
+  { re: /\b((had|have|got|still\s+had)\s+(some\s+|a\s+bit\s+of\s+|a\s+little\s+|a\s+few\s+)?(room|gas|juice)|(room|gas)\s+(left|to\s+spare|in\s+(the\s+)?tank)|more\s+(left|in\s+(the\s+)?tank|in\s+me))\b/i,
+    rpe: () => 8 },
+  // Reassurance that still reports an effort — comfortable, not easy.
+  { re: /\b(not\s+(too\s+)?bad|wasn'?t\s+bad|went\s+(well|fine|ok(ay)?)|felt\s+(good|fine|ok(ay)?|alright)|pretty\s+good)\b/i,
+    rpe: () => 7 },
+
   // The working range.
   { re: /\b(struggl(e|ed|ing)|start(ed|ing)?\s+to\s+(struggle|feel\s+it)|tough|hard(er)?\s+than|dug\s+in|heavy)\b/i,
     rpe: () => 9 },
@@ -104,6 +117,33 @@ export function effortFromWords(text = '') {
     ...(conflicted ? { conflicted: true, took: 'the harder reading' } : {}),
     basis: 'their own words, on the RIR-anchored RPE scale — 10 is nothing left, 9 is one more rep, 8 is two.',
   };
+}
+
+/**
+ * What goes on the set row: their words, all of them, verbatim.
+ *
+ * `felt` and `note` arrive as two fields because they do two jobs — one is
+ * read for the effort, the other is anything else said at the rack — but the
+ * RECORD wants both. The founder's "not too bad, had room left" drove the
+ * next load and was then thrown away, so the row said 8 × 185 and nothing
+ * about how; six weeks later that "how" is the only thing that explains the
+ * number. One string, the felt first, deduped when one is inside the other.
+ *
+ * @returns string|null — null when nothing was said, which is a real answer.
+ */
+export function wordsForRecord({ felt = null, note = null } = {}) {
+  const parts = [];
+  for (const w of [felt, note]) {
+    const t = String(w || '').trim();
+    if (!t) continue;
+    const lower = t.toLowerCase();
+    const inside = parts.findIndex(p => p.toLowerCase().includes(lower));
+    if (inside >= 0) continue;                              // already carried
+    const holds = parts.findIndex(p => lower.includes(p.toLowerCase()));
+    if (holds >= 0) { parts[holds] = t; continue; }        // the longer wins
+    parts.push(t);
+  }
+  return parts.length ? parts.join(' — ').slice(0, 500) : null;
 }
 
 /**

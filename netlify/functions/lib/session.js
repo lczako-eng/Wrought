@@ -275,13 +275,17 @@ export async function recordSet(userId, { session, current, plan = [], today,
                                           note = null, exercise = null, skip = false,
                                           setsDone = 0 }) {
   let done = setsDone;
+  // The row as STORED, handed back so the caller can read it out. Echoing the
+  // arguments proves a write was composed, never that it landed — and the
+  // words on a set are the field most often composed and least often checked.
+  let row = null;
 
   if (skip) {
     done = current.sets ?? done;             // force the move on
   } else {
     const name = exercise || current.name;
     const key  = exercise ? exerciseKey(exercise) : current.key;
-    const { error } = await supabase.from('wrought_sets').insert([{
+    const { data: stored, error } = await supabase.from('wrought_sets').insert([{
       user_id: userId, session_id: session.id,
       exercise: name, exercise_key: key,
       set_number: done + 1,
@@ -294,8 +298,9 @@ export async function recordSet(userId, { session, current, plan = [], today,
       muscles: current.muscles || [],
       note: note ? String(note).slice(0, 500) : null,
       local_date: today,
-    }]);
+    }]).select('id, exercise, set_number, reps, weight_kg, rpe, note').single();
     if (error) return { error: error.message };
+    row = stored || null;
     done += 1;
   }
 
@@ -317,7 +322,7 @@ export async function recordSet(userId, { session, current, plan = [], today,
     await supabase.from('wrought_sessions').update({ cursor_index: cursor }).eq('id', session.id);
   }
 
-  return { sets_done: done, cursor, finished: cursor >= plan.length, more_here: moreHere };
+  return { sets_done: done, cursor, finished: cursor >= plan.length, more_here: moreHere, row };
 }
 
 /**
