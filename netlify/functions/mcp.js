@@ -16,7 +16,7 @@
 
 import {
   supabase, openai, MODEL, SITE_URL,
-  getAuthUser, newToken, hashToken,
+  getAuthUser, AuthUnavailable, newToken, hashToken,
   localDateFor, localMinutesFor, clockString, humanDuration, addDays, daysBetween,
   sayWeight, sayWeightDelta, sayLength, lbToKg, inToCm, kgToLb,
   getProfile, getMemory, getGoals, getWindow, windowStatus,
@@ -1221,6 +1221,19 @@ function unauthorized(id) {
     statusCode: 401,
     headers: { ...CORS, 'WWW-Authenticate': WWW_AUTH },
     body: JSON.stringify(rpcError(id ?? null, -32001, 'Sign in with Wrought to use this.')),
+  };
+}
+
+// A blip is answered as a blip. 503 and Retry-After, never the 401 challenge:
+// a client that reads 401 as "token dead" drops the connector for the rest of
+// the conversation, which is what turned a three-second database reload into
+// a six-minute outage and a manual reconnect mid-workout.
+function unavailable(id) {
+  return {
+    statusCode: 503,
+    headers: { ...CORS, 'Retry-After': '3' },
+    body: JSON.stringify(rpcError(id ?? null, -32000,
+      'WROUGHT could not reach its database for a moment. Retry in a few seconds — nothing about the sign-in has changed.')),
   };
 }
 
@@ -5799,7 +5812,13 @@ export const handler = async (event) => {
   // The handshake answers without auth so any client can discover the toolset.
   // Actually using a tool requires sign-in, and that 401 is what makes
   // "Sign in with Wrought" appear inside ChatGPT and Claude.
-  const authUser = await getAuthUser(event);
+  let authUser;
+  try {
+    authUser = await getAuthUser(event);
+  } catch (e) {
+    if (e instanceof AuthUnavailable) return unavailable(msg.id);
+    throw e;
+  }
   const response = await handleRpc(msg, authUser);
   if (response && response.__unauthorized) return unauthorized(response.id);
 

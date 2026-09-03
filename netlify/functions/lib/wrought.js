@@ -143,31 +143,76 @@ export function sayLength(cm, units) {
 //      in every client on earth, and is the fallback when a connector's OAuth
 //      implementation is having a bad day.
 
+// "COULD NOT CHECK" IS NOT "NOT SIGNED IN". The founder's night: a migration
+// applied mid-session bounced PostgREST for three seconds, the token lookup
+// failed, this function fell through to the JWT path (which cannot vouch for
+// an opaque OAuth token), returned null, and the server answered 401 with a
+// sign-in challenge. ChatGPT reads a 401 as a DEAD TOKEN: it marked the
+// connector unavailable, stopped calling tools for the rest of the session,
+// and needed a manual reconnect six minutes later — for a blip that was over
+// before the next set. A transient failure has to come back as a transient
+// answer (503, retry), never as an authentication verdict. The dashboard has
+// the same rule in different words: a network failure is never answered with
+// a password form.
+export class AuthUnavailable extends Error {
+  constructor(why = 'auth_unavailable') { super(why); this.name = 'AuthUnavailable'; }
+}
+
+// Errors that say nothing about the token: no HTTP status at all (a
+// PostgREST or network failure), a server-side 5xx, a rate limit, a timeout.
+// A 401/403/404 from the auth API is a verdict about the credential and stands.
+const transient = e => !e || e.status == null || e.status >= 500 || e.status === 429 || e.status === 408;
+
+/**
+ * The pure decision: given what each lookup said, is this a user, nobody, or
+ * a question that could not be answered right now.
+ *
+ * @returns 'user' | 'none' | 'unavailable'
+ */
+export function authVerdict({ lookupFailed = false, jwtUser = null, jwtError = null } = {}) {
+  if (jwtUser) return 'user';
+  // The issued-token table could not be read and the JWT path cannot vouch
+  // for an opaque token — the credential may be perfectly good.
+  if (lookupFailed) return 'unavailable';
+  if (jwtError && transient(jwtError)) return 'unavailable';
+  return 'none';
+}
+
 export async function getAuthUser(event) {
   const h = event.headers?.authorization || event.headers?.Authorization || '';
   if (!h.startsWith('Bearer ') || !supabase) return null;
   const token = h.slice(7).trim();
   if (!token) return null;
 
+  let lookupFailed = false;
   try {
     const hash = createHash('sha256').update(token).digest('base64url');
-    const { data: row } = await supabase.from('wrought_oauth_tokens')
+    const { data: row, error } = await supabase.from('wrought_oauth_tokens')
       .select('user_id, expires_at').eq('token_hash', hash).maybeSingle();
+    if (error) throw error;
     if (row && new Date(row.expires_at).getTime() > Date.now()) {
-      const { data } = await supabase.auth.admin.getUserById(row.user_id);
+      const { data, error: uErr } = await supabase.auth.admin.getUserById(row.user_id);
       // A token we issued ourselves already passed the second factor at the
       // moment it was authorised — see oauth-authorize-complete.js. Re-checking
       // here would demand a code from ChatGPT, which has no way to ask for one.
       if (data?.user) return data.user;
+      // A deleted account is a dead token; anything else is a failed check.
+      if (uErr && transient(uErr)) throw uErr;
     }
-  } catch { /* fall through to JWT */ }
+  } catch (e) {
+    lookupFailed = transient(e);
+  }
 
+  let jwtUser = null, jwtError = null;
   try {
     const { data, error } = await supabase.auth.getUser(token);
-    if (error || !data?.user) return null;
-    if (!(await mfaSatisfied(data.user, token))) return null;
-    return data.user;
-  } catch { return null; }
+    if (error) jwtError = error;
+    else if (data?.user && await mfaSatisfied(data.user, token)) jwtUser = data.user;
+  } catch (e) { jwtError = e; }
+
+  const verdict = authVerdict({ lookupFailed, jwtUser, jwtError });
+  if (verdict === 'unavailable') throw new AuthUnavailable();
+  return verdict === 'user' ? jwtUser : null;
 }
 
 // ── Two-factor, enforced where it actually matters ──────────────────────────
