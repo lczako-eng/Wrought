@@ -2807,16 +2807,20 @@ async function brief(args, user) {
   // still recoverable — a month of verdicts is a record of whether the advice
   // was any good.
   let verdict = null;
-  if (!args.refresh) {
-    const { data: cached } = await supabase.from('wrought_briefs')
-      .select('verdict').eq('user_id', user.id).eq('local_date', date).eq('kind', kind).maybeSingle();
-    verdict = cached?.verdict || null;
-  }
+  const { data: cached } = await supabase.from('wrought_briefs')
+    .select('verdict, facts').eq('user_id', user.id).eq('local_date', date).eq('kind', kind).maybeSingle();
+  if (!args.refresh) verdict = cached?.verdict || null;
   if (!verdict) {
     verdict = await writeVerdict({ facts, profile, goals, memory, flags, kind });
     if (verdict) {
+      // A correction-first evening tap asks for a refreshed receipt. Refreshing
+      // the words must not erase proof that the scheduled push already went,
+      // or the same appointment becomes eligible to send twice.
+      const storedFacts = cached?.facts?._delivery
+        ? { ...facts, _delivery: cached.facts._delivery }
+        : facts;
       await supabase.from('wrought_briefs')
-        .upsert({ user_id: user.id, local_date: date, kind, facts, verdict },
+        .upsert({ user_id: user.id, local_date: date, kind, facts: storedFacts, verdict },
                 { onConflict: 'user_id,local_date,kind' });
     }
   }

@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<title>WROUGHT — open your morning</title>
+<title>WROUGHT — open your check-in</title>
 <link rel="icon" href="/icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="/icon-180.png">
 <style>
@@ -36,7 +36,7 @@
 </head>
 <body>
   <div class="mark">WROUGHT</div>
-  <h1 id="head">Your morning check-in</h1>
+  <h1 id="head">Your WROUGHT check-in</h1>
   <p class="lead" id="lead">Tap below to pick it up with your assistant.</p>
 
   <div class="card" id="opener">Loading…</div>
@@ -54,9 +54,16 @@
     var p = new URLSearchParams(location.search);
     var to = (p.get('to') || 'chatgpt').toLowerCase();
     var prompt = p.get('q') || '';
+    var kind = (p.get('kind') || 'morning').toLowerCase();
 
     var names = { chatgpt: 'ChatGPT', claude: 'Claude' };
     var name = names[to] || 'ChatGPT';
+    var labels = {
+      morning: 'Your morning briefing',
+      midday: 'Your midday check-in',
+      evening: 'Your daily close',
+      care: 'Review the record'
+    };
 
     // Build the assistant URL. chatgpt.com / claude.ai are the destinations the
     // person actually chose. On iOS a real tap on this link is the ONLY context
@@ -74,6 +81,7 @@
     go.href = assistantUrl();
 
     document.getElementById('opener').textContent = prompt || 'Open your assistant and ask for your morning brief.';
+    document.getElementById('head').textContent = labels[kind] || 'Your WROUGHT check-in';
     document.getElementById('lead').textContent =
       'Tap below to pick your day up with ' + name + '.';
     // Honest about the one thing the platform will not do: the app cannot be

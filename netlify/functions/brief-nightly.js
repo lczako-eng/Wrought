@@ -36,13 +36,57 @@ import { athleteRows, athleteRead } from './lib/athlete.js';
 
 const SEND_HOUR = 20;
 
-// Everyone who has logged anything in the last fortnight. A dormant account
-// does not need a nightly email about a week that did not happen.
+// Everyone with recent activity OR a phone that explicitly asked us to speak.
+// The old events-only scan silently cancelled every configured check-in after
+// fourteen quiet days — exactly when a standing coach is supposed to help a
+// person resume. Evening still stays quiet without a log; this only keeps the
+// three appointments and user-authored alerts eligible to run.
 async function activeUsers() {
   const since = addDays(new Date().toISOString().slice(0, 10), -14);
-  const { data } = await supabase.from('wrought_events')
-    .select('user_id').gte('local_date', since).limit(5000);
-  return [...new Set((data || []).map(r => r.user_id))];
+  const [{ data: events }, { data: push }] = await Promise.all([
+    supabase.from('wrought_events').select('user_id').gte('local_date', since).limit(5000),
+    supabase.from('wrought_push_subs').select('user_id').limit(5000),
+  ]);
+  return [...new Set([...(events || []), ...(push || [])].map(r => r.user_id))];
+}
+
+// A brief row is the durable receipt for both the words and their delivery.
+// Keeping delivery inside the existing facts JSON avoids a schema dependency,
+// while the unique user/day/kind index gives each appointment one home.
+async function storeBrief({ userId, date, kind, facts, verdict }) {
+  const { data: prior } = await supabase.from('wrought_briefs')
+    .select('facts').eq('user_id', userId).eq('local_date', date).eq('kind', kind).maybeSingle();
+  const kept = prior?.facts?._delivery ? { ...facts, _delivery: prior.facts._delivery } : facts;
+  await supabase.from('wrought_briefs').upsert(
+    { user_id: userId, local_date: date, kind, facts: kept, verdict },
+    { onConflict: 'user_id,local_date,kind' });
+  return kept;
+}
+
+async function deliveryFor(userId, date, kind) {
+  const { data } = await supabase.from('wrought_briefs')
+    .select('facts').eq('user_id', userId).eq('local_date', date).eq('kind', kind).maybeSingle();
+  return data?.facts?._delivery || {};
+}
+
+async function markDelivered(userId, date, kind, channel, message = null) {
+  const { data } = await supabase.from('wrought_briefs')
+    .select('facts, verdict').eq('user_id', userId).eq('local_date', date).eq('kind', kind).maybeSingle();
+  const at = new Date().toISOString();
+  const facts = {
+    ...(data?.facts || { date, kind }),
+    _delivery: {
+      ...(data?.facts?._delivery || {}),
+      [channel]: {
+        sent_on: date,
+        sent_at: at,
+        ...(message ? { title: message.title, body: message.body, url: message.url } : {}),
+      },
+    },
+  };
+  await supabase.from('wrought_briefs').upsert(
+    { user_id: userId, local_date: date, kind, facts, verdict: data?.verdict || null },
+    { onConflict: 'user_id,local_date,kind' });
 }
 
 // The brief is generated and stored regardless of whether it can be delivered.
@@ -107,7 +151,6 @@ export async function buildBriefFor(userId, now = new Date()) {
   const writtenVerdict = flags.length
     ? null
     : await writeVerdict({ facts, profile, goals, memory, flags, kind: 'evening' });
-  const written = !!writtenVerdict;
   let verdict;
 
   if (flags.length) {
@@ -126,11 +169,10 @@ export async function buildBriefFor(userId, now = new Date()) {
   // enormously better than nothing, and it is facts rather than opinion.
   if (!verdict) verdict = plainBrief({ facts, flags, balance });
 
-  if (verdict && written) {
-    await supabase.from('wrought_briefs').upsert(
-      { user_id: userId, local_date: date, kind: 'evening', facts, verdict },
-      { onConflict: 'user_id,local_date,kind' });
-  }
+  // The computed no-key read is still the real receipt. Previously only the
+  // optional model-written version was stored, contradicting the contract
+  // above and leaving the scheduled close with no durable evidence at all.
+  if (verdict) await storeBrief({ userId, date, kind: 'evening', facts, verdict });
 
   return { date, facts, verdict, flags, profile, logged: day.logged };
 }
@@ -160,17 +202,25 @@ async function email(to, subject, text) {
 // The lock screen, which is the reason the PWA is worth installing. Nothing
 // here composes a sentence: the verdict was computed already, and a notification
 // that phrased things its own way could disagree with the brief it came from.
-async function push(userId, profile, out) {
+export function eveningMessage(out, opens = 'app') {
   const flag = out.flags?.[0] || null;
   const care = !!flag;
-  return deliver(userId, profile, {
+  return {
     title: care ? 'WROUGHT · DAY CLOSED · REVIEW' : 'WROUGHT · DAY CLOSED',
     // The scheduled close is the receipt somebody asked for. A care flag may
     // annotate its title, but it can never replace the scorecard again.
     body: out.facts?.notification_body || firstSentence(out.facts?.goal_receipt || out.verdict),
     tag: `wrought-${out.date}`,
-    url: '/app.html#daily-close',
-  });
+    url: morningLink(opens, 'evening'),
+  };
+}
+
+async function push(userId, profile, out) {
+  const { data: destination } = await supabase.from('wrought_profile')
+    .select('morning_opens').eq('user_id', userId).maybeSingle()
+    .then(r => (r.error ? { data: null } : r), () => ({ data: null }));
+  const message = eveningMessage(out, destination?.morning_opens);
+  return { sent: await deliver(userId, profile, message), message };
 }
 
 // One sender for every kind of notification this product has. The nightly read
@@ -247,22 +297,8 @@ async function middayColumnsExist() {
 // The founder's second check-in: where the day stands while there is still an
 // afternoon to act on it. Same guards as the morning — probed columns, once a
 // day, stamped only on success, a failure here never costs the evening read.
-async function runMidday(userId, profile, now) {
-  if (!(await middayColumnsExist())) return 0;
-
+export async function buildMiddayFor(userId, profile, now = new Date()) {
   const date = localDateFor(profile.timezone, now);
-  const minutes = localMinutesFor(profile.timezone, now);
-
-  const { data: m } = await supabase.from('wrought_profile')
-    .select('midday_hour, midday_minute, midday_sent_on')
-    .eq('user_id', userId).maybeSingle();
-
-  if (!morningDue({
-    hour: Math.floor(minutes / 60), minute: minutes % 60,
-    morningHour: m?.midday_hour, morningMinute: m?.midday_minute ?? 0,
-    sentOn: m?.midday_sent_on, today: date,
-  })) return 0;
-
   const { data: mo } = await supabase.from('wrought_profile')
     .select('morning_opens').eq('user_id', userId).maybeSingle()
     .then(r => (r.error ? { data: null } : r), () => ({ data: null }));
@@ -276,48 +312,54 @@ async function runMidday(userId, profile, now) {
   const scored = scoreGoals(goals, day, summariseRange(recent, profile), profile);
 
   const out = middayBrief({ facts: day, flags, scored });
-  if (!out?.text) return 0;
-
-  const sent = await deliver(userId, profile, {
+  if (!out?.text) return null;
+  const message = {
     title: flags.length ? 'WROUGHT · MIDDAY BRIEF · REVIEW' : 'WROUGHT · MIDDAY BRIEF',
     body: out.notification_text.length > 160 ? `${out.notification_text.slice(0, 157)}…` : out.notification_text,
     tag: `wrought-midday-${date}`,
     url: morningLink(mo?.morning_opens, 'midday'),
+  };
+  await storeBrief({
+    userId, date, kind: 'midday', verdict: out.text,
+    facts: { date, kind: 'midday', notification: message, text: out.text },
   });
+  return { date, out, message, flags };
+}
+
+async function runMidday(userId, profile, now) {
+  if (!(await middayColumnsExist())) return 0;
+
+  const date = localDateFor(profile.timezone, now);
+  const minutes = localMinutesFor(profile.timezone, now);
+  const { data: m } = await supabase.from('wrought_profile')
+    .select('midday_hour, midday_minute, midday_sent_on')
+    .eq('user_id', userId).maybeSingle();
+
+  if (!morningDue({
+    hour: Math.floor(minutes / 60), minute: minutes % 60,
+    morningHour: m?.midday_hour, morningMinute: m?.midday_minute ?? 0,
+    sentOn: m?.midday_sent_on, today: date,
+  })) return 0;
+
+  const built = await buildMiddayFor(userId, profile, now);
+  if (!built) return 0;
+
+  const sent = await deliver(userId, profile, built.message);
   if (sent) {
-    await supabase.from('wrought_profile')
-      .update({ midday_sent_on: date }).eq('user_id', userId);
+    await Promise.all([
+      supabase.from('wrought_profile').update({ midday_sent_on: date }).eq('user_id', userId),
+      markDelivered(userId, date, 'midday', 'push', built.message),
+    ]);
   }
   return sent ? 1 : 0;
 }
 
-async function runMorning(userId, profile, now) {
-  if (!(await morningColumnsExist())) return 0;
-
+export async function buildMorningFor(userId, profile, now = new Date()) {
   const date = localDateFor(profile.timezone, now);
-  const minutes = localMinutesFor(profile.timezone, now);
   const yesterdayDate = addDays(date, -1);
-
-  // Read the three morning columns on their own. profile came from getProfile,
-  // which does not select them — and adding them there would put every caller
-  // in the product behind this migration for no benefit.
-  // morning_opens is selected DEFENSIVELY, apart from the scheduling columns:
-  // it arrived one migration later (020), and naming a column PostgREST does
-  // not know about rejects the whole query — so a database holding 019 but not
-  // 020 would lose the entire morning brief for the sake of a link preference.
-  // The fallback is the dashboard, which every account verifiably has.
-  const { data: m } = await supabase.from('wrought_profile')
-    .select('morning_hour, morning_minute, morning_sent_on')
-    .eq('user_id', userId).maybeSingle();
   const { data: mo } = await supabase.from('wrought_profile')
     .select('morning_opens').eq('user_id', userId).maybeSingle()
     .then(r => (r.error ? { data: null } : r), () => ({ data: null }));
-
-  if (!morningDue({
-    hour: Math.floor(minutes / 60), minute: minutes % 60,
-    morningHour: m?.morning_hour, morningMinute: m?.morning_minute ?? 0,
-    sentOn: m?.morning_sent_on, today: date,
-  })) return 0;
 
   // Everything here comes from the same computed facts the dashboard and the
   // connector read. Nothing in this file does arithmetic — a third mouth
@@ -378,10 +420,10 @@ async function runMorning(userId, profile, now) {
   });
   // Nothing worth saying sends nothing. A morning nag is how a product gets
   // muted permanently, and muted never comes back on.
-  if (!out) return 0;
+  if (!out) return null;
 
   const notice = morningNotification({ yesterdayBalance, goals, week, planned: dueRoutine, flags });
-  const sent = await deliver(userId, profile, {
+  const message = {
     title: notice.title,
     body: notice.body,
     tag: `wrought-morning-${date}`,
@@ -390,14 +432,43 @@ async function runMorning(userId, profile, now) {
     // what carries the words. The scheduled briefing always opens the briefing
     // conversation; a record review can be mentioned after it, never instead.
     url: morningLink(mo?.morning_opens),
+  };
+  await storeBrief({
+    userId, date, kind: 'morning', verdict: out.text,
+    facts: { date, kind: 'morning', notification: message, text: out.text },
   });
+  return { date, out, message, flags };
+}
+
+async function runMorning(userId, profile, now) {
+  if (!(await morningColumnsExist())) return 0;
+
+  const date = localDateFor(profile.timezone, now);
+  const minutes = localMinutesFor(profile.timezone, now);
+  // Read the three scheduling columns on their own. A database without 019
+  // loses the optional appointment, never the evening close.
+  const { data: m } = await supabase.from('wrought_profile')
+    .select('morning_hour, morning_minute, morning_sent_on')
+    .eq('user_id', userId).maybeSingle();
+
+  if (!morningDue({
+    hour: Math.floor(minutes / 60), minute: minutes % 60,
+    morningHour: m?.morning_hour, morningMinute: m?.morning_minute ?? 0,
+    sentOn: m?.morning_sent_on, today: date,
+  })) return 0;
+
+  const built = await buildMorningFor(userId, profile, now);
+  if (!built) return 0;
+  const sent = await deliver(userId, profile, built.message);
 
   // STAMPED ONLY ON SUCCESS, exactly like an alert's last_sent_on. Marking it
   // sent when nothing was delivered means the one morning a phone was off is
   // the morning the brief silently skips for good.
   if (sent) {
-    await supabase.from('wrought_profile')
-      .update({ morning_sent_on: date }).eq('user_id', userId);
+    await Promise.all([
+      supabase.from('wrought_profile').update({ morning_sent_on: date }).eq('user_id', userId),
+      markDelivered(userId, date, 'morning', 'push', built.message),
+    ]);
   }
   return sent ? 1 : 0;
 }
@@ -514,9 +585,13 @@ export const handler = async () => {
     considered++;
 
     const date = localDateFor(profile.timezone, now);
-    const { data: existing } = await supabase.from('wrought_briefs')
-      .select('id').eq('user_id', userId).eq('local_date', date).eq('kind', 'evening').maybeSingle();
-    if (existing) { skipped++; continue; }              // already read today
+    const delivered = await deliveryFor(userId, date, 'evening');
+    // Reading the brief early must never cancel the scheduled appointment.
+    // Only a recorded successful delivery suppresses the same channel.
+    if (delivered.email?.sent_on === date && delivered.push?.sent_on === date) {
+      skipped++;
+      continue;
+    }
 
     try {
       const out = await buildBriefFor(userId, now);
@@ -529,11 +604,21 @@ export const handler = async () => {
       // a nag, and a nightly nag is how a product gets muted forever.
       if (!out.logged) continue;
 
-      const { data: auth } = await supabase.auth.admin.getUserById(userId);
-      const mailedThis = await email(auth?.user?.email, `Wrought — ${out.date}`, out.verdict);
-      if (mailedThis) mailed++;
-      const pushedThis = await push(userId, profile, out);
-      pushed += pushedThis;
+      if (delivered.email?.sent_on !== date) {
+        const { data: auth } = await supabase.auth.admin.getUserById(userId);
+        const mailedThis = await email(auth?.user?.email, `Wrought — ${out.date}`, out.verdict);
+        if (mailedThis) {
+          mailed++;
+          await markDelivered(userId, date, 'evening', 'email');
+        }
+      }
+      if (delivered.push?.sent_on !== date) {
+        const pushedThis = await push(userId, profile, out);
+        pushed += pushedThis.sent;
+        if (pushedThis.sent) {
+          await markDelivered(userId, date, 'evening', 'push', pushedThis.message);
+        }
+      }
     } catch {
       skipped++;
     }

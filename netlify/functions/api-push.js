@@ -9,9 +9,10 @@
 // DELETE → remove one. A person turning notifications off must not have to
 //          fight the product about it.
 
-import { supabase, getAuthUser } from './lib/wrought.js';
+import { supabase, getAuthUser, getProfile } from './lib/wrought.js';
 import { vapidPublicKey, vapidConfigured, sendPush } from './lib/push.js';
 import { describeAlert } from './lib/alerts.js';
+import { buildBriefFor, buildMiddayFor, buildMorningFor, eveningMessage } from './brief-nightly.js';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -33,9 +34,15 @@ export const handler = async (event) => {
   // ── What can this account do right now ──
   if (event.httpMethod === 'GET') {
     const { data: subs } = await supabase.from('wrought_push_subs')
-      .select('id, label, created_at, last_sent_at').eq('user_id', user.id);
+      .select('id, label, created_at, last_sent_at, failures').eq('user_id', user.id);
     const { data: prof } = await supabase.from('wrought_profile')
-      .select('brief_hour, push_enabled').eq('user_id', user.id).maybeSingle();
+      .select('brief_hour, brief_minute, push_enabled, morning_hour, morning_minute, morning_sent_on, midday_hour, midday_minute, midday_sent_on, morning_opens')
+      .eq('user_id', user.id).maybeSingle()
+      .then(r => (r.error ? { data: null } : r), () => ({ data: null }));
+    const { data: briefRows } = await supabase.from('wrought_briefs')
+      .select('local_date, kind, facts').eq('user_id', user.id)
+      .in('kind', ['morning', 'midday', 'evening'])
+      .order('local_date', { ascending: false }).limit(12);
     // Tolerated rather than required: without migration 018 there are simply
     // no rules to show, and the notifications screen must not break for it.
     const { data: alertRows } = await supabase.from('wrought_alerts')
@@ -48,9 +55,17 @@ export const handler = async (event) => {
       vapid_public_key: vapidPublicKey(),
       devices: (subs || []).map(s => ({
         id: s.id, label: s.label, added: s.created_at, last_sent: s.last_sent_at,
+        failures: s.failures || 0,
       })),
       brief_hour: prof?.brief_hour ?? 20,
+      brief_minute: prof?.brief_minute ?? 0,
+      morning_hour: prof?.morning_hour ?? null,
+      morning_minute: prof?.morning_minute ?? 0,
+      midday_hour: prof?.midday_hour ?? null,
+      midday_minute: prof?.midday_minute ?? 0,
+      morning_opens: prof?.morning_opens || 'app',
       push_enabled: prof?.push_enabled !== false,
+      checkins: checkinStatus(prof, briefRows || []),
       // The rules somebody set by TALKING, readable and switchable off from
       // the website too. Being able to see what is going to be sent, and stop
       // it in one tap, is the safety valve on the whole channel: somebody who
@@ -75,28 +90,66 @@ export const handler = async (event) => {
         .select('endpoint, p256dh, auth').eq('user_id', user.id);
       if (!subs?.length) return json(400, { error: 'no_devices', message: 'No phone is registered yet.' });
 
-      const results = await Promise.all(subs.map(s => sendPush(s, {
-        title: 'WROUGHT',
-        body: 'Notifications are working. Your nightly read will arrive like this.',
-        tag: 'wrought-test',
-        url: '/app.html',
-      })));
+      let message;
+      let label = 'test';
+      if (['morning', 'midday', 'evening'].includes(body.test)) {
+        const profile = await getProfile(user.id);
+        const built = body.test === 'morning'
+          ? await buildMorningFor(user.id, profile)
+          : body.test === 'midday'
+            ? await buildMiddayFor(user.id, profile)
+            : await buildBriefFor(user.id);
+        message = body.test === 'evening' ? eveningMessage(built, profile.morning_opens) : built?.message;
+        label = body.test;
+        if (!message?.body) {
+          return json(400, { error: 'nothing_to_preview', message: `There is not enough on the record for a ${label} brief yet.` });
+        }
+        message = { ...message, tag: `wrought-preview-${label}` };
+      } else {
+        message = {
+          title: 'WROUGHT',
+          body: 'Notifications are working. Your daily check-ins will arrive like this.',
+          tag: 'wrought-test',
+          url: '/app.html',
+        };
+      }
+
+      const results = await Promise.all(subs.map(s => sendPush(s, message)));
       const sent = results.filter(r => r.ok).length;
       await dropGone(user.id, subs, results);
       return json(200, {
         sent, tried: subs.length,
-        say: sent ? `Sent to ${sent} device${sent === 1 ? '' : 's'}.` : 'Could not deliver to any device.',
+        say: sent ? `Sent today's ${label} to ${sent} device${sent === 1 ? '' : 's'}.` : 'Could not deliver to any device.',
         detail: results.map(r => ({ status: r.status, reason: r.reason || null })),
       });
     }
 
     // Settings, not a subscription.
-    if (body.brief_hour !== undefined || body.push_enabled !== undefined) {
+    const settings = ['brief_hour', 'brief_minute', 'morning_hour', 'morning_minute',
+      'midday_hour', 'midday_minute', 'morning_opens', 'push_enabled'];
+    if (settings.some(k => body[k] !== undefined)) {
       const patch = { user_id: user.id };
-      if (body.brief_hour !== undefined) {
-        const h = parseInt(body.brief_hour, 10);
-        if (!(h >= 0 && h <= 23)) return json(400, { error: 'bad_hour' });
-        patch.brief_hour = h;
+      for (const key of ['brief_hour', 'morning_hour', 'midday_hour']) {
+        if (body[key] === undefined) continue;
+        if (body[key] === null) {
+          if (key !== 'brief_hour') { patch[key] = null; continue; }
+          return json(400, { error: 'bad_hour', field: key });
+        }
+        const h = Number(body[key]);
+        if (!Number.isInteger(h) || h < 0 || h > 23) return json(400, { error: 'bad_hour', field: key });
+        patch[key] = h;
+      }
+      for (const key of ['brief_minute', 'morning_minute', 'midday_minute']) {
+        if (body[key] === undefined) continue;
+        const m = Number(body[key]);
+        if (m !== 0 && m !== 30) return json(400, { error: 'bad_minute', field: key });
+        patch[key] = m;
+      }
+      if (body.morning_opens !== undefined) {
+        if (!['app', 'chatgpt', 'claude'].includes(body.morning_opens)) {
+          return json(400, { error: 'bad_destination' });
+        }
+        patch.morning_opens = body.morning_opens;
       }
       if (body.push_enabled !== undefined) patch.push_enabled = !!body.push_enabled;
       const { error } = await supabase.from('wrought_profile').upsert(patch, { onConflict: 'user_id' });
@@ -119,7 +172,7 @@ export const handler = async (event) => {
     }, { onConflict: 'endpoint' });
 
     if (error) return json(500, { error: error.message });
-    return json(200, { ok: true, say: 'This phone will get your nightly read.' });
+    return json(200, { ok: true, say: 'This phone will get your daily check-ins.' });
   }
 
   if (event.httpMethod === 'DELETE' && body.alert_id) {
@@ -145,6 +198,33 @@ export const handler = async (event) => {
 
   return json(405, { error: 'method_not_allowed' });
 };
+
+function checkinStatus(profile, rows) {
+  const latest = {};
+  for (const row of rows || []) {
+    if (!latest[row.kind]) latest[row.kind] = row;
+  }
+  const time = (hour, minute = 0) => hour == null
+    ? null
+    : `${String(hour).padStart(2, '0')}:${String(minute || 0).padStart(2, '0')}`;
+  const build = (kind, hour, minute, legacySent = null) => {
+    const row = latest[kind];
+    const delivered = row?.facts?._delivery?.push || null;
+    return {
+      kind,
+      time: time(hour, minute),
+      destination: profile?.morning_opens || 'app',
+      last_sent_on: delivered?.sent_on || legacySent || null,
+      last_sent_at: delivered?.sent_at || null,
+      last_message: delivered ? { title: delivered.title, body: delivered.body, url: delivered.url } : null,
+    };
+  };
+  return [
+    build('morning', profile?.morning_hour, profile?.morning_minute, profile?.morning_sent_on),
+    build('midday', profile?.midday_hour, profile?.midday_minute, profile?.midday_sent_on),
+    build('evening', profile?.brief_hour ?? 20, profile?.brief_minute),
+  ];
+}
 
 // A subscription the browser has thrown away — uninstalled, permission revoked,
 // data cleared — is gone for good. Retrying it nightly forever is how a send
