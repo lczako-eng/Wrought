@@ -113,6 +113,42 @@ await test('anonymous tools/call gets the 401 challenge that triggers sign-in', 
     'without this header no MCP client knows where to send the user to sign in');
 });
 
+await test('"could not check" is never answered as "not signed in"', async () => {
+  // A migration applied mid-session bounced PostgREST for three seconds. The
+  // token lookup failed, getAuthUser fell through to the JWT path (which
+  // cannot vouch for an opaque OAuth token), and the server answered 401 with
+  // the sign-in challenge. ChatGPT reads a 401 as a DEAD TOKEN: it dropped
+  // the connector for the rest of the workout and needed a manual reconnect
+  // six minutes later — for a blip that was over before the next set.
+  const { authVerdict } = await import('../netlify/functions/lib/wrought.js');
+  // The issued-token table could not be read: the credential may be fine.
+  assert.equal(authVerdict({ lookupFailed: true, jwtError: { status: 401 } }), 'unavailable');
+  assert.equal(authVerdict({ lookupFailed: true }), 'unavailable');
+  // The table WAS read and held nothing, and the auth API said no: a verdict.
+  assert.equal(authVerdict({ lookupFailed: false, jwtError: { status: 401 } }), 'none');
+  assert.equal(authVerdict({ lookupFailed: false }), 'none');
+  // The auth API itself fell over: not a verdict either.
+  assert.equal(authVerdict({ lookupFailed: false, jwtError: { status: 503 } }), 'unavailable');
+  assert.equal(authVerdict({ lookupFailed: false, jwtError: new Error('fetch failed') }), 'unavailable');
+  // A user is a user whatever else happened.
+  assert.equal(authVerdict({ lookupFailed: true, jwtUser: { id: 'u' } }), 'user');
+
+  // And the handler turns it into a 503 with Retry-After — never the 401
+  // challenge, which is the answer that costs a reconnect.
+  const mcp = readFileSync(new URL('../netlify/functions/mcp.js', import.meta.url), 'utf8');
+  assert.match(mcp, /if \(e instanceof AuthUnavailable\) return unavailable\(msg\.id\);/);
+  const fn = mcp.slice(mcp.indexOf('function unavailable('), mcp.indexOf('function unavailable(') + 600);
+  assert.match(fn, /statusCode: 503/);
+  assert.match(fn, /'Retry-After'/);
+  assert.ok(!/WWW-Authenticate/.test(fn), 'a transient failure must not carry the sign-in challenge');
+  assert.match(fn, /nothing about the sign-in has changed/);
+  // getAuthUser no longer swallows the lookup error into a null.
+  const w = readFileSync(new URL('../netlify/functions/lib/wrought.js', import.meta.url), 'utf8');
+  const g = w.slice(w.indexOf('export async function getAuthUser('), w.indexOf('// ── Two-factor'));
+  assert.match(g, /if \(error\) throw error;/, 'the token lookup error is swallowed again');
+  assert.match(g, /throw new AuthUnavailable\(\)/);
+});
+
 await test('notifications are accepted with no body', async () => {
   const res = await handler({ httpMethod: 'POST', headers: {},
     body: JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized' }) });
@@ -2141,8 +2177,8 @@ await test('the session-JWT path is gated and the connector path deliberately is
   // ChatGPT holds a token minted after the code was already given, and there is
   // no way to ask it for a fresh one mid-conversation. Re-checking that path
   // would break every connector; skipping the JWT path would make 2FA a lie.
-  assert.match(lib, /if \(!\(await mfaSatisfied\(data\.user, token\)\)\) return null;/);
-  const oauthArm = lib.slice(lib.indexOf('wrought_oauth_tokens'), lib.indexOf('fall through to JWT'));
+  assert.match(lib, /data\?\.user && await mfaSatisfied\(data\.user, token\)/);
+  const oauthArm = lib.slice(lib.indexOf('wrought_oauth_tokens'), lib.indexOf('lookupFailed = transient(e);'));
   assert.ok(!/mfaSatisfied/.test(oauthArm), 'the connector path re-asks for a code it can never get');
 });
 

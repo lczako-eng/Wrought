@@ -1953,6 +1953,23 @@ bounces PostgREST and there is no window in which a live set can wait. The
 "apply it through the connector" convenience in this file now carries that
 condition.
 
+**And a three-second blip became a six-minute outage because the server
+called it a sign-in failure.** The 8:33 screenshot shows ChatGPT *"holding
+it here"* with no tool call at all — it had written the connector off.
+`getAuthUser` swallowed the failed token lookup, fell through to the JWT path
+(which cannot vouch for an opaque OAuth token), returned null, and the
+handler answered **401 with the sign-in challenge**. A client reads a 401 as
+a dead token: it stops calling tools for the rest of the conversation and
+waits for a reconnect. *Could not check* is not *not signed in*.
+`authVerdict()` in `lib/wrought.js` is the pure decision — a lookup that
+failed, or an auth API that fell over, is `unavailable`; a table that was
+read and held nothing is `none` — and `getAuthUser` throws
+`AuthUnavailable`, which the MCP handler answers with **503 and
+Retry-After** and no challenge. The dashboard's version of the same rule
+already existed in other words: a network failure is never answered with a
+password form. The `api-*` functions let the throw surface as a 500, which
+the page shows as a server error rather than the sign-in gate.
+
 **And the flush itself was the right recovery with the wrong landing.** It
 left a live session holding five sets beside an event holding the rest —
 pec-deck, seated row, a second treadmill — so the finaliser would have filed
