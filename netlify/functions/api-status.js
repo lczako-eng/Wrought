@@ -62,6 +62,7 @@ const MIGRATIONS = [
   { file: '025_wrought_athlete.sql',      probe: col('wrought_profile', 'track'),    gives: 'the athlete track — VO2 max, HRV, recovery and logged tests read as trends, and the one thing to work on in every brief' },
   { file: '026_wrought_coach.sql',        probe: col('wrought_profile', 'coach_style'), gives: 'a standing coach — the trainer style every built session comes in, and the voice it is coached in, until it is changed' },
   { file: '027_wrought_set_client_id.sql', probe: col('wrought_sets', 'client_id'),    gives: 'a set ticked with no signal is sent when the signal returns, and sent twice lands once' },
+  { file: '028_wrought_oauth_secret.sql',  probe: col('wrought_oauth_clients', 'client_secret_hash'), gives: 'a custom ChatGPT (Actions) can connect — the client that keeps a secret instead of doing PKCE' },
 ];
 
 // A probe that treats EVERY error as "not run" lies twice over: a timeout reads

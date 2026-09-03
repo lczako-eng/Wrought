@@ -47,11 +47,14 @@ export const handler = async (event) => {
         scopes_supported: ['wrought'],
         response_types_supported: ['code'],
         grant_types_supported: ['authorization_code', 'refresh_token'],
-        // PKCE is not optional here. These are public clients — a desktop app
-        // or a browser extension cannot keep a client secret, so the challenge
-        // is the only thing binding the code to whoever requested it.
+        // PKCE for public clients — a desktop app or a browser extension
+        // cannot keep a client secret, so the challenge is the only thing
+        // binding the code to whoever requested it. A confidential client (a
+        // custom ChatGPT's Actions, run from OpenAI's servers) presents a
+        // secret instead, and the token endpoint demands exactly one of the
+        // two according to how the client registered.
         code_challenge_methods_supported: ['S256'],
-        token_endpoint_auth_methods_supported: ['none'],
+        token_endpoint_auth_methods_supported: ['none', 'client_secret_post', 'client_secret_basic'],
         service_documentation: `${base}/connect.html`,
         op_policy_uri: `${base}/privacy.html`,
         op_tos_uri: `${base}/terms.html`,

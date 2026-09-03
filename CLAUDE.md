@@ -1691,6 +1691,44 @@ as a trend or turned it into a recommendation. Now:
   answer) puts somebody on the track; so does *"I play hockey"* through
   `set_plan`. Applied to the live database through the connector.
 
+### A custom ChatGPT — the same tools by Actions, and the sheet it will actually read
+
+`netlify/functions/actions.js` + `lib/gpt_instructions.js` +
+`028_wrought_oauth_secret.sql` + `docs/CUSTOM_GPT.md`. The decisive fact
+behind most of the ChatGPT incidents in this file is that **the pasted-in
+connector does not reliably show the MCP instruction sheet to its model.** A
+custom GPT is different: its own Instructions box is read every turn, and its
+Actions are an OpenAPI document over plain HTTP. So the server is exposed
+once more, as that document.
+
+- **Nothing is reimplemented.** Every operation is `handleRpc`'s
+  `tools/call` — the same auth, the same membership gate, the same handlers,
+  the same result shape — and a test asserts the function never touches the
+  database itself. A tool result carrying `error` still answers 200 with it
+  as the body: ChatGPT hides the body of a non-2xx, and the whole point of
+  `say` and `note` is that the model reads them.
+- **Thirty operations, three hundred characters.** ChatGPT's caps. The
+  twenty-nine daily tools get an operation each; everything else goes through
+  `call_tool` with the tool's name, whose enum is exactly the remainder. A
+  test holds both limits.
+- **The sheet is 5,600 characters, not 82,000.** `GPT_INSTRUCTIONS` is the
+  MCP sheet condensed to what a model most often gets wrong, in the order it
+  gets it wrong, served at `/actions/instructions` so the builder pastes it
+  from the live server. Under the 8,000-character cap, and tested.
+- **The confidential client.** A GPT's Actions run from OpenAI's servers:
+  they can keep a secret and do not do PKCE. Every client until now was
+  public, PKCE was mandatory at the token endpoint, and a GPT could not have
+  connected at all. 028 adds `client_secret_hash`; registering with
+  `token_endpoint_auth_method: client_secret_post` mints a secret **shown
+  once**; a challenge-less authorization is refused for any client without a
+  secret; a code minted to a confidential client is marked and the token
+  endpoint demands the secret for it (constant-time, and again on every
+  refresh). A public client can never turn itself confidential. Before 028
+  a confidential registration refuses by name rather than falling back to a
+  public client that would fail later with nothing saying why.
+- **The connector stays.** Claude reads the MCP sheet properly and needs
+  none of this. Notifications are unrelated to either.
+
 ### The record, checked against itself — named with a door each, never fixed on its own
 
 `lib/integrity.js` + the `record_check` tool + `record_check` on the
@@ -4266,7 +4304,7 @@ self-reporting scale removes the most-abandoned manual entry), then Strava.
 
 ## Conventions
 
-- `npm test` runs `test/harness.mjs` — 706 offline tests, no network, no database.
+- `npm test` runs `test/harness.mjs` — 709 offline tests, no network, no database.
   Run it before every push. It covers the JSON-RPC envelope (which fails as an
   uninformative "could not connect" inside ChatGPT) and all the arithmetic
   (which fails as a confidently wrong number in somebody's verdict).
@@ -4306,7 +4344,7 @@ self-reporting scale removes the most-abandoned manual entry), then Strava.
    `003_wrought_training.sql`, `004_wrought_fasting.sql`,
    `005_wrought_activity.sql`, `006_wrought_identity.sql`, `007_wrought_push.sql`,
    `008_wrought_blocks.sql`, `009_wrought_photos.sql` and
-   `010_wrought_profile_web.sql`, `011_wrought_membership.sql`, `012_wrought_link_codes.sql`, `013_wrought_work.sql`, `014_wrought_plan.sql` `015_wrought_ingest_dedupe_fix.sql`, `016_wrought_set_source.sql` `017_wrought_session_aim.sql`, `018_wrought_alerts.sql`, `023_wrought_commitment.sql` and `024_wrought_places.sql` in Supabase. Full checklist in `docs/SETUP.md`. (017 and 018 through 027 were applied through the Supabase connector from a session — `list_migrations` shows them by name — so a session with that connector can apply an additive migration itself rather than leaving it on this list — **but never while a `wrought_sessions` row is active: DDL bounces PostgREST and the founder's mid-set `log_set` failed for exactly that reason.** 017 sat unapplied for weeks while the code degraded politely around it; check `/status` before assuming a column exists.)
+   `010_wrought_profile_web.sql`, `011_wrought_membership.sql`, `012_wrought_link_codes.sql`, `013_wrought_work.sql`, `014_wrought_plan.sql` `015_wrought_ingest_dedupe_fix.sql`, `016_wrought_set_source.sql` `017_wrought_session_aim.sql`, `018_wrought_alerts.sql`, `023_wrought_commitment.sql` and `024_wrought_places.sql` in Supabase. Full checklist in `docs/SETUP.md`. (017 and 018 through 028 were applied through the Supabase connector from a session — `list_migrations` shows them by name — so a session with that connector can apply an additive migration itself rather than leaving it on this list — **but never while a `wrought_sessions` row is active: DDL bounces PostgREST and the founder's mid-set `log_set` failed for exactly that reason.** 017 sat unapplied for weeks while the code degraded politely around it; check `/status` before assuming a column exists.)
 3. Set env vars in Netlify: `SUPABASE_URL` (**no trailing slash** — Kong answers
    "Invalid path specified in request URL" and nothing says why),
    `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_ANON_KEY`,

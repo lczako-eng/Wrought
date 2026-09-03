@@ -177,7 +177,11 @@ function fail(text) { $('msg').className = 'msg err'; $('msg').textContent = tex
 async function start() {
   if (!sb) return fail('This deploy is missing its Supabase keys.');
   const req = request();
-  if (!req?.client_id || !req?.redirect_uri || !req?.code_challenge) {
+  // A code_challenge is not demanded HERE: a custom ChatGPT's Actions arrive
+  // without one and prove themselves with a client secret at the token
+  // endpoint instead. The server refuses a challenge-less request from any
+  // client that cannot do that — the decision is made where the secret is.
+  if (!req?.client_id || !req?.redirect_uri) {
     return fail('This link is missing its authorization parameters. Start the connection again from your AI client.');
   }
 

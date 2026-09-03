@@ -6,7 +6,8 @@
 // and the user never sees a login screen again after the first one.
 
 import { supabase, hashToken, newToken } from './lib/wrought.js';
-import { createHash } from 'node:crypto';
+import { CONFIDENTIAL_MARK, loadClient } from './oauth-authorize-complete.js';
+import { createHash, timingSafeEqual } from 'node:crypto';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -43,15 +44,40 @@ export const handler = async (event) => {
 
   const body = parseBody(event);
   const grant = body.grant_type;
+  // A confidential client's credentials ride in the body (client_secret_post)
+  // or in a Basic header (client_secret_basic); ChatGPT uses either.
+  const creds = clientCredentials(event, body);
 
-  if (grant === 'authorization_code') return exchangeCode(body);
-  if (grant === 'refresh_token')      return refresh(body);
+  if (grant === 'authorization_code') return exchangeCode(body, creds);
+  if (grant === 'refresh_token')      return refresh(body, creds);
   return fail(400, 'unsupported_grant_type', `Unsupported grant_type: ${grant}`);
 };
 
-async function exchangeCode(body) {
-  const { code, code_verifier, client_id, redirect_uri } = body;
-  if (!code || !code_verifier) return fail(400, 'invalid_request', 'code and code_verifier are required.');
+function clientCredentials(event, body) {
+  const h = event.headers?.authorization || event.headers?.Authorization || '';
+  if (/^Basic /i.test(h)) {
+    try {
+      const [id, secret] = Buffer.from(h.slice(6).trim(), 'base64').toString('utf8').split(':');
+      return { client_id: decodeURIComponent(id || ''), client_secret: decodeURIComponent(secret || '') };
+    } catch { /* fall through to the body */ }
+  }
+  return { client_id: body.client_id || null, client_secret: body.client_secret || null };
+}
+
+// Does this secret belong to this client? Constant-time on the hashes, and a
+// client with no secret on file can never pass — a public client cannot turn
+// itself confidential by guessing.
+function secretMatches(client, secret) {
+  if (!client?.client_secret_hash || !secret) return false;
+  const a = Buffer.from(hashToken(String(secret)));
+  const b = Buffer.from(String(client.client_secret_hash));
+  return a.length === b.length && timingSafeEqual(a, b);
+}
+
+async function exchangeCode(body, creds) {
+  const { code, code_verifier, redirect_uri } = body;
+  const client_id = body.client_id || creds.client_id;
+  if (!code) return fail(400, 'invalid_request', 'code is required.');
 
   const { data: row } = await supabase.from('wrought_oauth_codes')
     .select('*').eq('code_hash', hashToken(code)).maybeSingle();
@@ -62,11 +88,23 @@ async function exchangeCode(body) {
   if (client_id && client_id !== row.client_id) return fail(400, 'invalid_grant', 'client_id mismatch.');
   if (redirect_uri && redirect_uri !== row.redirect_uri) return fail(400, 'invalid_grant', 'redirect_uri mismatch.');
 
-  // The PKCE check. Whoever redeems the code must prove they are the same party
-  // that requested it, by producing the verifier whose hash was registered up
-  // front — an intercepted code is worthless without it.
-  const expected = createHash('sha256').update(code_verifier).digest('base64url');
-  if (expected !== row.code_challenge) return fail(400, 'invalid_grant', 'PKCE verification failed.');
+  if (row.code_challenge === CONFIDENTIAL_MARK) {
+    // A CODE MINTED TO A CONFIDENTIAL CLIENT. No verifier exists; the party
+    // redeeming it proves itself with the secret registered for that client.
+    // Whoever holds the code without the secret gets nothing — the same
+    // property PKCE gives a public client, held by a different key.
+    const client = await loadClient(row.client_id);
+    if (!secretMatches(client, creds.client_secret)) {
+      return fail(401, 'invalid_client', 'Client authentication failed.');
+    }
+  } else {
+    // The PKCE check. Whoever redeems the code must prove they are the same party
+    // that requested it, by producing the verifier whose hash was registered up
+    // front — an intercepted code is worthless without it.
+    if (!code_verifier) return fail(400, 'invalid_request', 'code_verifier is required.');
+    const expected = createHash('sha256').update(code_verifier).digest('base64url');
+    if (expected !== row.code_challenge) return fail(400, 'invalid_grant', 'PKCE verification failed.');
+  }
 
   // Burn the code before issuing anything, so a replay in flight loses the race.
   await supabase.from('wrought_oauth_codes').update({ used: true }).eq('code_hash', row.code_hash);
@@ -74,8 +112,9 @@ async function exchangeCode(body) {
   return issueTokens(row.user_id, row.client_id, row.scope || 'wrought');
 }
 
-async function refresh(body) {
-  const { refresh_token, client_id } = body;
+async function refresh(body, creds) {
+  const { refresh_token } = body;
+  const client_id = body.client_id || creds.client_id;
   if (!refresh_token) return fail(400, 'invalid_request', 'refresh_token is required.');
 
   const { data: row } = await supabase.from('wrought_oauth_refresh')
@@ -84,6 +123,15 @@ async function refresh(body) {
   if (!row || row.revoked) return fail(400, 'invalid_grant', 'Unknown or revoked refresh token.');
   if (new Date(row.expires_at).getTime() < Date.now()) return fail(400, 'invalid_grant', 'Refresh token expired.');
   if (client_id && row.client_id && client_id !== row.client_id) return fail(400, 'invalid_grant', 'client_id mismatch.');
+
+  // A confidential client renews with its secret, every time. A stolen
+  // refresh token from a GPT is worthless without it.
+  if (row.client_id) {
+    const client = await loadClient(row.client_id);
+    if (client?.client_secret_hash && !secretMatches(client, creds.client_secret)) {
+      return fail(401, 'invalid_client', 'Client authentication failed.');
+    }
+  }
 
   // Rotation: the old refresh token dies with the request that used it, so a
   // stolen one is good for at most a single use before the real client's next
