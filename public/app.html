@@ -2587,7 +2587,7 @@ function renderAccount(user, ids, factors, linkNote) {
     </section>
 
     <section class="panel">
-      <h2>The nightly read on your phone</h2>
+      <h2>Your daily check-ins</h2>
       <div id="push-body"><p class="empty">Checking…</p></div>
       <p class="msg" id="pushmsg"></p>
     </section>
@@ -3097,7 +3097,26 @@ async function syncDevices() {
 // Nothing here composes a message. The server sends words it already computed,
 // so a notification can never disagree with the brief it came from.
 
-const HOURS = Array.from({ length: 24 }, (_, h) => h);
+const CHECKIN_TIMES = Array.from({ length: 48 }, (_, i) =>
+  `${String(Math.floor(i / 2)).padStart(2, '0')}:${i % 2 ? '30' : '00'}`);
+
+function checkinOptions(value, canTurnOff = true) {
+  return `${canTurnOff ? `<option value=""${value == null ? ' selected' : ''}>Off</option>` : ''}` +
+    CHECKIN_TIMES.map(t => `<option value="${t}"${t === value ? ' selected' : ''}>${t}</option>`).join('');
+}
+
+function checkinRows(checkins, on) {
+  const names = { morning: 'Morning briefing', midday: 'Midday check-in', evening: 'Daily close' };
+  return `<div class="doors">${checkins.map(c => {
+    const sent = c.last_sent_on ? `Last accepted by the push service ${esc(c.last_sent_on)}`
+      : c.time ? 'No successful delivery recorded yet' : 'Off';
+    const words = c.last_message?.body
+      ? `<span class="sub dim">Last sent: ${esc(c.last_message.body)}</span>` : '';
+    return `<div class="door"><div><b>${esc(names[c.kind] || c.kind)}${c.time ? ` · ${esc(c.time)}` : ''}</b>
+      <span class="sub">${sent}</span>${words}</div>
+      ${on && c.time ? `<button class="ghost small" data-preview="${esc(c.kind)}">Send today’s version</button>` : ''}</div>`;
+  }).join('')}</div>`;
+}
 
 async function loadPush() {
   const el = $('push-body');
@@ -3127,30 +3146,34 @@ async function loadPush() {
 
   el.innerHTML = `
     <p class="sub">${on
-      ? `Your read arrives on ${d.devices.length} device${d.devices.length === 1 ? '' : 's'}, one sentence, once a day.`
-      : 'Off. The read still waits for you here and in your email — this just puts it on your lock screen.'}</p>
+      ? `Morning, midday and evening can reach ${d.devices.length} device${d.devices.length === 1 ? '' : 's'}. Each one is a different appointment.`
+      : 'Off. The reads still wait here — this puts the three appointments on your lock screen.'}</p>
     ${denied ? `<p class="sub dim">This browser is blocking notifications. Turn them back on in its site settings first.</p>` : ''}
     <div class="btnrow">
       ${on
-        ? `<button class="ghost" id="push-test">Send a test</button>
-           <button class="ghost" id="push-off">Turn off on this device</button>`
+        ? `<button class="ghost" id="push-off">Turn off on this device</button>`
         : `<button class="ghost" id="push-on"${denied ? ' disabled' : ''}>Turn on notifications</button>`}
     </div>
-    <p class="sub dim" style="margin-top:14px">What hour do you want it?</p>
-    <div class="btnrow">
-      <select id="push-hour" class="hourpick">
-        ${HOURS.map(h => `<option value="${h}"${h === (d.brief_hour ?? 20) ? ' selected' : ''}>${String(h).padStart(2, '0')}:00</option>`).join('')}
-      </select>
-      <button class="ghost" id="push-hour-save">Save</button>
+    ${checkinRows(d.checkins || [], on)}
+    <p class="sub dim" style="margin-top:16px">Schedule · your local time</p>
+    <div class="planrows">
+      <div class="planrow"><span class="lbl">Morning</span><select id="push-morning" class="hourpick">${checkinOptions(d.morning_hour == null ? null : `${String(d.morning_hour).padStart(2, '0')}:${String(d.morning_minute || 0).padStart(2, '0')}`)}</select></div>
+      <div class="planrow"><span class="lbl">Midday</span><select id="push-midday" class="hourpick">${checkinOptions(d.midday_hour == null ? null : `${String(d.midday_hour).padStart(2, '0')}:${String(d.midday_minute || 0).padStart(2, '0')}`)}</select></div>
+      <div class="planrow"><span class="lbl">Evening</span><select id="push-evening" class="hourpick">${checkinOptions(`${String(d.brief_hour ?? 20).padStart(2, '0')}:${String(d.brief_minute || 0).padStart(2, '0')}`, false)}</select></div>
+      <div class="planrow"><span class="lbl">A tap opens</span><select id="push-opens" class="hourpick">
+        ${[['chatgpt','ChatGPT'],['claude','Claude'],['app','WROUGHT']].map(([v,l]) => `<option value="${v}"${d.morning_opens === v ? ' selected' : ''}>${l}</option>`).join('')}
+      </select></div>
     </div>
+    <div class="btnrow"><button class="ghost" id="push-schedule-save">Save schedule</button></div>
     <p class="sub dim">Your time, wherever you are. A day with nothing logged gets nothing —
-    a nightly "you logged nothing" is how somebody mutes an app for good.</p>
+    a nightly "you logged nothing" is how somebody mutes an app for good. “Accepted” proves the push service took it; only your phone can prove it displayed.</p>
     ${alertList(d.alerts || [])}`;
 
   $('push-on')?.addEventListener('click', () => subscribePush(d.vapid_public_key));
   $('push-off')?.addEventListener('click', unsubscribePush);
-  $('push-test')?.addEventListener('click', testPush);
-  $('push-hour-save')?.addEventListener('click', saveHour);
+  document.querySelectorAll('[data-preview]').forEach(b =>
+    b.addEventListener('click', () => testPush(b.dataset.preview)));
+  $('push-schedule-save')?.addEventListener('click', saveCheckins);
   document.querySelectorAll('[data-alertoff]').forEach(b =>
     b.addEventListener('click', () => stopAlert(b.dataset.alertoff)));
 }
@@ -3270,26 +3293,41 @@ async function unsubscribePush() {
   setTimeout(loadPush, 700);
 }
 
-async function testPush() {
+async function testPush(kind = true) {
   $('pushmsg').textContent = 'Sending…';
   const { data: s } = await sb.auth.getSession();
   const res = await fetch('/.netlify/functions/api-push', {
     method: 'POST',
     headers: { Authorization: `Bearer ${s.session.access_token}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ test: true }),
+    body: JSON.stringify({ test: kind }),
   });
   const out = await res.json();
   $('pushmsg').textContent = out.say || out.message || 'Could not send.';
 }
 
-async function saveHour() {
+async function saveCheckins() {
+  const split = (id, optional) => {
+    const value = $(id).value;
+    if (!value && optional) return { hour: null, minute: 0 };
+    const [hour, minute] = value.split(':').map(Number);
+    return { hour, minute };
+  };
+  const morning = split('push-morning', true);
+  const midday = split('push-midday', true);
+  const evening = split('push-evening', false);
   const { data: s } = await sb.auth.getSession();
   const res = await fetch('/.netlify/functions/api-push', {
     method: 'POST',
     headers: { Authorization: `Bearer ${s.session.access_token}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ brief_hour: +$('push-hour').value }),
+    body: JSON.stringify({
+      morning_hour: morning.hour, morning_minute: morning.minute,
+      midday_hour: midday.hour, midday_minute: midday.minute,
+      brief_hour: evening.hour, brief_minute: evening.minute,
+      morning_opens: $('push-opens').value,
+    }),
   });
   $('pushmsg').textContent = res.ok ? 'Saved.' : 'Could not save.';
+  if (res.ok) setTimeout(loadPush, 500);
 }
 
 // The factor being set up right now. Held here rather than in the markup so a

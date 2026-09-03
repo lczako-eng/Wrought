@@ -775,6 +775,7 @@ export const handler = async (event) => {
   const { data: brief } = await supabase.from('wrought_briefs')
     .select('verdict, local_date')
     .eq('user_id', userId).eq('local_date', localDateFor(profile.timezone))
+    .eq('kind', 'evening')
     .order('created_at', { ascending: false }).limit(1).maybeSingle();
 
   return {

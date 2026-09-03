@@ -3101,6 +3101,39 @@ not recompute, replace or repeat the receipt, and it does not plan tomorrow —
 the next morning owns that conversation. A weekly goal is not presented as a
 daily score, and an unlogged metric is never rendered as zero.
 
+### The three appointments are one loop, and the loop leaves a receipt
+
+The account screen owns all three times, the shared tap destination and a
+**send today's version** button for each. Waiting until tomorrow morning to
+find out whether a morning notification works is not a test; it is a day lost.
+The preview builds the real message from the real record through the same
+builders the cron uses, sends through the same web-push transport and carries
+the same tap-through opener. It is not sample copy.
+
+Each scheduled message is kept in `wrought_briefs`, including the deterministic
+no-API-key evening receipt, and successful delivery is recorded inside the
+row's `facts._delivery`. That distinction is load-bearing: **a brief being
+built or read is not a brief being delivered.** The old evening guard treated
+an early read as proof the 8 PM appointment had happened and silently cancelled
+the push. Now only a successful channel receipt suppresses that channel.
+
+The same distinction is stated on the screen. An HTTP success proves that the
+push service accepted the encrypted message; only the phone can prove it put
+the notification on glass. Never label the former as the latter.
+
+The scheduler's audience is recent loggers **plus every subscribed phone**.
+An events-only fourteen-day window made all configured check-ins disappear
+after a quiet fortnight, precisely when a standing coach was supposed to help
+somebody return. The evening still stays silent on an empty day; eligibility
+to be checked and a decision to send are separate things.
+
+All three taps use the launcher. Morning opens the day's plan, midday opens a
+live assessment, and evening opens a correction-first receipt before anything
+is read back. The launcher names the appointment it is carrying — a midday tap
+must never land on a page calling itself a morning check-in. If the destination
+is WROUGHT rather than an assistant, the evening still lands directly on the
+Daily Close card.
+
 ### Notifications you set by talking — the AI writes the rule, the cron sends it
 
 `018_wrought_alerts.sql` + `lib/alerts.js` + `set_alert` / `my_alerts` /
@@ -4205,7 +4238,7 @@ self-reporting scale removes the most-abandoned manual entry), then Strava.
 
 ## Conventions
 
-- `npm test` runs `test/harness.mjs` — 705 offline tests, no network, no database.
+- `npm test` runs `test/harness.mjs` — 707 offline tests, no network, no database.
   Run it before every push. It covers the JSON-RPC envelope (which fails as an
   uninformative "could not connect" inside ChatGPT) and all the arithmetic
   (which fails as a confidently wrong number in somebody's verdict).
@@ -4284,7 +4317,8 @@ describing a different mechanism. What actually reaches a phone:
    the response carries `notification` — that day's verdict — and one extra
    *Show Notification* action puts it on the lock screen. No app, no push
    certificates, no permission grants. Shipped.
-2. **Email at 22:00** via `brief-nightly.js`. Shipped (needs `RESEND_API_KEY`).
+2. **Email at the chosen evening hour** via `brief-nightly.js`. Shipped (needs
+   `RESEND_API_KEY`).
 3. **Web push to an installed PWA** — the proper answer. `sw.js` and
    `site.webmanifest` are built and the site offers to install itself: Android
    gets a real button off `beforeinstallprompt`, iOS gets the honest Share →
@@ -4296,8 +4330,9 @@ describing a different mechanism. What actually reaches a phone:
    server sends words it has already computed, so a notification can never
    disagree with the brief.
 
-`brief-nightly.js` runs **hourly**, not nightly, because 22:00 is a different
-instant per user — it serves only those for whom it is currently the send hour.
+`brief-nightly.js` runs **twice hourly**, not nightly, because 20:00 (or the
+chosen half hour) is a different instant per user — it serves only those for
+whom it is currently the send slot.
 A day with nothing logged gets no email; a nightly nag is how a product gets
 muted forever.
 

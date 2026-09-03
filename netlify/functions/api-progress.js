@@ -191,6 +191,7 @@ export const handler = async (event) => {
       .then(r => r.data || []),
     supabase.from('wrought_briefs')
       .select('local_date, kind, verdict').eq('user_id', user.id)
+      .eq('kind', 'evening')
       .order('local_date', { ascending: false }).limit(1).maybeSingle()
       .then(r => r.data),
     // Workouts that came from a DEVICE rather than being typed or dictated.

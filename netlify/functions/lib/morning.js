@@ -267,6 +267,14 @@ const OPENERS = {
     "I've eaten so far and how the day is going — log it, then tell me where I " +
     'stand against my targets and what the afternoon needs. If Wrought has a care note, mention it after ' +
     'the check-in; never replace the check-in with it.',
+  // The close is interactive for the same reason the morning is: the receipt
+  // is only trustworthy if the person can correct a missing meal, workout or
+  // shift in the same place it is read. Tomorrow stays tomorrow's conversation.
+  evening:
+    'Gym bro — close my day. Using the Wrought connector, give me today\'s exact receipt: what I ate, ' +
+    'trained and did for physical work, my steps and computed burn, and how those facts landed against ' +
+    'the goals we set. Ask whether anything is missing or wrong; if I correct something, log or amend it ' +
+    'before reading the updated receipt back. Do not plan tomorrow — the morning brief owns that.',
 };
 
 function careOpener(flag = {}) {
@@ -289,12 +297,12 @@ function careOpener(flag = {}) {
  * plus the opener to read or paste. The launcher builds the chatgpt.com /
  * claude.ai URL itself.
  */
-function bridge(opens, prompt) {
+function bridge(opens, prompt, which = 'morning') {
   if (opens === 'chatgpt' || opens === 'claude') {
-    return `/go.html?to=${opens}&q=${encodeURIComponent(prompt)}`;
+    return `/go.html?to=${opens}&q=${encodeURIComponent(prompt)}&kind=${which}`;
   }
   // The dashboard is the one destination every account verifiably has.
-  return '/app.html';
+  return which === 'evening' ? '/app.html#daily-close' : '/app.html';
 }
 
 /**
@@ -320,7 +328,7 @@ export function pickDue(routines = []) {
 }
 
 export function morningLink(opens, which = 'morning') {
-  return bridge(opens, OPENERS[which] || OPENERS.morning);
+  return bridge(opens, OPENERS[which] || OPENERS.morning, which);
 }
 
 /**
@@ -330,7 +338,7 @@ export function morningLink(opens, which = 'morning') {
  * record whether the diary was incomplete, without fabricating what was eaten.
  */
 export function careReviewLink(opens, flag) {
-  if (opens === 'chatgpt' || opens === 'claude') return bridge(opens, careOpener(flag));
+  if (opens === 'chatgpt' || opens === 'claude') return bridge(opens, careOpener(flag), 'care');
   return '/app.html#care-review';
 }
 

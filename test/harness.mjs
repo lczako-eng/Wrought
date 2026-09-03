@@ -9312,7 +9312,8 @@ await test('the lock screen is a complete computed scoreboard, not a clipped par
   const nightly = readFileSync(new URL('../netlify/functions/brief-nightly.js', import.meta.url), 'utf8');
   assert.match(nightly, /WROUGHT · DAY CLOSED/);
   assert.match(nightly, /out\.facts\?\.notification_body/);
-  assert.match(nightly, /'\/app\.html#daily-close'/);
+  assert.match(nightly, /morningLink\(opens, 'evening'\)/,
+    'the daily close cannot open the selected assistant');
   assert.doesNotMatch(nightly, /care \? notice\.body|careNotification\(flag\)/,
     'a care warning can still replace the ordinary scorecard');
   assert.match(nightly, /care \? 'WROUGHT · DAY CLOSED · REVIEW'/,
@@ -12299,6 +12300,20 @@ await test('tapping the morning brief opens the assistant with the day already a
     'the launcher makes a request and stops being a no-login bridge');
   // The opener is offered to paste, because the app cannot be handed a prompt.
   assert.match(go, /clipboard/, 'the launcher drops the copy-the-opener fallback');
+  // One launcher serves all three appointments. Calling a midday tap a
+  // "morning check-in" is exactly the kind of seam that makes the loop feel
+  // bolted together instead of deliberate.
+  for (const label of ['Your morning briefing', 'Your midday check-in', 'Your daily close']) {
+    assert.ok(go.includes(label), `${label} is missing from the launcher`);
+  }
+
+  const close = morningLink('chatgpt', 'evening');
+  assert.match(close, /kind=evening/);
+  const closePrompt = decodeURIComponent(new URLSearchParams(close.split('?')[1]).get('q'));
+  assert.match(closePrompt, /exact receipt/);
+  assert.match(closePrompt, /anything is missing or wrong/);
+  assert.match(closePrompt, /Do not plan tomorrow/);
+  assert.equal(morningLink('app', 'evening'), '/app.html#daily-close');
 });
 
 await test('the morning says what is planned, and only when it should', async () => {
@@ -12331,7 +12346,7 @@ await test('the morning says what is planned, and only when it should', async ()
 
 await test('the scheduled morning computes the completed day, not today\'s projection', () => {
   const src = readFileSync(new URL('../netlify/functions/brief-nightly.js', import.meta.url), 'utf8');
-  const fn = src.slice(src.indexOf('async function runMorning'), src.indexOf('// Cheap exit before any of the reads below'));
+  const fn = src.slice(src.indexOf('export async function buildMorningFor'), src.indexOf('async function runAlerts'));
   assert.match(fn, /const yesterdayDate = addDays\(date, -1\)/);
   assert.match(fn, /dayFacts\(userId, profile, yesterdayDate\)/,
     'the scheduler never loads yesterday as a complete day');
@@ -12347,6 +12362,66 @@ await test('the scheduled morning computes the completed day, not today\'s proje
     'the tap-through prompt does not request the current expectations');
   assert.match(morning, /Wait for my/,
     'tapping the push can alter the day before the person answers');
+});
+
+await test('the daily loop survives a quiet fortnight and keeps a delivery receipt', () => {
+  const cron = readFileSync(new URL('../netlify/functions/brief-nightly.js', import.meta.url), 'utf8');
+  const users = cron.slice(cron.indexOf('async function activeUsers'), cron.indexOf('// A brief row'));
+  assert.match(users, /wrought_events/, 'recent activity no longer wakes the scheduler');
+  assert.match(users, /wrought_push_subs/,
+    'a subscribed phone is silently dropped after fourteen quiet days');
+
+  // A computed brief is still the real brief when no optional model key is
+  // present. If it is not stored there is no history, no exact payload to
+  // inspect and no durable once-per-channel proof.
+  assert.match(cron, /if \(verdict\) await storeBrief\(\{ userId, date, kind: 'evening'/);
+  assert.doesNotMatch(cron, /verdict && written/,
+    'the no-key evening receipt is still thrown away');
+  for (const kind of ['morning', 'midday']) {
+    assert.match(cron, new RegExp(`kind: '${kind}'[\\s\\S]{0,180}notification: message`),
+      `${kind} has no durable copy of the words it sent`);
+    assert.match(cron, new RegExp(`markDelivered\\(userId, date, '${kind}', 'push'`),
+      `${kind} never records successful delivery`);
+  }
+  assert.match(cron, /markDelivered\(userId, date, 'evening', 'push'/,
+    'the daily close never records successful push delivery');
+  assert.match(cron, /delivered\.email\?\.sent_on === date && delivered\.push\?\.sent_on === date/,
+    'the scheduler cannot distinguish a cached read from a delivered appointment');
+  assert.ok(!/if \(existing\) \{ skipped\+\+; continue; \}/.test(cron),
+    'reading the evening brief early still cancels the scheduled close');
+
+  // Once morning and midday share the briefs table, every generic consumer
+  // must explicitly ask for the evening row it means.
+  for (const file of ['api-progress.js', 'ingest.js']) {
+    const src = readFileSync(new URL(`../netlify/functions/${file}`, import.meta.url), 'utf8');
+    const at = src.indexOf("from('wrought_briefs')");
+    assert.ok(at >= 0 && src.slice(at, at + 350).includes("eq('kind', 'evening')"),
+      `${file} can mistake a midday check-in for the daily close`);
+  }
+  const mcp = readFileSync(new URL('../netlify/functions/mcp.js', import.meta.url), 'utf8');
+  const brief = mcp.slice(mcp.indexOf('async function brief('), mcp.indexOf('async function getDay('));
+  assert.match(brief, /cached\?\.facts\?\._delivery/,
+    'refreshing a corrected receipt erases proof that its push already went');
+});
+
+await test('all three real check-ins can be previewed and configured from one screen', () => {
+  const api = readFileSync(new URL('../netlify/functions/api-push.js', import.meta.url), 'utf8');
+  const app = page('app.html');
+
+  for (const kind of ['morning', 'midday', 'evening']) {
+    assert.ok(api.includes(`'${kind}'`), `${kind} cannot be previewed by the push endpoint`);
+    assert.ok(app.includes(kind), `${kind} is absent from the daily check-ins screen`);
+  }
+  for (const id of ['push-morning', 'push-midday', 'push-evening', 'push-opens', 'push-schedule-save']) {
+    assert.ok(app.includes(`id="${id}"`), `${id} is missing from the check-in controls`);
+  }
+  assert.match(api, /buildMorningFor/);
+  assert.match(api, /buildMiddayFor/);
+  assert.match(api, /buildBriefFor/);
+  assert.match(app, /data-preview=/, 'the screen still offers only a generic test notification');
+  assert.match(app, /last_message\.body/, 'the exact last notification cannot be inspected');
+  assert.match(app, /only your phone can prove it displayed/i,
+    'the dashboard overclaims what a push-service acceptance proves');
 });
 
 await test('a missed hour is a delay, never a cancelled day', () => {
