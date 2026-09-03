@@ -3730,6 +3730,9 @@ let trainerRoutines = [];
 async function loadTrainer() {
   const session = await needsSession('Trainer', 'The live session at the rack');
   if (!session) { stopTrainer(); return; }
+  // Sets ticked in a dead spot go first, so the screen about to be drawn is
+  // the record with them in it rather than without.
+  await flushTickQueue({ quiet: true });
   const data = { session };
 
   // THREE ROUND TRIPS AT ONCE, NOT ONE AFTER ANOTHER.
@@ -3872,6 +3875,7 @@ function renderTrainer(d) {
           <input id="tk-rpe" type="number" inputmode="decimal" min="1" max="10" step="0.5"
             placeholder="—"></label>
       </div>
+      ${tickQueueNotice()}
       <p class="sub dim">Prefilled with what was prescribed — change anything that was different.
         ${c?.prescribed == null ? 'No weight is filled in because there is no history for this lift yet; put in what you actually used.' : ''}
         Leave RPE blank if you would rather not say — an unreported effort never adds weight.</p>
@@ -3897,15 +3901,92 @@ function wireTick() {
     b.addEventListener('click', () => tickSet('goto', b, { index: Number(b.dataset.goto) })));
 }
 
+// A SET TICKED WITH NO SIGNAL IS KEPT AND SENT WHEN THE SIGNAL RETURNS.
+//
+// Gyms are basements. A tick that failed used to say "nothing was saved" and
+// hand the set back to the person to remember mid-workout — the one moment
+// nobody remembers anything. So a set that cannot be sent is queued on the
+// phone and sent, in order, the moment the network is back: on the browser's
+// own online event, on the next open of the Trainer tab, and before any new
+// tick. Each tick carries an id minted here, so a retry whose first attempt
+// actually landed is answered by the server as the same set, never a second.
+//
+// Only SETS queue. Ending a session or jumping the cursor while offline is
+// refused plainly — those are decisions about a session the page cannot see,
+// and queueing them would file a workout at a time nobody chose.
+const TICK_QUEUE_KEY = 'wrought_tick_queue';
+function readTickQueue() {
+  try { const q = JSON.parse(localStorage.getItem(TICK_QUEUE_KEY) || '[]'); return Array.isArray(q) ? q : []; }
+  catch { return []; }
+}
+function writeTickQueue(q) {
+  try { localStorage.setItem(TICK_QUEUE_KEY, JSON.stringify(q)); } catch { /* storage blocked: the set was still sent or refused visibly */ }
+}
+function mintTickId() {
+  try { return crypto.randomUUID(); } catch { return `t-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`; }
+}
+// Sends what is waiting, oldest first, stopping at the first failure so the
+// order of sets on the record is the order they happened. Returns how many
+// went. Never throws: a queue that cannot be flushed is simply still a queue.
+let flushingTicks = false;
+async function flushTickQueue({ quiet = false } = {}) {
+  if (flushingTicks) return 0;
+  const q = readTickQueue();
+  if (!q.length) return 0;
+  const { data } = sb ? await sb.auth.getSession() : { data: {} };
+  if (!data?.session) return 0;
+  flushingTicks = true;
+  let sent = 0, last = null;
+  try {
+    while (q.length) {
+      const item = q[0];
+      let res;
+      try {
+        res = await fetch('/.netlify/functions/api-session', {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${data.session.access_token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify(item.payload),
+        });
+      } catch { break; }                       // still no signal — keep it
+      const body = await res.json().catch(() => ({}));
+      // A server answer of any kind settles the item: saved, already there
+      // (duplicate), or refused for a reason — a refusal is shown, never
+      // retried forever, because the session it belonged to may have closed.
+      q.shift(); writeTickQueue(q);
+      if (res.ok) { sent += 1; last = body; }
+      else if (!quiet) {
+        const out = $('tk-say');
+        if (out) { out.textContent = `A queued set was not taken: ${body.say || body.error || 'refused'}.`; out.className = 'qasay bad'; }
+      }
+    }
+  } finally { flushingTicks = false; }
+  if (sent && last && !last.ended) {
+    trainerLastJson = JSON.stringify(last) + '|' + JSON.stringify(trainerRoutinesFull);
+    if (view === 'trainer') renderTrainer(last);
+    const out = $('tk-say');
+    if (out) { out.textContent = `Back online — ${sent} queued set${sent === 1 ? '' : 's'} sent.`; out.className = 'qasay good'; }
+  }
+  return sent;
+}
+function tickQueueNotice() {
+  const n = readTickQueue().length;
+  return n ? `<p class="caveat" id="tkqueue">${n} set${n === 1 ? '' : 's'} waiting for signal — they send themselves when it returns.</p>` : '';
+}
+window.addEventListener('online', () => { flushTickQueue(); });
+
 async function tickSet(action, btn, extra = {}) {
   if (action === 'end' && !confirm('Finish and file this workout?')) return;
   const out = $('tk-say');
   const { data } = sb ? await sb.auth.getSession() : { data: {} };
   if (!data?.session) { if (out) out.textContent = 'Sign in first.'; return; }
 
+  // Anything still waiting goes first, so a set logged now cannot land before
+  // one logged five minutes ago in a dead spot.
+  await flushTickQueue({ quiet: true });
+
   const num = id => { const v = ($(id)?.value || '').trim(); return v === '' ? null : Number(v); };
   const payload = action === 'set'
-    ? { action: 'set', reps: num('tk-reps'), weight: num('tk-wt'), rpe: num('tk-rpe') }
+    ? { action: 'set', reps: num('tk-reps'), weight: num('tk-wt'), rpe: num('tk-rpe'), client_id: mintTickId() }
     : { action, ...extra };
 
   document.querySelectorAll('[data-tick]').forEach(b => { b.disabled = true; });
@@ -3934,7 +4015,18 @@ async function tickSet(action, btn, extra = {}) {
     const say = $('tk-say');
     if (say) { say.textContent = 'Logged.'; say.className = 'qasay good'; }
   } catch {
-    if (out) { out.textContent = 'Could not reach the server — nothing was saved.'; out.className = 'qasay bad'; }
+    // NO SIGNAL. A set is kept and sent later; anything else is refused in
+    // as many words, because it is a decision the page cannot make blind.
+    if (action === 'set') {
+      const q = readTickQueue(); q.push({ payload, at: Date.now() }); writeTickQueue(q);
+      if (out) { out.textContent = `No signal — set kept (${q.length} waiting). It sends itself when you are back online.`; out.className = 'qasay'; }
+      // The boxes are cleared so the next set is a fresh entry, as it would be
+      // after a save that went through.
+      const rp = $('tk-reps'); if (rp) rp.value = '';
+    } else if (out) {
+      out.textContent = 'No signal — that needs the server. Sets still queue; try this again when you are back online.';
+      out.className = 'qasay bad';
+    }
     document.querySelectorAll('[data-tick]').forEach(b => { b.disabled = false; });
   }
 }

@@ -1691,6 +1691,33 @@ as a trend or turned it into a recommendation. Now:
   answer) puts somebody on the track; so does *"I play hockey"* through
   `set_plan`. Applied to the live database through the connector.
 
+### A set ticked with no signal — kept, sent when it returns, landed once
+
+`027_wrought_set_client_id.sql` + `clientId` on `recordSet` + the tick queue
+in `app.html`. Gyms are basements. The rack screen's tick needed the network,
+and a failed one said *"nothing was saved"* and handed the set back to the
+person to remember mid-workout — the one moment nobody remembers anything.
+
+- **A set that cannot be sent is queued on the phone** (`localStorage`) and
+  sent oldest-first the moment the signal returns: on the browser's `online`
+  event, before the Trainer tab draws, and before any new tick, so a set
+  logged now cannot land before one logged five minutes ago in a dead spot.
+  The flush stops at the first failure — the record keeps the order the sets
+  happened in — and the rack screen says how many are waiting.
+- **Only SETS queue.** Ending a session or jumping the cursor offline is
+  refused in as many words: those are decisions about a session the page
+  cannot see, and queueing them would file a workout at a time nobody chose.
+- **Sent twice lands once.** Every tick carries an id minted on the page;
+  `recordSet` finds an earlier landing by it and answers the duplicate as a
+  duplicate — checked before the insert AND caught on the unique index
+  afterwards, because two retries can race through the first check. The
+  guarantee is the index, a database fact; NULLs are distinct, so every set
+  logged by voice is untouched.
+- **Before 027 the write still goes.** The id is dropped rather than the set
+  — a rack screen that cannot write because a migration is pending is a far
+  worse failure than a duplicate it cannot yet catch. Probed once per
+  container, like 016 and 017.
+
 ### The scale corrects the target — computed at last, offered, never applied on its own
 
 `lib/adapt.js` + `calibration` on `my_plan` and the dashboard + `recalibrate`
@@ -4178,7 +4205,7 @@ self-reporting scale removes the most-abandoned manual entry), then Strava.
 
 ## Conventions
 
-- `npm test` runs `test/harness.mjs` — 704 offline tests, no network, no database.
+- `npm test` runs `test/harness.mjs` — 705 offline tests, no network, no database.
   Run it before every push. It covers the JSON-RPC envelope (which fails as an
   uninformative "could not connect" inside ChatGPT) and all the arithmetic
   (which fails as a confidently wrong number in somebody's verdict).
@@ -4218,7 +4245,7 @@ self-reporting scale removes the most-abandoned manual entry), then Strava.
    `003_wrought_training.sql`, `004_wrought_fasting.sql`,
    `005_wrought_activity.sql`, `006_wrought_identity.sql`, `007_wrought_push.sql`,
    `008_wrought_blocks.sql`, `009_wrought_photos.sql` and
-   `010_wrought_profile_web.sql`, `011_wrought_membership.sql`, `012_wrought_link_codes.sql`, `013_wrought_work.sql`, `014_wrought_plan.sql` `015_wrought_ingest_dedupe_fix.sql`, `016_wrought_set_source.sql` `017_wrought_session_aim.sql`, `018_wrought_alerts.sql`, `023_wrought_commitment.sql` and `024_wrought_places.sql` in Supabase. Full checklist in `docs/SETUP.md`. (017 and 018 through 026 were applied through the Supabase connector from a session — `list_migrations` shows them by name — so a session with that connector can apply an additive migration itself rather than leaving it on this list — **but never while a `wrought_sessions` row is active: DDL bounces PostgREST and the founder's mid-set `log_set` failed for exactly that reason.** 017 sat unapplied for weeks while the code degraded politely around it; check `/status` before assuming a column exists.)
+   `010_wrought_profile_web.sql`, `011_wrought_membership.sql`, `012_wrought_link_codes.sql`, `013_wrought_work.sql`, `014_wrought_plan.sql` `015_wrought_ingest_dedupe_fix.sql`, `016_wrought_set_source.sql` `017_wrought_session_aim.sql`, `018_wrought_alerts.sql`, `023_wrought_commitment.sql` and `024_wrought_places.sql` in Supabase. Full checklist in `docs/SETUP.md`. (017 and 018 through 027 were applied through the Supabase connector from a session — `list_migrations` shows them by name — so a session with that connector can apply an additive migration itself rather than leaving it on this list — **but never while a `wrought_sessions` row is active: DDL bounces PostgREST and the founder's mid-set `log_set` failed for exactly that reason.** 017 sat unapplied for weeks while the code degraded politely around it; check `/status` before assuming a column exists.)
 3. Set env vars in Netlify: `SUPABASE_URL` (**no trailing slash** — Kong answers
    "Invalid path specified in request URL" and nothing says why),
    `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_ANON_KEY`,

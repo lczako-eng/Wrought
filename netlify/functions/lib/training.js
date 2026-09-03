@@ -2280,6 +2280,20 @@ export async function sessionsCanCarryAim() {
 
 export function _resetAimProbe(v = null) { _hasAim = v; }
 
+// Whether 027 has run — whether a set can carry the client id that makes an
+// offline retry land once. Probed once per container, like 016 and 017:
+// naming a column PostgREST does not know about rejects the WHOLE insert, and
+// a rack screen that cannot write a set because a migration is pending is a
+// far worse failure than a duplicate it cannot yet catch.
+let _hasClientId = null;
+export async function setsCanCarryClientId() {
+  if (_hasClientId !== null) return _hasClientId;
+  const { error } = await supabase.from('wrought_sets').select('client_id').limit(1);
+  _hasClientId = !error;
+  return _hasClientId;
+}
+export function _resetClientIdProbe(v = null) { _hasClientId = v; }
+
 /**
  * Write the derived sets for workout events.
  *
