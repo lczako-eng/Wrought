@@ -326,6 +326,94 @@ export async function recordSet(userId, { session, current, plan = [], today,
 }
 
 /**
+ * A workout told after the fact, while one is still RUNNING, is the same
+ * workout — the pure decision.
+ *
+ * The founder's night: the connector dropped mid-session (a migration
+ * applied live bounced PostgREST for three seconds), ChatGPT could not reach
+ * log_set, and when it came back it did the honest thing and flushed the
+ * rest of the session through `log` as a workout event: "pec-deck 180 × 8,
+ * 180 × 8; seated row 250 × 5, 220 × 8". Correct recovery — and it left a
+ * live session holding five sets beside an EVENT holding the rest, so the
+ * finaliser would have filed a second workout for the same hour. Two
+ * sessions on one night is the one number the whole plan rests on, wrong.
+ *
+ * So the exercises go INTO the session: anything already logged set by set
+ * is skipped (re-telling what was recorded must not double it), anything on
+ * the plan but not yet done gets its sets, anything new is appended to the
+ * plan — the ad-hoc rule, a different lift in the order it happened. The
+ * finaliser then writes one event with everything.
+ */
+export function foldPlan({ plan = [], sessionSets = [], exercises = [] }) {
+  const have = new Set(sessionSets.map(r => r.exercise_key));
+  const planKeys = new Map(plan.map((e, i) => [e.key || exerciseKey(e.name), i]));
+  const additions = [];
+  const rows = [];
+  const skipped = [];
+  let nextIndex = plan.length;
+
+  for (const x of exercises.slice(0, 20)) {
+    const name = String(x?.name || '').trim();
+    if (!name) continue;
+    const key = exerciseKey(name);
+    if (have.has(key)) { skipped.push({ name, why: 'already logged set by set in this session' }); continue; }
+    const n = Math.min(Math.max(parseInt(x.sets, 10) || 1, 1), 10);
+    const reps = x.reps != null ? Math.round(Number(x.reps)) || null : null;
+    const kg = x.weight_kg != null ? Number(x.weight_kg) || null : null;
+    const muscles = Array.isArray(x.muscles) ? x.muscles : [];
+    let idx = planKeys.get(key);
+    if (idx == null) {
+      idx = nextIndex++;
+      additions.push({
+        index: idx, name: name.slice(0, 120), key, sets: n, reps, timed: false,
+        minutes: null, detail: null, rest_s: 120, load_kg: null, muscles, cue: null,
+      });
+      planKeys.set(key, idx);
+    }
+    have.add(key);
+    for (let s = 1; s <= n; s++) {
+      rows.push({
+        exercise: name.slice(0, 120), exercise_key: key, set_number: s, position: idx + 1,
+        reps, weight_kg: kg, rpe: null, muscles, note: null,
+      });
+    }
+  }
+  return { additions, rows, skipped };
+}
+
+/**
+ * Write the fold: the rows into the live session, the additions onto its
+ * plan. Insert first, then the plan — a failure between the two leaves real
+ * sets on the session and a plan one slot short, which the checklist
+ * survives; the reverse would promise slots with nothing in them.
+ */
+export async function foldIntoSession(userId, session, exercises, { today, now = new Date().toISOString() } = {}) {
+  const { data: sets, error: readErr } = await supabase.from('wrought_sets')
+    .select('exercise_key').eq('session_id', session.id);
+  if (readErr) return { error: readErr.message };
+  const plan = Array.isArray(session.plan) ? session.plan : [];
+  const { additions, rows, skipped } = foldPlan({ plan, sessionSets: sets || [], exercises });
+
+  if (rows.length) {
+    const { error } = await supabase.from('wrought_sets').insert(rows.map(r => ({
+      user_id: userId, session_id: session.id, event_id: null,
+      local_date: today, logged_at: now, ...r,
+    })));
+    if (error) return { error: error.message };
+  }
+  if (additions.length) {
+    const { error } = await supabase.from('wrought_sessions')
+      .update({ plan: [...plan, ...additions] }).eq('id', session.id);
+    if (error) return { folded: rows.length, error: `plan not extended: ${error.message}` };
+  }
+  return {
+    session_id: session.id, session_name: session.name,
+    folded: rows.length, added: additions.map(a => a.name),
+    skipped,
+  };
+}
+
+/**
  * Close anything left running that plainly is not running any more.
  *
  * Called on the way into a read — the dashboard, the brief — so a session
