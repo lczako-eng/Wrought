@@ -12,6 +12,7 @@
 
 import { supabase, getAuthUser, getProfile, localDateFor, insertEvents, lbToKg, sayWeight } from './lib/wrought.js';
 import { ACTIVITY } from './lib/training.js';
+import { STYLES, styleFrom } from './lib/design.js';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -92,6 +93,8 @@ async function read(user) {
       birth_year: p.birth_year,
       sex: p.sex,
       activity_level: p.activity_level || null,
+      // The standing coach — a STYLES key, or null for the plain trainer.
+      coach_style: p.coach_style && STYLES[p.coach_style] ? p.coach_style : null,
       training_age: p.training_age,
       train_days: p.train_days,
       equipment: p.equipment || [],
@@ -147,6 +150,15 @@ async function save(user, body) {
     if (v == null || v === '' || v in ACTIVITY) patch.activity_level = v || null;
     else bad.push('activity_level');
   }
+  // THE STANDING COACH, from the Trainer-styles panel. A style key, or null
+  // to go back to the plain trainer. Validated against the same list the
+  // tools use — a stored key nothing recognises would coach nobody.
+  if ('coach_style' in body) {
+    const v = body.coach_style;
+    if (v == null || v === '') patch.coach_style = null;
+    else if (styleFrom(String(v))) patch.coach_style = styleFrom(String(v));
+    else bad.push('coach_style');
+  }
 
   if ('height_cm' in body)  set('height_cm',  num(body.height_cm, 50, 260), 'height');
   if ('birth_year' in body) set('birth_year', num(body.birth_year, 1900, new Date().getFullYear()), 'birth year');
@@ -182,10 +194,13 @@ async function save(user, body) {
     // Name the migration. Every other endpoint here does, and a raw Postgres
     // "column does not exist" sends somebody reading the wrong file.
     const missing = /column .*(display_name|avatar_path).* does not exist/i.test(error.message || '');
+    const noCoach = /column .*coach_style.* does not exist/i.test(error.message || '');
     return json(500, {
-      error: missing ? 'migration_010_not_run' : 'save_failed',
+      error: missing ? 'migration_010_not_run' : noCoach ? 'migration_026_not_run' : 'save_failed',
       message: missing
         ? 'The profile columns are not installed. Run schema/010_wrought_profile_web.sql in Supabase.'
+        : noCoach
+        ? 'The standing-coach column is not installed. Run schema/026_wrought_coach.sql in Supabase.'
         : error.message,
     });
   }

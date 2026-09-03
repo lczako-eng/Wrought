@@ -823,7 +823,7 @@ const TOOLS = [
   {
     name: 'set_plan',
     title: 'Change the plan',
-    description: 'Changes the pace, how hard it pushes, or the days a week — any one of them on its own. "Make it aggressive", "ease off", "stop nagging me", "chase me harder", "make it four days". Re-computes the calorie and protein targets from the new pace in the same call, so the plan and the numbers can never disagree. Changing a plan is NEVER a negotiation and never gets a remark about commitment: a plan somebody keeps missing is a plan set wrong, and easing it to what they will actually do is the correct move.',
+    description: 'Changes the pace, how hard it pushes, the days a week, or the STANDING COACH — any one of them on its own. "Make it aggressive", "ease off", "stop nagging me", "chase me harder", "make it four days", "coach me like a boxer from now on", "make Fight camp my default", "back to the plain trainer". Re-computes the calorie and protein targets from the new pace in the same call, so the plan and the numbers can never disagree. Changing a plan is NEVER a negotiation and never gets a remark about commitment: a plan somebody keeps missing is a plan set wrong, and easing it to what they will actually do is the correct move.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -837,6 +837,7 @@ const TOOLS = [
         minutes_per_week:  { type: 'integer', description: 'Minutes of training a week, in total, they will commit to (0-3000). "Three hours a week" is 180.' },
         track:             { type: 'string', enum: ['general','athlete'], description: 'The athlete track: "I train for a sport", "I want to be an athlete", "competitive". Turns on the performance read — VO2 max, HRV, recovery, logged tests — and the what-to-work-on line in every brief. The response OFFERS a five-a-week commitment; set it only on a yes.' },
         sport:             { type: 'string', description: 'What they train for, in their words — "hockey", "5k", "boxing". Naming a sport puts them on the athlete track.' },
+        style:             { type: 'string', description: 'The STANDING coach: the trainer style every built session comes in, and the voice it is coached in, until they change it. A method name ("Fight camp", "Conjugate method", "One hard set") or the famous name people actually say ("coach me like Louie Simmons", "Arnold style") — recognised either way. "none" / "plain" clears it. Delivery and session shape only; every load still comes from the tools. A style named on design_workout for one day still wins for that day.' },
       },
     },
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
@@ -1899,6 +1900,9 @@ async function savePlan(userId, patch) {
   const row = { user_id: userId, ...patch, plan_set_on: new Date().toISOString().slice(0, 10) };
   const { error } = await supabase.from('wrought_profile')
     .upsert(row, { onConflict: 'user_id' });
+  if (error && /column .*coach_style.* does not exist/i.test(error.message)) {
+    return { error: 'The standing-coach column is not in the database yet — run schema/026_wrought_coach.sql in Supabase.' };
+  }
   if (error && /column .* does not exist/i.test(error.message)) {
     return { error: 'The plan columns are not in the database yet — run schema/014_wrought_plan.sql in Supabase.' };
   }
@@ -2181,6 +2185,24 @@ async function setPlan(args, user) {
   }
   if (args.sport != null) patch.sport = String(args.sport).trim().slice(0, 80) || null;
   if (patch.sport && args.track == null) patch.track = 'athlete';
+  // THE STANDING COACH. "Coach me like a boxer from now on", "make Fight camp
+  // my default", "back to the plain trainer". Recognised from the method name
+  // or the famous name people actually say; stored as the style KEY so the
+  // voice and the session shape are looked up, never re-parsed.
+  if (args.style != null) {
+    const raw = String(args.style).trim();
+    if (!raw || /^(none|off|plain|default|no( coach)?|stop|clear|normal)$/i.test(raw)) {
+      patch.coach_style = null;
+    } else {
+      const key = styleFrom(raw);
+      if (!key) {
+        return { error: 'unknown_style',
+          say: `No style called "${raw}". The ones on the shelf: ${Object.values(STYLES).map(s => s.say).join(', ')}.`,
+          note: 'Offer the list in one line and let them pick — never guess a style from a vague word.' };
+      }
+      patch.coach_style = key;
+    }
+  }
   if (patch.strength_per_week != null || patch.cardio_per_week != null) {
     const cur = await getProfile(user.id);
     const s = patch.strength_per_week ?? cur.strength_per_week;
@@ -2188,7 +2210,7 @@ async function setPlan(args, user) {
     if (s != null && c != null) patch.train_days = Math.max(1, Math.min(14, s + c));
   }
   if (!Object.keys(patch).length) {
-    return { error: 'Nothing to change — pass a pace, a push, days a week, or the strength / stamina / minutes commitment.' };
+    return { error: 'Nothing to change — pass a pace, a push, days a week, a coaching style, or the strength / stamina / minutes commitment.' };
   }
 
   const saved = await savePlan(user.id, patch);
@@ -2203,6 +2225,11 @@ async function setPlan(args, user) {
   if (patch.cardio_per_week != null) changed.push(`${patch.cardio_per_week} stamina session${patch.cardio_per_week === 1 ? '' : 's'} a week`);
   if (patch.minutes_per_week != null) changed.push(`${patch.minutes_per_week} minutes a week`);
   if (patch.train_days) changed.push(`${patch.train_days} sessions a week`);
+  if ('coach_style' in patch) {
+    changed.push(patch.coach_style
+      ? `coach is ${STYLES[patch.coach_style].say}${STYLES[patch.coach_style].tradition ? `, ${STYLES[patch.coach_style].tradition}` : ''} — every built session comes in that style and that voice until you say otherwise`
+      : 'back to the plain trainer — no standing style');
+  }
 
   // A new pace with the old calorie target standing beside it is the same bug
   // set_goal already had with stacked rings: two answers to one question. So
@@ -2245,7 +2272,7 @@ async function setPlan(args, user) {
     say: `Changed — ${changed.join('; ')}.` + (offer ? ` ${offer.say}` : '') +
          (retargeted ? ` Targets moved with it: about ${retargeted.calories_per_day} kcal and ${retargeted.protein_g_per_day}g protein a day, on pace for roughly ${Math.abs(retargeted.projected_kg_per_week)}kg a week.` : '') +
          (held ? ` ${held}` : ''),
-    note: 'Confirm it in one line and move on. NO remark about commitment, no asking why, no warning that they are backing off — a plan somebody keeps missing is a plan set wrong, and easing it to what they will really do is the right call, not a retreat. If they went aggressive, say plainly that it will be hungrier and that protein and lifting matter more now, and leave it there.',
+    note: 'Confirm it in one line and move on. NO remark about commitment, no asking why, no warning that they are backing off — a plan somebody keeps missing is a plan set wrong, and easing it to what they will really do is the right call, not a retreat. If they went aggressive, say plainly that it will be hungrier and that protein and lifting matter more now, and leave it there. A coaching style changes DELIVERY and the shape of a built session only — never a load, never a plate, and a care flag silences the voice like every other.',
     next_actions: ['my_plan to hear the whole thing back', 'brief — it scores the new targets from tonight'],
   };
 }
@@ -2309,10 +2336,15 @@ async function athleteReport(_args, user) {
 // corner-man register. A plain "Leg day" has no voice and the ordinary
 // trainer lines stand. Names carry the surname on purpose (that is how the
 // person finds them); the VOICE never says it.
-function sessionVoice(session) {
-  const key = styleFrom(session?.name || '');
+// The STANDING coach on the plan is the fallback: a plain "Leg day" is coached
+// in the register they chose once, and a session named for a tradition still
+// speaks in its own.
+function sessionVoice(session, profile = null) {
+  const named = styleFrom(session?.name || '');
+  const standing = profile?.coach_style && STYLES[profile.coach_style] ? profile.coach_style : null;
+  const key = named || standing;
   const voice = key ? STYLES[key]?.voice : null;
-  return voice ? { style: STYLES[key].say, ...voice } : null;
+  return voice ? { style: STYLES[key].say, ...(standing && !named ? { from: 'standing_coach' } : {}), ...voice } : null;
 }
 
 // ── Where they train ───────────────────────────────────────────────────────
@@ -3505,7 +3537,7 @@ async function startSession(args, user) {
     aim,
     aim_pending: !aim,
     // The session's voice from the first set, when it is one of the traditions.
-    ...(sessionVoice({ name }) ? { voice: sessionVoice({ name }) } : {}),
+    ...(sessionVoice({ name }, profile) ? { voice: sessionVoice({ name }, profile) } : {}),
     // The daily targets a notification can be a percentage of. Gone once set.
     ...(needGoals ? { goals_needed: needGoals } : {}),
     aim_saved: canAim ? undefined : 'This session\'s aim cannot be stored until migration 017 has been run, so it will not be on the record afterwards.',
@@ -3816,7 +3848,7 @@ async function logSet(args, user) {
       : { rpe: null, why: 'they did not say how it felt, so the load holds — an unreported effort never adds weight' },
     // The session's VOICE, when the routine is one of the traditions: the
     // register for the line between this set and the next. Delivery only.
-    ...(sessionVoice(session) ? { voice: sessionVoice(session) } : {}),
+    ...(sessionVoice(session, profile) ? { voice: sessionVoice(session, profile) } : {}),
     ask_after: afterSet({ reps: args.reps ?? null, target: current.reps, hadEffort: effort.rpe != null }),
     ...(setNo === 1 && !moreSetsHere
       ? { ask_before: beforeSet({ exercise: nextExercise.name, setNumber: 1,
@@ -4007,7 +4039,7 @@ async function sessionStatus(_args, user) {
     current: current ? { exercise: current.name, set: doneHere + 1, of: current.sets, reps: current.reps } : null,
     checklist: planChecklist(plan, session.cursor_index || 0, doneHere),
     progress: sessionProgress(plan, sets),
-    ...(sessionVoice(session) ? { voice: sessionVoice(session) } : {}),
+    ...(sessionVoice(session, profile) ? { voice: sessionVoice(session, profile) } : {}),
     say: last
       ? `${sets.length} set${sets.length === 1 ? '' : 's'} on the record, last one ${last.exercise} set ${last.set_number}: ${last.reps ?? '—'} reps${last.weight_kg != null ? ` at ${Number(last.weight_kg)}kg` : ''}. ${current ? `Up: ${current.name} set ${doneHere + 1} of ${current.sets ?? '?'}.` : 'The plan is finished.'}`
       : `${session.name} is open with no sets logged yet.`,
@@ -5341,7 +5373,12 @@ async function designWorkout(args, user) {
   // A famous name is a STYLE ask. "Schwarzenegger workout" is golden-era
   // volume; "boxing workout" is a camp's conditioning shape. Recognised from
   // either field, because people put it wherever it comes out.
-  const style = styleFrom(args.style) || styleFrom(args.focus) || null;
+  // A style named for the day wins; otherwise the STANDING coach on the plan,
+  // so "build me a leg day" comes in the tradition they chose once rather
+  // than asking every time. Said back which it was.
+  const named = styleFrom(args.style) || styleFrom(args.focus) || null;
+  const standing = !named && profile.coach_style && STYLES[profile.coach_style] ? profile.coach_style : null;
+  const style = named || standing;
   const focus = focusFrom(args.focus) || (style ? STYLES[style].focus_default || null : null);
   const minutes = Number(args.minutes) > 0 ? Math.round(Number(args.minutes)) : null;
 
@@ -5387,6 +5424,10 @@ async function designWorkout(args, user) {
   return {
     ...(style ? {
       style: STYLES[style].say,
+      // Whether this came from today's ask or from the plan — so "why is this
+      // a boxing session" has an answer, and so does "how do I change it".
+      style_source: standing ? 'standing_coach' : 'named_today',
+      ...(standing ? { style_source_note: `${STYLES[style].say} is their standing coach on the plan. Say so in half a clause. A different style for today is just naming one; changing it for good is set_plan with style.` } : {}),
       // SAID EVERY TIME A STYLE IS USED, and never softened: the method is
       // real and published; the name is an era, not an endorsement. Claiming
       // a famous coach's programme is a small lie that makes every honest

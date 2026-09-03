@@ -1691,6 +1691,40 @@ as a trend or turned it into a recommendation. Now:
   answer) puts somebody on the track; so does *"I play hockey"* through
   `set_plan`. Applied to the live database through the connector.
 
+### The standing coach — set once, every built session comes in that style
+
+`026_wrought_coach.sql` + `coach_style` on the plan + `style` on `set_plan`
++ *Make my coach* on the Trainer-styles panel. The founder: *"are you done
+with all the other trainer styles and where can I find them on the app or
+website and change it?"* — and, told there was no way to keep one: *"Ok do
+it."* The twenty-four could be picked per session and were never remembered,
+so *"build me a leg day"* came in the plain trainer's voice however many times
+somebody had asked for the boxing one.
+
+- **One column, a `STYLES` key, null is the plain trainer.** Validated in
+  code against the list the tools already use, not by a constraint — the
+  list lives in `lib/design.js` and a constraint would need migrating every
+  time a style was added. `planRead` carries `coach`, `coach_say`,
+  `coach_tradition` and `coach_voice`, and says *"Coach: Fight camp, in the
+  tradition of…"* — so `my_plan` and the plan panel name the same coach.
+- **Never in `missing`.** The plain trainer is a complete answer, and
+  demanding a tradition before the first session is the setup interview the
+  warm-up doctrine forbids.
+- **A style named for the day still wins.** `design_workout` takes the named
+  style, else the standing one, and says which (`style_source`) so *"why is
+  this a boxing session"* has an answer. `sessionVoice` falls back to it on
+  every reader — start, every set, the status read — so a plain *"Leg day"*
+  is coached in the register they chose once.
+- **Changed in one sentence, or one tap.** `set_plan` with `style` takes the
+  method name or the famous name people actually say, and *none / plain /
+  back to the plain trainer* clears it; an unknown name answers with the
+  shelf rather than guessing. The panel's button goes through `api-profile`
+  — the same column — so the screen and the tool cannot disagree about who
+  is coaching. Never in the demo.
+- **Delivery and session shape only.** The no-loads rule and the care-flag
+  silence hold exactly as for a style picked for the day; the note on
+  `set_plan` says so.
+
 ### Every style has a voice — a register that changes delivery and nothing else
 
 `lib/voices.js`, merged onto `STYLES`, carried as `voice` on `design_workout`
@@ -4104,7 +4138,7 @@ self-reporting scale removes the most-abandoned manual entry), then Strava.
 
 ## Conventions
 
-- `npm test` runs `test/harness.mjs` — 702 offline tests, no network, no database.
+- `npm test` runs `test/harness.mjs` — 703 offline tests, no network, no database.
   Run it before every push. It covers the JSON-RPC envelope (which fails as an
   uninformative "could not connect" inside ChatGPT) and all the arithmetic
   (which fails as a confidently wrong number in somebody's verdict).
@@ -4144,7 +4178,7 @@ self-reporting scale removes the most-abandoned manual entry), then Strava.
    `003_wrought_training.sql`, `004_wrought_fasting.sql`,
    `005_wrought_activity.sql`, `006_wrought_identity.sql`, `007_wrought_push.sql`,
    `008_wrought_blocks.sql`, `009_wrought_photos.sql` and
-   `010_wrought_profile_web.sql`, `011_wrought_membership.sql`, `012_wrought_link_codes.sql`, `013_wrought_work.sql`, `014_wrought_plan.sql` `015_wrought_ingest_dedupe_fix.sql`, `016_wrought_set_source.sql` `017_wrought_session_aim.sql`, `018_wrought_alerts.sql`, `023_wrought_commitment.sql` and `024_wrought_places.sql` in Supabase. Full checklist in `docs/SETUP.md`. (017 and 018 through 025 were applied through the Supabase connector from a session — `list_migrations` shows them by name — so a session with that connector can apply an additive migration itself rather than leaving it on this list — **but never while a `wrought_sessions` row is active: DDL bounces PostgREST and the founder's mid-set `log_set` failed for exactly that reason.** 017 sat unapplied for weeks while the code degraded politely around it; check `/status` before assuming a column exists.)
+   `010_wrought_profile_web.sql`, `011_wrought_membership.sql`, `012_wrought_link_codes.sql`, `013_wrought_work.sql`, `014_wrought_plan.sql` `015_wrought_ingest_dedupe_fix.sql`, `016_wrought_set_source.sql` `017_wrought_session_aim.sql`, `018_wrought_alerts.sql`, `023_wrought_commitment.sql` and `024_wrought_places.sql` in Supabase. Full checklist in `docs/SETUP.md`. (017 and 018 through 026 were applied through the Supabase connector from a session — `list_migrations` shows them by name — so a session with that connector can apply an additive migration itself rather than leaving it on this list — **but never while a `wrought_sessions` row is active: DDL bounces PostgREST and the founder's mid-set `log_set` failed for exactly that reason.** 017 sat unapplied for weeks while the code degraded politely around it; check `/status` before assuming a column exists.)
 3. Set env vars in Netlify: `SUPABASE_URL` (**no trailing slash** — Kong answers
    "Invalid path specified in request URL" and nothing says why),
    `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_ANON_KEY`,

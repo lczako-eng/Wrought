@@ -60,6 +60,7 @@ const MIGRATIONS = [
   { file: '023_wrought_commitment.sql',   probe: col('wrought_profile', 'strength_per_week'), gives: 'the training commitment — strength, stamina and minutes a week — and the mid-week check that reads the week against it' },
   { file: '024_wrought_places.sql',       probe: t('wrought_places'),                gives: 'where you train as a record — a gym with its kit, the park, the garage — so a session is built to the place you are at' },
   { file: '025_wrought_athlete.sql',      probe: col('wrought_profile', 'track'),    gives: 'the athlete track — VO2 max, HRV, recovery and logged tests read as trends, and the one thing to work on in every brief' },
+  { file: '026_wrought_coach.sql',        probe: col('wrought_profile', 'coach_style'), gives: 'a standing coach — the trainer style every built session comes in, and the voice it is coached in, until it is changed' },
 ];
 
 // A probe that treats EVERY error as "not run" lies twice over: a timeout reads
