@@ -34,9 +34,10 @@ import { applyAnswers, setupState } from './lib/setup.js';
 import { weeklyVolume } from './lib/volume.js';
 import { ALERT_KINDS, describeAlert, suggestAlerts } from './lib/alerts.js';
 import { planRead } from './lib/plan.js';
+import { calibration } from './lib/adapt.js';
 import { guideRead } from './lib/guide.js';
 import { nextNudge, nudgeNote } from './lib/prompt.js';
-import { setBodyGoal, setMetricGoal, retireGoalsFor, intentFrom, SET_TARGETS_URL } from './lib/goals.js';
+import { setBodyGoal, setMetricGoal, retireGoalsFor, intentFrom, applyCalibration, SET_TARGETS_URL } from './lib/goals.js';
 import { ROUTING_HABIT } from './lib/wrought.js';
 import { preflight } from './lib/preflight.js';
 import { finaliseSession, closeStaleSessions, recordSet, foldIntoSession } from './lib/session.js';
@@ -823,7 +824,7 @@ const TOOLS = [
   {
     name: 'set_plan',
     title: 'Change the plan',
-    description: 'Changes the pace, how hard it pushes, the days a week, or the STANDING COACH — any one of them on its own. "Make it aggressive", "ease off", "stop nagging me", "chase me harder", "make it four days", "coach me like a boxer from now on", "make Fight camp my default", "back to the plain trainer". Re-computes the calorie and protein targets from the new pace in the same call, so the plan and the numbers can never disagree. Changing a plan is NEVER a negotiation and never gets a remark about commitment: a plan somebody keeps missing is a plan set wrong, and easing it to what they will actually do is the correct move.',
+    description: 'Changes the pace, how hard it pushes, the days a week, the STANDING COACH, or RECALIBRATES the calorie target to what the scale says — any one of them on its own. "Make it aggressive", "ease off", "stop nagging me", "chase me harder", "make it four days", "coach me like a boxer from now on", "make Fight camp my default", "back to the plain trainer", "recalibrate", "use the real number". Re-computes the calorie and protein targets from the new pace in the same call, so the plan and the numbers can never disagree. Changing a plan is NEVER a negotiation and never gets a remark about commitment: a plan somebody keeps missing is a plan set wrong, and easing it to what they will actually do is the correct move.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -838,6 +839,7 @@ const TOOLS = [
         track:             { type: 'string', enum: ['general','athlete'], description: 'The athlete track: "I train for a sport", "I want to be an athlete", "competitive". Turns on the performance read — VO2 max, HRV, recovery, logged tests — and the what-to-work-on line in every brief. The response OFFERS a five-a-week commitment; set it only on a yes.' },
         sport:             { type: 'string', description: 'What they train for, in their words — "hockey", "5k", "boxing". Naming a sport puts them on the athlete track.' },
         style:             { type: 'string', description: 'The STANDING coach: the trainer style every built session comes in, and the voice it is coached in, until they change it. A method name ("Fight camp", "Conjugate method", "One hard set") or the famous name people actually say ("coach me like Louie Simmons", "Arnold style") — recognised either way. "none" / "plain" clears it. Delivery and session shape only; every load still comes from the tools. A style named on design_workout for one day still wins for that day.' },
+        recalibrate:       { type: 'boolean', description: 'THE SCALE CORRECTS THE TARGET. "Recalibrate", "use what the scale says", "move the target to the real number", "yes" to the offer on my_plan. Moves the daily calorie target to what four weeks of logged intake and weigh-ins say the body actually spends, keeping the chosen pace — computed on the server, stepped at most 300 a fortnight, floored at 1,200, held under the rapid-loss ceiling. Only ever on their word: my_plan OFFERS it; this applies it. Never estimate the figure yourself.' },
       },
     },
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
@@ -2142,19 +2144,26 @@ async function myPlan(_args, user) {
   // ONE reader, shared with the dashboard — see lib/plan.js. The plan somebody
   // is told and the plan somebody can go and look at must be the same plan.
   const p = planRead({ profile: f.profile, goals: f.goals, weightKg: f.weightKg });
+  // THE SCALE'S CORRECTION, read off the last four weeks and OFFERED. Every
+  // surface said the trend corrects the target; this is the arithmetic that
+  // does it, and it moves nothing until they say so.
+  const today = localDateFor(f.profile.timezone);
+  const range = await rangeFacts(user.id, f.profile, addDays(today, -29), today);
+  const cal = calibration({ days: range.days, profile: f.profile, goals: f.goals, weightKg: f.weightKg, today });
 
   return {
     ...p,
+    calibration: cal,
     missing: p.missing || undefined,
     options: {
       pace: Object.fromEntries(Object.entries(PACES).map(([k, v]) => [k, v.say])),
       push: Object.fromEntries(Object.entries(PUSH).map(([k, v]) => [k, v.say])),
     },
-    say: p.lines.length ? p.say : 'No plan on file yet.',
-    changeable: 'Any of it changes in one sentence — "make it aggressive", "ease off", "stop nagging me", "make it four days".',
+    say: (p.lines.length ? p.say : 'No plan on file yet.') + (cal.known ? ` ${cal.say}` : ''),
+    changeable: 'Any of it changes in one sentence — "make it aggressive", "ease off", "stop nagging me", "make it four days", "recalibrate" to move the target to what the scale says.',
     note: p.missing
       ? `Not set up yet. Ask for ALL of this in ONE message, never as a form and never one question at a time: ${p.missing.join('; ')}. Offer the pace and push options in a line each, in plain words. Then call set_plan (and set_goal with an intent) and get straight on with what they were doing.`
-      : 'Say it back short — what they are aiming at, how fast, how hard it pushes, days a week. ALWAYS quote the target BESIDE the maintenance figure and the weekly rate: "2,833 against a maintenance of 3,833, about 0.9kg a week" is a decision somebody can judge, where "2,833" on its own is a rule handed down and reads as arbitrary. Then remind them in half a clause that any of it changes by just saying so. Never defend the plan and never ask them to justify a change.',
+      : 'Say it back short — what they are aiming at, how fast, how hard it pushes, days a week. ALWAYS quote the target BESIDE the maintenance figure and the weekly rate: "2,833 against a maintenance of 3,833, about 0.9kg a week" is a decision somebody can judge, where "2,833" on its own is a rule handed down and reads as arbitrary. Then remind them in half a clause that any of it changes by just saying so. Never defend the plan and never ask them to justify a change. If calibration.known, say its line too — what the scale actually did against the projection, and the corrected target if there is one — and OFFER the move; apply it only on a yes (set_plan with recalibrate: true). Never move a target yourself and never estimate an expenditure.',
     next_actions: ['set_plan to change any part of it', 'suggest_workout to train under it'],
   };
 }
@@ -2209,8 +2218,28 @@ async function setPlan(args, user) {
     const c = patch.cardio_per_week ?? cur.cardio_per_week;
     if (s != null && c != null) patch.train_days = Math.max(1, Math.min(14, s + c));
   }
+  // THE SCALE CORRECTS THE TARGET, on their word. "Recalibrate", "use what the
+  // scale says", "move it to the real number" — the read is computed in
+  // lib/adapt.js and applied through the one goal-writing door, never here.
+  if (args.recalibrate === true) {
+    const done = await applyCalibration(user.id);
+    if (done.error) return { error: done.error };
+    return {
+      recalibrated: done.applied,
+      ...(done.applied ? { from: done.from, to: done.to } : {}),
+      calibration: done.calibration,
+      say: done.applied
+        ? `Changed — the calorie target moved from ${done.from} to ${done.to} a day, off what the scale says you actually spend. ${done.calibration.say}`
+        : done.calibration.say,
+      note: done.applied
+        ? 'Confirm the move in one line with its working — the average intake, what the scale did, the expenditure it implies. It steps at most 300 a fortnight; say so if the read wanted more. No remark about why the gap existed: salt, sleep and a heavy week are not separable from here.'
+        : 'Nothing moved. Say why in the read\'s own words — a thin log, within noise, or a floor — and leave it.',
+      next_actions: ['my_plan to hear the whole thing back'],
+    };
+  }
+
   if (!Object.keys(patch).length) {
-    return { error: 'Nothing to change — pass a pace, a push, days a week, a coaching style, or the strength / stamina / minutes commitment.' };
+    return { error: 'Nothing to change — pass a pace, a push, days a week, a coaching style, recalibrate: true, or the strength / stamina / minutes commitment.' };
   }
 
   const saved = await savePlan(user.id, patch);

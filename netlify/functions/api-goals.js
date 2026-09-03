@@ -18,7 +18,7 @@
 // write two different shapes of the same intention.
 
 import { getAuthUser } from './lib/wrought.js';
-import { setBodyGoal, setMetricGoal } from './lib/goals.js';
+import { setBodyGoal, setMetricGoal, applyCalibration } from './lib/goals.js';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -40,6 +40,23 @@ export const handler = async (event) => {
 
   let body = {};
   try { body = JSON.parse(event.body || '{}'); } catch { return json(400, { error: 'Bad JSON.' }); }
+
+  // THE SCALE CORRECTS THE TARGET — one tap on the read the plan panel shows.
+  // The figure is computed in lib/adapt.js from the last four weeks of the
+  // record; the page never sends a number. Nothing moves unless the read
+  // suggests a move, and the answer says why when it does not.
+  if (body.recalibrate === true) {
+    const done = await applyCalibration(user.id);
+    if (done.error) return json(500, { error: done.error });
+    return json(200, {
+      applied: done.applied,
+      ...(done.applied ? { from: done.from, to: done.to } : {}),
+      calibration: done.calibration,
+      say: done.applied
+        ? `Target moved from ${done.from} to ${done.to} a day, off what the scale says you actually spend.`
+        : done.calibration.say,
+    });
+  }
 
   // A body goal: intent + optional pace. The page's buttons send exactly this.
   if (body.intent) {

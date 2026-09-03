@@ -1100,6 +1100,10 @@ table.matrix td.rh.cold { color: var(--heat-3); }
 .planrow.style .lineage { font-size: 12.5px; color: var(--muted); font-weight: 400; }
 .planrow.style .emph { font-size: 12px; color: var(--dim); font-weight: 400; }
 .planrow.style .voice { font-size: 12px; color: var(--muted); font-weight: 400; margin-top: 2px; }
+/* The scale's correction on the plan panel: a read, one tap, its caveat. */
+.calib { margin: 10px 0 4px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; }
+.calib .sub { margin: 0 0 6px; }
+.calibact { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin: 4px 0 6px; }
 /* The standing coach: a tag on the row, and the two actions kept together. */
 .planrow.style.iscoach { border-color: var(--heat-3); }
 .coachtag { display: inline-block; font-size: 10.5px; letter-spacing: .08em; text-transform: uppercase; padding: 1px 6px; border-radius: 6px; border: 1px solid var(--heat-3); color: var(--heat-5); margin-left: 6px; vertical-align: middle; }
@@ -5931,11 +5935,53 @@ function planPanel(d) {
     </div>
     ${p.pace_say ? `<p class="sub dim">${esc(p.pace_say)}</p>` : ''}
     ${p.push_say ? `<p class="sub dim">${esc(p.push_say)}</p>` : ''}
+    ${calibrationBlock(d.calibration)}
     ${p.missing?.length ? `<p class="sub">Still to settle: ${esc(p.missing.join('; '))}.</p>` : ''}
     <p class="caveat">Every figure is an estimate, and the weekly trend on the scale corrects it —
     never the other way round. Any part of this changes in one sentence to your assistant:
     <em>"make it aggressive"</em>, <em>"ease off"</em>, <em>"stop nagging me"</em>. It is never a negotiation.</p>
   </section>`;
+}
+
+// THE SCALE CORRECTS THE TARGET — the read, with its working, and one tap to
+// apply it. Every surface said the weigh-in trend corrects the target; this
+// is where it is finally shown doing so. The figure is computed server-side
+// in lib/adapt.js; the page sends no number, only "yes". Never in the demo.
+function calibrationBlock(c) {
+  if (!c) return '';
+  if (!c.known) {
+    return `<p class="sub dim">What the scale says: ${esc(c.say)}</p>`;
+  }
+  const move = c.suggested_target != null;
+  return `<div class="calib">
+    <p class="sub"><strong>What the scale says.</strong> ${esc(c.say)}</p>
+    ${move && !DEMO ? `<p class="calibact">
+      <button class="ghost small" data-recal="1" title="Move the calorie target to the corrected figure">Use ${n(c.suggested_target)} a day</button>
+      <span class="dim" id="calmsg"></span></p>` : ''}
+    <p class="caveat">${esc(c.caveat)}</p>
+  </div>`;
+}
+
+async function recalibrateTap(btn) {
+  const el = $('calmsg');
+  if (btn) btn.disabled = true;
+  if (el) el.textContent = 'Moving…';
+  const { data: s } = await sb.auth.getSession();
+  if (!s?.session) { if (el) el.textContent = 'Sign in first.'; return; }
+  try {
+    const res = await fetch('/api/goals', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${s.session.access_token}` },
+      body: JSON.stringify({ recalibrate: true }),
+    });
+    const body = await res.json();
+    if (el) el.textContent = body.say || body.error || (res.ok ? 'Moved.' : 'Could not move it.');
+    if (res.ok && body.applied) refreshRecord();
+    else if (btn) btn.disabled = false;
+  } catch (e) {
+    if (el) el.textContent = `Did not save: ${e?.message || e}`;
+    if (btn) btn.disabled = false;
+  }
 }
 
 // Defensible numbers, exactly where a model used to reach for a plausible one.
@@ -6648,6 +6694,8 @@ function wireQuickAdd() {
     b.addEventListener('click', () => refileAsWork(b.dataset.refile, b)));
   document.querySelectorAll('[data-settarget]').forEach(b =>
     b.addEventListener('click', () => setTargetTap(b.dataset.settarget, b.dataset.setpace || null)));
+  document.querySelectorAll('[data-recal]').forEach(b =>
+    b.addEventListener('click', () => recalibrateTap(b)));
   document.querySelectorAll('[data-setsteps]').forEach(b =>
     b.addEventListener('click', () => setStepsTap(parseInt(b.dataset.setsteps, 10))));
 }

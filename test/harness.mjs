@@ -4595,6 +4595,112 @@ await test('a target is never quoted without its maintenance', () => {
   assert.match(SERVER_INSTRUCTIONS, /NEVER "maintain"/);
 });
 
+await test('the scale corrects the target — computed, stepped, floored, and never applied on its own', async () => {
+  // Every surface said "the weekly weigh-in trend corrects the target, never
+  // the other way round", and nothing did it. This is the arithmetic:
+  // expenditure = intake − (weight change × 7,700) / days.
+  const { calibration, calibratedGoalRow, MAX_STEP } = await import('../netlify/functions/lib/adapt.js');
+  const profile = { height_cm: 190.5, birth_year: 1982, sex: 'male', plan_pace: 'steady', units: 'metric', timezone: 'UTC' };
+  const goals = [
+    { metric: 'weight_kg', direction: 'reach', goal: 'Lose weight', cadence: 'once' },
+    { metric: 'calories', direction: 'at_most', cadence: 'daily', target_value: 1723, active: true },
+  ];
+  const day = (i, over = {}) => ({ date: `2026-08-${String(i).padStart(2, '0')}`, logged: true, meals: 3, calories: 1900, ...over });
+  // 28 closed days at 1,900, weigh-ins every fourth day sliding down 0.4 kg a week.
+  const days = [];
+  for (let i = 1; i <= 28; i++) days.push(day(i, i % 4 === 1 ? { weight_kg: Math.round((150 - 0.4 * ((i - 1) / 7)) * 100) / 100 } : {}));
+
+  const c = calibration({ days, profile, goals, weightKg: 148.5, today: '2026-08-29' });
+  assert.equal(c.known, true, JSON.stringify(c));
+  assert.equal(c.avg_intake, 1900);
+  assert.ok(Math.abs(c.trend_kg_per_week + 0.4) < 0.02, `trend ${c.trend_kg_per_week}`);
+  // 1,900 + 0.4 × 7,700 / 7 = 2,340.
+  assert.ok(Math.abs(c.expenditure - 2340) <= 5, `expenditure ${c.expenditure}`);
+  assert.equal(c.verdict, 'slower', 'losing 0.4 against a basal-priced projection near 0.7 is slower');
+  // The steady deficit at ~150 kg is 0.5% × 150 × 7,700 / 7 ≈ 825 → clamped to 750,
+  // so the read wants 2,340 − 750 = 1,590; that is 133 under 1,723 → moved to it.
+  assert.ok(Math.abs(c.suggested_target - 1590) <= 5, `suggested ${c.suggested_target}`);
+  assert.ok(Math.abs(c.delta) <= MAX_STEP);
+  assert.match(c.say, /averaged about 1,900 kcal/);
+  assert.match(c.say, /real expenditure of about 2,3\d\d/);
+  assert.match(c.note, /APPLY it only if they say so/);
+  assert.match(c.caveat, /unlogged days looked like logged ones/);
+  // Slower than projected is a fact about arithmetic, never the person.
+  assert.ok(!/fail|slipp|cheat|honest|discipline/i.test(c.say), c.say);
+
+  // THE STEP IS CAPPED. Eating 3,000 while the scale holds reads as a 3,000
+  // expenditure and a 2,250 target; the target moves at most 300 toward it.
+  const big = calibration({ days: days.map(d => ({ ...d, calories: 3000, weight_kg: d.weight_kg != null ? 150 : undefined })), profile, goals, weightKg: 150, today: '2026-08-29' });
+  assert.equal(big.known, true);
+  assert.equal(big.suggested_target, 1723 + MAX_STEP, `stepped ${big.suggested_target}`);
+  assert.match(big.reason, /moved 300 toward the read/);
+
+  // THE FLOOR. A small body eating little reads as a low expenditure; the
+  // target never goes under 1,200.
+  const small = calibration({
+    days: days.map(d => ({ ...d, calories: 1300, weight_kg: d.weight_kg != null ? 55 - 0.1 * ((Number(d.date.slice(-2)) - 1) / 7) : undefined })),
+    profile: { ...profile, height_cm: 155, sex: 'female' }, goals: [goals[0], { ...goals[1], target_value: 1250 }], weightKg: 55, today: '2026-08-29' });
+  assert.equal(small.known, true);
+  if (small.suggested_target != null) assert.ok(small.suggested_target >= 1200, `floor ${small.suggested_target}`);
+
+  // LOSING FASTER THAN THE CEILING ONLY EVER MOVES THE TARGET UP.
+  const fast = calibration({ days: days.map(d => ({ ...d, calories: 1400, weight_kg: d.weight_kg != null ? 150 - 1.4 * ((Number(d.date.slice(-2)) - 1) / 7) : undefined })), profile, goals, weightKg: 145, today: '2026-08-29' });
+  assert.equal(fast.known, true);
+  assert.ok(fast.suggested_target == null || fast.suggested_target >= 1723, `came down on a rapid loss: ${fast.suggested_target}`);
+
+  // A THIN LOG IS NOT A READ — it reports and never suggests.
+  const thin = calibration({ days: days.map((d, i) => (i % 3 === 0 ? d : { ...d, meals: 0, calories: null })), profile, goals, weightKg: 148.5, today: '2026-08-29' });
+  assert.equal(thin.known, true);
+  assert.equal(thin.thin, true);
+  assert.equal(thin.suggested_target, null);
+  assert.match(thin.say, /a reading, not a correction/);
+
+  // Too little of anything says what is missing and computes nothing.
+  const none = calibration({ days: days.slice(0, 6), profile, goals, weightKg: 150, today: '2026-08-29' });
+  assert.equal(none.known, false);
+  assert.match(none.say, /cannot correct the target yet/);
+  assert.equal(none.expenditure, undefined);
+  // The open day is never intake evidence.
+  const withToday = calibration({ days: [...days, day(29, { calories: 300 })], profile, goals, weightKg: 148.5, today: '2026-08-29' });
+  assert.equal(withToday.avg_intake, 1900);
+
+  // The write is the same shape setBodyGoal writes, and it is a calorie goal only.
+  const row = calibratedGoalRow('u1', c);
+  assert.equal(row.metric, 'calories');
+  assert.equal(row.direction, 'at_most');
+  assert.equal(row.target_value, c.suggested_target);
+  assert.match(row.goal, /recalibrated from the scale/);
+  assert.equal(calibratedGoalRow('u1', none), null);
+
+  // WIRED, and only ever on their word: my_plan carries and OFFERS it, set_plan
+  // applies it through the one goal-writing door, the goals endpoint takes the
+  // tap, the plan panel shows the read and the button. Never applied by a read.
+  const mcp = readFileSync(new URL('../netlify/functions/mcp.js', import.meta.url), 'utf8');
+  const my = mcp.slice(mcp.indexOf('async function myPlan('), mcp.indexOf('async function setPlan('));
+  assert.match(my, /calibration: cal,/);
+  assert.match(my, /OFFER the move; apply it only on a yes/);
+  const sp = mcp.slice(mcp.indexOf('async function setPlan('), mcp.indexOf('// ── The athlete track'));
+  assert.match(sp, /if \(args\.recalibrate === true\) \{[\s\S]{0,80}applyCalibration\(user\.id\)/);
+  const spTool = mcp.slice(mcp.indexOf("name: 'set_plan'"), mcp.indexOf("name: 'answer_setup'"));
+  assert.match(spTool, /recalibrate:\s*\{ type: 'boolean'/);
+  assert.match(spTool, /Never estimate the figure yourself/);
+  const goalsLib = readFileSync(new URL('../netlify/functions/lib/goals.js', import.meta.url), 'utf8');
+  assert.match(goalsLib, /export async function applyCalibration/);
+  assert.match(goalsLib, /retireGoalsFor\(userId, 'calories', 'daily'\)/);
+  const api = readFileSync(new URL('../netlify/functions/api-goals.js', import.meta.url), 'utf8');
+  assert.match(api, /if \(body\.recalibrate === true\)/);
+  const prog = readFileSync(new URL('../netlify/functions/api-progress.js', import.meta.url), 'utf8');
+  assert.match(prog, /calibration: calibration\(\{ days: recent\.days, profile, goals, weightKg, today: to \}\)/);
+  const page = readFileSync(new URL('../public/app.html', import.meta.url), 'utf8');
+  assert.match(page, /function calibrationBlock\(c\)/);
+  assert.match(page, /data-recal="1"/);
+  assert.match(page, /body: JSON\.stringify\(\{ recalibrate: true \}\)/);
+  assert.match(page, /move && !DEMO/, 'the tap must never appear in the demo');
+  // Nothing anywhere applies a calibration without a person's word.
+  assert.ok(!/applyCalibration\(/.test(prog), 'the dashboard read applies a calibration by itself');
+  assert.ok(!/applyCalibration\(/.test(readFileSync(new URL('../netlify/functions/brief-nightly.js', import.meta.url), 'utf8')), 'the scheduled function applies a calibration by itself');
+});
+
 await test('a standing coach — set once, every built session comes in that style, changed in one sentence', async () => {
   // The founder: "where can I find them on the app or website and change it?"
   // The twenty-one styles could be picked per session and never kept. One

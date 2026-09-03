@@ -1691,6 +1691,42 @@ as a trend or turned it into a recommendation. Now:
   answer) puts somebody on the track; so does *"I play hockey"* through
   `set_plan`. Applied to the live database through the connector.
 
+### The scale corrects the target — computed at last, offered, never applied on its own
+
+`lib/adapt.js` + `calibration` on `my_plan` and the dashboard + `recalibrate`
+on `set_plan` and `/api/goals` + the read on the plan panel. Every surface in
+this file says *"the weekly weigh-in trend corrects the target, never the
+other way round"*, and until now **nothing did it.** The projected rate and
+the real one were both computed and never compared, on the one number the
+whole product promises to get right.
+
+- **The arithmetic**: expenditure ≈ average logged intake − (weight change ×
+  7,700) / days. Somebody eating 1,900 who loses 0.4 kg a week is spending
+  about 2,340, and that figure needs no height, age or lifestyle multiplier —
+  it comes from two things the record already holds. The correction applies
+  the pace's own deficit to that expenditure rather than to basal.
+- **Offered, never applied on its own.** `my_plan` and the plan panel carry
+  the read with its working; `set_plan` with `recalibrate: true` and the
+  panel's one tap apply it through `applyCalibration` in `lib/goals.js`, the
+  one goal-writing door. A test asserts neither the dashboard read nor the
+  scheduled function ever calls it. A target that moves under somebody is a
+  target they stop trusting.
+- **A thin log is not a read.** Under ten logged days, four weigh-ins or a
+  fortnight's span it says what is missing; under 60% coverage it reports and
+  never suggests. Unlogged days are assumed to look like logged ones and the
+  caveat says so. The open day is never intake evidence.
+- **The step is capped at 300 a fortnight**, toward the read, never a jump —
+  a fortnight of salt and sleep moves the scale by more than a fortnight of
+  fat. **The floors do not move**: never under 1,200, never past the
+  rapid-loss ceiling, and a trend already faster than the ceiling only ever
+  moves the target UP.
+- **Slower than projected is a fact about the arithmetic, never the
+  person.** A test greps the line for judgement words. The gap is never
+  explained: salt, sleep and a heavy week are not separable from here.
+- **The plan's basis stays basal** — the founder's instruction. A
+  recalibrated target reads on the plan panel as *above basal, so the deficit
+  comes from what you move*, which is exactly what it is.
+
 ### The standing coach — set once, every built session comes in that style
 
 `026_wrought_coach.sql` + `coach_style` on the plan + `style` on `set_plan`
@@ -3164,10 +3200,14 @@ harness now reads the `wrought_alerts` check constraint out of 018 and asserts
 `ALERT_KINDS` and `set_alert`'s own enum are exactly equal to it — the shift
 bug's lesson, applied before it could happen again rather than after.
 
-**Still blocked on the two VAPID environment variables.** `scripts/vapid.mjs`
-generates the pair once; regenerating later kills every existing subscription
-silently. Until they are set, `vapidConfigured()` is false and every send is a
-no-op — the rules are stored and start working the moment the keys exist.
+**The VAPID keys ARE set (23 August) and push is live** — the founder's phone
+took the morning and midday briefs on 3 September. This paragraph used to say
+they were still missing, and that stale line nearly cost a regenerated pair:
+`scripts/vapid.mjs` prints a NEW pair every run, and setting it would have
+silently killed the one subscription that works. **Check Netlify's variables
+before touching them; never regenerate.** The three alert RULES on the
+founder's account have never fired because a care flag stands and every
+coaching kind is silenced under one — by doctrine, not a bug.
 
 ### The checklist you can tick, and the aim every session states
 
@@ -4138,7 +4178,7 @@ self-reporting scale removes the most-abandoned manual entry), then Strava.
 
 ## Conventions
 
-- `npm test` runs `test/harness.mjs` — 703 offline tests, no network, no database.
+- `npm test` runs `test/harness.mjs` — 704 offline tests, no network, no database.
   Run it before every push. It covers the JSON-RPC envelope (which fails as an
   uninformative "could not connect" inside ChatGPT) and all the arithmetic
   (which fails as a confidently wrong number in somebody's verdict).
@@ -4223,10 +4263,11 @@ describing a different mechanism. What actually reaches a phone:
    gets a real button off `beforeinstallprompt`, iOS gets the honest Share →
    Add to Home Screen instruction, since nothing can trigger that from script.
    The worker caches only the shell and never `/api`, `/oauth` or `/mcp` — a
-   cached brief is a wrong brief. **Still needed: VAPID keys and a send
-   endpoint.** The push and notificationclick handlers are already written and
-   deliberately compose nothing; the server sends words it has already computed,
-   so a notification can never disagree with the brief.
+   cached brief is a wrong brief. **Live**: the VAPID keys are set and the
+   founder's installed PWA receives the morning, midday and evening pushes.
+   The push and notificationclick handlers deliberately compose nothing; the
+   server sends words it has already computed, so a notification can never
+   disagree with the brief.
 
 `brief-nightly.js` runs **hourly**, not nightly, because 22:00 is a different
 instant per user — it serves only those for whom it is currently the send hour.
@@ -4318,7 +4359,7 @@ that?"* They get confused constantly and only one of them is ours to fix:
 
 And a lock-screen notification is a **fourth** thing again, with nothing to do
 with the connector at all. That is web push from `brief-nightly.js`, blocked on
-the two VAPID variables and an installed PWA, and no listing anywhere changes
+an installed PWA (the VAPID keys are set and it works), and no listing anywhere changes
 it. Getting listed will not make notifications work and notifications working
 will not get it listed — the two are unrelated, and conflating them is how a
 week gets spent on the wrong one.
