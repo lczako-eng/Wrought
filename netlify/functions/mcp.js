@@ -39,7 +39,7 @@ import { nextNudge, nudgeNote } from './lib/prompt.js';
 import { setBodyGoal, setMetricGoal, retireGoalsFor, intentFrom, SET_TARGETS_URL } from './lib/goals.js';
 import { ROUTING_HABIT } from './lib/wrought.js';
 import { preflight } from './lib/preflight.js';
-import { finaliseSession, closeStaleSessions, recordSet } from './lib/session.js';
+import { finaliseSession, closeStaleSessions, recordSet, foldIntoSession } from './lib/session.js';
 import { effortFromWords, wordsForRecord, beforeSet, afterSet, methodsFor } from './lib/coach.js';
 import { PROVIDERS, providerSummary, recommendRoute } from './lib/providers.js';
 import { nutritionTotals, composition, macroMatrix, yearOverYear } from './lib/nutrition.js';
@@ -1366,8 +1366,34 @@ async function log(args, user) {
 
   // WHERE A WORKOUT HAPPENED travels into the record and adds the place the
   // first time it is named. "Walk at the park" is a workout with a place.
-  const placesTouched = await applyPlaces(user.id, events, localDateFor(profile.timezone));
-  const written = await insertEvents(user.id, profile, events, { rawInput: text });
+  const today = localDateFor(profile.timezone);
+  const placesTouched = await applyPlaces(user.id, events, today);
+
+  // A WORKOUT TOLD WHILE ONE IS RUNNING IS THE SAME WORKOUT. When the
+  // connector drops mid-session and comes back, the honest recovery is a
+  // flush through `log` — and on the founder's night that left a live
+  // session holding five sets beside an event holding the rest, so the
+  // finaliser would have filed a second workout for the same hour. The
+  // exercises go INTO the session instead; what was already logged set by
+  // set is skipped; the finaliser writes one event with everything. Only a
+  // session opened TODAY qualifies — folding tonight's lifts into a stale
+  // session from yesterday would move them to the wrong day.
+  let folded = null;
+  let toWrite = events;
+  const workouts = events.filter(e => e.event_type === 'workout'
+    && Array.isArray(e.detail?.exercises) && e.detail.exercises.length);
+  if (workouts.length) {
+    const { data: live } = await supabase.from('wrought_sessions')
+      .select('*').eq('user_id', user.id).eq('status', 'active').maybeSingle();
+    if (live && live.local_date === today) {
+      folded = await foldIntoSession(user.id, live, workouts.flatMap(w => w.detail.exercises), { today });
+      if (!folded.error) toWrite = events.filter(e => !workouts.includes(e));
+    }
+  }
+
+  const written = toWrite.length
+    ? await insertEvents(user.id, profile, toWrite, { rawInput: text })
+    : [];
   // A type the database has not been taught yet is stored as a note rather
   // than losing the whole call — which used to take the food down with it.
   const degraded = written?.degraded || null;
@@ -1381,10 +1407,10 @@ async function log(args, user) {
   // The result is NOT discarded. A swallowed error is worse than a crash —
   // the 015 postmortem — and here it would mean training that looks logged
   // and counts for nothing in the lift record.
-  const bridged = await syncSetsFromWorkouts(user.id, written);
+  const bridged = written.length ? await syncSetsFromWorkouts(user.id, written) : {};
 
-  const hungry = needsMacros(written, events);
-  const untimed = needsDuration(written, events);
+  const hungry = needsMacros(written, toWrite);
+  const untimed = needsDuration(written, toWrite);
 
   const kinds = [...new Set(written.map(e => e.event_type))];
   const day = await dayFacts(user.id, profile, localDateFor(profile.timezone));
@@ -1395,8 +1421,15 @@ async function log(args, user) {
   const nr = args.quiet ? null : await nudgeFor(user.id, profile, { day });
   const nudge = nr?.nudge || null;
 
+  const foldSay = folded && !folded.error
+    ? `Folded into the running ${folded.session_name}: ${folded.folded} set${folded.folded === 1 ? '' : 's'}${folded.added.length ? ` (${folded.added.join(', ')} added to the plan)` : ''}${folded.skipped.length ? `; ${folded.skipped.map(s => s.name).join(', ')} already on it set by set` : ''}.`
+    : null;
+
   return {
     ...(degraded ? { not_counted_yet: degraded } : {}),
+    // A workout told while one is running went INTO it — one workout tonight,
+    // not two. Said as a fact; the model must not describe a separate entry.
+    ...(folded ? { folded_into_session: folded } : {}),
     // The one thing worth raising unprompted, already filtered by their push
     // setting and silenced entirely by a care flag. Null means say nothing.
     nudge: nudge || undefined,
@@ -1432,10 +1465,15 @@ async function log(args, user) {
     // The item, then the day — in that order, because that is the order the
     // person is thinking in. Composed here rather than left to the model, the
     // same rule as every other number in this server.
-    say: args.quiet
-      ? `Logged: ${written.map(e => itemSay(e)).join('; ')}.`
-      : `Logged ${written.length} thing${written.length === 1 ? '' : 's'}: ${written.map(e => itemSay(e)).join('; ')}.` +
-        (day.food.meals ? ` Today so far: ${day.food.say}.` : ''),
+    say: [
+      foldSay,
+      written.length
+        ? (args.quiet
+          ? `Logged: ${written.map(e => itemSay(e)).join('; ')}.`
+          : `Logged ${written.length} thing${written.length === 1 ? '' : 's'}: ${written.map(e => itemSay(e)).join('; ')}.` +
+            (day.food.meals ? ` Today so far: ${day.food.say}.` : ''))
+        : null,
+    ].filter(Boolean).join(' ') || 'Nothing was written.',
     // A named food stored with no macros is barely stored at all, and the model
     // is the only thing that can fix it — it read the words. Asking here, in the
     // response it is currently reading, beats hoping the tool description landed.
@@ -1446,7 +1484,9 @@ async function log(args, user) {
     ...(bridged.error ? { sets_error: bridged.error } : {}),
     ...(bridged.skipped ? { sets_skipped: bridged.skipped, sets_note: bridged.say } : {}),
     ...(bridged.deduped ? { sets_deduped: true } : {}),
-    note: untimed.length && !hungry.length
+    note: folded && !folded.error && !written.length
+      ? `This went INTO the workout already running — it is NOT a separate entry, so never describe it as one. Say in half a clause that the sets are on the session, then carry on with log_set for the rest of it (session_status shows where it stands) and end_session when they stop. ${folded.skipped.length ? 'The lifts already logged set by set were left exactly as they were, not doubled.' : ''}`
+      : untimed.length && !hungry.length
       ? `Recorded, but ${untimed.map(u => `"${u.summary}"`).join(' and ')} went in with no duration, so ${untimed.length === 1 ? 'it counts' : 'they count'} for NOTHING in calories out. Ask how long it took — one short question, in the same message as the confirmation — then amend_last with the minutes. The server works the calories out from the minutes and their bodyweight; never estimate the calories yourself.`
       : hungry.length
       ? `Recorded, but ${hungry.map(h => `"${h.summary}"`).join(' and ')} went in with no calories or macros, so ${hungry.length === 1 ? 'it counts' : 'they count'} for nothing in every total. You named the food, so you can estimate ${hungry.length === 1 ? 'it' : 'them'}: call amend_last NOW with your best figures and estimated: true. Do it without asking permission${args.quiet ? ', silently, and say nothing about it' : ' and then give BOTH numbers in one short line — what that item came to on its own, and what the day is at now. amend_last returns entry and day_total for exactly this. Never the day total alone: an item with no figure beside it cannot be corrected by the one person who knows it is wrong'}. Only leave macros null when the food itself was never named — "had lunch" stays empty, "two pepperettes" does not.`

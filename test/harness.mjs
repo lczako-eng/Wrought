@@ -875,6 +875,54 @@ await test('the keys already on the record are put back under their own lift', a
   assert.match(mcp, /rekeySets\(user\.id\)/);
 });
 
+await test('a workout told while one is running goes INTO it — one workout tonight, not two', async () => {
+  // The founder's night: the connector dropped mid-session, and when it came
+  // back ChatGPT flushed the rest through `log` as a workout event — the
+  // right recovery, and it left a live session holding five sets beside an
+  // event holding the rest. The finaliser would have filed a second workout
+  // for the same hour, on the one number the whole plan rests on.
+  const { foldPlan } = await import('../netlify/functions/lib/session.js');
+  const plan = [
+    { index: 0, name: 'Bench press', key: 'bench press', sets: 2, reps: 8 },
+    { index: 1, name: 'Seated row machine', key: 'seated row machine', sets: 2, reps: 8 },
+  ];
+  const sessionSets = [{ exercise_key: 'bench press' }, { exercise_key: 'bench press' }];
+  const r = foldPlan({ plan, sessionSets, exercises: [
+    { name: 'Flat bench press', sets: 2, reps: 8, weight_kg: 102 },     // already logged set by set
+    { name: 'Seated row machine', sets: 2, reps: null, weight_kg: null }, // on the plan, not yet done
+    { name: 'Pec-deck/chest fly', sets: 2, reps: 8, weight_kg: 81.6 },   // new — appended
+  ] });
+  // Re-telling what was recorded set by set must not double it.
+  assert.equal(r.skipped.length, 1);
+  assert.match(r.skipped[0].name, /bench/i);
+  assert.ok(!r.rows.some(x => x.exercise_key === 'bench press'), 'the bench was doubled');
+  // A planned lift not yet done gets its sets at its own slot, no new slot.
+  const rowRows = r.rows.filter(x => x.exercise_key === 'seated row machine');
+  assert.equal(rowRows.length, 2);
+  assert.equal(rowRows[0].position, 2);
+  // A new lift is appended to the plan, in the order it happened.
+  assert.equal(r.additions.length, 1);
+  assert.equal(r.additions[0].name, 'Pec-deck/chest fly');
+  assert.equal(r.additions[0].index, 2);
+  const pec = r.rows.filter(x => x.exercise_key === r.additions[0].key);
+  assert.equal(pec.length, 2);
+  assert.equal(pec[1].set_number, 2);
+  assert.equal(pec[0].weight_kg, 81.6);
+  // Nothing is written with an event id — these are session sets.
+  assert.ok(r.rows.every(x => !('event_id' in x)));
+
+  // log folds only into a session opened TODAY — never into yesterday's
+  // stale one, which would move tonight's lifts to the wrong day — and
+  // writes no workout event when it does.
+  const mcp = readFileSync(new URL('../netlify/functions/mcp.js', import.meta.url), 'utf8');
+  const fn = mcp.slice(mcp.indexOf('async function log('), mcp.indexOf('async function reviewIntakeDays('));
+  assert.match(fn, /live && live\.local_date === today/);
+  assert.match(fn, /foldIntoSession\(user\.id, live/);
+  assert.match(fn, /toWrite = events\.filter\(e => !workouts\.includes\(e\)\)/);
+  assert.match(fn, /folded_into_session/);
+  assert.match(fn, /it is NOT a separate entry/);
+});
+
 await test('session_status — "did that save" is answered from the rows, never guessed', () => {
   // "Wrought's set logger is glitching on this one, so I don't want to
   // falsely tell you it saved." The set WAS on the record. The refusal to
@@ -4697,7 +4745,7 @@ await test('every door a workout enters through feeds the bridge', () => {
   // amend_last (corrected afterwards). Any one missing and that path's
   // training silently counts for nothing.
   const mcp = readFileSync(new URL('../netlify/functions/mcp.js', import.meta.url), 'utf8');
-  const logFn = mcp.slice(mcp.indexOf('const written = await insertEvents(user.id, profile, events'), mcp.indexOf('const hungry ='));
+  const logFn = mcp.slice(mcp.indexOf('const written = toWrite.length'), mcp.indexOf('const hungry ='));
   assert.match(logFn, /syncSetsFromWorkouts\(user\.id, written\)/, 'log does not feed the set record');
   const structFn = mcp.slice(mcp.indexOf('async function structureEntries('), mcp.indexOf('async function undoLast(') > 0 ? mcp.indexOf('async function undoLast(') : mcp.indexOf('async function structureEntries(') + 4000);
   assert.match(structFn, /syncSetsFromWorkouts/, 'a dictated workout never reaches the set record');
@@ -4841,7 +4889,7 @@ await test('a running total is the whole day, never the item just logged', () =>
   ]) {
     const at = mcp.indexOf(fn);
     const end = mcp.indexOf(next, at);
-    const body = mcp.slice(at, end > at ? end : at + 6000);
+    const body = mcp.slice(at, end > at ? end : at + 9000);
     assert.match(body, /day_total: dayTotal\(/, `${fn} does not return the day's total`);
   }
 
@@ -5580,7 +5628,7 @@ await test('every caller surfaces what the bridge did, and never swallows it', (
     ['async function structureEntries(', 'async function undoLast('],
   ]) {
     const at = mcp.indexOf(fn);
-    const end = mcp.indexOf(next) > at ? mcp.indexOf(next) : at + 6000;
+    const end = mcp.indexOf(next) > at ? mcp.indexOf(next) : at + 9000;
     const body = mcp.slice(at, end);
     if (!/syncSetsFromWorkouts/.test(body)) continue;
     assert.ok(!/^\s*await syncSetsFromWorkouts/m.test(body), `${fn} discards the bridge result`);
@@ -11306,7 +11354,7 @@ await test('every training door takes a place, the log stamps it, and the record
   // A workout logged in a sentence carries its place into the detail, and the
   // stray top-level key never reaches insertEvents.
   const log = mcp.slice(mcp.indexOf('\nasync function log('), mcp.indexOf('\nasync function log(') + 4000);
-  assert.ok(log.indexOf('applyPlaces(user.id, events') < log.indexOf('insertEvents(user.id, profile, events'), 'places are applied after the write');
+  assert.ok(log.indexOf('applyPlaces(user.id, events') < log.indexOf('insertEvents(user.id, profile, toWrite'), 'places are applied after the write');
   const places = readFileSync(new URL('../netlify/functions/lib/places.js', import.meta.url), 'utf8');
   assert.match(places, /const name = e\.place; delete e\.place;/, 'the top-level place key survives to insertEvents');
   // The log schema and the sheet both carry the rule.

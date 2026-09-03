@@ -1934,6 +1934,40 @@ the rack screen uses — and the rule is on the tool and the sheet: an errored
 `log_set` is followed by `session_status`, never by a verdict; a set it shows
 is never logged again, a set it does not show is logged now.
 
+### A migration applied mid-set took the connector down — and the flush that followed nearly doubled the night
+
+The most expensive minute in this file was mine, and the logs are exact.
+At 00:30:17 UTC I applied `017_wrought_session_aim.sql` through the
+Supabase connector. PostgREST reloaded its schema cache and reconnected —
+*"Connection Pool initialized… Config reloaded… Schema cache queried in
+1375ms"* — and for those seconds every request to the database failed.
+The founder was between pec-deck sets. His next `log_set` reached the
+function and nothing reached the database: no token lookup, no insert, no
+edge log at all. ChatGPT said *"Wrought just went unavailable again"*, he
+re-authorised the connector at 00:37, and it flushed the rest of the
+session through `log` as a workout event at 00:41.
+
+**Rule: never apply a migration, however additive, while anybody is
+training.** Check `wrought_sessions` for an active row first; a DDL statement
+bounces PostgREST and there is no window in which a live set can wait. The
+"apply it through the connector" convenience in this file now carries that
+condition.
+
+**And the flush itself was the right recovery with the wrong landing.** It
+left a live session holding five sets beside an event holding the rest —
+pec-deck, seated row, a second treadmill — so the finaliser would have filed
+a second workout for the same hour, and the weekly count, the one number the
+whole plan rests on, would have read two. `foldPlan()` / `foldIntoSession()`
+in `lib/session.js`: a workout told to `log` while a session opened TODAY is
+running goes **into** that session. What was already logged set by set is
+skipped, never doubled; a planned lift not yet done gets its sets at its own
+slot; a new lift is appended to the plan in the order it happened; no event
+is written, and the finaliser files one workout with everything. Only a
+session from today qualifies — folding tonight's lifts into yesterday's stale
+session would move them to the wrong day. The founder's night was repaired
+by hand the same way: the event's rows moved onto the session, the event
+removed, one workout on the record.
+
 ### Gauging — the set that just happened decides the next one
 
 The founder, after logging a set and getting nothing back: *"it's not really
@@ -4003,7 +4037,7 @@ self-reporting scale removes the most-abandoned manual entry), then Strava.
    `003_wrought_training.sql`, `004_wrought_fasting.sql`,
    `005_wrought_activity.sql`, `006_wrought_identity.sql`, `007_wrought_push.sql`,
    `008_wrought_blocks.sql`, `009_wrought_photos.sql` and
-   `010_wrought_profile_web.sql`, `011_wrought_membership.sql`, `012_wrought_link_codes.sql`, `013_wrought_work.sql`, `014_wrought_plan.sql` `015_wrought_ingest_dedupe_fix.sql`, `016_wrought_set_source.sql` `017_wrought_session_aim.sql`, `018_wrought_alerts.sql`, `023_wrought_commitment.sql` and `024_wrought_places.sql` in Supabase. Full checklist in `docs/SETUP.md`. (017 and 018 through 025 were applied through the Supabase connector from a session — `list_migrations` shows them by name — so a session with that connector can apply an additive migration itself rather than leaving it on this list. 017 sat unapplied for weeks while the code degraded politely around it; check `/status` before assuming a column exists.)
+   `010_wrought_profile_web.sql`, `011_wrought_membership.sql`, `012_wrought_link_codes.sql`, `013_wrought_work.sql`, `014_wrought_plan.sql` `015_wrought_ingest_dedupe_fix.sql`, `016_wrought_set_source.sql` `017_wrought_session_aim.sql`, `018_wrought_alerts.sql`, `023_wrought_commitment.sql` and `024_wrought_places.sql` in Supabase. Full checklist in `docs/SETUP.md`. (017 and 018 through 025 were applied through the Supabase connector from a session — `list_migrations` shows them by name — so a session with that connector can apply an additive migration itself rather than leaving it on this list — **but never while a `wrought_sessions` row is active: DDL bounces PostgREST and the founder's mid-set `log_set` failed for exactly that reason.** 017 sat unapplied for weeks while the code degraded politely around it; check `/status` before assuming a column exists.)
 3. Set env vars in Netlify: `SUPABASE_URL` (**no trailing slash** — Kong answers
    "Invalid path specified in request URL" and nothing says why),
    `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_ANON_KEY`,
