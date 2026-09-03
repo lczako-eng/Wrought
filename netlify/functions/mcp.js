@@ -35,6 +35,7 @@ import { weeklyVolume } from './lib/volume.js';
 import { ALERT_KINDS, describeAlert, suggestAlerts } from './lib/alerts.js';
 import { planRead } from './lib/plan.js';
 import { calibration } from './lib/adapt.js';
+import { recordCheck } from './lib/integrity.js';
 import { guideRead } from './lib/guide.js';
 import { nextNudge, nudgeNote } from './lib/prompt.js';
 import { setBodyGoal, setMetricGoal, retireGoalsFor, intentFrom, applyCalibration, SET_TARGETS_URL } from './lib/goals.js';
@@ -557,6 +558,18 @@ const TOOLS = [
     description: 'Where they are in the workout, read from the record rather than remembered: the checklist, the percentage, the last set AS STORED, and the aim. CALL THIS WHEN A log_set CALL ERRORED OR TIMED OUT, before saying anything about whether the set saved — never announce that the logger is "glitching" and move on, and never guess either way. If the set is on the record, say so and do NOT log it again (that doubles it); if it is not, call log_set now. Also for "did that save", "did you get that", "where was I", "what\'s left", "how far through am I", "what am I on".',
     inputSchema: { type: 'object', properties: {} },
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+  },
+  {
+    name: 'record_check',
+    title: 'Check the record against itself',
+    description: 'THE RECORD, CHECKED — what in the last month looks wrong or is counting for nothing: a set that landed twice within seconds (in the lift record, the max and the volume), a meal with no calories on it, a workout with no minutes, a two-hour-plus "workout" that may be a shift, a scale nobody has stood on in a fortnight. "Is my record right", "check my log", "anything wrong in there", "audit it", "does everything add up". Each finding carries its ids and the door to fix it. IT NEVER FIXES ANYTHING ON ITS OWN — two coffees in a day is ordinary and a long hike is a real workout; say what is listed with the fix beside each and let them choose. The one fix it can apply on their word: drop_set_ids removes doubled sets they named.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        drop_set_ids: { type: 'array', items: { type: 'string' }, description: 'Ids of doubled sets to remove — ONLY from a previous record_check\'s duplicate_sets.fix.ids, and only after they said to. Never a set they did not name.' },
+      },
+    },
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
   },
   {
     name: 'swap_exercise',
@@ -4395,6 +4408,54 @@ async function endSession(args, user) {
   };
 }
 
+// THE RECORD, CHECKED AGAINST ITSELF. One read over the last month naming
+// what the arithmetic cannot use, with ids and a door each — never a repair
+// on its own. The one write it carries is on their word: doubled sets they
+// named, checked against their own rows before anything is deleted.
+async function recordCheckTool(args, user) {
+  const profile = await getProfile(user.id);
+  const today = localDateFor(profile.timezone);
+  const from30 = addDays(today, -29), from14 = addDays(today, -13);
+
+  let dropped = [];
+  if (Array.isArray(args.drop_set_ids) && args.drop_set_ids.length) {
+    const ids = args.drop_set_ids.map(String).slice(0, 50);
+    const { data: own } = await supabase.from('wrought_sets')
+      .select('id, exercise, reps, weight_kg').eq('user_id', user.id).in('id', ids);
+    if (own?.length) {
+      const { error } = await supabase.from('wrought_sets').delete()
+        .eq('user_id', user.id).in('id', own.map(r => r.id));
+      if (error) return { error: error.message, say: `Nothing was removed: ${error.message}` };
+      dropped = own;
+    }
+  }
+
+  const [range, day, setsRes, workoutsRes, foodRes] = await Promise.all([
+    rangeFacts(user.id, profile, from30, today),
+    dayFacts(user.id, profile, today),
+    supabase.from('wrought_sets')
+      .select('id, exercise, exercise_key, reps, weight_kg, session_id, local_date, logged_at, muscles')
+      .eq('user_id', user.id).gte('local_date', from30).limit(3000),
+    supabase.from('wrought_events')
+      .select('id, source, local_date, summary, detail')
+      .eq('user_id', user.id).eq('event_type', 'workout').gte('local_date', from30).limit(500),
+    supabase.from('wrought_events')
+      .select('id, event_type, local_date, summary, detail')
+      .eq('user_id', user.id).in('event_type', ['food', 'drink']).gte('local_date', from14).limit(2000),
+  ]);
+
+  const check = recordCheck({
+    days: range.days, sets: setsRes.data || [], workouts: workoutsRes.data || [],
+    food: foodRes.data || [], todayDups: duplicateItems(day.log || []), today,
+  });
+  return {
+    ...(dropped.length ? { dropped } : {}),
+    ...check,
+    say: (dropped.length ? `Removed ${dropped.length} doubled set${dropped.length === 1 ? '' : 's'}. ` : '') + check.say,
+    next_actions: check.clean ? ['brief'] : ['amend_last / log_weight / log_activity for the fixes they choose', 'record_check with drop_set_ids for doubled sets they name'],
+  };
+}
+
 async function previousBest(userId, key, excludeSessionId) {
   const { data } = await supabase.from('wrought_sets')
     .select('weight_kg, session_id').eq('user_id', userId).eq('exercise_key', key)
@@ -5764,6 +5825,7 @@ const IMPL = {
   log_set: logSet,
   rack_note: rackNote,
   session_status: sessionStatus,
+  record_check: recordCheckTool,
   swap_exercise: swapExercise,
   calibrate_lift: calibrateLift,
   end_session: endSession,

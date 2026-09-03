@@ -17,6 +17,7 @@ import { orderInsight, earnedRoom, energyBalance, exerciseKey, deviceMatrix, wee
 import { weeklyVolume } from './lib/volume.js';
 import { planRead } from './lib/plan.js';
 import { calibration } from './lib/adapt.js';
+import { recordCheck } from './lib/integrity.js';
 import { intakeState } from './lib/intake.js';
 import { STYLES } from './lib/design.js';
 import { listPlaces } from './lib/places.js';
@@ -158,7 +159,7 @@ export const handler = async (event) => {
     getGoals(user.id),
     getWindow(user.id),
     supabase.from('wrought_sets')
-      .select('exercise, exercise_key, reps, weight_kg, rpe, position, set_number, muscles, session_id, local_date, note')
+      .select('id, exercise, exercise_key, reps, weight_kg, rpe, position, set_number, muscles, session_id, local_date, note, logged_at')
       .eq('user_id', user.id).gte('local_date', histFrom).lte('local_date', to)
       .order('logged_at', { ascending: false }).limit(3000)
       .then(r => r.data || []),
@@ -185,7 +186,7 @@ export const handler = async (event) => {
       .order('last_used_on', { ascending: false, nullsFirst: false })
       .then(r => r.data || []),
     supabase.from('wrought_events')
-      .select('event_type, local_date, summary, detail, estimated')
+      .select('id, event_type, local_date, summary, detail, estimated')
       .eq('user_id', user.id).in('event_type', ['food', 'drink'])
       .order('local_date', { ascending: false }).limit(8000)
       .then(r => r.data || []),
@@ -237,9 +238,12 @@ export const handler = async (event) => {
       .order('occurred_at', { ascending: false }).limit(1)
       .then(r => r.data?.[0]?.detail?.value_kg ?? null),
 
-    // Runs, rides and swims, read as a progression.
+    // Runs, rides and swims, read as a progression — and every workout, for
+    // the list and the record check. `id` and `source` are here because the
+    // list read `e.source` off a row that never carried it, so every workout
+    // from a watch was labelled as logged by hand.
     supabase.from('wrought_events')
-      .select('local_date, summary, detail')
+      .select('id, source, local_date, summary, detail')
       .eq('user_id', user.id).eq('event_type', 'workout')
       .gte('local_date', addDays(to, -119)).lte('local_date', to)
       .order('local_date', { ascending: true }).limit(400)
@@ -654,6 +658,18 @@ export const handler = async (event) => {
       // care flags get whatever the range buttons say. Offered on the plan
       // panel with its working; applied only by a tap. Never by itself.
       calibration: calibration({ days: recent.days, profile, goals, weightKg, today: to }),
+      // THE RECORD, CHECKED AGAINST ITSELF — doubled sets, meals and workouts
+      // counting for nothing, a scale nobody has stood on. Named with their
+      // ids and a door each; never fixed by the read. Off the last thirty
+      // days whatever the range buttons say.
+      record_check: recordCheck({
+        days: recent.days,
+        sets: histSets.filter(s => s.local_date >= addDays(to, -29)),
+        workouts: cardioRows.filter(w => w.local_date >= addDays(to, -29)),
+        food: foodRows.filter(f => f.local_date >= addDays(to, -13)),
+        todayDups: dupsToday,
+        today: to,
+      }),
       // The questionnaire: what is answered, what is not, and that training
       // waits on it. The same state the tools gate on, so the screen and the
       // refusal can never disagree.
