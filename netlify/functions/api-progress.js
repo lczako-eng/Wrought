@@ -20,6 +20,7 @@ import { intakeState } from './lib/intake.js';
 import { STYLES } from './lib/design.js';
 import { listPlaces } from './lib/places.js';
 import { STYLE_ROUTINES } from './lib/style_routines.js';
+import { mealTiming } from './lib/timing.js';
 import { athleteRows, athleteRead } from './lib/athlete.js';
 import { formWatch, cardioProgress } from './lib/form.js';
 import { nextNudge } from './lib/prompt.js';
@@ -802,6 +803,10 @@ export const handler = async (event) => {
       // The twenty-one written sessions, one per tradition, so the website can
       // LIST them — "so people know what's going on with this" — and add or
       // take one out of their own workouts in a tap. Same data the tools carry.
+      // WHEN they eat, off the clock on every entry — the dots for the chart
+      // and the typical first/last meal, computed here so the panel and the
+      // nutrition tool cannot disagree. Recorded, not graded.
+      meal_timing: mealTiming(range.days, { today: to }),
       traditions: Object.entries(STYLE_ROUTINES).map(([key, r]) => ({
         key, name: r.name, kind: r.kind, tier: r.tier, est_minutes: r.est_minutes,
         notes: r.notes, exercises: r.exercises,

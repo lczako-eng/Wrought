@@ -1985,6 +1985,45 @@ session would move them to the wrong day. The founder's night was repaired
 by hand the same way: the event's rows moved onto the session, the event
 removed, one workout on the record.
 
+### When you eat — the clock read back, correctable, and drawn
+
+`lib/timing.js` + `meal_times` on `rangeFacts` days + `at` and `time_note` on
+`log` + `time_hint` on `amend_last` + `meal_timing` on `nutrition` and the
+dashboard + the *When you eat* panel. The founder: *"you should use the GPT
+to know WHEN you're eating. When you're saying 'Broski I just ate this', take
+the time — and if it's not correct, like you ate an hour ago and forgot, just
+tell it the time. Then we can use that on a chart."*
+
+Two of the three parts already existed and neither was visible. Every entry
+has always been filed under a clock — the time said as `time_hint`, or the
+minute it was mentioned — and `dayFacts` already read it back as `at`. What
+was missing:
+
+- **The confirmation says the time.** *"Logged: two eggs (~300 kcal) at
+  7:32am."* `recorded[]` carries `at` off the stored row, and `time_note`
+  says why: a meal mentioned an hour after it was eaten is an hour wrong on
+  the record, and only the person can say so. It asks nothing — a time
+  question on every meal is the form this product refuses to be — but the
+  number is there to be corrected.
+- **The correction has a door.** `amend_last` takes `time_hint`, anchored on
+  the entry's OWN day rather than today, so yesterday's dinner corrected this
+  morning stays on yesterday; the date is re-derived in their zone so a meal
+  pulled back across midnight moves day. `moved_to` is read back.
+- **The chart.** `mealTiming()` turns the clocks into dots — one per meal, at
+  its hour, sized by calories, **hollow when it has no figure** (a
+  size-by-calories chart would otherwise erase exactly the entries most worth
+  fixing). The read is medians, not means: the typical first meal, the
+  typical last, the window between, the share of logged calories after 8pm.
+  Today's last meal is not last yet and stays out of the lasts. Under three
+  logged days it says so rather than reading a pattern into two dots.
+
+**Recorded, never graded.** There is no right hour to eat and no colour for
+a wrong one; *"31% after 8pm"* is a fact and *"too late"* is an opinion
+nothing here is entitled to — the fasting doctrine, one panel along. A test
+greps the read for judgement words. **And the chart is only as honest as the
+clocks**, which is the whole reason the confirmation reads them back; the
+caveat rides every response.
+
 ### Gauging — the set that just happened decides the next one
 
 The founder, after logging a set and getting nothing back: *"it's not really

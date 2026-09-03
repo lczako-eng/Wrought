@@ -775,6 +775,11 @@ svg.ser .cursor { transition: opacity var(--quick) var(--ease); }
 /* ── Charts ─────────────────────────────────────────────────────────────── */
 svg { display: block; width: 100%; height: auto; overflow: visible; }
 .gridline { stroke: var(--edge); stroke-width: 1; }
+/* When-you-eat dots: one hue, a 2px surface ring so overlapping meals stay
+   separable, hollow for a meal with no figure. The ring colour is the panel's
+   own background — see .panel. */
+.mealdot { fill: var(--temper); stroke: #1f1b19; stroke-width: 2; }
+.mealdot.hollow { fill: none; stroke: var(--temper); stroke-width: 2; }
 .axis { fill: var(--ash-dim); font-size: 10px; font-family: var(--mono); }
 
 /* The target sits UNDER the data as a dashed rule, never over it — a solid
@@ -7522,6 +7527,7 @@ function render(d) {
     out.push(matrixPanel(s.matrix));
   }
   out.push(nutritionPanel(d.nutrition));
+  if (trends) out.push(mealTimingPanel(d));
   out.push(fastingPanel(d));
   if (trends) {
     out.push(devicePanel(d.device_matrix));
@@ -8411,6 +8417,56 @@ function matrixPanel(m) {
 // macro grid, and what the meals were actually made of. The last one is
 // counted in meals rather than grams, because that is the only honest unit a
 // described dinner supports.
+// WHEN they eat — every meal as a dot at the hour it was filed under, day by
+// day. The founder: "take the time, and if it's not correct just tell it the
+// time, then we can use that on a chart — when you eat and all that."
+//
+// Everything here is drawn off meal_timing, which the server computed; the
+// page scales pixels and nothing else. One series, so no legend box — the
+// title names it. A dot's size is the calories; a HOLLOW dot is a meal with no
+// figure, which counts for nothing in any total and would otherwise vanish
+// from a size-by-calories chart, hiding exactly the entries most worth
+// fixing. Recorded, not graded: no hour is coloured as wrong.
+function mealTimingPanel(d) {
+  const t = d.meal_timing;
+  if (!t || !t.points?.length) return '';
+  const dates = (d.calendar?.days || []).map(c => c.date);
+  const seen = [...new Set(t.points.map(p => p.date))].sort();
+  const axisDates = dates.length ? dates : seen;
+  const N = axisDates.length;
+  if (!N) return '';
+  const W = 460, H = 210, P = { t: 12, r: 10, b: 22, l: 44 };
+  const Y0 = 5 * 60, Y1 = 24 * 60;                    // 5am to midnight
+  const y = m => P.t + ((Math.min(Math.max(m, Y0), Y1) - Y0) / (Y1 - Y0)) * (H - P.t - P.b);
+  const x = i => P.l + ((i + 0.5) / N) * (W - P.l - P.r);
+  const maxK = Math.max(...t.points.map(p => p.kcal || 0), 1);
+  const r = k => (k == null ? 4 : 4 + Math.sqrt(k / maxK) * 5);   // 4px to 9px
+  const col = new Map(axisDates.map((dt, i) => [dt, i]));
+
+  const grid = [6, 9, 12, 15, 18, 21].map(h => `<line class="gridline" x1="${P.l}" x2="${W - P.r}" y1="${y(h * 60).toFixed(1)}" y2="${y(h * 60).toFixed(1)}"/>`).join('');
+  const labels = [[6, '6am'], [12, 'noon'], [18, '6pm'], [21, '9pm']].map(([h, s]) =>
+    `<text class="axis" x="${P.l - 6}" y="${(y(h * 60) + 3).toFixed(1)}" text-anchor="end">${s}</text>`).join('');
+
+  const dots = t.points.filter(p => col.has(p.date)).map(p => {
+    const cx = x(col.get(p.date)).toFixed(1), cy = y(p.at).toFixed(1);
+    const tip = `${p.date} · ${p.clock} · ${p.summary}${p.kcal != null ? ` · ${n(p.kcal)} kcal` : ' · no calories on it'}`;
+    return p.kcal == null
+      ? `<circle class="mealdot hollow" cx="${cx}" cy="${cy}" r="${r(null).toFixed(1)}"><title>${esc(tip)}</title></circle>`
+      : `<circle class="mealdot" cx="${cx}" cy="${cy}" r="${r(p.kcal).toFixed(1)}"><title>${esc(tip)}</title></circle>`;
+  }).join('');
+
+  return `<section class="panel graph-panel">
+    <h2>When you eat</h2>
+    <p class="sub">${esc(t.say)}</p>
+    <svg viewBox="0 0 ${W} ${H}" role="img" aria-label="meals by time of day, one dot per meal, larger for more calories">
+      ${grid}${labels}${dots}
+      <text class="axis" x="${P.l}" y="${H - 6}">${esc(axisDates[0].slice(5))}</text>
+      <text class="axis" x="${W - P.r}" y="${H - 6}" text-anchor="end">${esc(axisDates[N - 1].slice(5))}</text>
+    </svg>
+    <p class="sub dim">Bigger dot, more calories; a hollow dot has no figure on it. ${esc(t.caveat)}</p>
+  </section>`;
+}
+
 function nutritionPanel(nu) {
   if (!nu?.totals) return '';
   const t = nu.totals;

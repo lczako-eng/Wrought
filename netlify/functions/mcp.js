@@ -21,7 +21,7 @@ import {
   sayWeight, sayWeightDelta, sayLength, lbToKg, inToCm, kgToLb,
   getProfile, getMemory, getGoals, getWindow, windowStatus,
   dayFacts, rangeFacts, summariseRange, scoreGoals, careFlags, CARE_WINDOW_DAYS, lastDays,
-  parseLog, eventsFromClient, needsMacros, needsDuration, matchEntries, duplicateItems, setupNeeded, insertEvents, writeVerdict, rememberFact,
+  parseLog, eventsFromClient, needsMacros, needsDuration, matchEntries, duplicateItems, setupNeeded, insertEvents, eventTimestamp, writeVerdict, rememberFact,
   fastLength, fastingSummary,
 } from './lib/wrought.js';
 import { allowed } from './lib/membership.js';
@@ -59,6 +59,7 @@ import { pickDue } from './lib/morning.js';
 import { athleteRows, athleteRead, TESTS, parseTestValue, ATHLETE_COMMITMENT } from './lib/athlete.js';
 import { resolvePlace, placeEquipment, listPlaces, bumpPlace, applyPlaces, sessionsCanCarryPlace, PLACE_KINDS } from './lib/places.js';
 import { dayReceipt } from './lib/receipt.js';
+import { mealTiming } from './lib/timing.js';
 
 // Newest first. The icons on serverInfo are only honoured by clients speaking
 // the newer revisions, so blindly answering 2025-06-18 quietly costs the tile.
@@ -180,6 +181,7 @@ HOW PEOPLE ACTUALLY ASK. Nobody says "call the brief tool". They say one of a hu
   log_set — "done", "got it", "got 8", "8 at 225", "that's up", "failed at 5", "couldn't finish", "one more in the tank"
   rack_note — "not too bad, had room left" (said after the set was logged), "that one was a grinder", "shoulder pinched on the last rep", "today I'm chasing the top set" (an aim said after the session started)
   session_status — "did that save", "did you get that", "where was I", "what's left", "how far through am I", "what am I on" — and ALWAYS when a log_set call errored or timed out, before saying anything about whether it saved
+  amend_last with time_hint — "that was an hour ago", "I ate that at noon", "actually that was this morning", "wrong time, it was about six". Every entry is filed under a clock and the when-you-eat chart is built on it; log reads the clock back as "at" so this correction can happen on the spot
   form_check — "am I getting faster", "was that my best run", "how's my running going", "is my pace improving", "where's my wall", "why am I stalling", "check my form", "why did that feel awful", "am I grinding", "my form went", "that was ugly", "I rushed it", "why can't I hit this any more", "this used to be easy"
   set_alert — "remind me to stop eating at nine", "tell me when I hit 80% of my calories", "nudge me if I have not trained", "let me know when my fast starts", "ping me to weigh in", "can you tell me at 6", "warn me when". ALWAYS a tool call. WROUGHT can never speak first inside a conversation, so the ONLY way to remind somebody of anything is to write a rule the hourly job sends — saying "I'll remind you" without calling set_alert is a promise nothing keeps.
   my_alerts — "what reminders do I have", "what are you telling me about", "am I set up for notifications", "turn my notifications on"
@@ -744,6 +746,7 @@ const TOOLS = [
         },
         type: { type: 'string', enum: ['food','drink','workout','weight','measurement','sleep','symptom','mood','supplement','note','fast'],
                 description: 'Which kind of entry to amend. Omit to amend whatever was logged most recently.' },
+        time_hint: { type: 'string', description: '"HH:MM" 24h local — WHEN it actually happened, for a time correction: "that was an hour ago", "I ate that at noon", "actually that was this morning". Every entry is filed under a clock and the when-you-eat chart is built on it, so a meal mentioned late is an hour wrong until this is called. Work the clock out from what they said and the time the entry was filed (log returns it as `at`).' },
       },
       required: ['text'],
     },
@@ -1462,8 +1465,15 @@ async function log(args, user) {
     } : {}),
     recorded: written.map(e => ({
       id: e.id, type: e.event_type, summary: e.summary, estimated: e.estimated,
+      // THE CLOCK IT WAS FILED UNDER. Said back so a meal eaten an hour ago
+      // and mentioned now gets its time corrected on the spot — the founder's
+      // ask — instead of sitting an hour wrong on the when-you-eat chart.
+      at: e.occurred_at ? clockString(localMinutesFor(profile.timezone, new Date(e.occurred_at))) : null,
       ...itemNumbers(e.detail || {}),
     })),
+    time_note: written.some(e => e.event_type === 'food' || e.event_type === 'drink')
+      ? 'SAY THE TIME BACK for each meal — "logged at 7:32pm". Every entry is filed under a clock: the time they said, or this minute. If they ate earlier ("that was an hour ago", "I had that at noon", "this morning") and did not say so, this minute is WRONG on the record, and the eating window and the when-you-eat chart are built on it — so ask nothing, but when they correct it call amend_last with time_hint. When they say a time up front, pass it as time_hint on the item.'
+      : undefined,
     count: written.length,
     parsed,
     structured_by: structuredBy,
@@ -1483,7 +1493,11 @@ async function log(args, user) {
       written.length
         ? (args.quiet
           ? `Logged: ${written.map(e => itemSay(e)).join('; ')}.`
-          : `Logged ${written.length} thing${written.length === 1 ? '' : 's'}: ${written.map(e => itemSay(e)).join('; ')}.` +
+          // Each meal with the clock it was filed under, so "at 7:32pm" is
+          // read back and a meal eaten an hour ago gets its time corrected.
+          : `Logged ${written.length} thing${written.length === 1 ? '' : 's'}: ${written.map(e => itemSay(e) + (
+              (e.event_type === 'food' || e.event_type === 'drink') && e.occurred_at
+                ? ` at ${clockString(localMinutesFor(profile.timezone, new Date(e.occurred_at)))}` : '')).join('; ')}.` +
             (day.food.meals ? ` Today so far: ${day.food.say}.` : ''))
         : null,
     ].filter(Boolean).join(' ') || 'Nothing was written.',
@@ -1718,6 +1732,19 @@ async function amendLast(args, user) {
     };
   }
 
+  // A TIME CORRECTION moves the clock the entry is filed under — "that was an
+  // hour ago" — anchored on the entry's OWN day, so yesterday's dinner
+  // corrected today stays on yesterday. The date is re-derived in their zone:
+  // a meal pulled back across midnight belongs to the day before.
+  let movedTo = null;
+  const timePatch = {};
+  if (args.time_hint && /^\d{1,2}:\d{2}$/.test(String(args.time_hint))) {
+    const moved = eventTimestamp({ time_hint: String(args.time_hint) }, profile, new Date(prev.occurred_at));
+    timePatch.occurred_at = moved.toISOString();
+    timePatch.local_date = localDateFor(profile.timezone, moved);
+    movedTo = { at: clockString(localMinutesFor(profile.timezone, moved)), date: timePatch.local_date };
+  }
+
   const { error } = await supabase.from('wrought_events').update({
     event_type: first.event_type,
     summary: String(first.summary || prev.summary).slice(0, 500),
@@ -1726,8 +1753,10 @@ async function amendLast(args, user) {
     detail: { ...(prev.detail || {}), ...(first.detail || {}) },
     estimated: !!first.estimated,
     raw_input: combined,
+    ...timePatch,
   }).eq('id', prev.id);
   if (error) return { error: error.message };
+  if (timePatch.local_date) prev.local_date = timePatch.local_date;
 
   // An amended workout re-derives its sets — "that was 235, not 225" has to
   // reach the lift record too, not just the day card. Idempotent under 016:
@@ -1762,13 +1791,16 @@ async function amendLast(args, user) {
     // The one item, with its own figures. Said alongside the day total, never
     // instead of it and never mistaken for it.
     entry: entry
-      ? { summary: entry.summary, calories: entry.calories, protein_g: entry.protein_g,
+      ? { summary: entry.summary, at: entry.at, calories: entry.calories, protein_g: entry.protein_g,
           carbs_g: entry.carbs_g, fat_g: entry.fat_g, estimated: entry.estimated }
       : undefined,
+    // The clock moved, read back off the stored row's own day.
+    ...(movedTo ? { moved_to: movedTo } : {}),
     ...(bridged.error ? { sets_error: bridged.error } : {}),
     ...(bridged.skipped ? { sets_skipped: bridged.skipped, sets_note: bridged.say } : {}),
     day_total: dayTotal(dayNow),
     say: `Updated: "${prev.summary}" is now "${first.summary}"` +
+      (movedTo ? ` — filed at ${movedTo.at}${movedTo.date !== today ? ` on ${movedTo.date}` : ''}` : '') +
       (entry?.calories != null ? ` — ${entry.calories.toLocaleString()} kcal for that one` : '') +
       `. Today so far: ${dayNow.food.say}`,
     note: 'One entry, not two. Acknowledge briefly and move on. Give the ITEM\'s own calories and the DAY total in the same breath — "that bun is about 330, which puts you at 1,840 for the day" — never the item alone and never the total alone. If they asked what they are at today, the headline is day_total (the WHOLE day, with its items listed under it); the entry you just amended is one line of it.',
@@ -4668,6 +4700,10 @@ async function nutrition(args, user) {
   const comp   = composition(evs, { since });
   const grid   = macroMatrix(evs, { weeks: 12, today });
   const yoy    = yearOverYear(evs, { today });
+  // WHEN they eat — the last thirty days' clocks, same function the dashboard
+  // panel draws from. "When do I usually eat" has a computed answer.
+  const recent = await rangeFacts(user.id, profile, addDays(today, -29), today);
+  const timing = mealTiming(recent.days, { today });
 
   const focus = args.period === 'today' ? totals.today
               : args.period === 'week'  ? totals.this_week
@@ -4679,13 +4715,19 @@ async function nutrition(args, user) {
   return {
     totals, composition: comp, macro_matrix: grid, year_over_year: yoy,
     composition_since: since,
+    meal_timing: {
+      first_meal: timing.first_meal, last_meal: timing.last_meal,
+      window_minutes: timing.window_minutes, late_share_percent: timing.late_share_percent,
+      days_counted: timing.days_counted, by_hour: timing.by_hour, say: timing.say, caveat: timing.caveat,
+    },
     say: [
       `Roughly ${focus.calories_per_day} kcal a day across ${focus.days_logged} logged days` +
         ` — ${focus.protein_g_per_day}g protein, ${focus.carbs_g_per_day}g carbs (${focus.sugar_g_per_day}g of it sugar), ${focus.fat_g_per_day}g fat.`,
       comp.say,
+      timing.enough ? timing.say : null,
       yoy.comparison?.say || null,
     ].filter(Boolean).join(' '),
-    note: 'Every macro is estimated from described meals — say "roughly". Composition is a count of MEALS, not weights: "meat in 71% of meals" is honest, "you ate 4kg of meat" is not. Never moralise about a category; report the share and let them decide what it means.',
+    note: 'Every macro is estimated from described meals — say "roughly". Composition is a count of MEALS, not weights: "meat in 71% of meals" is honest, "you ate 4kg of meat" is not. Never moralise about a category; report the share and let them decide what it means. meal_timing is the same rule: when they eat is reported as a fact, never as too early or too late.',
     next_actions: ['progress for the training side', 'set_goal if they want a number to be scored against'],
   };
 }

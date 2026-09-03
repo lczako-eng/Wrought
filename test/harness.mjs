@@ -959,6 +959,71 @@ await test('a workout told while one is running goes INTO it — one workout ton
   assert.match(fn, /it is NOT a separate entry/);
 });
 
+await test('when they eat — the clock on every entry, read back, correctable, and drawn', async () => {
+  // The founder: "take the time, and if it's not correct — you ate an hour
+  // ago and forgot — just tell it the time. Then we can use that on a chart."
+  const { mealTiming, clock } = await import('../netlify/functions/lib/timing.js');
+  assert.equal(clock(7 * 60 + 32), '7:32am');
+  assert.equal(clock(19 * 60 + 5), '7:05pm');
+  assert.equal(clock(0), '12:00am');
+
+  const day = (date, times) => ({ date, meal_times: times.map(([at, kcal]) => ({ at, kcal, summary: 'x', type: 'food' })) });
+  const days = [
+    day('2026-09-01', [[8 * 60, 400], [13 * 60, 700], [20 * 60 + 30, 900]]),
+    day('2026-09-02', [[11 * 60, 500], [19 * 60, 800]]),
+    day('2026-09-03', [[9 * 60, 300], [12 * 60 + 30, 600], [22 * 60, 500]]),
+    { date: '2026-09-04', meal_times: [] },                       // an unlogged day is not a 0am meal
+    day('2026-09-05', [[10 * 60, null]]),                          // today, still open
+  ];
+  const t = mealTiming(days, { today: '2026-09-05' });
+  assert.equal(t.days_counted, 4);
+  assert.equal(t.enough, true);
+  // Medians, not means — one late night must not drag the typical last meal.
+  assert.equal(t.first_meal, '9:30am', 'first meal is the median of the firsts');
+  // Today is open: its last meal is not last yet, so it is not in the lasts.
+  assert.equal(t.last_meal, '8:30pm');
+  // Late share is over calories with a figure on them; the null is not a zero.
+  assert.equal(t.late_share_percent, Math.round(((900 + 500) / (400 + 700 + 900 + 500 + 800 + 300 + 600 + 500)) * 100));
+  assert.equal(t.points.length, 9);
+  assert.ok(t.points.some(p => p.kcal == null), 'a meal with no figure is still a dot');
+  assert.match(t.say, /First meal usually around 9:30am/);
+  assert.match(t.say, /over 4 logged days/);
+  // NEVER GRADED — no hour is wrong.
+  assert.ok(!/too late|too early|should|bad|guilt|naughty|discipline/i.test(t.say + ' ' + t.caveat), `it graded: ${t.say}`);
+  assert.match(t.caveat, /Recorded, not graded/);
+  // Under three days it says so rather than reading a pattern into two dots.
+  const few = mealTiming(days.slice(0, 2), { today: '2026-09-05' });
+  assert.equal(few.enough, false);
+  assert.match(few.say, /at least 3/);
+
+  // The clocks come off the range read, so the dashboard and the nutrition
+  // tool draw from one function.
+  const lib = readFileSync(new URL('../netlify/functions/lib/wrought.js', import.meta.url), 'utf8');
+  assert.match(lib, /meal_times: d\.meal_times\.sort/);
+  const api = readFileSync(new URL('../netlify/functions/api-progress.js', import.meta.url), 'utf8');
+  assert.match(api, /meal_timing: mealTiming\(range\.days/);
+  const app = readFileSync(new URL('../public/app.html', import.meta.url), 'utf8');
+  assert.match(app, /function mealTimingPanel\(d\)/);
+  assert.match(app, /d\.meal_timing/);
+  assert.match(app, /mealTimingPanel\(d\)/);
+  // A hollow dot for a meal with no figure — it must not vanish from a
+  // size-by-calories chart, because it is the entry most worth fixing.
+  assert.match(app, /mealdot hollow/);
+
+  // log says the clock back; amend_last takes a correction anchored on the
+  // entry's OWN day; nutrition answers "when do I usually eat".
+  const mcp = readFileSync(new URL('../netlify/functions/mcp.js', import.meta.url), 'utf8');
+  assert.match(mcp, /at: e\.occurred_at \? clockString\(localMinutesFor\(profile\.timezone, new Date\(e\.occurred_at\)\)\) : null/);
+  assert.match(mcp, /SAY THE TIME BACK for each meal/);
+  const amend = TOOLS.find(x => x.name === 'amend_last');
+  assert.ok(amend.inputSchema.properties.time_hint, 'amend_last cannot move the clock');
+  assert.match(mcp, /eventTimestamp\(\{ time_hint: String\(args\.time_hint\) \}, profile, new Date\(prev\.occurred_at\)\)/,
+    'a time correction must anchor on the entry\'s own day, not today');
+  assert.match(mcp, /timePatch\.local_date = localDateFor\(profile\.timezone, moved\)/, 'a meal pulled across midnight must move day');
+  assert.match(mcp, /meal_timing: \{/);
+  assert.match(SERVER_INSTRUCTIONS, /amend_last with time_hint/);
+});
+
 await test('session_status — "did that save" is answered from the rows, never guessed', () => {
   // "Wrought's set logger is glitching on this one, so I don't want to
   // falsely tell you it saved." The set WAS on the record. The refusal to
