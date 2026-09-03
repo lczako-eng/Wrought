@@ -13,7 +13,7 @@ import {
   rangeFacts, summariseRange, dayFacts, careFlags, scoreGoals, duplicateItems, duplicateExtra, supabase,
 } from './lib/wrought.js';
 import { orderInsight, earnedRoom, energyBalance, exerciseKey, deviceMatrix, weekdayPattern, focusCall, lastSession,
-         weekSoFar, weekTargets, readiness, targetOptions, estimatedMax, liftTrend, readMovement, backfillDerivedSets, goalsToSet } from './lib/training.js';
+         weekSoFar, weekTargets, readiness, targetOptions, estimatedMax, liftTrend, readMovement, backfillDerivedSets, goalsToSet, rekeySets } from './lib/training.js';
 import { weeklyVolume } from './lib/volume.js';
 import { planRead } from './lib/plan.js';
 import { intakeState } from './lib/intake.js';
@@ -119,6 +119,10 @@ export const handler = async (event) => {
     backfillCompletion(user.id),
     refileMisdated(user.id, profile),
     refileMistypedActivity(user.id),
+    // Keys the old normaliser merged — the incline press filed as the
+    // overhead press — put back under their own lift, before the lift record
+    // and the progression below read them.
+    rekeySets(user.id),
   ]);
 
   const to   = params.to || localDateFor(profile.timezone);

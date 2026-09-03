@@ -1888,6 +1888,52 @@ dropped at the door with a warning only the model saw. Applied through the
 connector; the probe is cached per container, so a warm function keeps
 saying it cannot store an aim until it recycles.
 
+### The incline press that was the overhead press — a noise word that changed the load
+
+`exerciseKey()` in `lib/training.js` + `rekeyRows()` / `rekeySets()` + the
+`session_status` tool. Found while reading the founder's session rows for the
+screenshot above, and it is the invented-load failure delivered by a synonym
+table.
+
+**The key normaliser stripped every word that changes what a number on the
+bar means.** "incline", "machine", "seated", "dumbbell", "assisted",
+"weighted" were all noise, so *"Incline barbell press"* became *"press"* and
+keyed to **overhead press**, and *"Seated row machine"* keyed to the barbell
+row. His 84kg incline press was standing as the overhead press's last
+performance — a lift he does at 57kg — and `progressionCall` would have put
+86kg on the bar for it. The same night, the 100kg machine row was the barbell
+row's history.
+
+- **Over-splitting is the safe error; over-merging is the dangerous one.** A
+  key that is too specific costs a *"no history yet"* refusal, which is the
+  safest sentence in the product. A key that is too broad prescribes another
+  lift's load. So only the words that never change the load are noise now:
+  *barbell* (the default implement), *bb*, *flat*. The implement, the angle,
+  the machine, seated, assisted and weighted stay in the key; *db* and *kb*
+  are spelled out rather than dropped. Bare *"press"*, *OHP*, *shoulder press*
+  and *military press* still mean the overhead press.
+- **The record is re-keyed on the way in.** `exercise_key` is stamped at
+  write time, so the merges were sitting in the rows — and the lift record,
+  the max, the volume count and the progression all read the stored key.
+  `rekeySets` runs beside the other sweeps on the dashboard and the brief,
+  grouped by name, and refreshes the plan of any session still running so
+  the checklist does not restart an exercise at set 1. Applied to the
+  founder's rows through the connector as well.
+- **Two tests had pinned the merge as correct** — *Incline DB bench press*
+  keyed to *bench press*, a Smith squat to a back squat. Changed
+  deliberately, with the reason on them.
+
+**And the "glitching" that was not.** The same screenshot: ChatGPT said
+*"Wrought's set logger is glitching on this one, so I don't want to falsely
+tell you it saved."* The Supabase logs for that minute show every call
+answering 200 and the row landing with his words on it. The refusal to claim
+a save was right; the stopping place was wrong, because the model had no way
+to LOOK. `session_status` reads the live session back off the rows — the last
+set as stored, the checklist, the percentage from the same `sessionProgress`
+the rack screen uses — and the rule is on the tool and the sheet: an errored
+`log_set` is followed by `session_status`, never by a verdict; a set it shows
+is never logged again, a set it does not show is logged now.
+
 ### Gauging — the set that just happened decides the next one
 
 The founder, after logging a set and getting nothing back: *"it's not really

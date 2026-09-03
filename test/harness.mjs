@@ -806,18 +806,93 @@ await test('the same lift under different names collapses to one key', () => {
   // If these do not match, last week's number is invisible, progression
   // silently stops, and nobody notices for a month because the app still
   // looks like it is working.
-  for (const n of ['Bench', 'bench press', 'Barbell Bench Press', 'Incline DB bench press', 'benching']) {
+  for (const n of ['Bench', 'bench press', 'Barbell Bench Press', 'Flat bench press', 'Bench (BB)', 'benching']) {
     assert.equal(exerciseKey(n), 'bench press', `"${n}" should key to bench press`);
   }
+  for (const n of ['Incline press', 'Incline barbell press', 'Incline bench press', 'incline bench']) {
+    assert.equal(exerciseKey(n), 'incline press', `"${n}" should key to incline press`);
+  }
+  for (const n of ['Incline DB press', 'Incline dumbbell bench press', 'incline db bench']) {
+    assert.equal(exerciseKey(n), 'incline dumbbell press', `"${n}" should key to incline dumbbell press`);
+  }
   assert.equal(exerciseKey('Back Squat'), 'squat');
-  assert.equal(exerciseKey('Smith machine squat'), 'squat');
   assert.equal(exerciseKey('RDL'), 'romanian deadlift');
-  assert.equal(exerciseKey('Seated cable row'), 'row');
+  assert.equal(exerciseKey('Barbell row'), 'row');
+  assert.equal(exerciseKey('DB row'), exerciseKey('Dumbbell row'));
 });
 
-await test('genuinely different lifts stay different', () => {
+await test('a word that changes the load is never noise — the incline press is not the overhead press', () => {
+  // THE DANGEROUS ERROR. The first normaliser stripped "incline", "machine",
+  // "seated" and "dumbbell" as noise, so "Incline barbell press" became
+  // "press" and keyed to OVERHEAD PRESS, and "Seated row machine" keyed to
+  // the barbell row. The founder's 84kg incline press then stood as the last
+  // performance of a lift he does at 57kg, and progressionCall would have put
+  // 86kg on the bar for an overhead press. Over-splitting costs a "no history
+  // yet" refusal — the safe answer. Over-merging prescribes another lift's
+  // load, which is how this product injures somebody.
+  assert.notEqual(exerciseKey('Incline barbell press'), exerciseKey('Overhead press'));
+  assert.notEqual(exerciseKey('Incline press'), exerciseKey('Overhead press'));
+  assert.notEqual(exerciseKey('Seated row machine'), exerciseKey('Barbell row'));
+  assert.notEqual(exerciseKey('Seated cable row'), exerciseKey('Barbell row'));
+  assert.notEqual(exerciseKey('Dumbbell bench press'), exerciseKey('Bench press'), 'a per-hand load is not a bar load');
+  assert.notEqual(exerciseKey('Incline bench press'), exerciseKey('Bench press'));
+  assert.notEqual(exerciseKey('Smith machine squat'), exerciseKey('Back squat'));
+  assert.notEqual(exerciseKey('Assisted pull-up'), exerciseKey('Pull-up'));
+  assert.notEqual(exerciseKey('Hammer Strength shoulder press'), exerciseKey('Overhead press'));
+  // Bare "press" and the OHP spellings still mean the overhead press.
+  for (const n of ['press', 'OHP', 'shoulder press', 'Military press', 'Overhead press']) {
+    assert.equal(exerciseKey(n), 'overhead press', `"${n}"`);
+  }
   assert.notEqual(exerciseKey('squat'), exerciseKey('deadlift'));
   assert.notEqual(exerciseKey('curl'), exerciseKey('row'));
+});
+
+await test('the keys already on the record are put back under their own lift', async () => {
+  // exercise_key is stamped at write time, so every merge the old normaliser
+  // made is sitting in the record until the rows are re-keyed — and the lift
+  // record, the max and the progression all read the stored key.
+  const { rekeyRows } = await import('../netlify/functions/lib/training.js');
+  const rows = [
+    { id: 1, exercise: 'Incline barbell press', exercise_key: 'overhead press' },
+    { id: 2, exercise: 'Overhead press',        exercise_key: 'overhead press' },
+    { id: 3, exercise: 'Seated row machine',    exercise_key: 'row' },
+    { id: 4, exercise: 'Barbell row',           exercise_key: 'row' },
+    { id: 5, exercise: 'Bench press',           exercise_key: 'bench press' },
+  ];
+  const changes = rekeyRows(rows);
+  assert.deepEqual(changes.map(c => c.id).sort(), [1, 3], 'only the merged rows move');
+  assert.equal(changes.find(c => c.id === 1).exercise_key, 'incline press');
+  assert.equal(changes.find(c => c.id === 3).exercise_key, 'seated row machine');
+  // Idempotent: nothing to do the second time.
+  const after = rows.map(r => ({ ...r, exercise_key: changes.find(c => c.id === r.id)?.exercise_key || r.exercise_key }));
+  assert.equal(rekeyRows(after).length, 0);
+
+  // And the sweep runs on the way into the dashboard and the brief, before
+  // the lift record is read — like every other repair.
+  const api = readFileSync(new URL('../netlify/functions/api-progress.js', import.meta.url), 'utf8');
+  assert.match(api, /rekeySets\(user\.id\)/);
+  const mcp = readFileSync(new URL('../netlify/functions/mcp.js', import.meta.url), 'utf8');
+  assert.match(mcp, /rekeySets\(user\.id\)/);
+});
+
+await test('session_status — "did that save" is answered from the rows, never guessed', () => {
+  // "Wrought's set logger is glitching on this one, so I don't want to
+  // falsely tell you it saved." The set WAS on the record. The refusal to
+  // claim a save was right and the stopping place was wrong: the model had
+  // no way to look.
+  const t = TOOLS.find(x => x.name === 'session_status');
+  assert.ok(t, 'session_status is missing');
+  assert.match(t.description, /ERRORED OR TIMED OUT/);
+  assert.match(t.description, /do NOT log it again/);
+  assert.equal(t.annotations.readOnlyHint, true);
+  const mcp = readFileSync(new URL('../netlify/functions/mcp.js', import.meta.url), 'utf8');
+  const fn = mcp.slice(mcp.indexOf('async function sessionStatus('), mcp.indexOf('async function swapExercise('));
+  assert.match(fn, /last_set_on_record/);
+  assert.match(fn, /planChecklist\(/);
+  assert.match(fn, /sessionProgress\(/, 'the percentage must be the same computation the rack screen uses');
+  assert.match(fn, /never log it again/);
+  assert.match(SERVER_INSTRUCTIONS, /call session_status before saying a word about whether the set saved/);
+  assert.match(SERVER_INSTRUCTIONS, /session_status — "did that save"/);
 });
 
 await test('lower body takes bigger jumps than upper', () => {
@@ -7764,7 +7839,9 @@ await test('walking out of the gym does not delete the session', () => {
 
   // And both read paths sweep, so it turns up without another workout having
   // to be started first.
-  assert.match(mcp, /await closeStaleSessions\(user\.id, profile\)/);
+  // Awaited — inside a Promise.all with the other independent sweeps, never
+  // as its own serial hop.
+  assert.match(mcp, /await Promise\.all\(\[closeStaleSessions\(user\.id, profile\)/);
   const api = readFileSync(new URL('../netlify/functions/api-progress.js', import.meta.url), 'utf8');
   assert.match(api, /closeStaleSessions\(user\.id, profile\)/);
   // And the pre-bridge backfill rides beside it — the training logged while

@@ -15,11 +15,30 @@ import { activityTotal } from './activity.js';
 // exercise. If they don't collapse to the same key, last week's number is
 // invisible, progression silently stops, and nobody notices for a month
 // because the app still looks like it's working.
+//
+// AND THE OPPOSITE ERROR IS THE DANGEROUS ONE. The first version stripped
+// "incline", "machine", "seated", "dumbbell" and the rest as noise, so
+// "Incline barbell press" became "press" and keyed to OVERHEAD PRESS, and
+// "Seated row machine" keyed to the barbell row. The founder's incline press
+// at 84kg then stood as the overhead press's last performance — a lift he
+// does at 57kg — and progressionCall would have put 86kg on the bar for it.
+// Over-splitting costs a "no history yet" refusal, which is the safe answer;
+// over-merging prescribes another lift's load, which is how this product
+// injures somebody. So ONLY the words that never change the load are noise:
+// "barbell" (the default implement), "bb", and "flat". Everything that
+// changes what a number on the bar means — the implement, the angle, the
+// machine, seated, assisted, weighted — stays in the key.
 
-const NOISE = /\b(barbell|bb|dumbbell|db|machine|cable|smith|seated|standing|incline|decline|flat|close[- ]?grip|wide[- ]?grip|reverse|single[- ]?arm|one[- ]?arm|alternating|weighted|assisted)\b/g;
+const NOISE = /\b(barbell|bb|flat)\b/g;
+// "db" and "kb" are how people abbreviate the implement; they are the same
+// word as the long form, not noise.
+const ABBREV = [[/\bdbs?\b/g, 'dumbbell'], [/\bkbs?\b/g, 'kettlebell']];
 
 const SYNONYM = {
-  'bench': 'bench press', 'benching': 'bench press', 'chest press': 'bench press',
+  'bench': 'bench press', 'benching': 'bench press',
+  'incline bench press': 'incline press', 'incline bench': 'incline press',
+  'incline dumbbell bench press': 'incline dumbbell press', 'incline dumbbell bench': 'incline dumbbell press',
+  'dumbbell bench': 'dumbbell bench press',
   'squat': 'squat', 'squatting': 'squat', 'back squat': 'squat', 'front squat': 'squat',
   'dead': 'deadlift', 'deads': 'deadlift', 'deadlifting': 'deadlift',
   'ohp': 'overhead press', 'shoulder press': 'overhead press', 'military press': 'overhead press',
@@ -35,8 +54,9 @@ const SYNONYM = {
 
 export function exerciseKey(name) {
   let s = String(name || '').toLowerCase()
-    .replace(/[^a-z0-9\s-]/g, ' ')
-    .replace(NOISE, ' ')
+    .replace(/[^a-z0-9\s-]/g, ' ');
+  for (const [re, word] of ABBREV) s = s.replace(re, word);
+  s = s.replace(NOISE, ' ')
     .replace(/\s+/g, ' ')
     .trim();
   if (SYNONYM[s]) return SYNONYM[s];
@@ -44,6 +64,65 @@ export function exerciseKey(name) {
   const singular = s.replace(/s$/, '');
   if (SYNONYM[singular]) return SYNONYM[singular];
   return s || 'unnamed';
+}
+
+/**
+ * The rows whose stored key no longer matches what exerciseKey says.
+ *
+ * `exercise_key` is stamped at write time, so every key the old normaliser
+ * got wrong is sitting in the record — the incline press filed as the
+ * overhead press, the machine row filed as the barbell row — and every read
+ * built on the grain (last performance, the max, the lift record, the volume
+ * count) keeps seeing the merge until the rows are re-keyed. Pure, so the
+ * harness can pin the decision without a database.
+ */
+export function rekeyRows(rows = []) {
+  const out = [];
+  for (const r of rows) {
+    const key = exerciseKey(r.exercise);
+    if (key !== r.exercise_key) out.push({ id: r.id, exercise: r.exercise, from: r.exercise_key, exercise_key: key });
+  }
+  return out;
+}
+
+/**
+ * Re-key one person's set record, and the plan of any session still running.
+ *
+ * Runs on the way into the dashboard beside the other sweeps: one read when
+ * there is nothing to do, a handful of UPDATEs grouped by name the first time.
+ * The live session's plan carries keys too — recordSet counts sets done by
+ * `current.key` — so it is refreshed from the names in the same pass, or the
+ * checklist restarts an exercise at set 1 the moment its rows are re-keyed.
+ */
+export async function rekeySets(userId) {
+  const { data: rows, error } = await supabase.from('wrought_sets')
+    .select('id, exercise, exercise_key').eq('user_id', userId).limit(5000);
+  if (error) return { rekeyed: 0, error: error.message };
+
+  const changes = rekeyRows(rows || []);
+  const byName = new Map();
+  for (const c of changes) {
+    if (!byName.has(c.exercise)) byName.set(c.exercise, { key: c.exercise_key, ids: [] });
+    byName.get(c.exercise).ids.push(c.id);
+  }
+  let rekeyed = 0;
+  for (const [, { key, ids }] of byName) {
+    const { error: upErr } = await supabase.from('wrought_sets')
+      .update({ exercise_key: key }).eq('user_id', userId).in('id', ids);
+    if (upErr) return { rekeyed, error: upErr.message };
+    rekeyed += ids.length;
+  }
+
+  const { data: live } = await supabase.from('wrought_sessions')
+    .select('id, plan').eq('user_id', userId).eq('status', 'active');
+  for (const s of live || []) {
+    const plan = Array.isArray(s.plan) ? s.plan : [];
+    const fresh = plan.map(e => ({ ...e, key: exerciseKey(e.name) }));
+    if (fresh.some((e, i) => e.key !== plan[i].key)) {
+      await supabase.from('wrought_sessions').update({ plan: fresh }).eq('id', s.id);
+    }
+  }
+  return { rekeyed };
 }
 
 // Lower-body lifts take bigger jumps than upper — 2.5kg on a bench is a real
