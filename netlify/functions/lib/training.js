@@ -39,7 +39,10 @@ const SYNONYM = {
   'incline bench press': 'incline press', 'incline bench': 'incline press',
   'incline dumbbell bench press': 'incline dumbbell press', 'incline dumbbell bench': 'incline dumbbell press',
   'dumbbell bench': 'dumbbell bench press',
-  'squat': 'squat', 'squatting': 'squat', 'back squat': 'squat', 'front squat': 'squat',
+  // A FRONT squat is not a back squat — it is loaded at roughly four-fifths of
+  // one — so it keeps its own key. Merging them was the incline-press bug one
+  // lift along: the back squat's last performance prescribed for the front.
+  'squat': 'squat', 'squatting': 'squat', 'back squat': 'squat',
   'dead': 'deadlift', 'deads': 'deadlift', 'deadlifting': 'deadlift',
   'ohp': 'overhead press', 'shoulder press': 'overhead press', 'military press': 'overhead press',
   'press': 'overhead press',
@@ -339,6 +342,40 @@ function distanceMode(summary = '') {
   return DISTANCE_MODES.find(m => m.match.test(String(summary))) || DISTANCE_WALK;
 }
 
+/**
+ * Are these two names the same lift, for the purpose of NOT DOUBLING it?
+ *
+ * exerciseKey deliberately over-splits — "seated row machine" and "seated
+ * row" are different keys, because merging them would prescribe one lift's
+ * load for the other, and over-merging is the dangerous error for a LOAD.
+ * For a fold it is the other way round: a workout re-told after the fact
+ * ("pec deck", "seated row", "incline treadmill") landed beside the rows
+ * already logged set by set as "Pec-deck/chest fly", "Seated row machine",
+ * "Incline treadmill — incline 12.5" — and the night read 14 sets where 9
+ * were done. Doubling is silent; a skip is reported in the answer.
+ *
+ * So: equal keys, or every word of the shorter name inside the longer one,
+ * with two guards. The shorter side must have at least two words — "row"
+ * alone is inside "seated row machine" and is a different lift — and the
+ * words the longer side ADDS must not name a different implement, angle or
+ * stance, because "incline press" told beside "incline dumbbell press" is
+ * two lifts and so is "bench press" beside "incline bench press".
+ */
+const DISTINGUISHING_WORDS = /^(dumbbell|kettlebell|smith|cable|band|trap|hex|safety|incline|decline|front|back|close|wide|sumo|paused?|deficit|romanian|single|one)$/;
+export function sameLift(a, b) {
+  const ka = exerciseKey(a), kb = exerciseKey(b);
+  if (!ka || !kb) return false;
+  if (ka === kb) return true;
+  const ta = ka.split(/[^a-z0-9]+/).filter(Boolean);
+  const tb = kb.split(/[^a-z0-9]+/).filter(Boolean);
+  const [short, long] = ta.length <= tb.length ? [ta, tb] : [tb, ta];
+  if (short.length < 2) return false;
+  const longSet = new Set(long);
+  if (!short.every(w => longSet.has(w))) return false;
+  const shortSet = new Set(short);
+  return !long.some(w => !shortSet.has(w) && DISTINGUISHING_WORDS.test(w));
+}
+
 export function trainingBurn(workouts = [], weightKg = null) {
   let measured = 0, estimated = 0, anyMeasured = false, anyEstimated = false;
   // EVERY SESSION ITEMISED, from the same pass that computes the total, so a
@@ -349,6 +386,18 @@ export function trainingBurn(workouts = [], weightKg = null) {
   for (const w of workouts) {
     const kcal = Number(w.detail?.calories);
     if (Number.isFinite(kcal) && kcal > 0) {
+      // A figure the finaliser STAMPED as an estimate is still an estimate.
+      // The close prices a session from its minutes and the person's weight
+      // so the row carries its own number — but reading that back as a
+      // measurement would make an estimated session look watch-measured on
+      // every screen, which is the labelled-estimates doctrine failing in the
+      // one place the label was just written.
+      if (w.detail?.calories_source === 'estimate') {
+        estimated += kcal; anyEstimated = true;
+        entries.push({ summary: w.summary, minutes: Number(w.detail?.minutes) || null,
+                       kcal: Math.round(kcal), source: 'estimate' });
+        continue;
+      }
       measured += kcal; anyMeasured = true;
       entries.push({ summary: w.summary, minutes: Number(w.detail?.minutes) || null,
                      kcal: Math.round(kcal), source: 'device' });
@@ -391,6 +440,57 @@ export function trainingBurn(workouts = [], weightKg = null) {
     entries,
     source: anyMeasured && anyEstimated ? 'mixed' : anyMeasured ? 'device' : anyEstimated ? 'estimate' : 'none',
   };
+}
+
+/**
+ * What ONE session was worth, said beside how the day counts it.
+ *
+ * The founder, asked "how many calories?" after closing a workout, was told
+ * "I didn't manually add any calories — Wrought is treating the 764 from your
+ * device as the training component." The session had no figure of its own,
+ * so the only number in front of the model was the day's, and it reported
+ * the clamp as though it were the answer. A workout that just closed must
+ * come back with what IT was worth, and then — separately — how that sits
+ * inside the day, because the two are different facts and a person asking
+ * the first one is not asking the second.
+ *
+ * @param own      { kcal, source: 'watch' | 'estimate' | 'none', minutes }
+ * @param balance  energyBalance() for the day, or null
+ */
+export function sessionWorth(own = {}, balance = null) {
+  const kcal = Math.round(Number(own?.kcal) || 0);
+  const source = own?.source || (kcal > 0 ? 'estimate' : 'none');
+  const mins = Number(own?.minutes) || null;
+
+  if (!(kcal > 0)) {
+    return {
+      kcal: 0, source: 'none', counted: 0,
+      say: 'No calorie figure on this session — it needs a recent weigh-in to price from. Log a weight and the day\'s burn fills in.',
+      why: own?.why || 'no recent weigh-in',
+    };
+  }
+
+  const money = v => Math.round(v).toLocaleString();
+  let say = source === 'watch'
+    ? `Your watch measured about ${money(kcal)} kcal inside the session.`
+    : `Worth roughly ${money(kcal)} kcal — estimated from ${mins ? `${mins} minutes` : 'the minutes'} at your bodyweight, not measured.`;
+
+  // How the DAY counts it. A watch's active energy already contains the
+  // session, so the day never stacks the session on top of it — but the
+  // person just asked what the session was worth, and "764 is the training
+  // component" answers a different question. Both facts, in that order.
+  let counted = kcal;
+  if (balance?.known) {
+    const c = balance.training_clamped;
+    if (c && Number(c.counted) < kcal) {
+      counted = Number(c.counted);
+      say += ` Your watch counted ${money(c.counted)} moving for the WHOLE day, and a session cannot be more than the day, so the day counts ${money(c.counted)} for training. The session's own figure is not added on top of the watch — that would count the same hour twice.`;
+    } else if (balance.active_source === 'device' || balance.active_source === 'logged_over_device') {
+      say += ` It sits inside what your watch measured for the day; nothing is stacked on top.`;
+    }
+  }
+
+  return { kcal, source, counted, ...(mins ? { minutes: mins } : {}), say, estimated: source !== 'watch' };
 }
 
 /**

@@ -852,6 +852,11 @@ await test('the same lift under different names collapses to one key', () => {
     assert.equal(exerciseKey(n), 'incline dumbbell press', `"${n}" should key to incline dumbbell press`);
   }
   assert.equal(exerciseKey('Back Squat'), 'squat');
+  // A front squat is loaded at about four-fifths of a back squat; keying them
+  // together prescribed one lift's load for the other — the incline-press
+  // collision, one lift along. Over-splitting is the safe error.
+  assert.equal(exerciseKey('Front Squat'), 'front squat');
+  assert.notEqual(exerciseKey('front squat'), exerciseKey('back squat'));
   assert.equal(exerciseKey('RDL'), 'romanian deadlift');
   assert.equal(exerciseKey('Barbell row'), 'row');
   assert.equal(exerciseKey('DB row'), exerciseKey('Dumbbell row'));
@@ -946,6 +951,65 @@ await test('a workout told while one is running goes INTO it — one workout ton
   assert.equal(pec[0].weight_kg, 81.6);
   // Nothing is written with an event id — these are session sets.
   assert.ok(r.rows.every(x => !('event_id' in x)));
+
+  // THE SHORT NAMES. The night after the fold shipped, ChatGPT re-told the
+  // whole session through `log` with the lifts named the short way — "pec
+  // deck", "seated row", "incline treadmill" — beside rows logged set by set
+  // as "Pec-deck/chest fly", "Seated row machine" and "Incline treadmill —
+  // incline 12.5, 2.5–3.0 mph". The strict key kept them apart, the fold
+  // appended all three as new lifts, and the record read 14 sets for 9 done.
+  // Doubling is silent; a skip is said in the answer, so the loose match is
+  // the safe side of this one.
+  const { sameLift } = await import('../netlify/functions/lib/training.js');
+  assert.ok(sameLift('seated row', 'Seated row machine'));
+  assert.ok(sameLift('pec deck', 'Pec-deck/chest fly'));
+  assert.ok(sameLift('incline treadmill', 'Incline treadmill — incline 12.5, 2.5–3.0 mph'));
+  assert.ok(sameLift('Flat bench press', 'bench press'));
+  // But not by ONE word — "row" is inside "seated row machine" and is the
+  // barbell row — and not across a different implement, which changes the load.
+  assert.ok(!sameLift('Barbell row', 'Seated row machine'));
+  assert.ok(!sameLift('press', 'incline press'));
+  assert.ok(!sameLift('incline press', 'incline dumbbell press'));
+  assert.ok(!sameLift('bench press', 'incline bench press'), 'flat and incline bench are two lifts in one session');
+  assert.ok(!sameLift('bench press', 'close grip bench press'));
+  assert.ok(!sameLift('squat', 'front squat'));
+
+  const retold = foldPlan({
+    plan: [
+      { index: 0, name: 'Incline treadmill — incline 12.5, 2.5–3.0 mph', key: 'incline treadmill incline 12 5 2 5 3 0 mph', sets: null, reps: null, timed: true },
+      { index: 1, name: 'Seated row machine', key: 'seated row machine', sets: 2, reps: 8 },
+      { index: 2, name: 'Pec-deck/chest fly', key: 'pec-deck chest fly', sets: 2, reps: 8 },
+      { index: 3, name: 'Overhead press', key: 'overhead press', sets: 2, reps: 8 },
+    ],
+    sessionSets: [
+      { exercise: 'Incline treadmill — incline 12.5, 2.5–3.0 mph', exercise_key: 'incline treadmill incline 12 5 2 5 3 0 mph' },
+      { exercise: 'Seated row machine', exercise_key: 'seated row machine' },
+      { exercise: 'Pec-deck/chest fly', exercise_key: 'pec-deck chest fly' },
+    ],
+    exercises: [
+      { name: 'incline treadmill', sets: 1 },
+      { name: 'pec deck', sets: 2, reps: 16, weight_kg: 81.6 },
+      { name: 'seated row', sets: 2, reps: 13 },
+      { name: 'press', sets: 2, reps: 8, weight_kg: 57 },   // genuinely not yet done — goes to its plan slot
+    ],
+  });
+  assert.equal(retold.skipped.length, 3, JSON.stringify(retold.skipped));
+  assert.equal(retold.additions.length, 0, 'a re-told lift was appended as a new one');
+  assert.ok(retold.rows.every(x => x.exercise_key === 'overhead press'), JSON.stringify(retold.rows));
+  assert.equal(retold.rows.length, 2);
+  assert.equal(retold.rows[0].position, 4);
+  // And a planned lift told the short way lands in ITS slot, not a new one.
+  const slotted = foldPlan({
+    plan: [{ index: 0, name: 'Seated row machine', key: 'seated row machine', sets: 2, reps: 8 }],
+    sessionSets: [],
+    exercises: [{ name: 'seated row', sets: 2, reps: 8, weight_kg: 100 }],
+  });
+  assert.equal(slotted.additions.length, 0);
+  assert.equal(slotted.rows.length, 2);
+  assert.equal(slotted.rows[0].exercise_key, 'seated row machine');
+  // The fold reads the names, not only the keys — the loose match needs words.
+  const sesSrc = readFileSync(new URL('../netlify/functions/lib/session.js', import.meta.url), 'utf8');
+  assert.match(sesSrc, /\.select\('exercise, exercise_key'\)\.eq\('session_id', session\.id\)/);
 
   // log folds only into a session opened TODAY — never into yesterday's
   // stale one, which would move tonight's lifts to the wrong day — and
@@ -6944,6 +7008,27 @@ await test('a treadmill is not a bench press — two statistics, never one', () 
   assert.equal(pure.mixed, false);
   assert.equal(pure.cardio.minutes, null);
 
+  // AN INCLINE BARBELL PRESS IS NOT CARDIO, and neither is a seated row
+  // machine. The split's own copy of the pattern had "incline" and "row
+  // machine" in it, so the founder's session read "6 cardio pieces" for one
+  // treadmill and the lifting volume lost both lifts. One pattern now, the
+  // routine editor's, which had already learned that "row" fronts every
+  // barbell row and a Farmer's walk is a loaded lift.
+  const founders = splitWork({
+    sets: [
+      { exercise: 'Incline treadmill — incline 12.5, 2.5–3.0 mph', logged_at: mins(1) },
+      { exercise: 'Bench press', logged_at: mins(5), reps: 8, weight_kg: 102 },
+      { exercise: 'Incline barbell press', logged_at: mins(12), reps: 8, weight_kg: 84 },
+      { exercise: 'Seated row machine', logged_at: mins(20), reps: 5, weight_kg: 113 },
+      { exercise: "Farmer's walk", logged_at: mins(25), reps: 1, weight_kg: 60 },
+      { exercise: 'Walking lunges', logged_at: mins(28), reps: 10, weight_kg: 20 },
+    ],
+    plan: [],
+  });
+  assert.equal(founders.strength.sets, 5, JSON.stringify(founders.strength));
+  assert.deepEqual(founders.cardio.exercises, ['Incline treadmill — incline 12.5, 2.5–3.0 mph']);
+  assert.equal(founders.cardio.entries, 1);
+
   // The split rides on the closed session, and end_session reports both.
   const ses = readFileSync(new URL('../netlify/functions/lib/session.js', import.meta.url), 'utf8');
   assert.match(ses, /\.eq\('metric', 'heart_rate'\)[\s\S]{0,200}\.order\('measured_at'/);
@@ -6984,6 +7069,23 @@ await test('the watch measures the session when its data can actually say so', (
   const ses = readFileSync(new URL('../netlify/functions/lib/session.js', import.meta.url), 'utf8');
   assert.match(ses, /const watched = windowedActive\(activeRows \|\| \[\]/);
   assert.match(ses, /calories: watched\.kcal, calories_source: 'watch'/);
+  // AND WHEN THE WATCH CANNOT VOUCH, THE SESSION STILL CARRIES ITS OWN FIGURE.
+  // The founder closed a workout, asked how many calories, and was told
+  // "I didn't add any — Wrought is treating the 764 from your device as the
+  // training component." The row had minutes and no figure. It is priced
+  // once, from the minutes and the weight on file, and stamped as an estimate.
+  assert.match(ses, /calories: estimate, calories_source: 'estimate'/);
+  assert.match(ses, /trainingBurn\(\[\{ summary: session\.name, detail: \{ kind: session\.kind, minutes \} \}\], weightKg\)/);
+  assert.match(ses, /\.eq\('event_type', 'weight'\)[\s\S]{0,80}\.order\('occurred_at', \{ ascending: false \}\)\.limit\(1\)/,
+    'the weigh-in for pricing must be the most recent anywhere — a window is not a memory');
+  // And trainingBurn reads the stamp back as an ESTIMATE, never as measured —
+  // otherwise the label written at the close is erased on the next read.
+  const stamped = trainingBurn([{ summary: 'S-Tier', detail: { kind: 'strength', minutes: 59, calories: 618, calories_source: 'estimate' } }], 150);
+  assert.equal(stamped.kcal, 618);
+  assert.equal(stamped.source, 'estimate');
+  assert.equal(stamped.entries[0].source, 'estimate');
+  const measuredStamp = trainingBurn([{ summary: 'S-Tier', detail: { kind: 'strength', minutes: 59, calories: 300, calories_source: 'watch' } }], 150);
+  assert.equal(measuredStamp.source, 'device');
   // The guard needs the WHOLE day's rows, not just the window — granularity
   // cannot be judged from a slice.
   assert.match(ses, /\.eq\('metric', 'active_calories'\)[\s\S]{0,40}\.eq\('local_date', dayOf\)/);
@@ -8071,7 +8173,13 @@ await test('a session left open overnight does not bill fourteen hours', () => {
   // invents hundreds of calories of training burn, and an overstated burn is
   // the number that tells somebody they have room to eat.
   const src = readFileSync(new URL('../netlify/functions/lib/session.js', import.meta.url), 'utf8');
-  assert.match(src, /const endAt = endedAt \? new Date\(endedAt\)\.getTime\(\) : lastSetAt;/);
+  // And "I'm done" said from the sofa ninety minutes later is not ninety
+  // minutes of training: an explicit close is honoured within a grace of the
+  // last set, then the last set plus the grace is the end. The founder's
+  // session closed at 142 minutes for under an hour of lifting, and the
+  // calorie estimate scaled with it.
+  assert.match(src, /Math\.min\(new Date\(endedAt\)\.getTime\(\), lastSetAt \+ CLOSE_GRACE_MS\)/);
+  assert.match(src, /: lastSetAt;/);
   assert.match(src, /Math\.max\(1, Math\.round\(\(endAt - started\) \/ 60000\)\)/);
   // The event is filed when it happened, not under today — a late Tuesday
   // session must not land on Wednesday.
@@ -9478,6 +9586,62 @@ await test('a session with no minutes on it is flagged, not silently free', () =
   const out = needsDuration(written, events);
   assert.equal(out.length, 1);
   assert.equal(out[0].id, 'a');
+});
+
+await test('a closed session says what IT was worth, then how the day counts it', async () => {
+  // The founder, at the close: "how many calories?" The answer he got was
+  // "I didn't manually add any — Wrought is treating the 764 active calories
+  // from your device as the training component." That is the DAY's clamp
+  // reported as the session's figure, because the session had none. Two
+  // facts, both said, in that order.
+  const { sessionWorth } = await import('../netlify/functions/lib/training.js');
+  const own = { kcal: 618, source: 'estimate', minutes: 59 };
+
+  // A watch that measured the whole day at 764 already contains the session,
+  // so the day counts 618 for training and nothing is stacked — said as such.
+  const inside = sessionWorth(own, { known: true, active_source: 'device', training_burn: 618 });
+  assert.equal(inside.kcal, 618);
+  assert.equal(inside.counted, 618);
+  assert.equal(inside.estimated, true);
+  assert.match(inside.say, /roughly 618 kcal/);
+  assert.match(inside.say, /estimated from 59 minutes at your bodyweight, not measured/);
+  assert.match(inside.say, /nothing is stacked on top/);
+
+  // The clamp, when the session's own figure is larger than the whole day:
+  // the session's number stays the answer, and the clamp is explained beside
+  // it rather than replacing it.
+  const clamped = sessionWorth({ kcal: 1491, source: 'estimate', minutes: 142 },
+    { known: true, active_source: 'device', training_burn: 764, training_clamped: { own: 1491, counted: 764, dropped: 727 } });
+  assert.equal(clamped.kcal, 1491);
+  assert.equal(clamped.counted, 764);
+  assert.match(clamped.say, /^Worth roughly 1,491 kcal/);
+  assert.match(clamped.say, /the day counts 764 for training/);
+  assert.match(clamped.say, /not added on top of the watch/);
+
+  // Measured inside the window reads as measured, and no weigh-in reads as
+  // no figure — never a number in its place.
+  assert.match(sessionWorth({ kcal: 400, source: 'watch', minutes: 50 }, null).say, /Your watch measured about 400 kcal/);
+  const none = sessionWorth({ kcal: 0, source: 'none', minutes: 50 }, null);
+  assert.equal(none.kcal, 0);
+  assert.match(none.say, /No calorie figure on this session/);
+  assert.match(none.say, /recent weigh-in/);
+
+  // Wired: end_session carries it, says it BEFORE the day's balance, and the
+  // note forbids answering "how many calories" with the day's arithmetic.
+  const mcp = readFileSync(new URL('../netlify/functions/mcp.js', import.meta.url), 'utf8');
+  const end = mcp.slice(mcp.indexOf('async function endSession('), mcp.indexOf('async function previousBest('));
+  assert.match(end, /const worth = sessionWorth\(done\.calories, balance\)/);
+  assert.match(end, /calories: worth,/);
+  assert.match(end, /` \$\{worth\.say\}` \+\s*` \$\{balance\.say\}`/);
+  assert.match(end, /SAY WHAT THE SESSION WAS WORTH from `calories`/);
+  assert.match(end, /Never answer "how many calories" with the day\\'s total/);
+  // The finaliser hands it back, and the panels label a priced session.
+  const ses = readFileSync(new URL('../netlify/functions/lib/session.js', import.meta.url), 'utf8');
+  assert.match(ses, /calories,\n    local_date: localDateFor/);
+  assert.match(ses, /calories_source: d\.calories_source \?\? null/);
+  const page = readFileSync(new URL('../public/app.html', import.meta.url), 'utf8');
+  assert.equal((page.match(/x\.calories_source === 'estimate' \? ', estimated' : ''/g) || []).length, 2,
+    'both workout lists label a priced session as an estimate');
 });
 
 await test('a logged session burns something, scaled to their own weight', () => {
