@@ -46,7 +46,7 @@ import { nutritionTotals, composition, macroMatrix, yearOverYear } from './lib/n
 import {
   exerciseKey, lastPerformance, progressionCall, TIERS,
   restingBurn, energyBalance, planFromRoutine, sessionTotals, earnedRoom,
-  orderPlan, orderInsight, deviceMatrix, weekdayPattern, weekSoFar, weekTargets, goalCall, baselineFromClaim, readiness, nextSetLoad,
+  orderPlan, orderInsight, deviceMatrix, weekdayPattern, weekSoFar, weekTargets, goalCall, baselineFromClaim, readiness, nextSetLoad, rekeySets,
   normaliseMovement, readMovement, syncSetsFromWorkouts,
   ACTIVITY,
   targetOptions, goalsToSet,
@@ -178,6 +178,8 @@ HOW PEOPLE ACTUALLY ASK. Nobody says "call the brief tool". They say one of a hu
   suggest_workout / programmes — "what should I train", "give me a workout", "I want to do a workout", "I wanna do a workout", "let's do a workout", "I want to train", "can we work out", "what's today", "programme me", "build me something", "I've got 40 minutes", "what am I neglecting", "proper programme", "what should I be running"
   start_session — "let's go", "starting now", "at the gym", "I'm going to the gym", "heading to the gym", "gym in ten", "leg day", "chest day", "I'm at the rack", "warmed up"
   log_set — "done", "got it", "got 8", "8 at 225", "that's up", "failed at 5", "couldn't finish", "one more in the tank"
+  rack_note — "not too bad, had room left" (said after the set was logged), "that one was a grinder", "shoulder pinched on the last rep", "today I'm chasing the top set" (an aim said after the session started)
+  session_status — "did that save", "did you get that", "where was I", "what's left", "how far through am I", "what am I on" — and ALWAYS when a log_set call errored or timed out, before saying anything about whether it saved
   form_check — "am I getting faster", "was that my best run", "how's my running going", "is my pace improving", "where's my wall", "why am I stalling", "check my form", "why did that feel awful", "am I grinding", "my form went", "that was ugly", "I rushed it", "why can't I hit this any more", "this used to be easy"
   set_alert — "remind me to stop eating at nine", "tell me when I hit 80% of my calories", "nudge me if I have not trained", "let me know when my fast starts", "ping me to weigh in", "can you tell me at 6", "warn me when". ALWAYS a tool call. WROUGHT can never speak first inside a conversation, so the ONLY way to remind somebody of anything is to write a rule the hourly job sends — saying "I'll remind you" without calling set_alert is a promise nothing keeps.
   my_alerts — "what reminders do I have", "what are you telling me about", "am I set up for notifications", "turn my notifications on"
@@ -232,7 +234,7 @@ A NEW WEIGHT IS JUST LOG_WEIGHT. "I'm down to 325" or "I weighed 148 this mornin
 
 BETWEEN THE SETS, YOU ARE THE TRAINER STANDING THERE — AND THE QUESTIONS ARE INPUTS, NOT CONVERSATION. Every log_set answer carries ask_after ("how did that feel — how many more could you have got?") and, at the top of a new exercise, ask_before ("where are you with this today — as it is, a little harder, or a little softer?"). Ask ONE of them, in the same message as the count, never as a separate turn, and never both. THEIR REPLY GOES TO log_set AS the felt field, VERBATIM — do not convert it to an RPE number yourself. The server reads the words against the reps-in-reserve scale and that reading is what decides the next load, so a number you inferred is a guess about how much weight goes on a bar: the same failure as an invented calorie target, in the place it hurts fastest. Words that report no effort produce no number and the load holds, which is deliberate. effort_read on the response says what it heard and from which phrase — relay that in half a clause when it matters ("taking that as about one rep left") so a wrong reading can be corrected rather than silently moving the weight.
 
-AT THE RACK, THE SERVER HOLDS THE CLIPBOARD. During a session, every log_set answer carries the checklist — every exercise with its sets and reps, marked done, current or to come. "What's left", "what's next", "how much more" are answered from the LATEST checklist, never from memory of the conversation. Ask at most ONE short question per rest gap — the reps, or how it felt — never a form. If they mention pain, log_set's note field takes their words verbatim AND it goes to remember (category health).
+AT THE RACK, THE SERVER HOLDS THE CLIPBOARD. During a session, every log_set answer carries the checklist — every exercise with its sets and reps, marked done, current or to come. "What's left", "what's next", "how much more" are answered from the LATEST checklist, never from memory of the conversation. Ask at most ONE short question per rest gap — the reps, or how it felt — never a form. If they mention pain, log_set's note field takes their words verbatim AND it goes to remember (category health). IF A log_set CALL ERRORS OR TIMES OUT, call session_status before saying a word about whether the set saved. "The logger is glitching, so I won't tell you it saved" is honest and it is the wrong stopping place: the set is very often on the record, and the person is left not knowing what the record holds — the same failure as a claimed save that never happened. A set session_status shows on the record is saved and must never be logged again (that doubles it); one it does not show was never written and gets logged now.
 
 A NUMBER THEY REMEMBER IS A CLAIM, NOT A LOAD. When a lift has no history the load call comes back as find_working_weight. At that moment — and only then — you may ask ONCE: "what do you usually do on this for a set?" If they answer, or volunteer a number any time ("I bench 185", "my max is 315"), pass it to calibrate_lift. The server holds part of it back — a remembered number is a best day, not a Tuesday — and frames the first set as a calibration: clean bar, add; grinding bar, strip it. What they ACTUALLY lift becomes the baseline, and from then on the record outranks the memory forever.
 
@@ -545,6 +547,13 @@ const TOOLS = [
       },
     },
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+  },
+  {
+    name: 'session_status',
+    title: 'Read the live session back off the record',
+    description: 'Where they are in the workout, read from the record rather than remembered: the checklist, the percentage, the last set AS STORED, and the aim. CALL THIS WHEN A log_set CALL ERRORED OR TIMED OUT, before saying anything about whether the set saved — never announce that the logger is "glitching" and move on, and never guess either way. If the set is on the record, say so and do NOT log it again (that doubles it); if it is not, call log_set now. Also for "did that save", "did you get that", "where was I", "what\'s left", "how far through am I", "what am I on".',
+    inputSchema: { type: 'object', properties: {} },
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   },
   {
     name: 'swap_exercise',
@@ -2590,7 +2599,10 @@ async function brief(args, user) {
   // nobody closed are filed before the day is read, or the brief tells somebody
   // who trained yesterday that they had a rest day — with all their sets
   // sitting in the table the whole time.
-  await closeStaleSessions(user.id, profile);
+  // And the set keys the old normaliser merged, put back under their own
+  // lift — the brief is the read most people make, so the repair rides here
+  // as well as on the dashboard. Independent of the sweep; together.
+  await Promise.all([closeStaleSessions(user.id, profile), rekeySets(user.id)]);
 
   const [day, range] = await Promise.all([
     dayFacts(user.id, profile, date),
@@ -3848,6 +3860,74 @@ async function rackNote(args, user) {
     ...out,
     say: said.join(' ') || 'Nothing was attached.',
     note: 'Half a clause at most — "got that down" — they are between sets. If up_next_load is here, say its load as given: it was computed from the set as it now reads. If words_saved is false, say so and take the set with log_set; never claim the words were kept unless on_record shows them.',
+  };
+}
+
+// THE SESSION, READ BACK. The founder's screenshot: "Wrought's set logger is
+// glitching on this one, so I don't want to falsely tell you it saved." The
+// refusal to claim a save is right — and it was the wrong stopping place,
+// because the set WAS on the record and the model had no way to look. A
+// claimed save that never happened and a real save reported as lost are the
+// same failure from the person's side: they no longer know what the record
+// holds. This answers it from the rows.
+async function sessionStatus(_args, user) {
+  const profile = await getProfile(user.id);
+  const today = localDateFor(profile.timezone);
+
+  const { data: session } = await supabase.from('wrought_sessions')
+    .select('*').eq('user_id', user.id).eq('status', 'active').maybeSingle();
+
+  if (!session) {
+    const { data: filed } = await supabase.from('wrought_sessions')
+      .select('name, ended_at').eq('user_id', user.id)
+      .eq('status', 'done').eq('local_date', today)
+      .order('ended_at', { ascending: false }).limit(3);
+    return {
+      active: false,
+      filed_today: (filed || []).map(s => s.name),
+      say: filed?.length
+        ? `No workout is running. Filed today: ${filed.map(s => s.name).join(', ')}.`
+        : 'No workout is running and nothing has been filed today.',
+      note: 'If they are reporting sets, call log_set with the exercise named — a session opens on the first set.',
+      next_actions: ['log_set with the exercise named', 'start_session'],
+    };
+  }
+
+  const plan = Array.isArray(session.plan) ? session.plan : [];
+  const { data: rows } = await supabase.from('wrought_sets')
+    .select('exercise, exercise_key, set_number, reps, weight_kg, rpe, note, logged_at')
+    .eq('session_id', session.id).order('logged_at', { ascending: false });
+  const sets = rows || [];
+  const last = sets[0] || null;
+  const current = plan[session.cursor_index] || null;
+  const doneHere = current ? sets.filter(r => r.exercise_key === current.key).length : 0;
+  const running = sessionTotals(sets);
+  const elapsed = Math.round((Date.now() - new Date(session.started_at).getTime()) / 60000);
+
+  return {
+    active: true,
+    name: session.name,
+    aim: session.aim ?? null,
+    minutes: elapsed,
+    // THE LAST SET AS STORED — the answer to "did that save".
+    last_set_on_record: last ? {
+      exercise: last.exercise, set: last.set_number, reps: last.reps,
+      weight_kg: last.weight_kg != null ? Number(last.weight_kg) : null,
+      rpe: last.rpe != null ? Number(last.rpe) : null,
+      words: last.note || null,
+      logged_at: last.logged_at,
+    } : null,
+    sets_on_record: sets.length,
+    so_far: { sets: running.sets, volume_kg: running.volume_kg, minutes: elapsed },
+    current: current ? { exercise: current.name, set: doneHere + 1, of: current.sets, reps: current.reps } : null,
+    checklist: planChecklist(plan, session.cursor_index || 0, doneHere),
+    progress: sessionProgress(plan, sets),
+    ...(sessionVoice(session) ? { voice: sessionVoice(session) } : {}),
+    say: last
+      ? `${sets.length} set${sets.length === 1 ? '' : 's'} on the record, last one ${last.exercise} set ${last.set_number}: ${last.reps ?? '—'} reps${last.weight_kg != null ? ` at ${Number(last.weight_kg)}kg` : ''}. ${current ? `Up: ${current.name} set ${doneHere + 1} of ${current.sets ?? '?'}.` : 'The plan is finished.'}`
+      : `${session.name} is open with no sets logged yet.`,
+    note: 'Answer from this, not from memory of the conversation. A set shown in last_set_on_record IS saved — say so in half a clause and never log it again. A set they reported that is not here was never written: call log_set for it now. Never say the logger is glitching without having read this.',
+    next_actions: ['log_set for the next set', 'rack_note for anything they said about the last one', 'end_session when they stop'],
   };
 }
 
@@ -5505,6 +5585,7 @@ const IMPL = {
   start_session: startSession,
   log_set: logSet,
   rack_note: rackNote,
+  session_status: sessionStatus,
   swap_exercise: swapExercise,
   calibrate_lift: calibrateLift,
   end_session: endSession,
