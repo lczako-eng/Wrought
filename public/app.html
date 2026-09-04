@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Wrought — your record</title>
 <meta name="theme-color" content="#14110F">
 <style>
@@ -51,6 +51,18 @@
   --moss:      #6FA672;
   --amber:     #E8B64C;
 
+  /* The dashboard's second layer: not new semantic colours, just surfaces and
+     light made from the forge palette above. Keeping them as tokens prevents
+     every card inventing its own almost-brown and almost-orange. */
+  --panel-hi:  rgba(48,39,35,.98);
+  --panel-lo:  rgba(22,19,17,.98);
+  --glass:     rgba(30,25,23,.78);
+  --label:     #94867D;
+  --line:      var(--edge);
+  --muted:     var(--ash);
+  --dim:       var(--ash-dim);
+  --flare:     rgba(242,100,25,.22);
+
   --gut: clamp(16px, 4vw, 28px);
   --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   /* THE WORDMARK IS ONE TYPEFACE ON EVERY PAGE. This drifted once and it was
@@ -69,9 +81,13 @@
 }
 
 * { box-sizing: border-box; }
-html { -webkit-text-size-adjust: 100%; }
+html { -webkit-text-size-adjust: 100%; color-scheme: dark; scroll-padding-top: 118px; }
 body {
-  margin: 0; background: var(--iron); color: var(--bright);
+  margin: 0; min-height: 100svh; overflow-x: clip;
+  background:
+    radial-gradient(1200px 720px at 50% -280px, rgba(122,31,10,.22), transparent 72%),
+    linear-gradient(180deg, #181310 0, var(--iron) 38%, #100e0d 100%);
+  color: var(--bright);
   font-family: var(--sans); font-size: 15px; line-height: 1.55;
   -webkit-font-smoothing: antialiased;
 }
@@ -79,11 +95,12 @@ body {
    sit in one light. Fixed and behind everything, weaker here than there — this
    screen is read for its numbers, not admired. */
 body::before {
-  content: ""; position: fixed; inset: -10% -20% auto -20%; height: 70vh; z-index: -1;
+  content: ""; position: fixed; inset: -12% -20% auto -20%; height: 78vh; z-index: -1;
   background:
-    radial-gradient(50% 48% at 76% 0%, rgba(245,166,35,.08), transparent 72%),
-    radial-gradient(58% 50% at 32% 0%, rgba(242,100,25,.16), transparent 72%);
-  pointer-events: none;
+    radial-gradient(42% 46% at 78% 8%, rgba(245,166,35,.12), transparent 72%),
+    radial-gradient(54% 54% at 27% 2%, rgba(242,100,25,.2), transparent 72%);
+  pointer-events: none; transform-origin: 50% 0;
+  animation: wrought-atmosphere 10s cubic-bezier(.22,.61,.36,1) both;
 }
 body::after {
   content: ""; position: fixed; inset: 0; z-index: -2; pointer-events: none;
@@ -93,6 +110,10 @@ body::after {
   background-size: 42px 42px;
   mask-image: linear-gradient(to bottom, rgba(0,0,0,.55), transparent 72%);
 }
+@keyframes wrought-atmosphere {
+  from { opacity: .36; transform: translate3d(-2.5%, -3%, 0) scale(1.08); }
+  to   { opacity: 1; transform: translate3d(0, 0, 0) scale(1); }
+}
 a { color: var(--heat-3); }
 :focus-visible { outline: 2px solid var(--heat-4); outline-offset: 2px; border-radius: 2px; }
 
@@ -100,10 +121,25 @@ a { color: var(--heat-3); }
 
 /* ── Chrome ─────────────────────────────────────────────────────────────── */
 header {
-  border-bottom: 1px solid var(--edge); padding-block: 20px 16px;
-  position: sticky; top: 0; background: linear-gradient(180deg, rgba(20,17,15,.98), rgba(20,17,15,.92));
-  backdrop-filter: blur(12px); z-index: 20;
-  box-shadow: 0 16px 38px -34px rgba(0,0,0,.9);
+  border-bottom: 1px solid rgba(255,255,255,.045);
+  padding: calc(14px + env(safe-area-inset-top)) 0 13px;
+  position: sticky; top: 0;
+  background:
+    radial-gradient(420px 100px at 12% 0, rgba(242,100,25,.09), transparent 75%),
+    linear-gradient(180deg, rgba(20,17,15,.94), rgba(20,17,15,.82));
+  -webkit-backdrop-filter: saturate(140%) blur(22px);
+  backdrop-filter: saturate(140%) blur(22px); z-index: 20;
+  box-shadow: 0 1px 0 rgba(255,255,255,.025) inset, 0 22px 48px -38px rgba(0,0,0,.95);
+}
+.page-progress {
+  position: absolute; inset: auto 0 -1px; height: 2px; overflow: hidden;
+  background: rgba(255,255,255,.025); pointer-events: none;
+}
+.page-progress > i {
+  display: block; width: 100%; height: 100%; transform: scaleX(0); transform-origin: left center;
+  background: linear-gradient(90deg, var(--temper), var(--heat-3) 60%, var(--heat-4));
+  box-shadow: 0 0 16px rgba(242,100,25,.7);
+  transition: transform 100ms linear;
 }
 .bar { display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap; }
 /* An author display rule beats the hidden attribute, so anything set to flex
@@ -113,7 +149,12 @@ header {
 .mark { display: flex; align-items: center; color: inherit; text-decoration: none; }
 /* 23%, the same proportion the tile is drawn at on the landing page and in the
    home-screen icon — a flat 7px on a 26px mark is a visibly different corner. */
-.mark img { border-radius: 23%; display: block; margin-right: 9px; }
+.mark img {
+  border-radius: 23%; display: block; margin-right: 9px;
+  box-shadow: 0 8px 20px -9px rgba(242,100,25,.9), 0 0 0 1px rgba(255,255,255,.08);
+  transition: transform var(--quick) var(--ease), box-shadow var(--quick) var(--ease);
+}
+.mark:hover img { transform: translateY(-1px) rotate(-2deg); box-shadow: 0 11px 24px -8px rgba(242,100,25,.95); }
 .mark .name {
   font-family: var(--stamp);
   font-weight: 700; font-size: 16px; letter-spacing: .04em;
@@ -149,6 +190,10 @@ header {
      fill of the same size reads as a highlight, not as a raised control. */
   box-shadow: 0 1px 0 rgba(0,0,0,.45), 0 0 0 1px rgba(242,100,25,.35);
 }
+#rangebtns .range[aria-pressed="true"] {
+  color: var(--heat-4); background: rgba(242,100,25,.1);
+  border-color: rgba(242,100,25,.42); box-shadow: inset 0 0 0 1px rgba(242,100,25,.04);
+}
 /* The range row keeps its outlined form: it is a filter, not a place you are.
    Different job, different shape — collapsing them would make "30d" look like
    somewhere you had navigated to. */
@@ -156,7 +201,7 @@ header {
 main { padding-block: 34px 0; display: flex; flex-direction: column; gap: 26px; }
 .whoami {
   display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
-  padding: 22px 0 40px; margin-top: 26px; border-top: 1px solid var(--edge);
+  padding: 22px 0 calc(40px + env(safe-area-inset-bottom)); margin-top: 26px; border-top: 1px solid var(--edge);
   font-size: 13px; color: var(--ash-dim);
 }
 .whoami #whoami-email { margin-right: auto; overflow-wrap: anywhere; }
@@ -229,9 +274,15 @@ main { padding-block: 34px 0; display: flex; flex-direction: column; gap: 26px; 
 .bs.rest  { background: var(--temper-dk); }
 /* Training sits between the two: hotter than the burn you cannot change,
    cooler than the day's work, so the bar reads left-to-right as effort. */
-.bs.train { background: var(--heat-2); animation: grow 900ms var(--ease) both; }
-.bs.move  { background: var(--heat-3); animation: grow 900ms var(--ease) both; }
-@keyframes grow { from { transform: scaleX(0); transform-origin: left; } }
+.bs.train { background: var(--heat-2); }
+.bs.move  { background: var(--heat-3); }
+#content.motion-first .bs.train, #content.motion-first .bs.move {
+  animation: wrought-grow-x 900ms var(--ease) both;
+}
+@keyframes wrought-grow-x {
+  from { transform: scaleX(0); transform-origin: left center; }
+  to   { transform: scaleX(1); transform-origin: left center; }
+}
 /* Three keys will not sit apart on a 390px screen, so they wrap and centre
    rather than being squeezed until the numbers collide. */
 .bskeys { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px 14px; margin-top: 8px; }
@@ -268,13 +319,17 @@ main { padding-block: 34px 0; display: flex; flex-direction: column; gap: 26px; 
 .targets { display: grid; grid-template-columns: repeat(auto-fit, minmax(104px, 1fr)); gap: 6px; }
 .tgt {
   display: flex; flex-direction: column; align-items: center; gap: 2px;
-  padding: 14px 6px 12px; border-radius: 10px; background: var(--scale);
-  border: 1px solid var(--edge); position: relative;
+  padding: 14px 6px 12px; border-radius: 14px;
+  background:
+    radial-gradient(90px 70px at 50% 28%, rgba(91,144,176,.07), transparent 75%),
+    rgba(20,17,15,.62);
+  border: 1px solid rgba(255,255,255,.05); position: relative;
+  box-shadow: 0 1px 0 rgba(255,255,255,.025) inset;
 }
 .tgt svg { width: 76px; height: 76px; display: block; }
 .tgt .track { stroke: var(--heat-0); }
-.tgt .fill { stroke-linecap: round; transform: rotate(-90deg); transform-origin: 50% 50%;
-  animation: sweep 900ms var(--ease) both; }
+.tgt .fill { stroke-linecap: round; transform: rotate(-90deg); transform-origin: 50% 50%; }
+#content.motion-first .tgt .fill { animation: sweep 900ms var(--ease) both; }
 .tgt .mid {
   position: absolute; top: 14px; left: 0; right: 0; height: 76px;
   display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0;
@@ -288,13 +343,17 @@ main { padding-block: 34px 0; display: flex; flex-direction: column; gap: 26px; 
    A number that overlaps the ring it sits inside is the exact kind of small
    ugliness that makes a screen look unfinished. */
 .tgt .num.long { font-size: 14.5px; font-stretch: 70%; letter-spacing: -.01em; }
-.tgt .of { font-family: var(--mono); font-size: 8.5px; color: var(--ash-dim); margin-top: 2px; }
+.tgt .of { font-family: var(--mono); font-size: 9.5px; color: var(--label); margin-top: 2px; }
 .tgt .lab {
-  font-family: var(--mono); font-size: 9px; letter-spacing: .1em; text-transform: uppercase;
-  color: var(--ash-dim); margin-top: 6px; text-align: center; line-height: 1.3;
+  font-family: var(--mono); font-size: 10px; letter-spacing: .1em; text-transform: uppercase;
+  color: var(--label); margin-top: 6px; text-align: center; line-height: 1.3;
 }
 .tgt.met .num { color: var(--moss); }
 .tgt.over .num { color: var(--heat-3); }
+.tgt.met { border-color: rgba(111,166,114,.24); }
+.tgt.over { border-color: rgba(242,100,25,.26); }
+.tgt.met .fill { filter: drop-shadow(0 0 5px rgba(111,166,114,.48)); }
+.tgt.over .fill { filter: drop-shadow(0 0 5px rgba(242,100,25,.5)); }
 .tgt .tick { position: absolute; top: 8px; right: 9px; color: var(--moss); font-size: 12px; }
 .tgt.unscored { opacity: .55; }
 .tgt.unscored .num { color: var(--ash-dim); font-size: 14px; }
@@ -383,13 +442,23 @@ main { padding-block: 34px 0; display: flex; flex-direction: column; gap: 26px; 
   --settle: 620ms;
 }
 @keyframes rise { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
-@keyframes grow { from { transform: scaleY(0); } to { transform: none; } }
 @keyframes sweep { from { stroke-dashoffset: var(--circ); } }
 @keyframes draw  { from { stroke-dashoffset: 1; } }
+@keyframes soft-land {
+  from { opacity: 0; transform: translateY(18px) scale(.992); filter: blur(4px); }
+  to   { opacity: 1; transform: none; filter: none; }
+}
+@keyframes beacon {
+  0%   { opacity: .62; transform: scale(.7); }
+  70%  { opacity: 0; transform: scale(1.9); }
+  100% { opacity: 0; transform: scale(1.9); }
+}
 
 /* pathLength="1" normalises every series to the same dash maths, so a 7-day
    line and a 365-day line draw in over the same beat. */
-svg.ser .series { stroke-dasharray: 1; animation: draw 900ms var(--ease) both; }
+svg.ser .series { stroke-dasharray: 1; opacity: .48; }
+svg.ser .series.solo { opacity: .92; }
+#content.motion-first svg.ser .series { animation: draw 900ms var(--ease) both; }
 svg.ser { touch-action: pan-y; cursor: crosshair; }
 svg.ser .scrub { stroke: var(--edge-lit); stroke-width: 1; transition: opacity var(--quick) var(--ease); }
 svg.ser .cursor { transition: opacity var(--quick) var(--ease); }
@@ -407,12 +476,24 @@ svg.ser .cursor { transition: opacity var(--quick) var(--ease); }
      but 14px and a flat shadow was the other extreme, and it is why the app
      looked cramped beside the page that sold it. The shadow is the landing
      page's, because depth is most of what separates the two. */
-  background: linear-gradient(180deg, rgba(38,32,32,.96), rgba(25,21,19,.96));
-  border: 1px solid rgba(255,255,255,.025); border-radius: 24px;
-  box-shadow: 0 1px 0 rgba(255,255,255,.055) inset, 0 30px 62px -38px rgba(0,0,0,.98);
+  background:
+    linear-gradient(135deg, rgba(255,255,255,.035), transparent 32%),
+    linear-gradient(180deg, var(--panel-hi), var(--panel-lo));
+  border: 1px solid rgba(255,255,255,.045); border-radius: 24px;
+  box-shadow:
+    0 1px 0 rgba(255,255,255,.075) inset,
+    0 -1px 0 rgba(0,0,0,.3) inset,
+    0 30px 68px -42px rgba(0,0,0,.98);
   padding: clamp(22px, 4.8vw, 32px); display: flex; flex-direction: column; gap: 15px;
-  animation: rise var(--settle) var(--ease) both;
 }
+.panel.arrive, .tile.arrive { animation: rise var(--settle) var(--ease) both; }
+.motion-pending { opacity: 0; transform: translateY(18px) scale(.992); }
+.motion-pending.motion-seen { animation: soft-land 720ms var(--ease) both; }
+.motion-pending .fill, .motion-pending .series, .motion-pending .trend,
+.motion-pending .pulse-line, .motion-pending .pulse-area { animation-play-state: paused; }
+.motion-pending.motion-seen .fill, .motion-pending.motion-seen .series,
+.motion-pending.motion-seen .trend, .motion-pending.motion-seen .pulse-line,
+.motion-pending.motion-seen .pulse-area { animation-play-state: running; }
 .panel > h2 {
   margin: 0; font-size: 12px; font-family: var(--mono); font-weight: 650;
   letter-spacing: .17em; text-transform: uppercase; color: var(--ash);
@@ -441,14 +522,18 @@ svg.ser .cursor { transition: opacity var(--quick) var(--ease); }
   content: ''; margin-left: auto; width: 7px; height: 7px; flex: none;
   border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor;
   transform: rotate(45deg) translate(-2px, -2px);
-  transition: transform var(--settle) var(--ease);
+  transition: transform var(--quick) var(--ease);
 }
 .panel.folded > h2.fold::after { transform: rotate(-45deg) translate(-1px, -1px); }
 /* Everything except the heading. Hidden rather than height-animated: a panel
    holding a chart cannot be measured reliably before it draws, and a collapse
    that jumps is worse than one that does not animate. */
 .panel.folded > *:not(h2.fold) { display: none; }
-.panel.folded { gap: 0; padding-bottom: clamp(20px, 4.5vw, 28px); }
+.panel.folded {
+  gap: 0; padding: 17px 19px; border-radius: 15px;
+  background: linear-gradient(180deg, rgba(34,28,26,.78), rgba(23,20,18,.76));
+  box-shadow: 0 1px 0 rgba(255,255,255,.035) inset, 0 14px 30px -28px rgba(0,0,0,.9);
+}
 /* A folded panel is a heading and a chevron and nothing else. A summary line
    was drafted here and cut: the panels whose value is a single figure are the
    ones already open by default, and on the rest a one-line preview is either
@@ -460,7 +545,10 @@ svg.ser .cursor { transition: opacity var(--quick) var(--ease); }
    old signed-in page led with a small callout and a wall of panels, so signing
    in felt like stepping into a different, cheaper product. This is not sales
    copy: it names the screen and gives today's record a proper front door. */
-.record-intro { padding: clamp(18px, 4vw, 38px) clamp(2px, 1vw, 10px) 4px; }
+.record-intro {
+  position: relative; overflow: hidden;
+  padding: clamp(18px, 4vw, 38px) clamp(2px, 1vw, 10px) 9px;
+}
 .record-kicker {
   margin: 0 0 13px; font-family: var(--mono); font-size: 11px; letter-spacing: .22em;
   text-transform: uppercase; color: var(--heat-3);
@@ -470,18 +558,60 @@ svg.ser .cursor { transition: opacity var(--quick) var(--ease); }
   font-stretch: 75%; font-size: clamp(42px, 8vw, 84px); line-height: .9;
   letter-spacing: -.05em; text-transform: uppercase; text-wrap: balance;
 }
-.record-title em { color: var(--heat-4); font-style: normal; }
+.record-title > span, .record-title em { display: inline-block; }
+#content.motion-first .record-title > span,
+#content.motion-first .record-title em { animation: title-land 760ms var(--ease) both; }
+.record-title em {
+  color: transparent; font-style: normal; animation-delay: 90ms;
+  background: linear-gradient(105deg, var(--heat-3), var(--heat-4) 54%, var(--heat-5) 70%, var(--heat-4));
+  background-size: 180% 100%; background-clip: text; -webkit-background-clip: text;
+}
+@keyframes title-land {
+  from { opacity: 0; transform: translateY(.34em); filter: blur(5px); background-position: 100% 0; }
+  to   { opacity: 1; transform: none; filter: none; background-position: 0 0; }
+}
 .record-lead {
   max-width: 47ch; margin: 19px 0 0; color: var(--ash); font-size: clamp(16px, 2.4vw, 19px);
 }
+.record-rule {
+  position: relative; width: min(460px, 74vw); height: 2px; overflow: hidden;
+  margin-top: 22px; border-radius: 999px;
+  background: linear-gradient(90deg, rgba(242,100,25,.42), rgba(91,144,176,.18), transparent);
+}
+.record-rule::after {
+  content: ""; position: absolute; inset: 0 auto 0 0; width: 28%;
+  background: linear-gradient(90deg, transparent, var(--heat-5), transparent);
+  transform: translateX(360%);
+  box-shadow: 0 0 16px rgba(245,166,35,.72);
+}
+#content.motion-first .record-rule::after {
+  transform: translateX(-110%); animation: signal-pass 1.1s .35s var(--ease) both;
+}
+@keyframes signal-pass { to { transform: translateX(360%); } }
 
 .overview-stage { display: grid; grid-template-columns: minmax(310px,.82fr) minmax(0,1.5fr); gap: 18px; align-items: stretch; }
 .overview-stage > .panel { min-width: 0; }
 .overview-stage .hero {
+  position: relative; overflow: hidden; isolation: isolate;
   background:
     radial-gradient(60% 58% at 50% 42%, rgba(91,144,176,.12), transparent 72%),
     linear-gradient(180deg, rgba(38,32,32,.98), rgba(23,20,18,.98));
 }
+.overview-stage .hero::before {
+  content: ""; position: absolute; z-index: -1; width: 330px; height: 330px;
+  left: 50%; top: 46%; translate: -50% -50%; border-radius: 50%;
+  background: radial-gradient(circle, rgba(91,144,176,.16), transparent 64%);
+  filter: blur(8px); opacity: .82;
+}
+.overview-stage .hero.over::before { background: radial-gradient(circle, rgba(242,100,25,.2), transparent 64%); }
+.overview-stage .hero.level::before { background: radial-gradient(circle, rgba(232,182,76,.17), transparent 64%); }
+.overview-stage .hero::after {
+  content: ""; position: absolute; z-index: -1; inset: 14px; border-radius: 17px;
+  border: 1px solid rgba(255,255,255,.025); pointer-events: none;
+}
+.overview-stage .hero.under .fill { filter: drop-shadow(0 0 8px rgba(91,144,176,.72)); }
+.overview-stage .hero.over .fill { filter: drop-shadow(0 0 9px rgba(242,100,25,.72)); }
+.overview-stage .hero.level .fill { filter: drop-shadow(0 0 8px rgba(232,182,76,.66)); }
 
 .momentum {
   position: relative; overflow: hidden; gap: 19px;
@@ -505,12 +635,17 @@ svg.ser .cursor { transition: opacity var(--quick) var(--ease); }
 .pulse-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .pulse-card {
   min-width: 0; padding: 14px 14px 11px; border-radius: 14px;
-  background: rgba(20,17,15,.58); border: 1px solid var(--edge);
+  background:
+    radial-gradient(130px 72px at 100% 0, rgba(242,100,25,.055), transparent 72%),
+    rgba(20,17,15,.64);
+  border: 1px solid rgba(255,255,255,.055);
+  box-shadow: 0 1px 0 rgba(255,255,255,.025) inset;
+  transition: transform var(--quick) var(--ease), border-color var(--quick) var(--ease), background var(--quick) var(--ease);
 }
 .pulse-top { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
 .pulse-label {
-  font-family: var(--mono); font-size: 9px; letter-spacing: .15em;
-  text-transform: uppercase; color: var(--ash-dim);
+  font-family: var(--mono); font-size: 10px; letter-spacing: .14em;
+  text-transform: uppercase; color: var(--label);
 }
 .pulse-value {
   font-family: var(--grotesk); font-size: clamp(22px, 3.4vw, 31px); line-height: 1;
@@ -518,24 +653,40 @@ svg.ser .cursor { transition: opacity var(--quick) var(--ease); }
 }
 .pulse-unit { color: var(--ash-dim); font-size: .45em; letter-spacing: 0; }
 .pulse-read {
-  min-height: 1.2em; margin: 5px 0 1px; font-family: var(--mono); font-size: 9px;
-  letter-spacing: .06em; text-transform: uppercase; color: var(--ash-dim);
+  min-height: 1.2em; margin: 5px 0 1px; font-family: var(--mono); font-size: 10px;
+  letter-spacing: .05em; text-transform: uppercase; color: var(--label);
 }
 .pulse-svg { display: block; width: 100%; height: auto; overflow: visible; }
 .pulse-gridline { stroke: var(--edge); stroke-width: 1; }
 .pulse-target { stroke: var(--ash-dim); stroke-width: 1; stroke-dasharray: 3 4; opacity: .7; }
 .pulse-line {
   fill: none; stroke-width: 2.8; stroke-linecap: round; stroke-linejoin: round;
-  stroke-dasharray: 1; animation: draw 900ms var(--ease) both;
+  stroke-dasharray: 1;
 }
+.pulse-area { opacity: .3; }
+.pulse-glow { fill: none; stroke-width: 7; opacity: .13; filter: blur(2px); }
 .pulse-dot { stroke: var(--iron); stroke-width: 2; }
+.pulse-halo {
+  opacity: 0; transform-box: fill-box; transform-origin: center;
+}
+.series-halo {
+  opacity: 0; transform-box: fill-box; transform-origin: center;
+}
+#content.motion-first .pulse-line { animation: draw 900ms var(--ease) both; }
+#content.motion-first .pulse-area { opacity: 0; animation: area-land 900ms 180ms var(--ease) both; }
+#content.motion-first .pulse-halo,
+#content.motion-first .series-halo { animation: beacon 1.35s 900ms var(--ease) 2; }
+@keyframes area-land { from { opacity: 0; } to { opacity: .3; } }
 
 @media (max-width: 860px) {
   .overview-stage { grid-template-columns: 1fr; }
 }
 @media (max-width: 560px) {
-  .record-intro { padding-top: 6px; }
-  .record-title { font-size: clamp(42px, 15vw, 62px); }
+  .record-intro { padding: 2px 2px 4px; }
+  .record-kicker { margin-bottom: 8px; font-size: 10px; }
+  .record-title { font-size: clamp(39px, 12vw, 50px); line-height: .93; }
+  .record-lead { margin-top: 12px; font-size: 15px; line-height: 1.45; }
+  .record-rule { margin-top: 14px; }
   .pulse-grid { gap: 7px; }
   .pulse-card { padding: 12px 10px 9px; }
   .pulse-value { font-size: 22px; }
@@ -549,7 +700,8 @@ svg.ser .cursor { transition: opacity var(--quick) var(--ease); }
 .hero { align-items: center; text-align: center; gap: 4px; padding: 30px 22px 26px; }
 .hero svg { width: min(280px, 74vw); height: auto; display: block; }
 .hero .track { stroke: var(--heat-0); }
-.hero .fill  { stroke-linecap: round; animation: sweep 1.1s var(--ease) both; }
+.hero .fill  { stroke-linecap: round; }
+#content.motion-first .hero .fill { animation: sweep 1.1s var(--ease) both; }
 .hero .net {
   font-family: var(--grotesk); font-weight: 900; font-stretch: 75%;
   font-size: clamp(38px, 12vw, 58px); letter-spacing: -.02em; line-height: 1;
@@ -598,6 +750,7 @@ svg.ser .cursor { transition: opacity var(--quick) var(--ease); }
 .setpill {
   font-family: var(--mono); font-size: 11.5px; padding: 4px 9px; border-radius: 999px;
   background: var(--scale-2); border: 1px solid var(--edge); color: var(--ash);
+  max-width: 100%; overflow-wrap: anywhere;
 }
 
 /* ── Navigation, thumb-height ─────────────────────────────────────────────
@@ -621,16 +774,24 @@ svg.ser .cursor { transition: opacity var(--quick) var(--ease); }
   /* Scrolling inside a pill track needs the track's own radius honoured at
      both ends, or the first and last tab look clipped mid-scroll. */
   .views { scroll-padding-inline: 3px; }
-  .bar { row-gap: 10px; }
+  .bar {
+    display: grid; grid-template-columns: auto minmax(0, 1fr);
+    row-gap: 9px; column-gap: 10px;
+  }
+  .mark { grid-column: 1; }
+  .views { grid-column: 1 / -1; width: 100%; }
   #rangebtns { order: 3; }
-  main { padding-bottom: 60px; }
+  #rangebtns {
+    grid-column: 2; justify-self: end; flex-wrap: nowrap; gap: 3px;
+  }
+  #rangebtns .range { min-width: 34px; min-height: 36px; padding: 6px 7px; }
+  .views .range { min-height: 44px; }
+  html { scroll-padding-top: 166px; }
+  main { padding-top: 20px; padding-bottom: calc(54px + env(safe-area-inset-bottom)); gap: 18px; }
 }
 .range { transition: background var(--quick) var(--ease), color var(--quick) var(--ease), border-color var(--quick) var(--ease); }
-
-@media (prefers-reduced-motion: reduce) {
-  .panel, .tile, .hero .fill, svg.ser .series { animation: none !important; }
-  * { transition: none !important; }
-}
+.range:active, .ghost:active, .say:active, .gate button:active,
+.tkgo:active, .tkalt:active, .qadel:active { transform: translateY(1px) scale(.985); }
 .sub { color: var(--ash); font-size: 13.5px; margin: 0; }
 .grid-2 { display: grid; grid-template-columns: 1fr; gap: 18px; }
 @media (min-width: 800px) { .grid-2 { grid-template-columns: 1fr 1fr; } }
@@ -682,11 +843,11 @@ svg.ser .cursor { transition: opacity var(--quick) var(--ease); }
 .dc-record { display: flex; flex-wrap: wrap; gap: 8px; }
 .dc-chip {
   display: flex; align-items: baseline; gap: 8px; padding: 9px 12px;
-  border: 1px solid var(--edge); border-radius: 3px; background: rgba(20,17,15,.48);
+  border: 1px solid var(--edge); border-radius: 999px; background: rgba(20,17,15,.48);
 }
 .dc-chip-label {
-  font-family: var(--mono); font-size: 9px; letter-spacing: .14em;
-  text-transform: uppercase; color: var(--ash-dim);
+  font-family: var(--mono); font-size: 10px; letter-spacing: .13em;
+  text-transform: uppercase; color: var(--label);
 }
 .dc-chip-value {
   font-family: var(--mono); font-size: 13px; font-weight: 650;
@@ -694,7 +855,7 @@ svg.ser .cursor { transition: opacity var(--quick) var(--ease); }
 }
 .dc-goals { display: grid; grid-template-columns: repeat(auto-fit, minmax(245px, 1fr)); gap: 10px; }
 .dc-goal {
-  padding: 16px; border: 1px solid var(--edge); border-radius: 4px;
+  padding: 16px; border: 1px solid var(--edge); border-radius: 14px;
   background: rgba(20,17,15,.56);
 }
 .dc-goal-name {
@@ -704,8 +865,8 @@ svg.ser .cursor { transition: opacity var(--quick) var(--ease); }
 .dc-three { display: grid; grid-template-columns: 1.35fr 1fr .8fr; gap: 10px; align-items: end; }
 .dc-col { min-width: 0; }
 .dc-col-label {
-  display: block; margin-bottom: 4px; font-family: var(--mono); font-size: 8.5px;
-  letter-spacing: .14em; text-transform: uppercase; color: var(--ash-dim);
+  display: block; margin-bottom: 4px; font-family: var(--mono); font-size: 9.5px;
+  letter-spacing: .13em; text-transform: uppercase; color: var(--label);
 }
 .dc-value {
   display: block; overflow-wrap: anywhere; font-family: var(--grotesk);
@@ -735,11 +896,14 @@ svg.ser .cursor { transition: opacity var(--quick) var(--ease); }
 /* ── Tiles ──────────────────────────────────────────────────────────────── */
 .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(145px, 1fr)); gap: 12px; }
 .tile {
-  background: linear-gradient(160deg, rgba(45,37,33,.94), rgba(24,20,18,.96));
-  border: 1px solid rgba(255,255,255,.025); border-radius: 18px;
-  box-shadow: 0 1px 0 rgba(255,255,255,.04) inset, 0 18px 34px -26px rgba(0,0,0,.9);
+  position: relative; overflow: hidden;
+  background:
+    radial-gradient(120px 90px at 100% 0, rgba(242,100,25,.075), transparent 72%),
+    linear-gradient(160deg, rgba(45,37,33,.96), rgba(24,20,18,.98));
+  border: 1px solid rgba(255,255,255,.045); border-radius: 18px;
+  box-shadow: 0 1px 0 rgba(255,255,255,.055) inset, 0 18px 34px -26px rgba(0,0,0,.9);
   padding: 20px; display: flex; flex-direction: column; gap: 7px;
-  animation: rise var(--settle) var(--ease) both;
+  transition: transform var(--quick) var(--ease), border-color var(--quick) var(--ease), box-shadow var(--quick) var(--ease);
 }
 .tile .k { font-family: var(--mono); font-size: 10px; letter-spacing: .14em; text-transform: uppercase; color: var(--ash-dim); }
 .tile .v { font-family: var(--grotesk); font-size: 34px; font-weight: 850; letter-spacing: -.035em; font-variant-numeric: tabular-nums; line-height: 1.02; }
@@ -751,18 +915,18 @@ svg.ser .cursor { transition: opacity var(--quick) var(--ease); }
 .lrow { display: grid; grid-template-columns: 54px 1fr 76px; gap: 11px; align-items: center; }
 .lrow .lbl { font-family: var(--mono); font-size: 10.5px; letter-spacing: .12em; text-transform: uppercase; color: var(--ash-dim); }
 .lrow .val { font-family: var(--mono); font-variant-numeric: tabular-nums; font-size: 13.5px; text-align: right; }
-.track { height: 11px; background: var(--scale-2); border-radius: 2px; overflow: hidden; }
+.track { height: 11px; background: var(--scale-2); border-radius: 999px; overflow: hidden; }
 /* display:block matters. A bare <span> is inline, height and background paint
    against the line box rather than the track, and the bar renders as an empty
    grey slot — which reads as a number the page failed to draw. */
-.fill { display: block; height: 100%; border-radius: 2px; }
+.fill { display: block; height: 100%; border-radius: 999px; }
 .fill.in  { background: linear-gradient(90deg, var(--heat-2), var(--heat-3)); }
 .fill.out { background: linear-gradient(90deg, var(--temper-dk), var(--temper)); }
 .net { display: flex; align-items: baseline; gap: 11px; flex-wrap: wrap; border-top: 1px solid var(--edge); padding-top: 12px; }
 .net .big { font-family: var(--mono); font-size: 1.5rem; font-weight: 600; font-variant-numeric: tabular-nums; }
 
 /* ── Callouts — semantic, never the accent ──────────────────────────────── */
-.callout { border-radius: 4px; padding: 16px 18px; display: flex; flex-direction: column; gap: 7px; }
+.callout { border-radius: 14px; padding: 16px 18px; display: flex; flex-direction: column; gap: 7px; }
 .callout .tag { font-family: var(--mono); font-size: 10px; letter-spacing: .16em; text-transform: uppercase; }
 .callout p { margin: 0; font-size: 14.5px; }
 .callout.good { background: rgba(111,166,114,.08); border: 1px solid rgba(111,166,114,.3); }
@@ -780,7 +944,7 @@ svg { display: block; width: 100%; height: auto; overflow: visible; }
    own background — see .panel. */
 .mealdot { fill: var(--temper); stroke: #1f1b19; stroke-width: 2; }
 .mealdot.hollow { fill: none; stroke: var(--temper); stroke-width: 2; }
-.axis { fill: var(--ash-dim); font-size: 10px; font-family: var(--mono); }
+.axis { fill: var(--label); font-size: 11px; font-family: var(--mono); }
 
 /* The target sits UNDER the data as a dashed rule, never over it — a solid
    line across a chart reads as a second series, and this is a boundary. */
@@ -788,11 +952,12 @@ svg.ser .target { stroke: var(--ash-dim); stroke-width: 1; stroke-dasharray: 4 4
 svg.ser .tgtlab { fill: var(--ash-dim); font-size: 9px; letter-spacing: .06em; }
 /* The area is atmosphere, not information — it fades out entirely before the
    baseline so it can never be mistaken for a filled bar with a value. */
-svg.ser .area { animation: fade 900ms var(--ease) both; }
+svg.ser .area { opacity: 1; }
+#content.motion-first svg.ser .area { animation: fade 900ms var(--ease) both; }
 @keyframes fade { from { opacity: 0; } }
 /* Drawn before the daily line and at lower opacity: the mean is what to read,
    the spikes are what actually happened, and both have to stay legible. */
-svg.ser .trend { stroke-dasharray: none; }
+svg.ser .trend { stroke-dasharray: none; filter: drop-shadow(0 0 5px rgba(255,255,255,.1)); }
 .tkey { color: var(--ash-dim); }
 .graph-panel { overflow: hidden; }
 .graph-panel svg.ser {
@@ -1491,7 +1656,7 @@ label.ghost { display: inline-block; }
 .ls-ex-top { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
 .ls-ex-top b { font-size: 15.5px; color: var(--bright); }
 .ls-sets { display: flex; flex-wrap: wrap; gap: 7px; margin: 9px 0 0; }
-.setpill {
+.ls .setpill {
   font-family: var(--mono); font-size: 13px; font-variant-numeric: tabular-nums;
   background: var(--scale); border: 1px solid var(--edge); border-radius: 8px;
   padding: 6px 10px; color: var(--bright);
@@ -1593,7 +1758,8 @@ a.ghost { display: inline-block; }
   display: flex; height: 7px; border-radius: 999px; overflow: hidden;
   margin: 11px 0 9px; background: var(--scale-2); box-shadow: inset 0 0 0 1px var(--edge);
 }
-.mbar span { display: block; animation: grow 700ms var(--ease) both; }
+.mbar span { display: block; transform-origin: left center; }
+#content.motion-first .mbar span { animation: wrought-grow-x 700ms var(--ease) both; }
 .mp { background: var(--temper); }
 .mc { background: var(--heat-3); }
 .mf { background: var(--heat-4); }
@@ -1604,8 +1770,8 @@ a.ghost { display: inline-block; }
 }
 .mkey i { width: 7px; height: 7px; border-radius: 2px; display: block; flex: none; align-self: center; }
 .mkey em {
-  font-style: normal; font-family: var(--mono); font-size: 9px; letter-spacing: .11em;
-  text-transform: uppercase; color: var(--ash-dim); font-weight: 400;
+  font-style: normal; font-family: var(--mono); font-size: 9.5px; letter-spacing: .1em;
+  text-transform: uppercase; color: var(--label); font-weight: 400;
 }
 /* Sugar is a SUBSET of carbs, never a fourth slice — so it gets a number and
    no swatch, because a swatch would imply a share of the bar it does not have. */
@@ -1661,12 +1827,12 @@ a.ghost { display: inline-block; }
 .ent .cats { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 4px; }
 .cat {
   font-family: var(--mono); font-size: 9.5px; letter-spacing: .08em; text-transform: uppercase;
-  padding: 1px 6px; border-radius: 2px; border: 1px solid var(--edge); color: var(--ash-dim);
+  padding: 2px 7px; border-radius: 999px; border: 1px solid var(--edge); color: var(--ash-dim);
 }
 
 /* A workout read back as forty flat rows is unreadable. Read back as exercises
    with their sets underneath, it is the session you actually did. */
-.sesh { border: 1px solid var(--edge); border-radius: 3px; margin: 6px 0 2px; overflow: hidden; }
+.sesh { border: 1px solid var(--edge); border-radius: 14px; margin: 6px 0 2px; overflow: hidden; }
 .sesh > summary {
   padding: 10px 13px; cursor: pointer; background: var(--scale-2);
   font-size: 13.5px; display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap;
@@ -1682,9 +1848,9 @@ a.ghost { display: inline-block; }
 .ex .nm { font-size: 13.5px; display: flex; gap: 10px; align-items: baseline; }
 .ex .nm .vol { margin-left: auto; font-family: var(--mono); font-size: 11px; color: var(--ash-dim); }
 .setlist { display: flex; gap: 5px; flex-wrap: wrap; margin-top: 6px; }
-.setpill {
+.setlist .setpill {
   font-family: var(--mono); font-size: 11.5px; font-variant-numeric: tabular-nums;
-  padding: 3px 8px; border-radius: 2px; background: var(--scale-2);
+  padding: 4px 8px; border-radius: 8px; background: var(--scale-2);
   border: 1px solid var(--edge); color: var(--bright);
 }
 .setpill.best { border-color: var(--heat-2); color: var(--heat-4); }
@@ -1761,7 +1927,12 @@ a.ghost { display: inline-block; }
 .gate-note b { color: var(--ash); }
 .msg { color: var(--ash); font-size: 13px; min-height: 19px; }
 
-@media (prefers-reduced-motion: reduce) { * { transition-duration: .01ms !important; } }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation: none !important; transition: none !important; scroll-behavior: auto !important;
+  }
+  .motion-pending { opacity: 1 !important; transform: none !important; filter: none !important; }
+}
 </style>
 <link rel="icon" href="/icon.svg" type="image/svg+xml">
 <link rel="icon" href="/icon-32.png" sizes="32x32" type="image/png">
@@ -1895,6 +2066,7 @@ a.ghost { display: inline-block; }
         <button class="range" data-days="365" aria-pressed="false">1y</button>
       </div>
     </div>
+    <div class="page-progress" aria-hidden="true"><i id="page-progress"></i></div>
   </header>
   <main class="wrap" id="content" style="position:relative"></main>
   <!-- Always visible, on every view. Somebody juggling two accounts should not
@@ -1940,6 +2112,30 @@ let sb = null;
 const $ = id => document.getElementById(id);
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;' }[c]));
 const n = v => (v == null ? '—' : Number(v).toLocaleString());
+const motionOK = () => !matchMedia('(prefers-reduced-motion: reduce)').matches;
+const motionScroll = () => motionOK() ? 'smooth' : 'auto';
+
+// A long record needs a sense of position. This is driven on the compositor
+// with one update per frame; it never changes the document and costs no layout
+// inside the scroll handler.
+function wirePageProgress() {
+  const line = $('page-progress');
+  if (!line) return;
+  let queued = false;
+  const paint = () => {
+    queued = false;
+    const room = Math.max(1, document.documentElement.scrollHeight - innerHeight);
+    line.style.transform = `scaleX(${Math.max(0, Math.min(1, scrollY / room))})`;
+  };
+  const queue = () => {
+    if (queued) return;
+    queued = true;
+    requestAnimationFrame(paint);
+  };
+  addEventListener('scroll', queue, { passive: true });
+  addEventListener('resize', queue, { passive: true });
+  paint();
+}
 
 // IT OPENS ON TODAY. The founder: "when we open it up, it should always be on
 // the first day." Opening on a 30-day window meant the first thing anybody saw
@@ -2176,7 +2372,7 @@ $('email')?.addEventListener('keydown', e => { if (e.key === 'Enter') $('pass').
 $('home')?.addEventListener('click', (e) => {
   e.preventDefault();
   document.querySelector('.range.view[data-view="record"]')?.click();
-  window.scrollTo({ top: 0, behavior: 'smooth' });
+  window.scrollTo({ top: 0, behavior: motionScroll() });
 });
 
 $('whoami-out')?.addEventListener('click', () => leave(false));
@@ -2192,6 +2388,7 @@ document.querySelectorAll('.range[data-days]').forEach(b => b.addEventListener('
 document.querySelectorAll('.range.view').forEach(b => b.addEventListener('click', () => {
   document.querySelectorAll('.range.view').forEach(x => x.setAttribute('aria-pressed', 'false'));
   b.setAttribute('aria-pressed', 'true');
+  b.scrollIntoView({ behavior: motionScroll(), block: 'nearest', inline: 'center' });
   view = b.dataset.view;
   // The range buttons only mean something on the record; the log paginates by
   // day and loads more on demand.
@@ -5564,7 +5761,7 @@ function hero(d) {
   const word = b.direction === 'deficit' ? 'under' : b.direction === 'surplus' ? 'over' : 'level';
   const gap = Math.abs(Math.round(b.net ?? 0));
 
-  return `<section class="panel hero">
+  return `<section class="panel hero ${word}">
     <h2>In vs out · today</h2>
     <svg viewBox="0 0 220 220" role="img" aria-label="${esc(b.say || '')}">
       <g transform="rotate(-90 110 110)" fill="none" stroke-width="15">
@@ -6409,7 +6606,7 @@ function wireCoachSetup() {
   });
   $('go-intake')?.addEventListener('click', () => {
     const el = document.getElementById('setup');
-    if (el) { el.classList.remove('folded'); el.scrollIntoView({ behavior: 'smooth', block: 'start' }); }
+    if (el) { el.classList.remove('folded'); el.scrollIntoView({ behavior: motionScroll(), block: 'start' }); }
   });
 }
 
@@ -7339,7 +7536,8 @@ function targetRing(g) {
     <svg viewBox="0 0 72 72" aria-hidden="true">
       <circle class="track" cx="36" cy="36" r="${R}" fill="none" stroke-width="7"/>
       <circle class="fill" cx="36" cy="36" r="${R}" fill="none" stroke-width="7"
-              stroke="${col}" stroke-dasharray="${(pct / 100 * C).toFixed(1)} ${C.toFixed(1)}"/>
+              stroke="${col}" stroke-dasharray="${(pct / 100 * C).toFixed(1)} ${C.toFixed(1)}"
+              style="--circ:${C.toFixed(1)}"/>
     </svg>
     <div class="mid">
       <span class="num${short(g.actual).length >= 5 ? ' long' : ''}">${esc(short(g.actual))}</span>
@@ -7575,8 +7773,9 @@ function dailyClosePanel(d) {
 function recordIntro(d) {
   return `<section class="record-intro">
     <p class="record-kicker">Your record · ${esc(d.today?.date || 'today')}</p>
-    <h1 class="record-title">Today, <em>in one look.</em></h1>
+    <h1 class="record-title"><span>Today,</span> <em>in one look.</em></h1>
     <p class="record-lead">What happened. What it moved. What the longer record says underneath it.</p>
+    <div class="record-rule" aria-hidden="true"></div>
   </section>`;
 }
 
@@ -7619,12 +7818,26 @@ function pulseGraph(metric) {
   const W = 220, H = 72, P = 6, N = Math.max(1, points.length - 1);
   const x = i => P + (i / N) * (W - P * 2);
   const y = v => P + (1 - (v - min) / (max - min)) * (H - P * 2);
-  let path = '', pen = false, last = -1;
+  let path = '', pen = false, last = -1, segment = [];
+  const segments = [];
   values.forEach((v, i) => {
-    if (v == null) { pen = false; return; }
+    if (v == null) {
+      if (segment.length) segments.push(segment);
+      segment = []; pen = false; return;
+    }
     path += `${pen ? 'L' : 'M'}${x(i).toFixed(1)},${y(v).toFixed(1)} `;
+    segment.push({ i, v });
     pen = true; last = i;
   });
+  if (segment.length) segments.push(segment);
+  // Each island closes to the chart floor by itself. Joining the fills across
+  // a null would paint a confident block over a day the record does not know.
+  const area = segments.filter(s => s.length > 1).map(s => {
+    const first = s[0], end = s[s.length - 1];
+    const ridge = s.map(p => `${x(p.i).toFixed(1)},${y(p.v).toFixed(1)}`).join(' L');
+    return `M${x(first.i).toFixed(1)},${H - P} L${ridge} L${x(end.i).toFixed(1)},${H - P} Z`;
+  }).join(' ');
+  const gradientId = `pulse-${String(metric.key || 'metric').replace(/[^a-z0-9_-]/gi, '')}`;
   const average = metric.seven_day_average != null
     ? `7d avg ${Number(metric.seven_day_average).toLocaleString()}${metric.unit ? ` ${metric.unit}` : ''}`
     : target != null ? `goal ${Number(target).toLocaleString()}${metric.unit ? ` ${metric.unit}` : ''}` : '';
@@ -7635,10 +7848,17 @@ function pulseGraph(metric) {
     <p class="pulse-read">${esc(average)}</p>
     <svg class="pulse-svg" viewBox="0 0 ${W} ${H}" role="img"
          aria-label="${esc(metric.label)} over ${points.length} days">
+      <defs><linearGradient id="${gradientId}" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stop-color="${colour}" stop-opacity=".48"/>
+        <stop offset="1" stop-color="${colour}" stop-opacity="0"/>
+      </linearGradient></defs>
       <line class="pulse-gridline" x1="${P}" y1="${(H / 2).toFixed(1)}" x2="${W - P}" y2="${(H / 2).toFixed(1)}"/>
       ${target != null ? `<line class="pulse-target" x1="${P}" y1="${y(target).toFixed(1)}" x2="${W - P}" y2="${y(target).toFixed(1)}"/>` : ''}
-      <path class="pulse-line" pathLength="1" d="${path.trim()}" stroke="${colour}"/>
-      ${last >= 0 ? `<circle class="pulse-dot" cx="${x(last).toFixed(1)}" cy="${y(values[last]).toFixed(1)}" r="4" fill="${colour}"/>` : ''}
+      ${area ? `<path class="pulse-area" d="${area}" fill="url(#${gradientId})"/>` : ''}
+      <path class="pulse-glow" d="${path.trim()}" stroke="${colour}" vector-effect="non-scaling-stroke"/>
+      <path class="pulse-line" pathLength="1" d="${path.trim()}" stroke="${colour}" vector-effect="non-scaling-stroke"/>
+      ${last >= 0 ? `<circle class="pulse-halo" cx="${x(last).toFixed(1)}" cy="${y(values[last]).toFixed(1)}" r="7" fill="${colour}"/>
+        <circle class="pulse-dot" cx="${x(last).toFixed(1)}" cy="${y(values[last]).toFixed(1)}" r="4" fill="${colour}"/>` : ''}
     </svg>
   </article>`;
 }
@@ -7850,17 +8070,53 @@ function render(d) {
   stagger();
 }
 
-// Everything arriving at once reads as a page load. Arriving in sequence reads
-// as the day being assembled, which is what is actually happening. Capped so a
-// long dashboard never leaves the bottom of the page waiting on a queue.
+// Motion happens once per screen and range, at the moment it becomes useful.
+// A warm-cache refresh, a trainer poll or a calendar selection must not make
+// the whole application look as though it reloaded. Below-fold cards wait for
+// the thumb instead of finishing their animation while nobody can see them.
+const enteredScreens = new Set();
+let revealObserver = null;
 function stagger(root = $('content')) {
   const bits = root.querySelectorAll('.panel, .tile');
-  bits.forEach((el, i) => { el.style.animationDelay = `${Math.min(i * 45, 450)}ms`; });
   makeFoldable(root);
   honourTargetsAnchor(root);
   honourDailyCloseAnchor(root);
   honourSetupAnchor(root);
   wireCharts(root);
+
+  const screen = (view === 'record' || view === 'calendar') ? `${view}:${days}` : view;
+  const first = !enteredScreens.has(screen);
+  root.classList.toggle('motion-first', first && motionOK());
+  revealObserver?.disconnect();
+  revealObserver = null;
+  bits.forEach(el => {
+    el.classList.remove('arrive', 'motion-pending', 'motion-seen');
+    el.style.animationDelay = '';
+  });
+  if (!first || !motionOK()) return;
+  enteredScreens.add(screen);
+
+  let visibleIndex = 0;
+  const canObserve = 'IntersectionObserver' in window;
+  if (canObserve) {
+    revealObserver = new IntersectionObserver(entries => {
+      for (const entry of entries) {
+        if (!entry.isIntersecting) continue;
+        entry.target.classList.add('motion-seen');
+        revealObserver.unobserve(entry.target);
+      }
+    }, { rootMargin: '0px 0px -5% 0px', threshold: .08 });
+  }
+
+  bits.forEach(el => {
+    if (el.getBoundingClientRect().top <= innerHeight * 1.04) {
+      el.classList.add('arrive');
+      el.style.animationDelay = `${Math.min(visibleIndex++ * 35, 180)}ms`;
+    } else if (revealObserver) {
+      el.classList.add('motion-pending');
+      revealObserver.observe(el);
+    }
+  });
 }
 
 // ── Every panel folds, and it remembers ───────────────────────────────────
@@ -7909,7 +8165,7 @@ function honourTargetsAnchor(root) {
   targetsAnchorPending = false;
   panel.classList.remove('folded');
   panel.querySelector('h2.fold')?.setAttribute('aria-expanded', 'true');
-  panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  panel.scrollIntoView({ behavior: motionScroll(), block: 'start' });
 }
 
 // The link the gate hands out — wrought.fit/app.html#setup — lands on the
@@ -7922,7 +8178,7 @@ function honourSetupAnchor(root) {
   const panel = root.querySelector('#setup');
   if (!panel) return;
   setupAnchorPending = false;
-  panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  panel.scrollIntoView({ behavior: motionScroll(), block: 'start' });
 }
 
 let dailyCloseAnchorPending = location.hash === '#daily-close';
@@ -7931,7 +8187,7 @@ function honourDailyCloseAnchor(root) {
   const panel = root.querySelector('#daily-close');
   if (!panel) return;
   dailyCloseAnchorPending = false;
-  panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  panel.scrollIntoView({ behavior: motionScroll(), block: 'start' });
 }
 
 const foldKey = (name) => `wrought_fold_${name.toLowerCase().replace(/[^a-z0-9]+/g, '_').slice(0, 40)}`;
@@ -8107,7 +8363,7 @@ function balancePanel(d) {
 //
 // Three things make a daily line actually readable, and the plain version had
 // none of them. The AREA under the curve gives the eye something to follow
-// across gaps. The seven-day MEAN, drawn dimmer, is the signal — a single day
+// across gaps. The seven-day MEAN, drawn with more weight, is the signal — a single day
 // is salt, sleep and memory, and somebody reading the spikes is reading noise.
 // And the TARGET line is the only thing that turns movement into progress:
 // without it a chart shows that a number moved, never whether it moved the
@@ -8176,6 +8432,9 @@ function chart(title, sub, series, colour, unit, opts = {}) {
   const gid = `g${title.replace(/\W/g, '')}`;
 
   const last = series.reduce((a, p, i) => (p.value != null ? i : a), -1);
+  const latest = last >= 0
+    ? `${series[last].date} · ${Math.round(series[last].value * 10) / 10}${unit || ''}`
+    : '';
 
   // Axis labels have to be DISTINCT or the chart is lying about its own scale.
   // A sessions-a-week line runs 3 to 4, and rounding three evenly spaced ticks
@@ -8200,10 +8459,10 @@ function chart(title, sub, series, colour, unit, opts = {}) {
   return `<section class="panel graph-panel"><h2>${esc(title)}</h2>
     <div class="chart-head">
       <p class="sub">${esc(sub)}${trendPath ? ' <span class="tkey">— the heavier line is the 7-day average.</span>' : ''}</p>
-      <p class="readout" aria-live="polite"></p>
+      <p class="readout" aria-live="polite">${esc(latest)}</p>
     </div>
     <svg class="ser" viewBox="0 0 ${W} ${H}" data-geo="${esc(geo)}" data-series="${esc(data)}"
-         role="img" aria-label="${esc(title)} over time">
+         role="img" tabindex="0" aria-label="${esc(title)} over time. Use left and right arrows to inspect recorded days.">
       <defs><linearGradient id="${gid}" x1="0" y1="0" x2="0" y2="1">
         <stop offset="0%" stop-color="${colour}" stop-opacity=".28"/>
         <stop offset="100%" stop-color="${colour}" stop-opacity="0"/>
@@ -8214,11 +8473,12 @@ function chart(title, sub, series, colour, unit, opts = {}) {
       ${target != null ? `<line class="target" x1="${P.l}" y1="${y(target).toFixed(1)}" x2="${W - P.r}" y2="${y(target).toFixed(1)}"/>
         <text class="axis tgtlab" x="${W - P.r}" y="${(y(target) - 5).toFixed(1)}" text-anchor="end">target ${Math.round(target)}</text>` : ''}
       <line class="scrub" x1="0" y1="${P.t}" x2="0" y2="${H - P.b}" opacity="0"/>
+      <path class="series ${trendPath ? 'raw' : 'solo'}" pathLength="1" d="${path.trim()}" fill="none" stroke="${colour}"
+            stroke-width="1.7" vector-effect="non-scaling-stroke" stroke-linejoin="round" stroke-linecap="round"/>
       ${trendPath ? `<path class="trend" d="${trendPath}" fill="none" stroke="${colour}"
-            stroke-width="2.5" stroke-opacity=".45" stroke-linejoin="round" stroke-linecap="round"/>` : ''}
-      <path class="series" pathLength="1" d="${path.trim()}" fill="none" stroke="${colour}"
-            stroke-width="2.8" stroke-linejoin="round" stroke-linecap="round"/>
-      ${last >= 0 ? `<circle cx="${x(last).toFixed(1)}" cy="${y(series[last].value).toFixed(1)}" r="4.2" fill="${colour}" stroke="var(--iron)" stroke-width="2"/>` : ''}
+            stroke-width="3" stroke-opacity=".9" vector-effect="non-scaling-stroke" stroke-linejoin="round" stroke-linecap="round"/>` : ''}
+      ${last >= 0 ? `<circle class="series-halo" cx="${x(last).toFixed(1)}" cy="${y(series[last].value).toFixed(1)}" r="8" fill="${colour}"/>
+        <circle cx="${x(last).toFixed(1)}" cy="${y(series[last].value).toFixed(1)}" r="4.2" fill="${colour}" stroke="var(--iron)" stroke-width="2"/>` : ''}
       <circle class="cursor" r="4.5" fill="${colour}" opacity="0"/>
       <text class="axis" x="${P.l}" y="${H - 4}">${esc(series[0].date.slice(5))}</text>
       <text class="axis" x="${W - P.r}" y="${H - 4}" text-anchor="end">${esc(series[series.length - 1].date.slice(5))}</text>
@@ -8230,6 +8490,10 @@ function chart(title, sub, series, colour, unit, opts = {}) {
 // is the difference between a graph and a record.
 function wireCharts(root = $('content')) {
   for (const svg of root.querySelectorAll('svg.ser')) {
+    // Opening a folded panel keeps the same SVG. Wiring it again made every
+    // pointer movement run once more for every open/close cycle.
+    if (svg.dataset.chartWired === '1') continue;
+    svg.dataset.chartWired = '1';
     let geo, series;
     try {
       geo = JSON.parse(svg.dataset.geo);
@@ -8242,10 +8506,22 @@ function wireCharts(root = $('content')) {
     const N = series.length - 1;
     const span = geo.W - geo.l - geo.r;
     const yOf = v => geo.t + (1 - (v - geo.min) / (geo.max - geo.min)) * (geo.H - geo.t - geo.b);
+    const known = series.map((p, i) => p[1] == null ? -1 : i).filter(i => i >= 0);
+    let active = known[known.length - 1] ?? -1;
+
+    const paint = i => {
+      if (i < 0 || series[i]?.[1] == null) return;
+      active = i;
+      const [date, value] = series[i];
+      const cx = geo.l + (i / N) * span;
+      line.setAttribute('x1', cx); line.setAttribute('x2', cx); line.setAttribute('opacity', '1');
+      dot.setAttribute('cx', cx); dot.setAttribute('cy', yOf(value)); dot.setAttribute('opacity', '1');
+      if (readout) readout.textContent = `${date} · ${Math.round(value * 10) / 10}${geo.unit}`;
+    };
 
     const move = e => {
       const box = svg.getBoundingClientRect();
-      const px = ((e.touches?.[0]?.clientX ?? e.clientX) - box.left) / box.width * geo.W;
+      const px = (e.clientX - box.left) / box.width * geo.W;
       let i = Math.round(((px - geo.l) / span) * N);
       i = Math.max(0, Math.min(N, i));
       // Empty days are real and must not be papered over, so the nearest
@@ -8256,15 +8532,24 @@ function wireCharts(root = $('content')) {
         if (near < 0) return;
         i = near;
       }
-      const [date, value] = series[i];
-      const cx = geo.l + (i / N) * span;
-      line.setAttribute('x1', cx); line.setAttribute('x2', cx); line.setAttribute('opacity', '1');
-      dot.setAttribute('cx', cx); dot.setAttribute('cy', yOf(value)); dot.setAttribute('opacity', '1');
-      if (readout) readout.textContent = `${date} · ${Math.round(value * 10) / 10}${geo.unit}`;
+      paint(i);
     };
     const clear = () => {
       line.setAttribute('opacity', '0'); dot.setAttribute('opacity', '0');
-      if (readout) readout.textContent = '';
+      if (active >= 0 && readout) {
+        const [date, value] = series[active];
+        readout.textContent = `${date} · ${Math.round(value * 10) / 10}${geo.unit}`;
+      }
+    };
+    const key = e => {
+      if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key) || !known.length) return;
+      e.preventDefault();
+      const at = Math.max(0, known.indexOf(active));
+      if (e.key === 'Home') active = known[0];
+      else if (e.key === 'End') active = known[known.length - 1];
+      else if (e.key === 'ArrowLeft') active = known[Math.max(0, at - 1)];
+      else active = known[Math.min(known.length - 1, at + 1)];
+      paint(active);
     };
 
     // Pointer events cover mouse and touch alike, and touch-action: pan-y lets
@@ -8275,6 +8560,7 @@ function wireCharts(root = $('content')) {
     svg.addEventListener('pointerdown', move);
     svg.addEventListener('pointerleave', clear);
     svg.addEventListener('pointercancel', clear);
+    svg.addEventListener('keydown', key);
   }
 }
 
@@ -9232,6 +9518,7 @@ if ('serviceWorker' in navigator) {
   addEventListener('load', () => navigator.serviceWorker.register('/sw.js').catch(() => {}));
 }
 
+wirePageProgress();
 boot();
 startLive();
 </script>

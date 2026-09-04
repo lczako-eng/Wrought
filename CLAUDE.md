@@ -1173,6 +1173,34 @@ somewhere you had navigated to. Same palette throughout; fewer edges.
 `MONTHS_SHORT` is named apart from the calendar's `MONTHS` — the `.bar` lesson,
 applied before it cost anything.
 
+### Motion has a reason, and a health number never lies on the way in
+
+The dashboard now uses motion as hierarchy rather than wallpaper. The first
+visible cards arrive in one short sequence; cards below the fold wait until the
+person reaches them; each screen and range does that once. A warm-cache update,
+a ninety-second refresh, a trainer poll and a calendar selection stay still.
+Replaying the whole screen when one number changes makes live data look like a
+reload and makes a long record feel slower than it is.
+
+**The numbers themselves do not count up from zero.** Every intermediate frame
+would be a made-up health value, even if it only lasted 300 ms. The container,
+ring, bar or line may arrive; the server's number is complete from the first
+frame. The day balance gives the hero its light, momentum lines keep separate
+area fills on each side of a missing day, and the newest point gets one finite
+signal rather than an ambient pulse that never stops.
+
+CSS animation names are global. Two separate `@keyframes grow` declarations
+once made every horizontal burn and macro bar use the later vertical rule.
+Animation names are now unique and tested. Target arcs carry their own
+circumference, reduced-motion disables every animation and transition including
+pseudo-elements, and JavaScript scrolling follows the same preference.
+
+The installed page owns the whole iPhone frame: `viewport-fit=cover`, safe-area
+padding at both ends, 44px view targets, and no forced portrait orientation.
+The service-worker shell version must be bumped whenever this surface changes,
+or a Home Screen icon can keep serving the design the release was meant to
+replace.
+
 ### Two classes called `.bar`, and the header they flattened
 
 Worth keeping because it cost an evening and looked like six different bugs. A
