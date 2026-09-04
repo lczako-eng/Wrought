@@ -11203,6 +11203,61 @@ await test('one at a time, once a day, and never in the night', () => {
   assert.equal(dueAlerts({ ...ctx, rules: monOnly, weekday: 2 }).length, 0);
 });
 
+await test('dashboard animation names cannot silently overwrite one another', () => {
+  // CSS keyframes are global. The old second `grow` definition replaced the
+  // first, so bars written to fill left-to-right actually rose from the floor.
+  const css = page('app.html').match(/<style>([\s\S]*?)<\/style>/)?.[1] || '';
+  const names = [...css.matchAll(/@keyframes\s+([\w-]+)/g)].map(m => m[1]);
+  const duplicates = [...new Set(names.filter((name, i) => names.indexOf(name) !== i))];
+  assert.deepEqual(duplicates, [], `keyframes collide: ${duplicates.join(', ')}`);
+  assert.match(css, /@keyframes wrought-grow-x[\s\S]*?scaleX\(0\)/);
+});
+
+await test('motion happens once, waits for the viewport, and fully respects less motion', () => {
+  const src = page('app.html');
+  const css = src.match(/<style>([\s\S]*?)<\/style>/)?.[1] || '';
+  assert.match(src, /const enteredScreens = new Set\(\)/,
+    'live refreshes will replay the whole entrance sequence');
+  assert.match(src, /IntersectionObserver\(entries/,
+    'below-fold cards finish animating before anybody reaches them');
+  assert.match(src, /Math\.min\(visibleIndex\+\+ \* 35, 180\)/,
+    'the first-screen sequence can leave the dashboard waiting');
+  assert.doesNotMatch(css, /\.panel\s*\{[^}]*animation:/,
+    'every render still replays every panel');
+  assert.match(css,
+    /@media \(prefers-reduced-motion: reduce\) \{[\s\S]*?\*, \*::before, \*::after \{[\s\S]*?animation: none !important; transition: none !important;/);
+  assert.doesNotMatch(src, /behavior:\s*['"]smooth['"]/,
+    'JavaScript smooth scrolling bypasses the operating-system preference');
+});
+
+await test('the premium charts stay honest and operable', () => {
+  const src = page('app.html');
+  const target = src.slice(src.indexOf('function targetRing('), src.indexOf('// Everything the watch'));
+  assert.match(target, /style="--circ:\$\{C\.toFixed\(1\)\}"/,
+    'target rings ask for a sweep without giving it a circumference');
+  const pulse = src.slice(src.indexOf('function pulseGraph('), src.indexOf('function momentumPanel('));
+  assert.match(pulse, /segments\.filter\(s => s\.length > 1\)/,
+    'the graph fill can bridge a day the record does not know');
+  assert.match(pulse, /class="pulse-area"/);
+  const wire = src.slice(src.indexOf('function wireCharts('), src.indexOf('// In versus out, day by day'));
+  assert.match(wire, /dataset\.chartWired === '1'/,
+    'opening a folded graph adds another copy of every pointer listener');
+  assert.match(wire, /\['ArrowLeft', 'ArrowRight', 'Home', 'End'\]/,
+    'the charts only work under a mouse or finger');
+});
+
+await test('the installed dashboard honours the whole iPhone frame', () => {
+  const app = page('app.html');
+  const manifest = JSON.parse(page('site.webmanifest'));
+  const worker = page('sw.js');
+  assert.match(app, /viewport-fit=cover/);
+  assert.match(app, /safe-area-inset-top/);
+  assert.match(app, /safe-area-inset-bottom/);
+  assert.equal(manifest.orientation, undefined, 'the dashboard is still locked to portrait');
+  assert.match(worker, /wrought-shell-v5/,
+    'installed phones can keep the old dashboard shell after this redesign');
+});
+
 await test('the dashboard is the same product as the page that sold it', () => {
   // The founder: "when you go to wrought.fit where it says the sign up, the
   // graphics and everything is so much better than the rest of the program."

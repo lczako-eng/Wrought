@@ -13,7 +13,7 @@
 // yesterday's numbers with confidence, so anything carrying data is network
 // first and only falls back to cache when the network genuinely fails.
 
-const SHELL = 'wrought-shell-v4';
+const SHELL = 'wrought-shell-v5';
 
 // Only the frame: markup, icons, manifest. No API responses ever.
 const SHELL_FILES = [
