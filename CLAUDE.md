@@ -1201,6 +1201,28 @@ The service-worker shell version must be bumped whenever this surface changes,
 or a Home Screen icon can keep serving the design the release was meant to
 replace.
 
+### One front door, the same room behind it
+
+The public site, dashboard, Home Screen install and native iPhone shell are one
+product now, not a polished advert followed by a visual downgrade. The homepage
+uses the same bright/ash tokens as `app.html`, puts the morning, midday and
+evening appointments in the first story it tells, and shows the real division:
+the website is complete; the native shell adds Apple Health background delivery
+and locked-phone Siri, never a second dashboard.
+
+**The release facts live in `public/app-info.json`.** Version, build, update
+label, release note and an optional download URL are read by the homepage, the
+dashboard manual and the connect page. The version and build are tested against
+the Xcode project. When a native build changes, update that file in the same
+commit; when an App Store or TestFlight URL exists, put it there instead of
+copying a link into three pages.
+
+The smaller public doors use `public/shell.css`. It deliberately owns only the
+room — atmosphere, surface depth, safe areas and touch finish — while each page
+keeps its own layout and behaviour. `shell.css` and `app-info.json` are part of
+the service-worker shell, currently `wrought-shell-v6`. A public redesign that
+does not bump that name has not reached the installed product.
+
 ### Two classes called `.bar`, and the header they flattened
 
 Worth keeping because it cost an evening and looked like six different bugs. A

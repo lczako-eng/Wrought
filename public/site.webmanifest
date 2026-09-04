@@ -1,7 +1,7 @@
 {
   "name": "WROUGHT",
   "short_name": "Wrought",
-  "description": "The training and nutrition memory that lives inside your AI.",
+  "description": "Your morning brief, live training memory and honest daily close.",
   "start_url": "/app.html",
   "scope": "/",
   "display": "standalone",

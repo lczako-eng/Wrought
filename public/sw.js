@@ -2,18 +2,16 @@
 // The service worker — what turns the website into something installable on a
 // phone, on both platforms, with no App Store and no review.
 //
-// This is deliberately NOT a native app. iOS has supported web push from a
-// home-screen app since 16.4 and Android has for years, so a PWA gets an icon,
-// a splash, a standalone window with no browser chrome, and notifications on
-// the lock screen — which is the entire reason to want an app here. A native
-// build would take two codebases, two store accounts, two review queues and a
-// release cycle to fix a typo, in exchange for almost nothing this cannot do.
+// The installable website is the complete product. The optional iPhone shell
+// frames this same page and adds only what the browser cannot reach: HealthKit
+// background delivery and locked-phone Siri shortcuts. One web deploy updates
+// both surfaces; the native build never becomes a second dashboard.
 //
 // The caching is deliberately timid. A fitness log is worthless if it shows you
 // yesterday's numbers with confidence, so anything carrying data is network
 // first and only falls back to cache when the network genuinely fails.
 
-const SHELL = 'wrought-shell-v5';
+const SHELL = 'wrought-shell-v6';
 
 // Only the frame: markup, icons, manifest. No API responses ever.
 const SHELL_FILES = [
@@ -21,6 +19,8 @@ const SHELL_FILES = [
   '/index.html',
   '/app.html',
   '/connect.html',
+  '/shell.css',
+  '/app-info.json',
   // The morning notification opens this launcher — it carries no data, so it is
   // pure shell, and a tap that fails to load on bad wifi is the whole feature
   // gone. Precached so it opens even offline.

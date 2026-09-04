@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>WROUGHT — connect</title>
 <meta name="description" content="Connect WROUGHT to ChatGPT or Claude, and get your Apple Watch feeding it automatically.">
 <style>
@@ -71,9 +71,10 @@
 <link rel="icon" href="/favicon.ico" sizes="32x32">
 <link rel="apple-touch-icon" href="/icon-180.png">
 <link rel="manifest" href="/site.webmanifest">
+<link rel="stylesheet" href="/shell.css">
 <meta name="theme-color" content="#14110F">
 </head>
-<body>
+<body class="wrought-shell setup-shell">
 
 <header class="wrap">
   <a class="mark" href="/" aria-label="WROUGHT home"><span class="name">WROUGHT</span></a>
@@ -225,6 +226,15 @@
     </div>
   </div>
 
+  <div class="panel" id="iphone-app">
+    <h3 style="margin-top:0">The Wrought iPhone app</h3>
+    <p class="muted">The native app opens the same dashboard as the website, then adds the two
+    jobs a web page cannot own: Apple Health background delivery and locked-phone Siri shortcuts.
+    A dashboard update reaches the app from wrought.fit without waiting for another native release.</p>
+    <p class="msg" style="margin:12px 0 0"><b id="native-version" style="color:var(--text)">Version 1.0 · build 7</b>
+    <span id="native-note"> · The dashboard updates from wrought.fit.</span></p>
+  </div>
+
   <div class="panel" id="easypanel">
     <h3 style="margin-top:0">The recommended way — Health Auto Export</h3>
     <p class="muted">A small App Store app that reads Apple's own <b>deduplicated</b> daily
@@ -244,8 +254,7 @@
     </ol>
     <p class="muted" style="margin:0">Its automatic schedule is a paid feature (a few dollars — the
     only cost in this whole setup); the manual export button is free, so test before paying.
-    <b>Coming:</b> the Wrought iPhone app does all of this with one tap — it is written and
-    headed for the App Store.</p>
+    The <b>Wrought iPhone app</b> does this with one tap when you are using the native build.</p>
   </div>
 
   <h3>Option B — a hand-built Shortcut (free, honest limits)</h3>
@@ -671,6 +680,15 @@ $('list').addEventListener('click', async () => {
 });
 
 boot();
+</script>
+<script>
+fetch('/app-info.json', { cache: 'no-store' }).then(r => r.ok ? r.json() : null).then(info => {
+  if (!info) return;
+  const version = document.getElementById('native-version');
+  const note = document.getElementById('native-note');
+  if (version) version.textContent = `Version ${info.version || '1.0'} · build ${info.build || '7'}`;
+  if (note && info.release_note) note.textContent = ` · ${info.release_note}`;
+}).catch(() => {});
 </script>
 </body>
 </html>
