@@ -11254,8 +11254,51 @@ await test('the installed dashboard honours the whole iPhone frame', () => {
   assert.match(app, /safe-area-inset-top/);
   assert.match(app, /safe-area-inset-bottom/);
   assert.equal(manifest.orientation, undefined, 'the dashboard is still locked to portrait');
-  assert.match(worker, /wrought-shell-v5/,
+  assert.match(worker, /wrought-shell-v6/,
     'installed phones can keep the old dashboard shell after this redesign');
+});
+
+await test('the public site sells the whole daily loop, not a different product', () => {
+  const home = page('index.html');
+  assert.match(home, /viewport-fit=cover/);
+  assert.match(home, /width:min\(1180px,100%\)/,
+    'the desktop website is still a phone-width column');
+  assert.match(home, /id="daily-loop"/);
+  for (const appointment of ['MORNING BRIEF', 'MIDDAY', 'DAY CLOSED']) {
+    assert.match(home, new RegExp(appointment), `${appointment} is absent from the public story`);
+  }
+  assert.match(home, /id="app"/);
+  assert.match(home, /fetch\('\/app-info\.json'/,
+    'app release information is copied into the page instead of maintained once');
+  assert.doesNotMatch(home, /textContent\s*=\s*paint\(0|requestAnimationFrame\(step\)/,
+    'a health figure counts through values that were never true');
+  assert.match(home, /@media\(prefers-reduced-motion:reduce\)[\s\S]*animation:none!important/);
+});
+
+await test('the app facts on the website match the native project', () => {
+  const info = JSON.parse(page('app-info.json'));
+  const pbx = readFileSync(new URL('../ios/Wrought.xcodeproj/project.pbxproj', import.meta.url), 'utf8');
+  const versions = [...pbx.matchAll(/MARKETING_VERSION = ([^;]+);/g)].map(m => m[1]);
+  const builds = [...pbx.matchAll(/CURRENT_PROJECT_VERSION = ([^;]+);/g)].map(m => m[1]);
+  assert.ok(versions.length && versions.every(v => v === info.version),
+    'the website advertises a different iPhone version');
+  assert.ok(builds.length && builds.every(v => v === String(info.build)),
+    'the website advertises a different iPhone build');
+  assert.match(page('sw.js'), /'\/app-info\.json'/,
+    'the installed app cannot read its own release facts offline');
+});
+
+await test('every public door shares the rebuilt product shell', () => {
+  for (const file of ['about.html', 'connect.html', 'authorize.html', 'privacy.html', 'terms.html', 'go.html']) {
+    const src = page(file);
+    assert.match(src, /viewport-fit=cover/, `${file} ignores the iPhone safe area`);
+    assert.match(src, /href="\/shell\.css"/, `${file} still looks like a separate product`);
+    assert.match(src, /class="wrought-shell/, `${file} does not activate the shared shell`);
+  }
+  const native = readFileSync(new URL('../ios/Wrought/ContentView.swift', import.meta.url), 'utf8');
+  assert.match(native, /heart\.text\.square\.fill/);
+  assert.match(native, /RoundedRectangle\(cornerRadius: 24\)/);
+  assert.match(native, /LinearGradient/);
 });
 
 await test('the dashboard is the same product as the page that sold it', () => {

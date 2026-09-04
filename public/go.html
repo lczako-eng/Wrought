@@ -5,7 +5,12 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>WROUGHT — open your check-in</title>
 <link rel="icon" href="/icon.svg" type="image/svg+xml">
+<link rel="icon" href="/icon-32.png" sizes="32x32" type="image/png">
+<link rel="icon" href="/favicon.ico" sizes="32x32">
 <link rel="apple-touch-icon" href="/icon-180.png">
+<link rel="manifest" href="/site.webmanifest">
+<meta name="theme-color" content="#14110F">
+<link rel="stylesheet" href="/shell.css">
 <style>
   :root{--bg:#14110F;--panel:#1B1614;--panel2:#241D1A;--line:#2E2622;
     --text:#F4EFE9;--muted:#9A8D84;--dim:#675D57;--ember:#F26419;--ash:#B8320C}
@@ -34,8 +39,8 @@
   a.dash{color:var(--muted);font-size:13px;text-decoration:none}
 </style>
 </head>
-<body>
-  <div class="mark">WROUGHT</div>
+<body class="wrought-shell handoff-shell">
+  <a class="mark" href="/">WROUGHT</a>
   <h1 id="head">Your WROUGHT check-in</h1>
   <p class="lead" id="lead">Tap below to pick it up with your assistant.</p>
 

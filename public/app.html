@@ -6003,6 +6003,17 @@ function guideView() {
         `<button class="say" type="button" data-say="${esc(l)}">${esc(l)}</button>`).join('')}</div>
     </section>`).join('')}
     <p class="sub dim taphint">Tap any line to copy it.</p>
+    <section class="panel" id="app-guide">
+      <h2>The app is this dashboard</h2>
+      <p class="sub tight">Browser, Home Screen and native iPhone app all open the same live
+      statistics house. A website update changes every copy; the native shell only adds
+      Apple Health background delivery and locked-phone Siri shortcuts.</p>
+      <div class="doors">
+        <div class="door"><div><b>Web + Home Screen</b><span class="sub">The complete product, including all three daily briefs.</span></div></div>
+        <div class="door"><div><b>iPhone companion · <span id="guide-app-version">version 1.0 · build 7</span></b><span class="sub" id="guide-app-note">The dashboard updates without another native release.</span></div></div>
+      </div>
+      <p class="caveat"><a class="linky" href="/#app">App details and installation →</a></p>
+    </section>
     <section class="panel">
       <h2>What it will not do</h2>
       <div class="rows">${GUIDE_REFUSES.map(r =>
@@ -6069,6 +6080,7 @@ function wireGuide() {
     $('app').hidden = true; $('gate').hidden = false;
   });
   wireSetup();
+  loadGuideAppInfo();
   document.querySelectorAll('.say[data-say]').forEach(b => b.addEventListener('click', async () => {
     try {
       await navigator.clipboard.writeText(b.dataset.say);
@@ -6086,6 +6098,19 @@ function wireGuide() {
       sel.removeAllRanges(); sel.addRange(r);
     }
   }));
+}
+
+// Release facts live beside the public site rather than being copied into the
+// manual forever. The fallback above keeps the guide useful offline.
+async function loadGuideAppInfo() {
+  try {
+    const res = await fetch('/app-info.json', { cache: 'no-store' });
+    if (!res.ok) return;
+    const info = await res.json();
+    const version = $('guide-app-version'), note = $('guide-app-note');
+    if (version) version.textContent = `version ${info.version || '1.0'} · build ${info.build || '7'}`;
+    if (note && info.release_note) note.textContent = info.release_note;
+  } catch {}
 }
 
 // ── The questionnaire, on screen ───────────────────────────────────────────
