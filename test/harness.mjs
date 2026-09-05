@@ -2397,7 +2397,7 @@ await test('every page the app can START on registers the worker', () => {
   // Verified to fail when the registration is removed.
   const entry = manifest.start_url.replace(/^\//, '');
   for (const f of new Set([entry, 'index.html'])) {
-    assert.match(page(f), /addEventListener\('load',[^\n]*serviceWorker\.register\('\/sw\.js'\)/,
+    assert.match(page(f), /addEventListener\('load',[^\n]*serviceWorker\.register\('\/sw\.js'(?:,\s*\{[^}]*\})?\)/,
       `${f} can be the first page loaded and never registers the worker on load`);
   }
 
@@ -11254,7 +11254,7 @@ await test('the installed dashboard honours the whole iPhone frame', () => {
   assert.match(app, /safe-area-inset-top/);
   assert.match(app, /safe-area-inset-bottom/);
   assert.equal(manifest.orientation, undefined, 'the dashboard is still locked to portrait');
-  assert.match(worker, /wrought-shell-v6/,
+  assert.match(worker, /wrought-shell-v7/,
     'installed phones can keep the old dashboard shell after this redesign');
 });
 
@@ -11273,6 +11273,50 @@ await test('the public site sells the whole daily loop, not a different product'
   assert.doesNotMatch(home, /textContent\s*=\s*paint\(0|requestAnimationFrame\(step\)/,
     'a health figure counts through values that were never true');
   assert.match(home, /@media\(prefers-reduced-motion:reduce\)[\s\S]*animation:none!important/);
+});
+
+await test('Forge 03 is a category change on both sides of sign-in', () => {
+  const home = page('index.html');
+  const app = page('app.html');
+  assert.match(home, /<body data-release="forge-03">/);
+  assert.match(app, /<body data-release="forge-03">/);
+  assert.match(home, /class="brief-board"/,
+    'the public proof fell back to the generic browser-window mockup');
+  assert.match(home, /class="memory-band/);
+  assert.doesNotMatch(home, /class="product-window"|class="window-bar"/,
+    'the old dark SaaS silhouette survived the redesign');
+  assert.match(app, /class="panel hero balance-plate/,
+    'today is still presented as an ordinary dashboard card');
+  assert.match(app, /class="balance-reading"/);
+  assert.match(app, /class="daily-ledger"/);
+  assert.match(app, /class="app-edition">F03</);
+});
+
+await test('mutable presentation cannot strand an installed phone on an old release', () => {
+  const worker = page('sw.js');
+  const app = page('app.html');
+  const config = readFileSync(new URL('../netlify.toml', import.meta.url), 'utf8');
+  const refresh = page('refresh.html');
+  const native = readFileSync(new URL('../ios/Wrought/WebView.swift', import.meta.url), 'utf8');
+
+  const shellList = worker.slice(worker.indexOf('const SHELL_FILES'), worker.indexOf('self.addEventListener(\'install\''));
+  assert.doesNotMatch(shellList, /['"]\/(?:index\.html)?['"]/,
+    'the marketing page is still precached as immutable app shell');
+  assert.match(worker, /const alwaysFresh[\s\S]*?url\.pathname === '\/'/);
+  assert.match(worker, /new Request\(e\.request, \{ cache: 'no-store' \}\)/);
+  assert.match(config, /for = "\/sw\.js"[\s\S]*?no-cache, no-store, must-revalidate/);
+  assert.match(config, /for = "\/\*\.html"[\s\S]*?no-cache, no-store, must-revalidate/);
+  assert.match(refresh, /startsWith\('wrought-shell-'\)/);
+  assert.match(refresh, /name\s*!==\s*'wrought-shell-v7'/,
+    'the recovery page deletes the complete current offline shell it just installed');
+  assert.match(worker, /k\.startsWith\('wrought-shell-'\)\s*&&\s*k\s*!==\s*SHELL/,
+    'activation deletes unrelated Cache API data');
+  assert.doesNotMatch(refresh, /localStorage\.clear|indexedDB\.deleteDatabase|serviceWorker\.getRegistrations\(\)[\s\S]*unregister/,
+    'the display recovery can erase identity, notifications or account state');
+  assert.match(app, /interfaceDirty[\s\S]*?update-ready/,
+    'a worker update can reload over a half-written log or password');
+  assert.match(native, /cachePolicy: \.reloadIgnoringLocalCacheData/,
+    'the native frame can relaunch an old HTML document');
 });
 
 await test('the app facts on the website match the native project', () => {
