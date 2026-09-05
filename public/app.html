@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Wrought — your record</title>
-<meta name="theme-color" content="#F0E8DA">
+<meta name="theme-color" content="#14110F">
 <style>
 /* ═══════════════════════════════════════════════════════════════════════════
    The record.
@@ -2202,6 +2202,132 @@ body::after {
   #content .tile:nth-last-child(-n+2) { border-bottom: 0; }
 }
 
+/* The Forge layout stays. The light paper experiment does not. These are the
+   original WROUGHT colours: black iron, warm charcoal and forged orange, with
+   tempered blue reserved for measured information. */
+:root {
+  --paper: #14110F;
+  --paper-hi: #1E1917;
+  --paper-low: #262020;
+  --ink: #14110F;
+  --ink-2: #262020;
+  --rule: #332B27;
+  --ledger-muted: #A79A90;
+  --signal-blue: #F26419;
+}
+
+html { color-scheme: dark; }
+body {
+  color: var(--bright);
+  background:
+    radial-gradient(1200px 720px at 50% -280px, rgba(122,31,10,.22), transparent 72%),
+    linear-gradient(180deg, #181310 0, var(--iron) 38%, #100e0d 100%);
+}
+body::before {
+  inset: -12% -20% auto -20%; height: 78vh; opacity: 1;
+  background:
+    radial-gradient(42% 46% at 78% 8%, rgba(245,166,35,.12), transparent 72%),
+    radial-gradient(54% 54% at 27% 2%, rgba(242,100,25,.2), transparent 72%);
+  animation: wrought-atmosphere 10s cubic-bezier(.22,.61,.36,1) both;
+}
+body::after {
+  background-image:
+    linear-gradient(rgba(255,255,255,.012) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255,255,255,.012) 1px, transparent 1px);
+  background-size: 42px 42px;
+  mask-image: linear-gradient(to bottom, rgba(0,0,0,.55), transparent 72%);
+  opacity: 1;
+}
+
+#gate > .gate, #down > .gate {
+  color: var(--bright); border-color: var(--edge-lit);
+  background: linear-gradient(155deg, rgba(48,39,35,.98), rgba(20,17,15,.99));
+  box-shadow: 0 38px 80px -38px #000, 0 0 64px -34px rgba(242,100,25,.7);
+}
+#gate .gate-mark, #down .gate-mark { box-shadow: 0 14px 28px -16px rgba(242,100,25,.95); }
+#gate .gate button, #down .gate button { box-shadow: 0 16px 30px -21px rgba(242,100,25,.95); }
+
+#app > header {
+  border-color: var(--edge);
+  color: var(--bright);
+  background:
+    radial-gradient(420px 100px at 12% 0, rgba(242,100,25,.09), transparent 75%),
+    linear-gradient(180deg, rgba(20,17,15,.96), rgba(20,17,15,.88));
+  -webkit-backdrop-filter: saturate(140%) blur(22px);
+  backdrop-filter: saturate(140%) blur(22px);
+  box-shadow: 0 1px 0 rgba(255,255,255,.025) inset, 0 22px 48px -38px rgba(0,0,0,.95);
+}
+.update-ready { background: var(--heat-3); color: #1A0A02; }
+.update-ready > button { border-color: #1A0A02; color: #1A0A02; }
+#app .mark .name { color: var(--bright); }
+.app-edition { border-color: var(--edge); color: var(--heat-3); }
+#app .views .range { color: var(--ash); }
+#app .views .range:hover { color: var(--bright); background: rgba(255,255,255,.035); }
+#app .views .range[aria-pressed="true"] { color: var(--bright); }
+#app #rangebtns { border-color: var(--edge-lit); }
+#app #rangebtns .range { border-color: var(--edge-lit); color: var(--ash); }
+#app #rangebtns .range[aria-pressed="true"] { color: #1A0A02; background: var(--heat-3); }
+
+#content .panel, #content .tile {
+  --bright: #F7F3EE; --ash: #A79A90; --ash-dim: #7A6E67;
+  --edge: #332B27; --edge-lit: #4A3E37; --scale: #1E1917; --scale-2: #262020;
+  --panel-hi: rgba(48,39,35,.98); --panel-lo: rgba(22,19,17,.98); --glass: rgba(30,25,23,.78);
+  color: var(--bright);
+}
+#content .panel { border-color: var(--edge); }
+#content .panel > h2, #content .panel > h2.fold { color: var(--ash); }
+.record-intro { border-color: var(--edge-lit); }
+.record-title, .record-lead::before { color: var(--bright); }
+.record-title em { color: var(--heat-3); }
+.record-lead { color: var(--ash); }
+
+.overview-stage {
+  border-color: var(--edge-lit); background: var(--scale);
+  box-shadow: 0 42px 84px -48px #000, 0 0 72px -42px rgba(242,100,25,.75);
+}
+#content .overview-stage .hero {
+  --bright: #F7F3EE; --ash: #A79A90; --ash-dim: #7A6E67;
+  --edge: #403832; --edge-lit: #5C4E46; --scale: #211D1A; --scale-2: #2C2620;
+  color: var(--bright); background: var(--iron);
+}
+.balance-live::before { background: var(--moss); box-shadow: 0 0 10px rgba(111,166,114,.75); }
+.balance-state.under, .balance-rail.under { color: var(--temper); }
+#content .overview-stage .momentum { border-color: var(--edge-lit); background: var(--scale); }
+.momentum-title { color: var(--bright); }
+.pulse-grid { border-color: var(--edge-lit); }
+.pulse-card { border-color: var(--edge); }
+.pulse-label, .pulse-read, .momentum-period { color: var(--ash); }
+.pulse-gridline { stroke: var(--edge); }
+.pulse-dot { stroke: var(--scale); }
+
+.tiles { border-color: var(--edge-lit); }
+#content .tile { border-color: var(--edge); background: var(--scale); }
+.tile .v { color: var(--bright); }
+#content .daily-close {
+  --bright: #F7F3EE; --ash: #A79A90; --ash-dim: #7A6E67; --edge: #403832; --scale: #211D1A;
+  color: var(--bright); background: linear-gradient(155deg, #28201D, var(--iron));
+  box-shadow: 0 38px 78px -46px #000, 0 0 64px -40px rgba(242,100,25,.8);
+}
+.callout.care { color: var(--bright); background: rgba(232,182,76,.08); border-color: rgba(232,182,76,.32); }
+
+@media (min-width: 1100px) {
+  #app > header { border-color: var(--edge); background: var(--scale); }
+  #app .mark { border-color: var(--edge-lit); }
+  #app .mark img { box-shadow: 0 14px 27px -17px rgba(242,100,25,.95); }
+  #app #rangebtns::before { border-color: var(--edge-lit); color: var(--ash-dim); }
+  #app #rangebtns .range { border-color: var(--edge-lit); }
+}
+
+@media (max-width: 700px) {
+  #app > header { background: rgba(20,17,15,.96); }
+  #app .mark img { box-shadow: 0 11px 23px -15px rgba(242,100,25,.95); }
+  #app .views { border-color: var(--edge); }
+  .overview-stage { box-shadow: 0 30px 62px -42px #000, 0 0 50px -36px rgba(242,100,25,.75); }
+  #content .overview-stage .momentum { border-color: var(--edge-lit); }
+  .pulse-card, .pulse-card:nth-child(even), .pulse-card:nth-last-child(-n+2) { border-color: var(--edge); }
+  #content .tile:nth-child(3n), #content .tile:nth-last-child(-n+3) { border-color: var(--edge); }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     animation: none !important; transition: none !important; scroll-behavior: auto !important;
@@ -2214,7 +2340,7 @@ body::after {
 <link rel="icon" href="/favicon.ico" sizes="32x32">
 <link rel="apple-touch-icon" href="/icon-180.png">
 <link rel="manifest" href="/site.webmanifest">
-<meta name="theme-color" content="#F0E8DA">
+<meta name="theme-color" content="#14110F">
 </head>
 <body data-release="forge-03">
 

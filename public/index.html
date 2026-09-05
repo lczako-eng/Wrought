@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>WROUGHT — your day, already understood</title>
 <meta name="description" content="The training memory that turns what you say, do and measure into a real morning brief, a live day and an honest daily close.">
-<meta name="theme-color" content="#F0E8DA">
+<meta name="theme-color" content="#14110F">
 <meta property="og:title" content="WROUGHT — your day, already understood">
 <meta property="og:description" content="One sentence becomes a record. Every morning becomes a plan. Every evening closes the loop.">
 <meta property="og:type" content="website">
@@ -100,7 +100,69 @@ footer{display:grid;grid-template-columns:1fr auto;gap:30px;padding-block:40px c
 @keyframes land{from{opacity:0;transform:translateY(24px)}}@keyframes board-land{from{opacity:0;transform:translateY(28px) rotate(0) scale(.96)}}@keyframes draw{from{stroke-dashoffset:1}}@keyframes grow{from{transform:scaleX(0)}}
 @media(max-width:920px){.edition{display:none}.nav{grid-template-columns:auto 1fr}.navlinks{justify-self:end}.navlinks>a:not(.open){display:none}.hero{grid-template-columns:1fr;min-height:auto}.hero-code{grid-column:1}.hero-copy{padding-bottom:12px}.brief-board{width:min(620px,95%);margin:40px auto 50px}.hero-foot{grid-column:1}.section-head{grid-template-columns:1fr;gap:14px}.loop-grid{grid-template-columns:1fr}.moment{min-height:350px;border-right:0;border-bottom:1px solid var(--ink)}.moment:last-child{border-bottom:0}.memory-head,.app-stage{grid-template-columns:1fr}.memory-head>div{max-width:600px}.instrument-grid{grid-template-columns:1fr}.burn-card{border-right:0;border-bottom:1px solid rgba(255,255,255,.23)}.phone{order:2}.app-copy{order:1}.connect-grid{grid-template-columns:1fr}.connect .btn{justify-self:start}}
 @media(max-width:600px){.nav{min-height:64px}.brand>img{width:34px;height:34px}.brand>b{font-size:14px}.navlinks>.open{padding:9px 12px;font-size:12px}.hero{padding-top:30px}.hero-code>span:last-child{display:none}.hero-copy{padding-top:36px}.hero-copy>h1{font-size:clamp(64px,21vw,88px);line-height:.78}.hero-copy>h1 .outline{-webkit-text-stroke-width:1.5px}.tag{margin-top:22px}.brief-board{width:calc(100% - 10px);box-shadow:9px 9px 0 var(--orange)}.brief-grid{grid-template-columns:1fr}.brief-score{border-right:0;border-bottom:1px solid rgba(255,255,255,.15);padding-right:0}.hero-foot{grid-template-columns:1fr}.hero-foot>div{display:grid;grid-template-columns:1fr 1fr;gap:9px}.ticker-track{animation-duration:18s}.section{padding-block:80px}.section-title>h2,.memory-head>h2,.app-copy>h2,.connect h2{font-size:clamp(46px,15vw,66px)}.moment{min-height:390px;padding:23px}.talk{grid-template-columns:1fr}.bubble{min-height:150px}.bubble.wrought{border-left:0;border-top:1px solid rgba(255,255,255,.23)}.burnkeys>span{font-size:7px}.phone-screen{min-height:585px}footer{grid-template-columns:1fr}.links{justify-content:flex-start}}
-@media(prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}.reveal,.motion-pending{opacity:1!important;transform:none!important}}
+/* Forge 03 keeps its stronger composition and motion, but WROUGHT keeps the
+   dark forge palette people already recognise. Colour is identity, not a
+   release gimmick: orange is action, tempered blue is measured information. */
+:root{
+  --iron:#14110F;--coal:#1B1614;--slate:#241D1A;--panel:#2A221E;--panel-hi:#342A25;
+  --edge:#2E2622;--edge-lit:#4B3B33;--heat-1:#B8320C;--heat-2:#F26419;--heat-3:#F5A623;
+  --temper:#5FA3C7;--moss:#6FA672;--on-heat:#1A0A02;
+  --paper:var(--iron);--paper-hi:var(--slate);--ink:var(--bright);--muted:var(--ash);
+  --line:rgba(247,243,238,.12);--orange:var(--heat-2);--orange-hot:var(--heat-3);
+  --blue:var(--temper);--green:var(--moss);--night:var(--coal);
+}
+html{color-scheme:dark}
+body{background:radial-gradient(1100px 680px at 78% -8%,rgba(242,100,25,.17),transparent 64%),radial-gradient(800px 620px at -8% 35%,rgba(95,163,199,.07),transparent 65%),var(--iron)}
+body::before{opacity:.22;background-image:linear-gradient(rgba(255,255,255,.018) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.018) 1px,transparent 1px);background-size:48px 48px;mask-image:linear-gradient(to bottom,#000,transparent 72%)}
+:focus-visible{outline-color:var(--heat-3)}
+.page-progress>i{background:linear-gradient(90deg,var(--heat-1),var(--heat-2),var(--heat-3));box-shadow:0 0 16px rgba(242,100,25,.6)}
+.nav-wrap{background:rgba(20,17,15,.88)}
+.brand>img{box-shadow:0 10px 24px -12px rgba(242,100,25,.9)}
+.navlinks>.open{border-color:rgba(242,100,25,.38);background:rgba(242,100,25,.1);color:var(--bright);box-shadow:0 16px 32px -24px rgba(242,100,25,.95)}
+.navlinks>.open:hover{background:rgba(242,100,25,.17);box-shadow:0 20px 36px -22px rgba(242,100,25,1)}
+.hero-code,.hero-foot{border-color:var(--line)}
+.actions .btn{border-color:var(--line)}
+.btn.primary{border:0;background:linear-gradient(135deg,var(--heat-3),var(--heat-2));color:var(--on-heat);box-shadow:0 17px 34px -20px rgba(242,100,25,.95)}
+.btn.secondary{background:rgba(255,255,255,.025);color:var(--bright)}
+.btn:hover{transform:translateY(-2px)}
+.btn.primary:hover{box-shadow:0 22px 40px -20px rgba(242,100,25,1)}
+.brief-board{border-color:rgba(255,255,255,.12);background:linear-gradient(155deg,rgba(52,42,37,.98),rgba(20,17,15,.99) 62%);box-shadow:0 44px 90px -38px #000,0 0 70px -34px rgba(242,100,25,.65),0 1px 0 rgba(255,255,255,.09) inset}
+.brief-command>b{color:#78B7D8}
+.status>i{animation:live-pulse 2.2s ease-in-out infinite}
+.ticker{border-color:rgba(242,100,25,.8);background:linear-gradient(90deg,#C84212,var(--heat-2),var(--heat-3));color:var(--on-heat)}
+.ticker-track>b::before{color:var(--on-heat)}
+.loop-grid{border-color:var(--line);box-shadow:0 35px 70px -54px #000}
+.moment{border-color:var(--line);background:linear-gradient(155deg,rgba(47,38,34,.95),rgba(24,20,18,.98));transition:transform 260ms var(--ease),background 260ms var(--ease)}
+.moment:nth-child(2){background:radial-gradient(300px 220px at 100% 100%,rgba(95,163,199,.12),transparent 72%),linear-gradient(155deg,rgba(43,37,35,.96),rgba(22,19,17,.99))}
+.moment:nth-child(3){background:radial-gradient(300px 220px at 100% 100%,rgba(111,166,114,.1),transparent 72%),linear-gradient(155deg,rgba(43,37,33,.96),rgba(22,19,17,.99))}
+.moment:hover{transform:translateY(-5px)}
+.moment-time{color:var(--heat-3)}
+.notification{border-color:rgba(255,255,255,.09);background:rgba(15,13,12,.78);box-shadow:0 18px 34px -28px #000;backdrop-filter:blur(12px)}
+.memory-band{border-block:1px solid var(--line);background:radial-gradient(900px 600px at 95% 15%,rgba(242,100,25,.1),transparent 65%),var(--night)}
+.bubble.you{background:linear-gradient(135deg,var(--heat-2),var(--heat-1));color:var(--bright)}
+.bubble.you>small{color:rgba(255,255,255,.62)}
+.trend .raw{stroke:rgba(95,163,199,.3)}.trend .mean{stroke:#78B7D8}.trend .dot{fill:#78B7D8}
+.phone{border-color:rgba(255,255,255,.16);background:#090807;box-shadow:0 50px 90px -36px #000,0 0 70px -38px rgba(95,163,199,.7);animation:phone-float 5s ease-in-out infinite}
+.phone-screen{background:radial-gradient(360px 260px at 100% 0,rgba(242,100,25,.22),transparent 68%),linear-gradient(155deg,#2A221E,#14110F 50%);color:var(--bright)}
+.phone-hero{border:1px solid rgba(242,100,25,.2);background:rgba(20,17,15,.72);box-shadow:0 20px 38px -30px rgba(242,100,25,.9)}
+.phone-action{border:0;background:linear-gradient(135deg,var(--heat-3),var(--heat-2));color:var(--on-heat)}
+.app-copy>h2 em{color:var(--heat-2)}
+.release>span,.app-points,.install{border-color:var(--line)}
+.install{background:rgba(255,255,255,.025)}
+.connect{background:linear-gradient(115deg,var(--heat-1),var(--heat-2) 58%,var(--heat-3));color:var(--on-heat)}
+.connect .chip{border-color:rgba(26,10,2,.36)}
+.connect .chip.on{background:var(--night);color:var(--bright)}
+.connect .mcp{border-color:rgba(26,10,2,.55);background:var(--night);color:var(--heat-3)}
+.connect .mcp.done{background:#16261D;color:#8ECF92}
+.connect .btn{border-color:var(--night);background:var(--night);color:var(--bright);box-shadow:0 18px 38px -24px #000}
+.reveal.motion-pending{filter:blur(4px)}.reveal.motion-pending.seen{filter:none;transition:opacity .72s var(--ease),transform .72s var(--ease),filter .72s var(--ease)}
+.seen .moment{animation:card-land .65s var(--ease) both}.seen .moment:nth-child(2){animation-delay:.09s}.seen .moment:nth-child(3){animation-delay:.18s}
+.seen .phone-chart path{stroke-dasharray:1;animation:draw 1.2s .18s var(--ease) both}
+@keyframes card-land{from{opacity:0;transform:translateY(20px)}}
+@keyframes live-pulse{50%{opacity:.55;box-shadow:0 0 20px #75E39B}}
+@keyframes phone-float{50%{transform:translateY(-8px)}}
+@media(max-width:920px){.moment{border-color:var(--line)}}
+@media(prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}.reveal,.motion-pending{opacity:1!important;transform:none!important;filter:none!important}}
 </style>
 </head>
 <body data-release="forge-03">
@@ -156,14 +218,14 @@ footer{display:grid;grid-template-columns:1fr auto;gap:30px;padding-block:40px c
     <div class="shell">
       <div class="memory-head"><h2>Memory is <em>the product.</em></h2><div><p class="eyebrow">02 / Capture in passing</p><p>The connected model understands what you said. WROUGHT catches it on the way past, preserves your words and computes the parts that must never be guessed.</p></div></div>
       <div class="talk"><div class="bubble you"><span class="bubble-label">You · anywhere in your AI</span>Petting zoo shift, four and a half hours on task, hard work. Also did ten push-ups.<small>One sentence. No form. No second app to remember.</small></div><div class="bubble wrought"><span class="bubble-label">WROUGHT · filed quietly</span>Work recorded separately from training. Ten push-ups added to today.<small>The shift estimate uses a published activity table. It never turns work into a workout.</small></div></div>
-      <div class="instrument-grid"><article class="burn-card"><h3>Three burns. Zero double counting.</h3><p>Resting is the body. Training is the choice. Other is the physical work life demanded.</p><div class="burnbar" aria-label="Example burn split: 1,660 resting, 410 training and 650 other"><i></i><i></i><i></i></div><div class="burnkeys"><span>Resting<b>1,660</b></span><span>Training<b>410</b></span><span>Other<b>650</b></span></div></article><article class="trend-card"><h3>The day is noise. The direction isn’t.</h3><p>Raw days stay visible. Missing days stay missing. The signal never invents a clean story.</p><svg class="trend" viewBox="0 0 420 185" role="img" aria-label="Example twelve-week trend moving steadily down with day-to-day variation"><defs><linearGradient id="trend-area" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#2C66F2" stop-opacity=".45"/><stop offset="1" stop-color="#2C66F2" stop-opacity="0"/></linearGradient></defs><path class="gridline" d="M10 38H410M10 91H410M10 144H410"/><path class="area" d="M10 44C55 49 69 60 104 66S159 76 192 91S250 104 283 121S341 129 370 144S397 148 410 153V178H10Z"/><path class="raw" d="M10 35L39 61L68 48L97 77L126 66L155 97L184 83L213 111L242 97L271 132L300 114L329 148L358 132L387 158L410 150"/><path class="mean" pathLength="1" d="M10 44C55 49 69 60 104 66S159 76 192 91S250 104 283 121S341 129 370 144S397 148 410 153"/><circle class="dot" cx="410" cy="153" r="6"/></svg><div class="trend-label"><span>12 weeks ago</span><span>Today</span></div></article></div>
+      <div class="instrument-grid"><article class="burn-card"><h3>Three burns. Zero double counting.</h3><p>Resting is the body. Training is the choice. Other is the physical work life demanded.</p><div class="burnbar" aria-label="Example burn split: 1,660 resting, 410 training and 650 other"><i></i><i></i><i></i></div><div class="burnkeys"><span>Resting<b>1,660</b></span><span>Training<b>410</b></span><span>Other<b>650</b></span></div></article><article class="trend-card"><h3>The day is noise. The direction isn’t.</h3><p>Raw days stay visible. Missing days stay missing. The signal never invents a clean story.</p><svg class="trend" viewBox="0 0 420 185" role="img" aria-label="Example twelve-week trend moving steadily down with day-to-day variation"><defs><linearGradient id="trend-area" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#5FA3C7" stop-opacity=".45"/><stop offset="1" stop-color="#5FA3C7" stop-opacity="0"/></linearGradient></defs><path class="gridline" d="M10 38H410M10 91H410M10 144H410"/><path class="area" d="M10 44C55 49 69 60 104 66S159 76 192 91S250 104 283 121S341 129 370 144S397 148 410 153V178H10Z"/><path class="raw" d="M10 35L39 61L68 48L97 77L126 66L155 97L184 83L213 111L242 97L271 132L300 114L329 148L358 132L387 158L410 150"/><path class="mean" pathLength="1" d="M10 44C55 49 69 60 104 66S159 76 192 91S250 104 283 121S341 129 370 144S397 148 410 153"/><circle class="dot" cx="410" cy="153" r="6"/></svg><div class="trend-label"><span>12 weeks ago</span><span>Today</span></div></article></div>
     </div>
   </section>
 
   <section class="section app-section shell reveal" id="app">
     <div class="section-head"><span class="section-index">03 / One system</span><div class="section-title"><h2>Website. Home Screen. iPhone.</h2><p>One live interface, not three products drifting apart.</p></div></div>
     <div class="app-stage">
-      <div class="phone" aria-label="WROUGHT iPhone app preview"><div class="phone-screen"><div class="phone-head"><span>WROUGHT / Forge 03</span><span>09:41</span></div><h3>Today in command.</h3><p>Your real record, live from the same account.</p><div class="phone-hero"><span>Energy position · today</span><strong>420</strong><small>roughly under · 2,080 in / 2,500 out</small></div><svg class="phone-chart" viewBox="0 0 260 76" aria-label="Example seven day movement trend"><path d="M3 57C29 51 39 60 64 44S101 50 126 31S166 39 190 22S227 27 257 9"/></svg><div class="phone-statline"><div class="phone-stat"><b>3/4</b><span>Sessions</span></div><div class="phone-stat"><b>148g</b><span>Protein</span></div><div class="phone-stat"><b>7:36</b><span>Sleep</span></div></div><div class="phone-action">Talk to your record ↗</div></div></div>
+      <div class="phone" aria-label="WROUGHT iPhone app preview"><div class="phone-screen"><div class="phone-head"><span>WROUGHT / Forge 03</span><span>09:41</span></div><h3>Today in command.</h3><p>Your real record, live from the same account.</p><div class="phone-hero"><span>Energy position · today</span><strong>420</strong><small>roughly under · 2,080 in / 2,500 out</small></div><svg class="phone-chart" viewBox="0 0 260 76" aria-label="Example seven day movement trend"><path pathLength="1" d="M3 57C29 51 39 60 64 44S101 50 126 31S166 39 190 22S227 27 257 9"/></svg><div class="phone-statline"><div class="phone-stat"><b>3/4</b><span>Sessions</span></div><div class="phone-stat"><b>148g</b><span>Protein</span></div><div class="phone-stat"><b>7:36</b><span>Sleep</span></div></div><div class="phone-action">Talk to your record ↗</div></div></div>
       <div class="app-copy"><p class="eyebrow">The complete product, wherever you open it</p><h2>One record. <em>Every door.</em></h2><p class="lead">The website is the full product. Save it to the Home Screen and it behaves like an app. The native iPhone companion adds only what iOS locks away: Apple Health, background delivery and locked-phone Siri.</p><div class="app-points"><div class="app-point"><i>01</i><div><b>Website + Home Screen</b><span>Briefs, charts, plans, logs and push notifications. No App Store required.</span></div></div><div class="app-point"><i>02</i><div><b>Native iPhone companion</b><span>Apple Health’s deduplicated totals, background sync and Siri from a locked phone.</span></div></div><div class="app-point"><i>03</i><div><b>Same live interface</b><span>Update wrought.fit once and the Home Screen and native frame receive it.</span></div></div></div><div class="release" aria-label="Current app release information"><span>Version <b id="app-version">1.0</b></span><span>Build <b id="app-build">7</b></span><span>Updated <b id="app-updated">4 Sep 2026</b></span><span>Interface <b>Forge 03</b></span></div><p class="app-note" id="app-note">The dashboard updates from wrought.fit without another native release.</p><div class="actions"><a class="btn primary" href="/app.html">Open WROUGHT ↗</a><a class="btn secondary" href="/connect.html#iphone-app">Set up iPhone</a><a class="btn secondary" id="app-download" href="#" hidden>Get the app</a></div><section id="install" class="install" hidden><img src="/icon.svg" alt=""><div><b>Put WROUGHT on your Home Screen</b><p id="install-ios" hidden>In Safari, tap Share, then Add to Home Screen. Open it from the new icon to enable notifications.</p><p id="install-go-note">Install the full dashboard as an app on this device.</p></div><button class="btn primary" id="install-go" type="button" hidden>Install</button></section></div>
     </div>
   </section>

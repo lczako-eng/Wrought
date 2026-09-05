@@ -11254,7 +11254,7 @@ await test('the installed dashboard honours the whole iPhone frame', () => {
   assert.match(app, /safe-area-inset-top/);
   assert.match(app, /safe-area-inset-bottom/);
   assert.equal(manifest.orientation, undefined, 'the dashboard is still locked to portrait');
-  assert.match(worker, /wrought-shell-v7/,
+  assert.match(worker, /wrought-shell-v8/,
     'installed phones can keep the old dashboard shell after this redesign');
 });
 
@@ -11275,7 +11275,7 @@ await test('the public site sells the whole daily loop, not a different product'
   assert.match(home, /@media\(prefers-reduced-motion:reduce\)[\s\S]*animation:none!important/);
 });
 
-await test('Forge 03 is a category change on both sides of sign-in', () => {
+await test('Forge 03 keeps the WROUGHT palette on both sides of sign-in', () => {
   const home = page('index.html');
   const app = page('app.html');
   assert.match(home, /<body data-release="forge-03">/);
@@ -11284,12 +11284,27 @@ await test('Forge 03 is a category change on both sides of sign-in', () => {
     'the public proof fell back to the generic browser-window mockup');
   assert.match(home, /class="memory-band/);
   assert.doesNotMatch(home, /class="product-window"|class="window-bar"/,
-    'the old dark SaaS silhouette survived the redesign');
+    'the old generic SaaS silhouette survived the redesign');
   assert.match(app, /class="panel hero balance-plate/,
     'today is still presented as an ordinary dashboard card');
   assert.match(app, /class="balance-reading"/);
   assert.match(app, /class="daily-ledger"/);
   assert.match(app, /class="app-edition">F03</);
+
+  // A layout release is not permission to replace the brand. The dark iron,
+  // forged orange and tempered data blue are the same outside and inside.
+  const homeBrand = home.slice(home.indexOf('Colour is identity'));
+  const appBrand = app.slice(app.indexOf('The Forge layout stays'));
+  for (const page of [home, app]) {
+    assert.match(page, /<meta name="theme-color" content="#14110F">/);
+  }
+  assert.match(homeBrand, /--iron:#14110F/);
+  assert.match(homeBrand, /--heat-2:#F26419/);
+  assert.match(homeBrand, /--temper:#5FA3C7/);
+  assert.match(homeBrand, /html\{color-scheme:dark\}/);
+  assert.match(appBrand, /--paper: #14110F/);
+  assert.match(appBrand, /--signal-blue: #F26419/);
+  assert.match(appBrand, /html \{ color-scheme: dark; \}/);
 });
 
 await test('mutable presentation cannot strand an installed phone on an old release', () => {
@@ -11307,7 +11322,7 @@ await test('mutable presentation cannot strand an installed phone on an old rele
   assert.match(config, /for = "\/sw\.js"[\s\S]*?no-cache, no-store, must-revalidate/);
   assert.match(config, /for = "\/\*\.html"[\s\S]*?no-cache, no-store, must-revalidate/);
   assert.match(refresh, /startsWith\('wrought-shell-'\)/);
-  assert.match(refresh, /name\s*!==\s*'wrought-shell-v7'/,
+  assert.match(refresh, /name\s*!==\s*'wrought-shell-v8'/,
     'the recovery page deletes the complete current offline shell it just installed');
   assert.match(worker, /k\.startsWith\('wrought-shell-'\)\s*&&\s*k\s*!==\s*SHELL/,
     'activation deletes unrelated Cache API data');

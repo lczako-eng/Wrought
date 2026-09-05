@@ -21,7 +21,7 @@ final class WebViewStore: NSObject, ObservableObject {
         config.allowsInlineMediaPlayback = true
         webView = WKWebView(frame: .zero, configuration: config)
         webView.isOpaque = false
-        webView.backgroundColor = UIColor(red: 0.941, green: 0.910, blue: 0.855, alpha: 1)
+        webView.backgroundColor = UIColor(red: 0.078, green: 0.067, blue: 0.059, alpha: 1)
         webView.scrollView.backgroundColor = webView.backgroundColor
         super.init()
         webView.navigationDelegate = self
