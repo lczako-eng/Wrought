@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Wrought — your record</title>
-<meta name="theme-color" content="#14110F">
+<meta name="theme-color" content="#F0E8DA">
 <style>
 /* ═══════════════════════════════════════════════════════════════════════════
    The record.
@@ -591,7 +591,7 @@ svg.ser .cursor { transition: opacity var(--quick) var(--ease); }
 
 .overview-stage { display: grid; grid-template-columns: minmax(310px,.82fr) minmax(0,1.5fr); gap: 18px; align-items: stretch; }
 .overview-stage > .panel { min-width: 0; }
-.overview-stage .hero {
+#content .overview-stage .hero {
   position: relative; overflow: hidden; isolation: isolate;
   background:
     radial-gradient(60% 58% at 50% 42%, rgba(91,144,176,.12), transparent 72%),
@@ -1927,6 +1927,281 @@ a.ghost { display: inline-block; }
 .gate-note b { color: var(--ash); }
 .msg { color: var(--ash); font-size: 13px; min-height: 19px; }
 
+/* ═══════════════════════════════════════════════════════════════════════════
+   FORGE 03 — THE DAILY LEDGER
+
+   This is a category change, not another polish pass. The record now reads as
+   an editorial training ledger: warm stock, hard rules, one black instrument
+   plate, and numbers with enough authority to own the screen. Rounded dark
+   cards no longer carry the hierarchy. The arithmetic and every functional
+   hook above remain untouched; this layer changes how the evidence is read.
+   ═══════════════════════════════════════════════════════════════════════════ */
+:root {
+  --paper: #F0E8DA;
+  --paper-hi: #FBF7EF;
+  --paper-low: #E3DACD;
+  --ink: #171411;
+  --ink-2: #2C2620;
+  --rule: #C8BCAE;
+  --ledger-muted: #675F56;
+  --signal-blue: #2C66F2;
+}
+
+html { color-scheme: light; }
+body {
+  color: var(--ink);
+  background:
+    linear-gradient(90deg, transparent calc(50% - .5px), rgba(23,20,17,.025) 50%, transparent calc(50% + .5px)),
+    var(--paper);
+}
+body::before {
+  inset: 0; height: auto; opacity: .26; animation: none;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 180 180' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.08'/%3E%3C/svg%3E");
+}
+body::after {
+  background-image: linear-gradient(rgba(23,20,17,.025) 1px, transparent 1px);
+  background-size: 100% 36px; mask-image: none; opacity: .55;
+}
+
+/* A credential plate on paper. Auth behavior stays exactly as it was. */
+#gate > .gate, #down > .gate {
+  max-width: 460px; padding: clamp(28px, 6vw, 48px);
+  color: var(--bright); background: var(--ink);
+  border: 1px solid var(--ink); box-shadow: 12px 12px 0 var(--heat-3);
+  text-align: left;
+}
+#gate .gate-mark, #down .gate-mark { margin-left: 0; border-radius: 10px; box-shadow: 5px 5px 0 var(--heat-3); }
+#gate .gate-h, #down .gate-h { font-size: clamp(42px, 11vw, 58px); letter-spacing: -.02em; }
+#gate .gate-tag, #down .gate-tag { color: var(--heat-3); font-size: 24px; }
+#gate .gate input, #down .gate input { border-radius: 0; }
+#gate .gate button, #down .gate button { border-radius: 0; box-shadow: 4px 4px 0 var(--bright); }
+
+#app > header {
+  border-color: var(--rule);
+  color: var(--ink);
+  background: rgba(240,232,218,.93);
+  -webkit-backdrop-filter: saturate(105%) blur(16px);
+  backdrop-filter: saturate(105%) blur(16px);
+  box-shadow: none;
+}
+.update-ready {
+  position: sticky; top: 0; z-index: 90; display: flex; align-items: center;
+  justify-content: center; gap: 14px; padding: 10px var(--gut);
+  color: var(--bright); background: var(--signal-blue);
+  font: 750 11px/1.3 var(--mono); letter-spacing: .08em; text-transform: uppercase;
+}
+.update-ready > button {
+  padding: 7px 10px; border: 1px solid var(--bright); border-radius: 0;
+  color: var(--bright); background: transparent; font: inherit; cursor: pointer;
+}
+#app .mark .name { color: var(--ink); }
+.app-edition {
+  margin-left: 10px; padding-left: 10px; border-left: 1px solid var(--rule);
+  color: var(--heat-3); font: 800 8px/1 var(--mono); letter-spacing: .14em;
+}
+#app .ranges { border-radius: 0; }
+#app .views { padding: 0; gap: 0; border: 0; background: transparent; }
+#app .views .range {
+  position: relative; border-radius: 0; color: var(--ledger-muted); background: transparent;
+  box-shadow: none; transition: color var(--quick) var(--ease), background var(--quick) var(--ease);
+}
+#app .views .range::after {
+  content: ""; position: absolute; left: 14px; right: 14px; bottom: 1px; height: 3px;
+  background: var(--heat-3); transform: scaleX(0); transform-origin: left;
+  transition: transform var(--quick) var(--ease);
+}
+#app .views .range:hover { color: var(--ink); background: rgba(23,20,17,.04); }
+#app .views .range[aria-pressed="true"] { color: var(--ink); background: transparent; box-shadow: none; }
+#app .views .range[aria-pressed="true"]::after { transform: scaleX(1); }
+#app #rangebtns { gap: 0; border: 1px solid var(--ink); }
+#app #rangebtns .range { border: 0; border-right: 1px solid var(--ink); border-radius: 0; color: var(--ink); }
+#app #rangebtns .range:last-child { border-right: 0; }
+#app #rangebtns .range[aria-pressed="true"] { color: var(--bright); background: var(--ink); box-shadow: none; }
+
+#content {
+  width: min(100%, 1440px); max-width: 1440px;
+  padding-block: clamp(28px, 4vw, 54px) 0; gap: clamp(20px, 3vw, 34px);
+}
+#content .panel, #content .tile {
+  --bright: var(--ink); --ash: var(--ledger-muted); --ash-dim: #81766C;
+  --edge: var(--rule); --edge-lit: #9C8E81; --scale: var(--paper-hi); --scale-2: var(--paper-low);
+  --panel-hi: var(--paper-hi); --panel-lo: var(--paper-hi); --glass: rgba(251,247,239,.86);
+  color: var(--ink);
+}
+#content .panel {
+  padding: clamp(22px, 3vw, 34px) 0; gap: 15px;
+  border: 0; border-top: 1px solid var(--rule); border-radius: 0;
+  background: transparent; box-shadow: none;
+}
+#content .panel > h2 { color: var(--ledger-muted); }
+#content .panel.folded {
+  padding: 17px 0; border-radius: 0; background: transparent; box-shadow: none;
+}
+#content .panel > h2.fold { color: var(--ledger-muted); }
+#content .grid-2 { gap: clamp(20px, 3vw, 34px); }
+
+.record-intro {
+  display: grid; grid-template-columns: minmax(0, 1fr) minmax(240px, .45fr);
+  gap: 30px; align-items: end; padding: 0 0 18px; border-bottom: 2px solid var(--ink);
+}
+.record-intro-main { min-width: 0; }
+.record-kicker { margin-bottom: 7px; color: var(--heat-3); }
+.record-title {
+  max-width: none; font-size: clamp(43px, 6.1vw, 78px); line-height: .84;
+  color: var(--ink); letter-spacing: -.065em;
+}
+.record-title em { color: var(--signal-blue); background: none; }
+.record-lead { margin: 0; max-width: 34ch; justify-self: end; color: var(--ledger-muted); font-size: 15px; }
+.record-lead::before {
+  content: "FORGE 03 / LIVE RECORD"; display: block; margin-bottom: 10px;
+  color: var(--ink); font: 800 9px/1 var(--mono); letter-spacing: .14em;
+}
+.record-rule { display: none; }
+
+.overview-stage {
+  grid-template-columns: minmax(360px, .9fr) minmax(0, 1.4fr); gap: 0;
+  align-items: stretch; border: 1px solid var(--ink); background: var(--paper-hi);
+  box-shadow: 12px 12px 0 var(--signal-blue);
+}
+#content .overview-stage .hero {
+  --bright: #F7F3EE; --ash: #A79A90; --ash-dim: #81766C;
+  --edge: #403832; --edge-lit: #5C4E46; --scale: #211D1A; --scale-2: #2C2620;
+  position: relative; padding: clamp(24px, 3vw, 39px); border: 0; color: var(--bright);
+  background: var(--ink); text-align: left; align-items: stretch; isolation: isolate;
+}
+#content .overview-stage .hero::before, #content .overview-stage .hero::after { display: none; }
+.balance-head { display: flex; justify-content: space-between; gap: 16px; align-items: center; }
+.balance-head > h2 { color: var(--ash); }
+.balance-live { display: flex; align-items: center; gap: 7px; color: var(--ash); font: 700 8px/1 var(--mono); letter-spacing: .13em; text-transform: uppercase; }
+.balance-live::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: #75E39B; box-shadow: 0 0 10px rgba(117,227,155,.75); }
+.balance-reading { display: grid; grid-template-columns: 1fr auto; gap: 12px; align-items: end; margin-block: 22px 17px; }
+.balance-number { font: 900 clamp(82px, 10vw, 136px)/.7 var(--grotesk); letter-spacing: -.075em; color: var(--bright); font-variant-numeric: tabular-nums; }
+.balance-state { padding-bottom: 5px; color: var(--heat-3); font: 800 10px/1.35 var(--mono); letter-spacing: .14em; text-align: right; text-transform: uppercase; }
+.balance-state.under { color: #83BFE1; }.balance-state.level { color: var(--amber); }
+.balance-rail { position: relative; height: 18px; margin: 3px 0 22px; border-block: 1px solid rgba(255,255,255,.2); }
+.balance-rail::before { content: ""; position: absolute; left: 50%; top: -5px; bottom: -5px; width: 1px; background: var(--bright); opacity: .55; }
+.balance-rail > i { position: absolute; top: 5px; left: 50%; height: 6px; width: min(50%, var(--balance)); transform-origin: left; background: currentColor; }
+.balance-rail.under { color: #83BFE1; }.balance-rail.over { color: var(--heat-3); }
+.balance-rail.under > i { transform: translateX(-100%); }.balance-rail.level > i { width: 3px; }
+.balance-totals { display: grid; grid-template-columns: 1fr 1fr; border-block: 1px solid rgba(255,255,255,.16); }
+.balance-total { padding: 14px 0; }.balance-total + .balance-total { padding-left: 18px; border-left: 1px solid rgba(255,255,255,.16); }
+.balance-total > span { display: block; color: var(--ash); font: 700 8px/1 var(--mono); letter-spacing: .14em; text-transform: uppercase; }
+.balance-total > b { display: block; margin-top: 7px; color: var(--bright); font: 800 25px/1 var(--grotesk); font-variant-numeric: tabular-nums; }
+#content .overview-stage .hero .burnsplit { width: 100%; margin-top: 17px; }
+#content .overview-stage .hero .bskeys { justify-content: flex-start; }
+#content .overview-stage .hero .bskey { color: var(--bright); }
+#content .overview-stage .hero .basis { color: var(--ash); }
+#content .overview-stage .hero .caveat { max-width: none; color: var(--ash); text-align: left; }
+.balance-empty { margin: 27px 0 8px; color: var(--bright); font: 900 clamp(62px, 9vw, 104px)/.78 var(--grotesk); letter-spacing: -.065em; }
+.balance-empty > span { display: block; margin-top: 14px; color: var(--ash); font: 800 9px/1 var(--mono); letter-spacing: .15em; text-transform: uppercase; }
+
+#content .overview-stage .momentum {
+  padding: clamp(24px, 3vw, 39px); border: 0; border-left: 1px solid var(--ink);
+  background: var(--paper-hi); box-shadow: none;
+}
+.momentum::before { height: 5px; background: var(--heat-3); }
+.momentum-title { color: var(--ink); }
+.pulse-grid { gap: 0; border: 1px solid var(--ink); }
+.pulse-card {
+  padding: 15px; border: 0; border-right: 1px solid var(--rule); border-bottom: 1px solid var(--rule);
+  border-radius: 0; background: transparent; box-shadow: none;
+}
+.pulse-card:nth-child(even) { border-right: 0; }
+.pulse-card:nth-last-child(-n+2) { border-bottom: 0; }
+.pulse-label, .pulse-read, .momentum-period { color: var(--ledger-muted); }
+.pulse-gridline { stroke: var(--rule); }.pulse-dot { stroke: var(--paper-hi); }
+
+.daily-ledger { display: grid; grid-template-columns: 1fr 1fr; gap: clamp(20px, 3vw, 34px); align-items: start; }
+.tiles { gap: 0; border: 1px solid var(--ink); grid-template-columns: repeat(3, 1fr); }
+#content .tile {
+  min-height: 132px; padding: 20px; border: 0; border-right: 1px solid var(--rule); border-bottom: 1px solid var(--rule);
+  border-radius: 0; background: var(--paper-hi); box-shadow: none;
+}
+#content .tile:nth-child(3n) { border-right: 0; }
+#content .tile:nth-last-child(-n+3) { border-bottom: 0; }
+.tile .v { font-size: clamp(38px, 4.5vw, 58px); color: var(--ink); }
+.tgt, .routine, .session, .pulse-card, .reading, .food-row, .training-row { box-shadow: none; }
+
+#content .daily-close {
+  --bright: #F7F3EE; --ash: #A79A90; --ash-dim: #81766C; --edge: #403832; --scale: #211D1A;
+  padding: clamp(28px, 5vw, 54px); color: var(--bright); background: var(--ink);
+  border: 0; box-shadow: 12px 12px 0 var(--heat-3);
+}
+#content .daily-close::before { background: var(--heat-3); }
+.callout { border-radius: 0; }.callout.care { border-width: 2px; background: #F6E4AF; color: var(--ink); }
+
+@media (min-width: 1100px) {
+  #app:not([hidden]) { display: grid; grid-template-columns: 246px minmax(0, 1fr); align-items: start; }
+  #app > header {
+    grid-column: 1; grid-row: 1 / 4; position: sticky; top: 0; min-height: 100svh;
+    border: 0; border-right: 1px solid var(--ink); padding: 0; background: var(--paper-hi);
+    -webkit-backdrop-filter: none; backdrop-filter: none;
+  }
+  #app > header > .wrap {
+    width: 100%; max-width: none; min-height: 100svh; padding: 28px 20px;
+    flex-direction: column; flex-wrap: nowrap; align-items: stretch; justify-content: flex-start; gap: 26px;
+  }
+  #app .mark { padding-bottom: 22px; border-bottom: 2px solid var(--ink); }
+  #app .mark img { width: 34px; height: 34px; border-radius: 8px; box-shadow: 4px 4px 0 var(--heat-3); }
+  #app .mark .name { font-size: 17px; }
+  #app .views { display: flex; flex-direction: column; align-items: stretch; width: 100%; }
+  #app .views .range { min-height: 42px; padding: 0 8px 0 15px; text-align: left; }
+  #app .views .range::after { inset: 9px auto 9px 0; width: 4px; height: auto; transform: scaleY(0); transform-origin: top; }
+  #app .views .range[aria-pressed="true"]::after { transform: scaleY(1); }
+  #app #rangebtns { display: grid; grid-template-columns: repeat(3, 1fr); margin-top: auto; }
+  #app #rangebtns::before { content: "WINDOW"; grid-column: 1 / -1; padding: 0 0 10px; border-bottom: 1px solid var(--ink); color: var(--ledger-muted); font: 800 8px/1 var(--mono); letter-spacing: .14em; }
+  #app #rangebtns .range { min-width: 0; padding: 9px 4px; border-right: 1px solid var(--ink); border-bottom: 1px solid var(--ink); }
+  #app #rangebtns .range:nth-of-type(3n) { border-right: 0; }
+  #app #rangebtns .range:nth-last-child(-n+2) { border-bottom: 0; }
+  #app > header .page-progress { inset: 0 0 0 auto; width: 3px; height: 100%; }
+  #app > #content, #app > .whoami { grid-column: 2; }
+  #app > .whoami { width: min(100%, 1440px); max-width: 1440px; }
+}
+
+@media (min-width: 701px) and (max-width: 1099px) {
+  #app > header > .wrap { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 10px 18px; }
+  #app .mark { grid-column: 1; }
+  #app .views { grid-column: 1 / -1; grid-row: 2; display: flex; flex-wrap: nowrap; overflow-x: auto; }
+  #app .views .range { flex: 0 0 auto; }
+  #app #rangebtns { grid-column: 2; justify-self: end; }
+}
+
+@media (max-width: 700px) {
+  #app > header { background: rgba(240,232,218,.96); }
+  #app .mark img { box-shadow: 3px 3px 0 var(--heat-3); }
+  #app .views { border-top: 1px solid var(--rule); border-bottom: 1px solid var(--rule); }
+  #app .views .range::after { left: 13px; right: 13px; }
+  #content { padding-top: 17px; }
+  .record-intro { grid-template-columns: 1fr; gap: 8px; padding: 0 0 13px; }
+  .record-kicker { font-size: 8.5px; }
+  .record-title { font-size: clamp(39px, 12vw, 52px); }
+  .record-lead { justify-self: start; max-width: 45ch; font-size: 13px; }
+  .record-lead::before { display: none; }
+  .overview-stage { grid-template-columns: 1fr; box-shadow: 7px 7px 0 var(--signal-blue); }
+  #content .overview-stage .hero { padding: 22px 18px; }
+  .balance-reading { margin-block: 18px 13px; }
+  .balance-number { font-size: clamp(76px, 25vw, 106px); }
+  .balance-rail { margin-bottom: 16px; }
+  .balance-total { padding-block: 11px; }
+  #content .overview-stage .hero .burnsplit { margin-top: 13px; }
+  #content .overview-stage .hero .caveat { font-size: 10.5px; margin-top: 7px; }
+  #content .overview-stage .momentum { padding: 21px 17px; border-left: 0; border-top: 1px solid var(--ink); }
+  .momentum-head { margin-bottom: 2px; }
+  .pulse-grid {
+    display: grid; grid-auto-flow: column; grid-auto-columns: minmax(150px, 72%);
+    grid-template-columns: none; overflow-x: auto; scroll-snap-type: x mandatory;
+    -webkit-overflow-scrolling: touch;
+  }
+  .pulse-card, .pulse-card:nth-child(even), .pulse-card:nth-last-child(-n+2) { border: 0; border-right: 1px solid var(--rule); scroll-snap-align: start; }
+  .pulse-card:last-child { border-right: 0; }
+  .daily-ledger { grid-template-columns: 1fr; gap: 18px; }
+  .tiles { grid-template-columns: 1fr 1fr; }
+  #content .tile:nth-child(3n) { border-right: 1px solid var(--rule); }
+  #content .tile:nth-child(even) { border-right: 0; }
+  #content .tile:nth-last-child(-n+3) { border-bottom: 1px solid var(--rule); }
+  #content .tile:nth-last-child(-n+2) { border-bottom: 0; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     animation: none !important; transition: none !important; scroll-behavior: auto !important;
@@ -1939,9 +2214,13 @@ a.ghost { display: inline-block; }
 <link rel="icon" href="/favicon.ico" sizes="32x32">
 <link rel="apple-touch-icon" href="/icon-180.png">
 <link rel="manifest" href="/site.webmanifest">
-<meta name="theme-color" content="#14110F">
+<meta name="theme-color" content="#F0E8DA">
 </head>
-<body>
+<body data-release="forge-03">
+
+<aside class="update-ready" id="update-ready" hidden>
+  <span>A new WROUGHT interface is ready.</span><button id="apply-update" type="button">Load it</button>
+</aside>
 
 <div id="gate" class="wrap" hidden>
   <div class="gate">
@@ -2047,7 +2326,7 @@ a.ghost { display: inline-block; }
 <div id="app" hidden>
   <header>
     <div class="wrap bar">
-      <a class="mark" href="#record" id="home" aria-label="WROUGHT — back to your record"><img src="/icon.svg" alt="" width="26" height="26"><span class="name">Wrought</span></a>
+      <a class="mark" href="#record" id="home" aria-label="WROUGHT — back to your record"><img src="/icon.svg" alt="" width="26" height="26"><span class="name">Wrought</span><span class="app-edition">F03</span></a>
       <nav class="ranges views" role="group" aria-label="View">
         <button class="range view" data-view="record" aria-pressed="true">Record</button>
         <button class="range view" data-view="guide" aria-pressed="false">Say this</button>
@@ -3434,7 +3713,7 @@ function urlB64(s) {
 // than somebody will hold a phone waiting for a button to do something.
 async function workerReady(ms = 10000) {
   if (!('serviceWorker' in navigator)) throw new Error('This browser has no service worker support.');
-  await navigator.serviceWorker.register('/sw.js').catch(() => {});
+  await navigator.serviceWorker.register('/sw.js', { updateViaCache: 'none' }).catch(() => {});
   return Promise.race([
     navigator.serviceWorker.ready,
     new Promise((_, reject) => setTimeout(() => reject(new Error(
@@ -5724,10 +6003,10 @@ function hero(d) {
   const b = d.today?.balance;
   if (!b?.known) {
     if (DEMO) {
-      return `<section class="panel hero"><h2>In vs out · today</h2>
+      return `<section class="panel hero balance-plate"><div class="balance-head"><h2>Energy position · today</h2><span class="balance-live">Live record</span></div>
         <p class="caveat">${esc(b?.say || 'Nothing to draw yet.')}</p></section>`;
     }
-    return `<section class="panel hero"><h2>In vs out · today</h2>
+    return `<section class="panel hero balance-plate"><div class="balance-head"><h2>Energy position · today</h2><span class="balance-live">Needs facts</span></div>
       ${factsForm(b, d.profile_known || {})}</section>`;
   }
 
@@ -5740,9 +6019,9 @@ function hero(d) {
   // they need. So until something is logged, the burn is shown as the burn and
   // no net is drawn at all.
   if (!b.calories_in) {
-    return `<section class="panel hero">
-      <h2>In vs out · today</h2>
-      <p class="net big">${n(b.calories_out)}<span class="netword">to burn today</span></p>
+    return `<section class="panel hero balance-plate">
+      <div class="balance-head"><h2>Energy position · today</h2><span class="balance-live">Live record</span></div>
+      <p class="balance-empty">${n(b.calories_out)}<span>to burn today · whole-day estimate</span></p>
       ${burnSplit(b)}
       <p class="caveat">${b.active_source === 'awaiting_device'
         ? 'Your watch hasn\'t sent today, so only the resting figure is counted — nothing is projected. Open the Wrought app and today\'s movement fills in.'
@@ -5751,31 +6030,24 @@ function hero(d) {
     </section>`;
   }
 
-  const R = 86, C = 2 * Math.PI * R;
   const ratio = Math.max(0, Math.min(1.35, b.calories_in / (b.calories_out || 1)));
-  const dash = Math.min(1, ratio) * C;
   // Over the day's burn reads warm, under reads cool. Neither is praise or
   // scolding — calories are not good or bad in themselves, and shading them
   // as a score is how a food log turns into something worse.
-  const col = ratio > 1.02 ? 'var(--heat-3)' : ratio < .92 ? 'var(--temper)' : 'var(--amber)';
   const word = b.direction === 'deficit' ? 'under' : b.direction === 'surplus' ? 'over' : 'level';
   const gap = Math.abs(Math.round(b.net ?? 0));
+  const rail = Math.max(2, Math.min(50, Math.abs(1 - ratio) * 100));
 
-  return `<section class="panel hero ${word}">
-    <h2>In vs out · today</h2>
-    <svg viewBox="0 0 220 220" role="img" aria-label="${esc(b.say || '')}">
-      <g transform="rotate(-90 110 110)" fill="none" stroke-width="15">
-        <circle class="track" cx="110" cy="110" r="${R}"/>
-        <circle class="fill" cx="110" cy="110" r="${R}" stroke="${col}"
-                stroke-dasharray="${dash.toFixed(1)} ${C.toFixed(1)}" style="--circ:${C.toFixed(1)}"/>
-      </g>
-      <text class="net" x="110" y="108" text-anchor="middle" fill="var(--bright)"
-            dominant-baseline="middle">${n(gap)}</text>
-      <text class="netword" x="110" y="140" text-anchor="middle" fill="currentColor">${word}</text>
-    </svg>
-    <div class="legs">
-      <span class="leg"><b>${n(b.calories_in)}</b><span>eaten</span></span>
-      <span class="leg"><b>${n(b.calories_out)}</b><span>burned</span></span>
+  return `<section class="panel hero balance-plate ${word}" aria-label="${esc(b.say || '')}">
+    <div class="balance-head"><h2>Energy position · today</h2><span class="balance-live">Live record</span></div>
+    <div class="balance-reading">
+      <strong class="balance-number">${n(gap)}</strong>
+      <span class="balance-state ${word}">${word}<br>${b.approximate ? 'roughly' : 'recorded'}</span>
+    </div>
+    <div class="balance-rail ${word}" style="--balance:${rail.toFixed(1)}%" role="img" aria-label="${esc(b.say || '')}"><i></i></div>
+    <div class="balance-totals">
+      <div class="balance-total"><span>Eaten</span><b>${n(b.calories_in)}</b></div>
+      <div class="balance-total"><span>Burned</span><b>${n(b.calories_out)}</b></div>
     </div>
     ${burnSplit(b)}
     ${restingBasis(b)}
@@ -7797,10 +8069,11 @@ function dailyClosePanel(d) {
 
 function recordIntro(d) {
   return `<section class="record-intro">
-    <p class="record-kicker">Your record · ${esc(d.today?.date || 'today')}</p>
-    <h1 class="record-title"><span>Today,</span> <em>in one look.</em></h1>
-    <p class="record-lead">What happened. What it moved. What the longer record says underneath it.</p>
-    <div class="record-rule" aria-hidden="true"></div>
+    <div class="record-intro-main">
+      <p class="record-kicker">WROUGHT / DAILY · ${esc(d.today?.date || 'today')}</p>
+      <h1 class="record-title"><span>Today’s</span> <em>record.</em></h1>
+    </div>
+    <p class="record-lead">What happened, what it moved, and what the longer record proves underneath it.</p>
   </section>`;
 }
 
@@ -7953,8 +8226,10 @@ function render(d) {
   // THE DAY IN PLAIN WORDS, before any more arithmetic — what was eaten and
   // what was trained, each with its own number. The founder's ask, verbatim:
   // "you should be speaking to it underneath — what did you log today?"
+  out.push('<div class="daily-ledger">');
   out.push(foodTodayPanel(d));
   out.push(trainingTodayPanel(d));
+  out.push('</div>');
   out.push(recordCheckPanel(d));
 
   // Directly under the day, because that is where the range buttons were doing
@@ -9540,7 +9815,30 @@ $('downgo').onclick = () => location.reload();
 // It is deliberately not awaited — a worker that fails to install must never
 // hold up the dashboard drawing.
 if ('serviceWorker' in navigator) {
-  addEventListener('load', () => navigator.serviceWorker.register('/sw.js').catch(() => {}));
+  let changingWorker = false;
+  let interfaceDirty = false;
+  let workerLastCheck = 0;
+  document.addEventListener('input', () => { interfaceDirty = true; }, { capture: true });
+  const updateWorker = () => {
+    const now = Date.now();
+    if (now - workerLastCheck < 30000) return Promise.resolve();
+    workerLastCheck = now;
+    return navigator.serviceWorker.register('/sw.js', { updateViaCache: 'none' })
+      .then(reg => reg.update()).catch(() => {});
+  };
+  addEventListener('load', () => navigator.serviceWorker.register('/sw.js', { updateViaCache: 'none' }).catch(() => {}));
+  addEventListener('pageshow', updateWorker);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) updateWorker(); });
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (changingWorker) return;
+    changingWorker = true;
+    if (interfaceDirty) {
+      document.getElementById('update-ready').hidden = false;
+      return;
+    }
+    location.reload();
+  });
+  document.getElementById('apply-update').addEventListener('click', () => location.reload());
 }
 
 wirePageProgress();

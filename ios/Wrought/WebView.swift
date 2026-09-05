@@ -21,11 +21,18 @@ final class WebViewStore: NSObject, ObservableObject {
         config.allowsInlineMediaPlayback = true
         webView = WKWebView(frame: .zero, configuration: config)
         webView.isOpaque = false
-        webView.backgroundColor = UIColor(red: 0.078, green: 0.067, blue: 0.059, alpha: 1)
+        webView.backgroundColor = UIColor(red: 0.941, green: 0.910, blue: 0.855, alpha: 1)
         webView.scrollView.backgroundColor = webView.backgroundColor
         super.init()
         webView.navigationDelegate = self
-        webView.load(URLRequest(url: URL(string: "https://wrought.fit/app.html")!))
+        // The native shell persists cookies and localStorage, but the HTML is
+        // deliberately fetched fresh. Otherwise relaunching the app can revive
+        // an old interface from WebKit's protocol cache after the site shipped.
+        let request = URLRequest(
+            url: URL(string: "https://wrought.fit/app.html")!,
+            cachePolicy: .reloadIgnoringLocalCacheData
+        )
+        webView.load(request)
     }
 
     /// The Supabase session access token, read from the page's own storage.
@@ -90,7 +97,11 @@ struct WebView: UIViewRepresentable {
         let store: WebViewStore
         init(store: WebViewStore) { self.store = store }
         @objc func reload() {
-            store.webView.reload()
+            if let url = store.webView.url {
+                store.webView.load(URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData))
+            } else {
+                store.webView.reload()
+            }
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
                 self.store.webView.scrollView.refreshControl?.endRefreshing()
             }

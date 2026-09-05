@@ -11,12 +11,10 @@
 // yesterday's numbers with confidence, so anything carrying data is network
 // first and only falls back to cache when the network genuinely fails.
 
-const SHELL = 'wrought-shell-v6';
+const SHELL = 'wrought-shell-v7';
 
 // Only the frame: markup, icons, manifest. No API responses ever.
 const SHELL_FILES = [
-  '/',
-  '/index.html',
   '/app.html',
   '/connect.html',
   '/shell.css',
@@ -40,7 +38,9 @@ self.addEventListener('install', (e) => {
 self.addEventListener('activate', (e) => {
   e.waitUntil(
     caches.keys()
-      .then(keys => Promise.all(keys.filter(k => k !== SHELL).map(k => caches.delete(k))))
+      .then(keys => Promise.all(keys
+        .filter(k => k.startsWith('wrought-shell-') && k !== SHELL)
+        .map(k => caches.delete(k))))
       .then(() => self.clients.claim())
   );
 });
@@ -58,6 +58,22 @@ self.addEventListener('fetch', (e) => {
     || url.origin !== location.origin;
 
   if (live || e.request.method !== 'GET') return;
+
+  // The marketing page and the recovery route are mutable documents, not app
+  // shell. Keeping either in Cache Storage is how a deployed redesign can be
+  // perfectly live on the server and still look unchanged on a saved icon.
+  // Network-only here; the installed product itself remains available offline.
+  const alwaysFresh = url.pathname === '/'
+    || url.pathname === '/index.html'
+    || url.pathname === '/refresh.html'
+    || url.pathname === '/sw.js';
+  if (alwaysFresh) {
+    const fresh = new Request(e.request, { cache: 'no-store' });
+    e.respondWith(fetch(fresh).catch(() => e.request.mode === 'navigate'
+      ? new Response(OFFLINE, { status: 503, headers: { 'Content-Type': 'text/html; charset=utf-8' } })
+      : Response.error()));
+    return;
+  }
 
   // A page is never served from cache while the network is reachable. The
   // fetch below is already network-first, but Safari will happily hold a
@@ -103,11 +119,11 @@ const OFFLINE = `<!doctype html><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>WROUGHT — offline</title>
 <style>body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;
-background:#14110F;color:#F4EFE9;font:16px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+background:#F0E8DA;color:#171411;font:16px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
 text-align:center;padding:28px}p{color:#9A8D84;margin:8px 0 0;font-size:14px}
 h1{font-family:Rockwell,"Roboto Slab",Georgia,serif;font-size:26px;margin:0;letter-spacing:.02em}
-button{margin-top:20px;padding:13px 20px;border:0;border-radius:11px;background:#F26419;
-color:#1A0A02;font:inherit;font-weight:700;font-size:15px;cursor:pointer}</style>
+button{margin-top:20px;padding:13px 20px;border:1px solid #171411;border-radius:0;background:#F26419;
+color:#171411;box-shadow:4px 4px 0 #171411;font:inherit;font-weight:700;font-size:15px;cursor:pointer}</style>
 <div><h1>No connection</h1>
 <p>Your record is safe on the server. This page just cannot reach it right now.</p>
 <button onclick="location.reload()">Try again</button></div>`;
