@@ -4637,7 +4637,7 @@ await test('"where am I at" is the whole day — every item, the session, the wo
   assert.match(r.say, /TRAINED — nothing logged/);
   assert.match(r.say, /WORKED — animal care, 3h \(3h on task\) — 1,556 kcal, estimated/);
   assert.match(r.say, /MOVED — 8,587 steps · 6.2 km · 740 active kcal \(watch\)/);
-  assert.match(r.say, /OUT — 2,473 resting \+ 0 training \+ 1,556 work\/moving = 4,029 out/);
+  assert.match(r.say, /OUT — 2,473 resting \+ 0 training \+ 1,556 work\/moving = 4,029/);
   assert.match(r.say, /NET — 1,410 in − 4,029 out = 2,619 down so far — the burn is the whole day/);
   assert.match(r.say, /set aside: Your watch/);
   assert.match(r.say, /GOALS — Calories: about 1,723 a day: 1,410 kcal of 1,723 kcal \(82%, hit\) · 6,000 steps a day: 8,587 of 6,000 \(143%, hit\)/);
@@ -4655,7 +4655,11 @@ await test('"where am I at" is the whole day — every item, the session, the wo
   assert.equal(bare.partial, false);
   // The file computes nothing of its own — every figure is another tool's.
   const src = readFileSync(new URL('../netlify/functions/lib/dayread.js', import.meta.url), 'utf8');
-  assert.ok(!/from '\.\/(training|activity|wrought|receipt)\.js'|\* 7700/.test(src), 'the readout is pricing something itself');
+  assert.ok(!/from '\.\/(training|activity|wrought)\.js'|\* 7700/.test(src), 'the readout is pricing something itself');
+  // The one thing it borrows is the receipt's RENDERER for the burn — words,
+  // not arithmetic — so the receipt and the whole-day read cannot account
+  // for the same burn two different ways.
+  assert.match(src, /import \{ outSay \} from '\.\/receipt\.js'/);
 
   // WIRED. get_day is the whole day and says so; a log whose sentence asked
   // where the day stands carries the same read; both tell the model to read
@@ -4692,6 +4696,76 @@ await test('"where am I at" is the whole day — every item, the session, the wo
   assert.match(lg, /work_check: \{/);
   assert.match(lg, /never re-type it on your own — a long hike is a real workout/);
   assert.ok(!/event_type = 'activity'|event_type: 'activity'/.test(lg.slice(lg.indexOf('const workLike'))), 'log re-types a workout on its own');
+});
+
+await test('every calorie in the burn is accounted for — each input on its own line, counted or set aside, with the reason', async () => {
+  // The founder, reading "Estimated burn: 3,426 — 2,473 resting + 953
+  // active" on his phone: "they should tell you how much your burn was. It
+  // should be more specific — every calorie has to be accounted for." The
+  // 953 was the watch's day; the three hours he had logged came to more, and
+  // nothing said which was taken or what the other came to.
+  const { energyBalance } = await import('../netlify/functions/lib/training.js');
+  const { dayReceipt, outSay } = await import('../netlify/functions/lib/receipt.js');
+  const { dayReadout } = await import('../netlify/functions/lib/dayread.js');
+  const profile = { height_cm: 191, birth_year: 1982, sex: 'male', activity_level: 'moderate' };
+  const activities = [{ event_type: 'activity', summary: 'animal care, 3h', detail: { label: 'animal care', key: 'animal_care', met: 4.3, hours: 3, kcal: 1556 } }];
+  const workouts = [{ event_type: 'workout', summary: 'S-Tier', detail: { minutes: 50, calories: 400, calories_source: 'estimate' } }];
+  const day = {
+    date: '2026-09-07',
+    log: [{ type: 'food', at: '10:15pm', summary: 'pasta with sausage', calories: 770, estimated: true }],
+    food: { calories: 770, protein_g: 30, carbs_g: 90, fat_g: 25, estimated: true, meals_uncounted: 0 },
+    device: { steps: 9151, active_calories: 953 },
+    activity: { count: 1, say: 'animal care, 3h' },
+  };
+
+  // THE SHIFT OUTWEIGHS THE WATCH. Both figures on the page, one counted,
+  // one set aside with the reason, the steps beside the watch's figure, and
+  // the resting line shows its working.
+  let balance = energyBalance({ profile, weightKg: 150, caloriesIn: 770, activeCalories: 953, foodEstimated: true, workouts, activities });
+  assert.equal(balance.device_active, 953);
+  assert.equal(balance.logged_work, 1556);
+  assert.equal(balance.device_less_training, 953 - 400);
+  let receipt = dayReceipt({ day, balance, date: '2026-09-07', today: '2026-09-07' });
+  let out = outSay(receipt.out).join('\n');
+  assert.match(out, /Resting — 2,479 · 150kg, 191cm, age 44, male — Mifflin-St Jeor/);
+  assert.match(out, /S-Tier \(50 min\) — 400, estimated/);
+  assert.match(out, /animal care, 3h \(3h on task\) — 1,556, estimated — priced from hours on task/);
+  assert.match(out, /your watch's active energy for the whole day \(9,151 steps\) — 953, set aside — lower than the work you logged once the 400 of training inside it is taken out \(553\)/);
+  assert.match(out, /Not added together: that would count the same hours twice/);
+  assert.equal(receipt.out.lines_sum, receipt.out.total, 'the three counted lines still sum to the total');
+  // The whole-day read carries the same block, verbatim, under the equation.
+  const read = dayReadout({ day, balance, receipt, scored: [], week: null, date: '2026-09-07', today: '2026-09-07' });
+  for (const line of outSay(receipt.out)) assert.ok(read.say.includes(line), `the readout dropped: ${line}`);
+  assert.match(read.note, /EVERY INPUT UNDER IT/);
+  assert.match(read.note, /Never collapse the burn into "resting \+ active"/);
+  assert.ok(read.out.lines[2].of.length === 2, 'the structured read carries the inputs, not just the counted figure');
+
+  // THE WATCH OUTWEIGHS THE SHIFT: the watch counted, the shift set aside.
+  balance = energyBalance({ profile, weightKg: 150, caloriesIn: 770, activeCalories: 2400, foodEstimated: true, workouts, activities });
+  receipt = dayReceipt({ day, balance, date: '2026-09-07', today: '2026-09-07' });
+  out = outSay(receipt.out).join('\n');
+  assert.match(out, /your watch's active energy for the whole day \(9,151 steps\) — 2,400, measured — 400 of it is the training counted above, leaving 2,000 here/);
+  assert.match(out, /animal care, 3h \(3h on task\) — 1,556, set aside — your watch counted more for the whole day/);
+
+  // NO WATCH: the shift, the sedentary floor for the rest of the day, and
+  // the training taken back out — the inputs genuinely add to the line.
+  balance = energyBalance({ profile, weightKg: 150, caloriesIn: 770, activeCalories: 0, foodEstimated: true, workouts, activities });
+  assert.equal(balance.sedentary_floor, Math.round(2479 * 0.2));
+  receipt = dayReceipt({ day: { ...day, device: {} }, balance, date: '2026-09-07', today: '2026-09-07' });
+  out = outSay(receipt.out).join('\n');
+  assert.match(out, /the rest of the day at the sedentary floor — 496/);
+  assert.match(out, /less the training counted above — -400/);
+  const work = receipt.out.lines[2];
+  assert.equal(work.of.reduce((s, o) => s + o.calories, 0), work.calories, 'with no watch the inputs sum to the counted line');
+
+  // A PROJECTION says it is one; a watch that has not sent is a stated
+  // absence, never a zero standing in for a day.
+  balance = energyBalance({ profile, weightKg: 150, caloriesIn: 770, activeCalories: 0, foodEstimated: true, workouts: [], activities: [] });
+  receipt = dayReceipt({ day: { ...day, device: {}, activity: null }, balance, date: '2026-09-07', today: '2026-09-07' });
+  assert.match(outSay(receipt.out).join('\n'), /projected from your activity level — \d[\d,]* — nothing measured this/);
+  balance = energyBalance({ profile, weightKg: 150, caloriesIn: 770, activeCalories: 0, foodEstimated: true, workouts: [], activities: [], deviceExpected: true });
+  receipt = dayReceipt({ day: { ...day, device: {}, activity: null }, balance, date: '2026-09-07', today: '2026-09-07' });
+  assert.match(outSay(receipt.out).join('\n'), /your watch's active energy for the whole day — 0, set aside — not sent today; nothing is projected in its place/);
 });
 
 await test('a custom ChatGPT reaches the same tools by Actions, with the sheet it will actually read', async () => {
@@ -7010,9 +7084,11 @@ await test('four hours of work comes back with what it was worth', () => {
   const work = r.out.lines.find(l => l.what === 'Work and moving about');
   assert.equal(work.calories, 1100);
   // Itemised underneath, with the hours on it.
-  assert.deepEqual(work.of, [{ what: 'Petting zoo, 4h', hours: 4, calories: 1050 }]);
+  const shift = work.of.find(o => o.what === 'Petting zoo, 4h');
+  assert.deepEqual({ what: shift.what, hours: shift.hours, calories: shift.calories, counted: shift.counted },
+    { what: 'Petting zoo, 4h', hours: 4, calories: 1050, counted: true });
   // And the shift is visible in the spoken form, not just the structure.
-  assert.match(r.say, /Petting zoo, 4h \(4h\) — 1,050/);
+  assert.match(r.say, /Petting zoo, 4h \(4h on task\) — 1,050/);
   assert.match(r.say, /NET — 330 in − 4,933 out = 4,603 down/);
 
   // Every eaten item keeps its own figure — the same doctrine, the other side.

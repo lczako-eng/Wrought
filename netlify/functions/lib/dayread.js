@@ -20,6 +20,8 @@
 // every figure is the receipt's, scoreGoals', dayFacts' or weekSoFar's own,
 // which is what lets a line here never disagree with a panel or a brief.
 
+import { outSay } from './receipt.js';
+
 const n = v => (Number.isFinite(Number(v)) ? Math.round(Number(v)) : null);
 const money = v => (n(v) == null ? '—' : n(v).toLocaleString());
 
@@ -72,9 +74,14 @@ export function dayReadout({ day = null, balance = null, receipt = null, scored 
     ? `MOVED — ${[moved.steps != null ? `${money(moved.steps)} steps` : null, moved.distance_km != null ? `${Math.round(moved.distance_km * 10) / 10} km` : null, moved.active_calories != null ? `${money(moved.active_calories)} active kcal (watch)` : null].filter(Boolean).join(' · ')}`
     : 'MOVED — the watch has not sent today (nothing is projected)');
 
-  // ── OUT / NET — the receipt's equations, verbatim ─────────────────────────
+  // ── OUT / NET — the receipt's own accounting, every input on its line ─────
+  // "2,473 resting + 953 active" was the equation alone, and the founder's
+  // answer was "every calorie has to be accounted for". The block under the
+  // equation is the receipt's — the resting basis, each session, each shift,
+  // the watch's day with its steps, and which of them counted — rendered by
+  // the one function the receipt itself uses, so the two cannot differ.
   if (receipt?.out) {
-    lines.push(`OUT — ${receipt.math.out}`);
+    lines.push(...outSay(receipt.out));
     lines.push(`NET — ${receipt.math.net}${partial ? ' so far — the burn is the whole day, the food is only what is logged yet' : ''}`);
     for (const s of receipt.set_aside || []) lines.push(`  set aside: ${s}`);
   } else {
@@ -101,14 +108,14 @@ export function dayReadout({ day = null, balance = null, receipt = null, scored 
     partial,
     in: inn,
     training, work, moved,
-    out: receipt?.out ? { total: receipt.out.total, lines: receipt.out.lines.map(l => ({ what: l.what, calories: l.calories })) } : null,
+    out: receipt?.out ? { total: receipt.out.total, lines: receipt.out.lines.map(l => ({ what: l.what, calories: l.calories, ...(l.basis ? { basis: l.basis } : {}), ...(l.of?.length ? { of: l.of } : {}) })) } : null,
     net: receipt?.net ?? null,
     set_aside: receipt?.set_aside || [],
     goals,
     week: week ? { say: week.say, done: week.done ?? null, target: week.target ?? null } : null,
     estimated: true,
     say: lines.join('\n'),
-    note: 'THIS IS THE WHOLE DAY. Read it out LINE BY LINE as it stands — every item eaten with its own calories, the session, the work, the steps, the burn added up, the net with its sign, each goal with its percentage, the week. Never collapse it into a sentence, never quote only a total, never add anything up yourself, never answer "where am I at" from the food alone. ' +
+    note: 'THIS IS THE WHOLE DAY. Read it out LINE BY LINE as it stands — every item eaten with its own calories, the session, the work, the steps, the burn added up WITH EVERY INPUT UNDER IT (the resting figure and what it is computed from, each session, each shift with its hours, the watch\'s figure for the day, and which of them counted and which was set aside and why), the net with its sign, each goal with its percentage, the week. Never collapse the burn into "resting + active" — every calorie is accounted for on its own line and that is the point. Never quote only a total, never add anything up yourself, never answer "where am I at" from the food alone. ' +
       (partial ? 'Say the day is not over: the burn is a whole-day figure and the food is only what has been logged so far. ' : '') +
       'Every figure is an estimate and is said to be one.',
   };
