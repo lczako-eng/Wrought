@@ -561,6 +561,13 @@ export function energyBalance({
   const logged = Number(activity.kcal) || 0;
 
   let train = 0, other = 0, activeSource;
+  // EVERY INPUT TO "OTHER", KEPT. The founder, handed "2,473 resting + 953
+  // active": "every calorie has to be accounted for." The counted figure is
+  // the larger of the watch and the logged work, or the logged work plus a
+  // sedentary floor, or a projection — and which one, and what the other
+  // came to, was known here and thrown away. The receipt needs them to say
+  // where each calorie came from, so they ride out with the totals.
+  let fromDevice = 0, floor = 0, viaLevel = 0;
 
   if (measured > 0) {
     // Apple's active energy is everything above resting, workouts included —
@@ -568,7 +575,7 @@ export function energyBalance({
     // zero: a watch that reported less than the session it recorded is a watch
     // disagreeing with itself, and a negative "other" is nonsense on a screen.
     train = Math.min(training.kcal, measured);
-    const fromDevice = Math.max(0, measured - train);
+    fromDevice = Math.max(0, measured - train);
 
     // THE LARGER OF THE TWO, not the device outright, and not the sum.
     //
@@ -595,8 +602,8 @@ export function energyBalance({
     // below what the multiplier alone would have said, so logging a shift can
     // never make somebody's burn go DOWN.
     train = training.kcal;
-    const floor = Math.round(restKcal * (ACTIVITY.sedentary.mult - 1));
-    const viaLevel = level ? Math.round(restKcal * (level.mult - 1)) : 0;
+    floor = Math.round(restKcal * (ACTIVITY.sedentary.mult - 1));
+    viaLevel = level ? Math.round(restKcal * (level.mult - 1)) : 0;
     other = Math.max(logged + floor - train, viaLevel - train, 0);
     activeSource = 'logged';
   } else if (deviceExpected) {
@@ -610,7 +617,7 @@ export function energyBalance({
     activeSource = 'awaiting_device';
   } else {
     train = training.kcal;
-    const viaLevel = level ? Math.round(restKcal * (level.mult - 1)) : 0;
+    viaLevel = level ? Math.round(restKcal * (level.mult - 1)) : 0;
     other = Math.max(0, viaLevel - train);
     activeSource = level ? 'activity_level' : train > 0 ? 'training_only' : 'none';
   }
@@ -673,6 +680,13 @@ export function energyBalance({
     // without recomputing anything — recomputation is how a screen and a
     // total end up quoting two different figures for the same session.
     training_detail: training,
+    // The inputs to "other", so a receipt can account for every calorie in it
+    // rather than quoting the one that won. Zero means "not in play today".
+    device_active: measured,
+    device_less_training: fromDevice,
+    logged_work: logged,
+    sedentary_floor: floor,
+    level_projection: viaLevel,
     ...(trainingClamped ? { training_clamped: trainingClamped } : {}),
     ...(activity.count ? { logged_activity: activity } : {}),
     say: `Roughly ${inn} in, about ${out} out (${parts.join(' · ')}) — ` +

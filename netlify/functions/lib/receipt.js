@@ -104,6 +104,9 @@ export function dayReceipt({ day = null, balance = null, date = null, today = nu
     {
       what: 'Resting',
       calories: n(balance.resting_burn),
+      // The working, on the line. "2,473 resting" with nothing beside it is
+      // the figure the founder could not audit and stopped believing.
+      ...(balance.resting_basis?.say ? { basis: balance.resting_basis.say } : {}),
       note: balance.resting_source === 'device'
         ? 'your watch\'s own basal figure for today'
         : 'estimated from your height, weight, age and sex — the whole day, not what has been spent so far',
@@ -113,18 +116,16 @@ export function dayReceipt({ day = null, balance = null, date = null, today = nu
       calories: n(balance.training_burn),
       ...(t.entries?.length ? { of: t.entries.map(e => ({
         what: e.summary, minutes: e.minutes, ...(e.km ? { km: e.km } : {}), calories: e.kcal,
-        ...(e.source === 'uncounted' ? { counts_as: 0, why: e.why }
-          : e.source === 'distance' ? { from: 'distance', why: e.why }
-          : { from: e.source }),
+        ...(e.source === 'uncounted' ? { counts_as: 0, counted: false, why: e.why }
+          : e.source === 'distance' ? { from: 'distance', counted: true, why: e.why }
+          : { from: e.source, counted: true }),
       })) } : {}),
       ...(balance.training_burn === 0 && !t.entries?.length ? { note: 'nothing logged' } : {}),
     },
     {
       what: 'Work and moving about',
       calories: n(balance.other_burn),
-      ...(a.entries?.length ? { of: a.entries.map(e => ({
-        what: e.summary, hours: e.hours, calories: n(e.kcal),
-      })) } : {}),
+      of: otherInputs(balance, a, day),
       note: otherNote(balance, a),
     },
   ];
@@ -222,6 +223,95 @@ function shortName(what) {
   return 'work/moving';
 }
 
+// EVERY CALORIE IN "OTHER", ACCOUNTED FOR.
+//
+// The founder, reading "2,473 resting + 953 active" on his phone: "they
+// should tell you how much your burn was. It should be more specific — every
+// calorie has to be accounted for." The 953 was the watch's day; the three
+// hours he had logged came to more, and nothing on the reply said which had
+// been taken or what the other came to. A figure that won an argument the
+// reader never saw is a figure they stop believing.
+//
+// So the counted line is broken into its inputs: each logged shift, the
+// watch's active energy (with the steps that came with it), the sedentary
+// floor or the level projection when those are what filled the day — each
+// marked counted or set aside, with the reason. They are inputs, not further
+// lines: the larger of two figures wins here, and pretending both add up to
+// the total is the lie this file exists to avoid.
+function otherInputs(balance, a, day) {
+  const money = v => n(v).toLocaleString();
+  const steps = day?.device?.steps;
+  const watchLabel = `your watch's active energy for the whole day${steps ? ` (${money(steps)} steps)` : ''}`;
+  const train = n(balance.training_burn);
+  const inputs = [];
+
+  const shifts = (a.entries || []).map(e => ({ what: e.summary, hours: e.hours, calories: n(e.kcal), estimated: true }));
+
+  switch (balance.active_source) {
+    case 'logged_over_device':
+      for (const s of shifts) inputs.push({ ...s, counted: true, why: 'priced from hours on task against a standard effort table' });
+      inputs.push({
+        what: watchLabel, calories: n(balance.device_active), measured: true, counted: false,
+        why: `lower than the work you logged${train ? ` once the ${money(train)} of training inside it is taken out (${money(balance.device_less_training)})` : ''} — a wrist does not see carrying, so the logged figure is the one used. Not added together: that would count the same hours twice`,
+      });
+      break;
+    case 'device':
+      inputs.push({
+        what: watchLabel, calories: n(balance.device_active), measured: true, counted: true,
+        ...(train ? { why: `${money(train)} of it is the training counted above, leaving ${money(balance.device_less_training)} here` } : {}),
+      });
+      for (const s of shifts) inputs.push({ ...s, counted: false, why: 'your watch counted more for the whole day, so its figure is the one used; the two are not added — same hours' });
+      break;
+    case 'logged':
+      for (const s of shifts) inputs.push({ ...s, counted: true, why: 'priced from hours on task against a standard effort table' });
+      inputs.push({ what: 'the rest of the day at the sedentary floor', calories: n(balance.sedentary_floor), counted: true, why: 'the hours not logged as work, charged at the lowest activity multiplier' });
+      if (train) inputs.push({ what: 'less the training counted above', calories: -train, counted: true });
+      if (n(balance.level_projection) - train > n(balance.logged_work) + n(balance.sedentary_floor) - train) {
+        inputs.push({ what: 'your activity level\'s projection', calories: n(balance.level_projection), counted: true, why: 'higher than the work plus the floor, so it stands — logging work never makes the burn go down' });
+      }
+      break;
+    case 'activity_level':
+      inputs.push({ what: 'projected from your activity level', calories: n(balance.level_projection), counted: true, why: 'nothing measured this — it is the same number all day' });
+      if (train) inputs.push({ what: 'less the training counted above', calories: -train, counted: true });
+      break;
+    case 'awaiting_device':
+      inputs.push({ what: watchLabel, calories: 0, counted: false, why: 'not sent today; nothing is projected in its place' });
+      break;
+    default:
+      break;
+  }
+  return inputs;
+}
+
+/**
+ * The OUT block as words, every input on its own line with what it is, how
+ * much it came to, and whether it counted. Shared by the receipt's own read
+ * and the whole-day read, so the two can never account for the burn
+ * differently.
+ */
+export function outSay(out) {
+  const money = v => n(v).toLocaleString();
+  const lines = [];
+  if (!out) {
+    lines.push('OUT — not known yet (needs your height, weight and birth year)');
+    return lines;
+  }
+  lines.push(`OUT — ${out.lines.map(l => `${money(l.calories)} ${shortName(l.what)}`).join(' + ')} = ${money(out.total)}`);
+  for (const l of out.lines) {
+    const tail = l.basis ? ` · ${l.basis}` : l.note && !(l.of || []).length ? ` · ${l.note}` : '';
+    lines.push(`  ${l.what} — ${money(l.calories)}${tail}`);
+    for (const o of l.of || []) {
+      const how = o.hours ? `${o.hours}h on task` : o.minutes ? `${o.minutes} min` : o.km ? `${o.km} km` : null;
+      const tag = o.counted === false ? 'set aside' : o.measured ? 'measured' : o.estimated || o.from === 'estimate' || o.from === 'distance' ? 'estimated' : o.from === 'device' ? 'watch' : null;
+      lines.push(`    ${o.what}${how ? ` (${how})` : ''} — ${money(o.calories)}${tag ? `, ${tag}` : ''}${o.why ? ` — ${o.why}` : ''}`);
+    }
+    // The line's note only when the inputs have not already said it — a
+    // reason stated twice reads as a system unsure of itself.
+    if ((l.of || []).length && l.note && !(l.of || []).some(o => o.why)) lines.push(`    → ${l.note}`);
+  }
+  return lines;
+}
+
 function otherNote(balance, a) {
   switch (balance.active_source) {
     case 'logged':             return 'from the work you logged, plus the rest of the day at the sedentary floor';
@@ -245,23 +335,13 @@ function receiptSay(inn, out, net, partial = false) {
     lines.push(`  ${l.what} — ${l.calories == null ? 'no calories on it' : money(l.calories)}`);
   }
 
-  if (!out) {
-    lines.push('OUT — not known yet (needs your height, weight and birth year)');
-    return lines.join('\n');
-  }
-
   // The add-up is ON the total line — "my basal rate should be on there, plus
   // what I burnt". These are the same three counted figures as the lines
   // below, which the harness holds to sum exactly, so the equation can never
-  // disagree with its own receipt.
-  lines.push(`OUT — ${out.lines.map(l => `${money(l.calories)} ${shortName(l.what)}`).join(' + ')} = ${money(out.total)}`);
-  for (const l of out.lines) {
-    lines.push(`  ${l.what} — ${money(l.calories)}`);
-    for (const o of l.of || []) {
-      const how = o.hours ? `${o.hours}h` : o.minutes ? `${o.minutes} min` : o.km ? `${o.km} km` : null;
-      lines.push(`    ${o.what}${how ? ` (${how})` : ''} — ${money(o.calories)}`);
-    }
-  }
+  // disagree with its own receipt. Every input under each line, with whether
+  // it counted — outSay is the one renderer, shared with the whole-day read.
+  lines.push(...outSay(out));
+  if (!out) return lines.join('\n');
 
   // The subtraction, written out with its plus or minus — never a bare verdict
   // whose working the reader has to reconstruct.

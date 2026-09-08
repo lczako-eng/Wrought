@@ -1778,6 +1778,33 @@ note pointing at another tool, and a note is what a model reads past.
   workout — and the record check still lists it at 150 minutes. His row was
   re-filed by hand through the connector: animal care, 3h, 1,556 kcal.
 
+**Then the next screenshot: *"Estimated burn: 3,426 — 2,473 resting + 953
+active."*** The founder: *"they should tell you how much your burn was. It
+should be more specific — every calorie has to be accounted for."* The 953
+was the watch's day; the three hours he had logged came to more; and the
+reply said neither which had been taken nor what the other came to. The read
+carried the receipt's EQUATION and none of its inputs, so the model had
+exactly the three summed figures to relay — the same failure the receipt
+was built to end, one layer up.
+
+- **`energyBalance` keeps every input to "other"** — `device_active`,
+  `device_less_training`, `logged_work`, `sedentary_floor`,
+  `level_projection` — instead of throwing away everything but the winner.
+- **`otherInputs()` in `lib/receipt.js` lists them under the counted line**,
+  each marked counted or set aside with the reason: the shift priced from
+  hours on task; the watch's active energy for the whole day WITH its steps,
+  set aside as lower once the training inside it is taken out; the
+  sedentary floor for the hours not logged; the training taken back out; a
+  projection named as one; a watch that has not sent as an absence. The
+  resting line carries its basis (*150kg, 191cm, age 44, male — Mifflin-St
+  Jeor*). Inputs, never further lines: the larger of two figures wins here,
+  and the three counted lines still sum to the total exactly.
+- **`outSay()` is the one renderer**, used by the receipt's own `say` and by
+  `dayReadout`, so the whole-day read and the receipt cannot account for
+  the same burn two different ways. The read's note says never to collapse
+  the burn into "resting + active". Tested across shift-over-watch,
+  watch-over-shift, no watch, a projection and a watch that has not sent.
+
 ### A custom ChatGPT — the same tools by Actions, and the sheet it will actually read
 
 `netlify/functions/actions.js` + `lib/gpt_instructions.js` +
@@ -4391,7 +4418,7 @@ self-reporting scale removes the most-abandoned manual entry), then Strava.
 
 ## Conventions
 
-- `npm test` runs `test/harness.mjs` — 719 offline tests, no network, no database.
+- `npm test` runs `test/harness.mjs` — 720 offline tests, no network, no database.
   Run it before every push. It covers the JSON-RPC envelope (which fails as an
   uninformative "could not connect" inside ChatGPT) and all the arithmetic
   (which fails as a confidently wrong number in somebody's verdict).
