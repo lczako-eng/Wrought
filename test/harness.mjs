@@ -4595,6 +4595,105 @@ await test('a target is never quoted without its maintenance', () => {
   assert.match(SERVER_INSTRUCTIONS, /NEVER "maintain"/);
 });
 
+await test('"where am I at" is the whole day — every item, the session, the work, the steps, the burn, the goals, the week', async () => {
+  // The founder at 10:16pm, told "that meal added 770, bringing today to
+  // 1,410": "when I asked for daily totals, it should come with absolutely
+  // everything — exactly what I've eaten, my walk, my burn, goals, what I
+  // did." Every figure was computed in four different tool results; the
+  // question was answered from the one in front of the model.
+  const { dayReadout } = await import('../netlify/functions/lib/dayread.js');
+  const day = {
+    date: '2026-09-07', logged: true,
+    food: { calories: 1410, protein_g: 51, carbs_g: 144, fat_g: 70, meals: 6, estimated: true, meals_uncounted: 0 },
+    log: [
+      { type: 'food', at: '9:54pm', summary: 'half a Tim Hortons sausage-and-egg sandwich', calories: 260, estimated: true },
+      { type: 'food', at: '10:15pm', summary: 'a McDouble', calories: 400, estimated: true },
+      { type: 'activity', at: '10:16pm', summary: 'animal care, 3h' },
+    ],
+    training: { sessions: 0, say: 'Rest day (nothing logged).' },
+    activity: { count: 1, say: 'animal care, 3h' },
+    device: { steps: 8587, active_calories: 740, distance_km: 6.2, as_of: '2026-09-08T01:41:00Z' },
+  };
+  const balance = {
+    known: true, training_detail: { entries: [] },
+    logged_activity: { entries: [{ summary: 'animal care, 3h', hours: 3, kcal: 1556 }] },
+    calories_out: 4029, resting_burn: 2473, training_burn: 0, other_burn: 1556, active_source: 'logged_over_device',
+  };
+  const receipt = {
+    out: { total: 4029, lines: [{ what: 'Resting', calories: 2473 }, { what: 'Training', calories: 0 }, { what: 'Work and moving about', calories: 1556 }] },
+    net: -2619,
+    math: { out: '2,473 resting + 0 training + 1,556 work/moving = 4,029 out', net: '1,410 in − 4,029 out = 2,619 down' },
+    set_aside: ['Your watch\'s figure for the day is lower than the work you logged, so the logged figure is the one used.'],
+  };
+  const scored = [
+    { goal: 'Calories: about 1,723 a day', metric: 'calories', cadence: 'daily', scored: true, target: 1723, actual: 1410, percent: 82, hit: true, over: false, unit: ' kcal' },
+    { goal: '6,000 steps a day', metric: 'steps', cadence: 'daily', scored: true, target: 6000, actual: 8587, percent: 143, hit: true, over: false, unit: '' },
+  ];
+  const week = { say: '1 of 3 sessions this week, 4 days left.', done: 1, target: 3 };
+  const r = dayReadout({ day, balance, receipt, scored, week, date: '2026-09-07', today: '2026-09-07' });
+  const lines = r.say.split('\n');
+  assert.match(lines[0], /^IN — 1,410 kcal · 51g protein · 144g carbs · 70g fat/);
+  assert.match(r.say, /10:15pm a McDouble — 400/);
+  assert.match(r.say, /TRAINED — nothing logged/);
+  assert.match(r.say, /WORKED — animal care, 3h \(3h on task\) — 1,556 kcal, estimated/);
+  assert.match(r.say, /MOVED — 8,587 steps · 6.2 km · 740 active kcal \(watch\)/);
+  assert.match(r.say, /OUT — 2,473 resting \+ 0 training \+ 1,556 work\/moving = 4,029 out/);
+  assert.match(r.say, /NET — 1,410 in − 4,029 out = 2,619 down so far — the burn is the whole day/);
+  assert.match(r.say, /set aside: Your watch/);
+  assert.match(r.say, /GOALS — Calories: about 1,723 a day: 1,410 kcal of 1,723 kcal \(82%, hit\) · 6,000 steps a day: 8,587 of 6,000 \(143%, hit\)/);
+  assert.match(r.say, /WEEK — 1 of 3 sessions this week/);
+  assert.equal(r.partial, true);
+  assert.equal(r.net, -2619);
+  assert.equal(r.moved.steps, 8587);
+  assert.match(r.note, /LINE BY LINE/);
+  assert.match(r.note, /never answer "where am I at" from the food alone/);
+  // No watch is a stated fact, never a zero; no burn says what is missing.
+  const bare = dayReadout({ day: { ...day, device: {} }, balance: { known: false, missing: ['a recent weigh-in'] }, receipt: null, scored: [], week: null, date: '2026-09-07', today: '2026-09-08' });
+  assert.match(bare.say, /MOVED — the watch has not sent today \(nothing is projected\)/);
+  assert.match(bare.say, /OUT — not known yet \(needs a recent weigh-in\)/);
+  assert.match(bare.say, /GOALS — none set/);
+  assert.equal(bare.partial, false);
+  // The file computes nothing of its own — every figure is another tool's.
+  const src = readFileSync(new URL('../netlify/functions/lib/dayread.js', import.meta.url), 'utf8');
+  assert.ok(!/from '\.\/(training|activity|wrought|receipt)\.js'|\* 7700/.test(src), 'the readout is pricing something itself');
+
+  // WIRED. get_day is the whole day and says so; a log whose sentence asked
+  // where the day stands carries the same read; both tell the model to read
+  // it line by line rather than the food total.
+  const mcp = readFileSync(new URL('../netlify/functions/mcp.js', import.meta.url), 'utf8');
+  const gd = mcp.slice(mcp.indexOf('async function getDay('), mcp.indexOf('async function progress('));
+  assert.match(gd, /const full = await fullDayRead\(user\.id, profile, date\)/);
+  assert.match(gd, /day_read: full\.read/);
+  assert.match(gd, /\? full\.read\.say/);
+  const fr = mcp.slice(mcp.indexOf('async function fullDayRead('), mcp.indexOf('async function getDay('));
+  assert.match(fr, /scoreGoals\(goals, day, summary, profile\)/);
+  assert.match(fr, /weekSoFar\(range\.days/);
+  assert.match(fr, /dayReceipt\(\{ day, balance, date, today \}\)/);
+  const lg = mcp.slice(mcp.indexOf('async function log(args, user)'), mcp.indexOf('async function reviewIntakeDays('));
+  assert.match(lg, /const askedForDay = \/where am i\|where do i stand\|totals\?\\b\|how many\|how much\|so far\|everything/);
+  assert.match(lg, /\.\.\.\(fullRead \? \{ day_read: fullRead\.read \} : \{\}\)/);
+  assert.match(lg, /THEY ASKED WHERE THE DAY STANDS: read day_read\.say out LINE BY LINE/);
+  const tool = mcp.slice(mcp.indexOf("name: 'get_day'"), mcp.indexOf("name: 'search_log'"));
+  assert.match(tool, /THE WHOLE DAY in one read/);
+  assert.match(tool, /"daily totals", "give me everything"/);
+  const { GPT_INSTRUCTIONS } = await import('../netlify/functions/lib/gpt_instructions.js');
+  assert.match(GPT_INSTRUCTIONS, /"daily totals", "give me everything", "how am I doing today", "what did I do today" mean get_day/);
+  assert.ok(GPT_INSTRUCTIONS.length <= 8000);
+
+  // A "WORKOUT" THAT READS AS A SHIFT is said on the log reply, never re-typed.
+  const { looksLikeWork } = await import('../netlify/functions/lib/activity.js');
+  assert.equal(looksLikeWork('worked three hours in the Petting Zoo', 180), true);
+  assert.equal(looksLikeWork('shift at the warehouse', null), true);
+  assert.equal(looksLikeWork('workout at the gym', 60), false, '"workout" is not work');
+  assert.equal(looksLikeWork('walked to work', 30), false, 'a walk is training');
+  assert.equal(looksLikeWork('worked on my bench press', 45), false);
+  assert.equal(looksLikeWork('worked 10 minutes in the garden', 10), false, 'ten minutes is not a shift');
+  assert.match(lg, /const workLike = written\.filter\(e => e\.event_type === 'workout' && looksLikeWork\(e\.summary, e\.detail\?\.minutes\)\)/);
+  assert.match(lg, /work_check: \{/);
+  assert.match(lg, /never re-type it on your own — a long hike is a real workout/);
+  assert.ok(!/event_type = 'activity'|event_type: 'activity'/.test(lg.slice(lg.indexOf('const workLike'))), 'log re-types a workout on its own');
+});
+
 await test('a custom ChatGPT reaches the same tools by Actions, with the sheet it will actually read', async () => {
   // ChatGPT does not reliably show the MCP instruction sheet to its model;
   // a custom GPT reads its own Instructions box every turn, capped at 8,000
@@ -6159,7 +6258,7 @@ await test('every caller surfaces what the bridge did, and never swallows it', (
   // would mean training that looks logged and counts for nothing.
   const mcp = readFileSync(new URL('../netlify/functions/mcp.js', import.meta.url), 'utf8');
   for (const [fn, next] of [
-    ['async function log(', 'async function parseLog('],
+    ['async function log(', 'async function reviewIntakeDays('],
     ['async function amendLast(', 'async function structureEntries('],
     ['async function structureEntries(', 'async function undoLast('],
   ]) {

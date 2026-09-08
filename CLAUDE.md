@@ -1741,6 +1741,43 @@ as a trend or turned it into a recommendation. Now:
   answer) puts somebody on the track; so does *"I play hockey"* through
   `set_plan`. Applied to the live database through the connector.
 
+### "Daily totals" is the whole day — and a shift filed as a workout is said, not swallowed
+
+`lib/dayread.js` + `day_read` on `get_day` and on `log` + `looksLikeWork()`
++ `work_check` on `log`. The founder at 10:16pm, told *"that meal added 770,
+bringing today to 1,410"*: *"When I asked for daily totals, it should come
+with absolutely everything — exactly what I've eaten, my walk, my burn, goals,
+and what I did."*
+
+**The vacuum, again.** Every number he asked for was already computed — the
+receipt itemises the burn, `scoreGoals` scores the rings, `dayFacts` holds
+the steps, `weekSoFar` the week — in four different tool results. *"Where am
+I at today"* rode on a `log` call, `log` answers with the food total and a
+note pointing at another tool, and a note is what a model reads past.
+
+- **One read, composed once.** `dayReadout` writes the day as a person thinks
+  of it, line by line: IN with every item and its calories, TRAINED with each
+  session's worth, WORKED with each shift's hours and worth, MOVED with the
+  steps and the watch's active energy (or *"the watch has not sent today"*,
+  never a zero), OUT as the receipt's own equation, NET with its sign and
+  *"so far"* on an open day, what was set aside, GOALS each with its
+  percentage, WEEK. Every figure is another tool's; a test asserts the file
+  prices nothing itself.
+- **`get_day` IS that read now** — its `say` and its description, so
+  *"where am I at"*, *"daily totals"*, *"give me everything"*, *"how am I
+  doing today"* land on the whole day. **And `log` carries it too when the
+  sentence that logged something also asked** (*"…where am I at today?"*),
+  because that is the reply the model is holding.
+- **A "workout" that reads as a shift.** *"worked three hours in the Petting
+  Zoo"* went in as a 180-minute cardio session on the founder's own phone —
+  clamped to what the watch saw, counted toward his training week — in spite
+  of the tool description. `looksLikeWork` (words of work, no words of
+  training, thirty minutes or more) puts `work_check` on the reply with the
+  one-call fix: `log_activity` with hours on task, then `undo_last` naming
+  the workout. **Never re-typed by the server** — a long hike is a real
+  workout — and the record check still lists it at 150 minutes. His row was
+  re-filed by hand through the connector: animal care, 3h, 1,556 kcal.
+
 ### A custom ChatGPT — the same tools by Actions, and the sheet it will actually read
 
 `netlify/functions/actions.js` + `lib/gpt_instructions.js` +
@@ -4354,7 +4391,7 @@ self-reporting scale removes the most-abandoned manual entry), then Strava.
 
 ## Conventions
 
-- `npm test` runs `test/harness.mjs` — 709 offline tests, no network, no database.
+- `npm test` runs `test/harness.mjs` — 719 offline tests, no network, no database.
   Run it before every push. It covers the JSON-RPC envelope (which fails as an
   uninformative "could not connect" inside ChatGPT) and all the arithmetic
   (which fails as a confidently wrong number in somebody's verdict).

@@ -26,7 +26,7 @@ import {
 } from './lib/wrought.js';
 import { allowed } from './lib/membership.js';
 import { pendingVoice } from './lib/voice.js';
-import { activityBurn, EFFORTS } from './lib/activity.js';
+import { activityBurn, EFFORTS, looksLikeWork } from './lib/activity.js';
 import { warmupFor, cooldownFor, sessionProgress } from './lib/warmup.js';
 import { formWatch, cardioProgress, BODY_WORDS } from './lib/form.js';
 import { intakeState, intakeGate, SETUP_URL } from './lib/intake.js';
@@ -61,6 +61,7 @@ import { pickDue } from './lib/morning.js';
 import { athleteRows, athleteRead, TESTS, parseTestValue, ATHLETE_COMMITMENT } from './lib/athlete.js';
 import { resolvePlace, placeEquipment, listPlaces, bumpPlace, applyPlaces, sessionsCanCarryPlace, PLACE_KINDS } from './lib/places.js';
 import { dayReceipt } from './lib/receipt.js';
+import { dayReadout } from './lib/dayread.js';
 import { mealTiming } from './lib/timing.js';
 
 // Newest first. The icons on serverInfo are only honoured by clients speaking
@@ -216,7 +217,7 @@ A RUNNING TOTAL IS THE WHOLE DAY, NEVER THE THING JUST LOGGED. "How many am I at
 
 SAYING SOMETHING WAS SAVED IS A CLAIM ABOUT THE RECORD, AND IT MAY ONLY EVER COME FROM A TOOL. Never say saved, added, logged, updated, changed, removed or "it's on your list" unless a tool call in THIS turn came back and said so. This has already gone wrong in production: "Added, Broski — S-Tier Home Workout is now saved" was answered without save_routine ever being called, and the account held one workout, not two. On a product whose entire promise is that it remembers, a claimed write that never happened is the worst failure there is — worse than a crash, because a crash is visible and this looks exactly like success. Nobody discovers it until they open the dashboard weeks later and their workout is not there. So: if they ask for something to be kept, CALL THE TOOL, in the same turn, before answering — "add that to my list", "save that", "keep it" are instructions, not conversation. Then quote what came back: save_routine returns on_file, which is every saved workout read from the database AFTER the write, and saying the count and the names is the only thing that tells a real save apart from a claimed one. If a call fails, say it failed and what to do — an honest error is worth ten confident sentences. Never write the confirmation first and the tool call later, and never let a long conversation about designing something stand in for having stored it.
 
-BOTH SIDES OF THE SUBTRACTION GET ITEMISED, NOT JUST THE EATING. "What did I do today", "how many calories", "what were those hours worth", "how am I doing on the day", "break it down", "where am I at today", "where do I stand", "including activity", "what's my net", "am I up or down" are answered from the receipt block — which brief, log_activity, energy_balance and get_day all return. ANY QUESTION WITH "INCLUDING ACTIVITY", "MY STEPS", "MY MOVE", "MY NET", OR "WHERE AM I AT" MEANS CALL energy_balance (or brief) — that response carries the workout burn AND the steps AND the watch's active calories, so answering it from a food total alone, or saying a workout has no burn number, is the tool not being called rather than a number that does not exist. The server prices every logged workout from its minutes and their bodyweight when no watch measured it; there is always a number. Read it out LINE BY LINE: every item in with its own calories, then resting, training and work each with their own figure and what each is made of, then the two totals, then the net. Do not collapse it into a sentence, do not quote only the totals, and never add anything up yourself — the lines are there so each one can be argued with separately, which is the only way an estimate is worth anything. LOGGING WORK ALWAYS COMES BACK WITH WHAT IT WAS WORTH: "logged four hours as activity" with no number is the feature failing, because the number is the entire reason to log it. And set_aside is not optional — a figure that looks smaller than somebody's own arithmetic reads as the log having been ignored, so say what was not counted and why.
+BOTH SIDES OF THE SUBTRACTION GET ITEMISED, NOT JUST THE EATING. "What did I do today", "how many calories", "what were those hours worth", "how am I doing on the day", "break it down", "where am I at today", "daily totals", "give me everything", "where do I stand", "including activity", "what's my net", "am I up or down" are answered from the receipt block — which brief, log_activity, energy_balance and get_day all return — and best of all from get_day's day_read — THE WHOLE DAY in one read: every item eaten with its calories, the session and its worth, the work and its worth, the steps, the burn added up, the net, each goal with its percentage, the week. When those words ride on a log, the log reply carries day_read too. ANY QUESTION WITH "INCLUDING ACTIVITY", "MY STEPS", "MY MOVE", "MY NET", OR "WHERE AM I AT" MEANS CALL get_day (or energy_balance, or brief) — that response carries the workout burn AND the steps AND the watch's active calories, so answering it from a food total alone, or saying a workout has no burn number, is the tool not being called rather than a number that does not exist. The server prices every logged workout from its minutes and their bodyweight when no watch measured it; there is always a number. Read it out LINE BY LINE: every item in with its own calories, then resting, training and work each with their own figure and what each is made of, then the two totals, then the net. Do not collapse it into a sentence, do not quote only the totals, and never add anything up yourself — the lines are there so each one can be argued with separately, which is the only way an estimate is worth anything. LOGGING WORK ALWAYS COMES BACK WITH WHAT IT WAS WORTH: "logged four hours as activity" with no number is the feature failing, because the number is the entire reason to log it. And set_aside is not optional — a figure that looks smaller than somebody's own arithmetic reads as the log having been ignored, so say what was not counted and why.
 
 STEPS AND EVERY WATCH READING ARE READ, NEVER ASKED FOR. Steps, active calories, resting heart rate, distance, sleep — these arrive from the person's phone and sit on the record. energy_balance and get_day return them directly (device.steps, device.active_calories, and energy_balance's logged.steps). When somebody says "plus my steps", "include my steps", "add my steps", "what are my steps", or anything asking to fold movement in, CALL energy_balance (or get_day) and READ THE NUMBER OFF IT. NEVER ask them for their step count or any watch figure — the watch already sent it, and asking a connected person for data the connector is holding is the exact failure they will call out: "you should know that you're connected." The ONLY honest "no steps" answer is when the tool itself returns none because the watch has not synced today — and even then you say the watch has not sent yet and to open the app, you never ask them to count. This is not a number you are allowed to collect by asking; it is one you are required to look up.
 
@@ -687,8 +688,8 @@ const TOOLS = [
   },
   {
     name: 'get_day',
-    title: 'Read one day\'s log',
-    description: 'The raw entries for one calendar day with times, plus that day\'s totals — ONE computed figure, never a range. If the user names something that is not among the items, it was never logged: call log for it and read this again rather than adding it up in prose. Use when the user asks what they ate or did on a specific day, or wants to check something was recorded correctly.',
+    title: 'The whole day, read out',
+    description: 'THE WHOLE DAY in one read: every item eaten with its own calories and time, the session and what it was worth, the work and what it was worth, the steps and the watch\'s active energy, the burn added up, the net with its sign, each goal with its percentage, and where the training week stands. "Where am I at", "daily totals", "give me everything", "how am I doing today", "what did I do today", "where do I stand", "break it down", "are they logged" all land here — read day_read.say out LINE BY LINE, never just a food total. Every line is ONE computed figure, never a range. If the user names something that is not among the items, it was never logged: call log for it and read this again rather than adding it up in prose.',
     inputSchema: {
       type: 'object',
       properties: { date: { type: 'string', description: 'YYYY-MM-DD. Defaults to today.' } },
@@ -1447,6 +1448,20 @@ async function log(args, user) {
   const kinds = [...new Set(written.map(e => e.event_type))];
   const day = await dayFacts(user.id, profile, localDateFor(profile.timezone));
 
+  // "WHERE AM I AT TODAY?" RIDING ON THE SAME SENTENCE AS THE LOG. The reply
+  // used to carry the food total and a note pointing at another tool, and the
+  // founder got "that meal added 770, bringing today to 1,410" — no walk, no
+  // burn, no goals. When the words ask for the day, the day comes back whole,
+  // on this reply, because this is the reply the model reads.
+  const askedForDay = /where am i|where do i stand|totals?\b|how many|how much|so far|everything|break it down|my net|up or down|how('?s| is| am i doing)/i.test(text);
+  const fullRead = askedForDay ? await fullDayRead(user.id, profile, localDateFor(profile.timezone), { day }) : null;
+
+  // A "WORKOUT" THAT READS AS A SHIFT. "worked three hours in the Petting Zoo"
+  // went in as a 180-minute cardio session — clamped to what the watch saw and
+  // counted toward the training week. Never re-typed here; said, with the
+  // one-call fix, on the reply the model cannot skip.
+  const workLike = written.filter(e => e.event_type === 'workout' && looksLikeWork(e.summary, e.detail?.minutes));
+
   // Preemptive, on the surface that fires most often. A quiet capture stays
   // quiet — somebody mid-way through a tax question who mentioned ten push-ups
   // did not open a conversation about their training week.
@@ -1501,6 +1516,16 @@ async function log(args, user) {
     // The whole day, in numbers. "How many am I at today" is answered from
     // HERE and never from the item that was just written.
     day_total: dayTotal(day),
+    // And when the sentence asked where the day stands, the WHOLE day — food,
+    // training, work, steps, burn, net, goals, week — from lib/dayread.js.
+    ...(fullRead ? { day_read: fullRead.read } : {}),
+    ...(workLike.length ? {
+      work_check: {
+        entries: workLike.map(e => ({ id: e.id, summary: e.summary, minutes: e.detail?.minutes ?? null })),
+        say: `${workLike.map(e => `"${e.summary}"`).join(' and ')} reads as WORK, not training, and it went in as a workout — so it is capped by what the watch measured and it counts toward the training week.`,
+        fix: 'If it was a shift: call log_activity with the hours ON TASK (not the shift length), then undo_last with a match naming this workout. Work is priced from the MET table against their bodyweight and is never capped by the watch. Ask in one clause; never re-type it on your own — a long hike is a real workout.',
+      },
+    } : {}),
     // The item, then the day — in that order, because that is the order the
     // person is thinking in. Composed here rather than left to the model, the
     // same rule as every other number in this server.
@@ -1516,6 +1541,8 @@ async function log(args, user) {
                 ? ` at ${clockString(localMinutesFor(profile.timezone, new Date(e.occurred_at)))}` : '')).join('; ')}.` +
             (day.food.meals ? ` Today so far: ${day.food.say}.` : ''))
         : null,
+      workLike.length ? `Check: ${workLike.map(e => `"${e.summary}"`).join(' and ')} reads as work rather than training — if it was a shift, say so and it moves to work, priced from the hours.` : null,
+      fullRead ? `\n${fullRead.read.say}` : null,
     ].filter(Boolean).join(' ') || 'Nothing was written.',
     // A named food stored with no macros is barely stored at all, and the model
     // is the only thing that can fix it — it read the words. Asking here, in the
@@ -1527,7 +1554,9 @@ async function log(args, user) {
     ...(bridged.error ? { sets_error: bridged.error } : {}),
     ...(bridged.skipped ? { sets_skipped: bridged.skipped, sets_note: bridged.say } : {}),
     ...(bridged.deduped ? { sets_deduped: true } : {}),
-    note: folded && !folded.error && !written.length
+    note: (fullRead ? 'THEY ASKED WHERE THE DAY STANDS: read day_read.say out LINE BY LINE — every item with its calories, the session, the work, the steps, the burn added up, the net, each goal with its percentage, the week. Never just the food total. ' : '') +
+      (workLike.length ? 'WORK_CHECK FIRST: a workout that reads as a shift is on the record — ask in one clause whether it was work, and if so log_activity with hours on task then undo_last naming the workout. ' : '') +
+      (folded && !folded.error && !written.length
       ? `This went INTO the workout already running — it is NOT a separate entry, so never describe it as one. Say in half a clause that the sets are on the session, then carry on with log_set for the rest of it (session_status shows where it stands) and end_session when they stop. ${folded.skipped.length ? 'The lifts already logged set by set were left exactly as they were, not doubled.' : ''}`
       : untimed.length && !hungry.length
       ? `Recorded, but ${untimed.map(u => `"${u.summary}"`).join(' and ')} went in with no duration, so ${untimed.length === 1 ? 'it counts' : 'they count'} for NOTHING in calories out. Ask how long it took — one short question, in the same message as the confirmation — then amend_last with the minutes. The server works the calories out from the minutes and their bodyweight; never estimate the calories yourself.`
@@ -1537,7 +1566,7 @@ async function log(args, user) {
         ? 'Caught in passing. Acknowledge in a short clause at most and return immediately to what they were actually talking about. No totals, no follow-up questions, no coaching.'
         : parsed
           ? 'Read the recorded summaries back in one short line so a mis-heard word gets caught now, not next week.'
-          : 'Could not parse this into structured entries — it was kept verbatim as a note so nothing was lost. Tell the user it was saved but not broken down.',
+          : 'Could not parse this into structured entries — it was kept verbatim as a note so nothing was lost. Tell the user it was saved but not broken down.'),
     // THE STANDING ORDER FOR THE NEXT TURN, planted on the one surface a model
     // cannot skip: the answer to the call it just made. The failure it exists
     // for happened on the founder's phone — food logged, then "Going to the
@@ -2894,29 +2923,54 @@ async function brief(args, user) {
   };
 }
 
+// THE WHOLE DAY, ONE READ. Everything "where am I at today" means — every
+// item eaten, the session, the work, the steps, the burn added up, the net,
+// each goal scored, the week — from the same functions the panels and the
+// brief use, composed once in lib/dayread.js. Called by get_day, and by log
+// when the sentence that logged something also asked where the day stands.
+async function fullDayRead(userId, profile, date, { day: known = null } = {}) {
+  const today = localDateFor(profile.timezone);
+  const [day, goals, range] = await Promise.all([
+    known ? Promise.resolve(known) : dayFacts(userId, profile, date),
+    getGoals(userId),
+    rangeFacts(userId, profile, addDays(date, -29), date),
+  ]);
+  const balance = await balanceFor(userId, profile, date, day);
+  const summary = summariseRange(range, profile);
+  const scored = scoreGoals(goals, day, summary, profile);
+  const week = weekSoFar(range.days, { today: date, ...weekTargets(profile) });
+  const receipt = dayReceipt({ day, balance, date, today });
+  return { day, balance, receipt, scored, week,
+           read: dayReadout({ day, balance, receipt, scored, week, date, today }) };
+}
+
 async function getDay(args, user) {
   const profile = await getProfile(user.id);
   const date = args.date || localDateFor(profile.timezone);
-  const day = await dayFacts(user.id, profile, date);
+  const full = await fullDayRead(user.id, profile, date);
+  const day = full.day;
   // "How many calories do I have today" lands here, and the follow-up is
   // always "how many am I allowed". Answering the second from nothing is how a
   // model ends up inventing a target.
-  const [targets, balance] = await Promise.all([
-    targetsFor(user.id, profile, day),
-    balanceFor(user.id, profile, date, day),
-  ]);
+  const targets = await targetsFor(user.id, profile, day);
   return {
     ...day,
     ...(targets ? { no_target_set: targets } : {}),
     // "What did I do today" is answered line by line, both sides, with the
     // subtraction underneath — never as two summary sentences.
-    receipt: dayReceipt({ day, balance, date, today: localDateFor(profile.timezone) }),
+    receipt: full.receipt,
+    // THE WHOLE DAY — the founder: "when I ask for daily totals it should come
+    // with absolutely everything: exactly what I've eaten, my walk, my burn,
+    // goals, and what I did." Every line here is another tool's own figure.
+    day_read: full.read,
+    goals: full.scored,
+    training_week: full.week,
     say: day.logged
-      ? `${date}: ${day.food.say} · ${day.training.say}`
+      ? full.read.say
       : `Nothing logged on ${date}.`,
-    note: targets
-      ? 'No daily calorie target is set. If they ask what they are allowed, quote the COMPUTED figures in no_target_set exactly — never a number of your own and never a range you rounded to.'
-      : undefined,
+    note: (targets
+      ? 'No daily calorie target is set. If they ask what they are allowed, quote the COMPUTED figures in no_target_set exactly — never a number of your own and never a range you rounded to. '
+      : '') + full.read.note,
     next_actions: day.logged ? ['brief for the verdict', 'undo_last if something is wrong'] : ['log to fill it in'],
   };
 }
