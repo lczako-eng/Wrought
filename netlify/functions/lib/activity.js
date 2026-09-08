@@ -150,6 +150,31 @@ export function activityBurn({ text = '', hours = null, effort = null, weightKg 
  * over-reporting hours. Saying it was capped keeps the log honest AND the
  * arithmetic sane.
  */
+// A "WORKOUT" THAT READS AS A SHIFT. "worked three hours in the Petting Zoo"
+// went in as a 180-minute cardio session, on the founder's own phone, in
+// spite of the tool description saying work is never a workout — because the
+// plain connector does not read the sheet and the model did what the words
+// suggested. Filed as a session it is clamped to what the watch saw and it
+// counts toward the training week; filed as work it is priced from hours on
+// task and counts toward nothing but the burn.
+//
+// The server never RE-TYPES an event on its own — a long hike is a real
+// workout — but it can say, on the reply the model cannot skip, that this one
+// reads as work and name the one-call fix. Words of work with no words of
+// training: "worked", "shift", "job", "at work", and none of the things
+// somebody does in a gym.
+const WORK_WORDS = /\b(work(ed|ing)?(?!\s*out)|shift|job|on the clock|at work)\b/i;
+const TRAINING_WORDS = /\b(gym|lift(ed|ing)?|bench|squat|deadlift|press|row(ed|ing)?|curl|set|sets|reps?|run|ran|jog|walk(ed)?|hike|treadmill|bike|cycl|swim|session|workout|cardio|sprint|yoga|stretch|class|match|game|practice|sport)\b/i;
+export function looksLikeWork(summary = '', minutes = null) {
+  const s = String(summary || '');
+  if (!WORK_WORDS.test(s) || TRAINING_WORDS.test(s)) return false;
+  // Ten minutes of "work" is not a shift; a duration nobody stated is still
+  // asked about (Number(null) is 0, which would read as ten minutes).
+  if (minutes == null || minutes === '') return true;
+  const m = Number(minutes);
+  return !Number.isFinite(m) || m >= 30;
+}
+
 export function activityTotal(events = [], restingKcal = null) {
   // Promoted first: a shift stored as a note because the database has not been
   // taught 'activity' yet is still a shift, and counting it zero is exactly the
