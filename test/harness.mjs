@@ -4698,6 +4698,24 @@ await test('"where am I at" is the whole day — every item, the session, the wo
   assert.ok(!/event_type = 'activity'|event_type: 'activity'/.test(lg.slice(lg.indexOf('const workLike'))), 'log re-types a workout on its own');
 });
 
+await test('"Logged in Wrought" — the confirmation names where the record is, on the tool, the reply and the sheet', async () => {
+  // The founder, after replies that said "logged" about food living only in
+  // the conversation: "for the lack of confusion, let's say logged in
+  // Wrought". A model can write "logged" unaided; it can only relay this
+  // line after a write landed, so the phrase is the receipt.
+  const mcp = readFileSync(new URL('../netlify/functions/mcp.js', import.meta.url), 'utf8');
+  const lg = mcp.slice(mcp.indexOf('async function log(args, user)'), mcp.indexOf('async function reviewIntakeDays('));
+  assert.match(lg, /\? `Logged in Wrought: \$\{written\.map/, 'the quiet confirmation does not name Wrought');
+  assert.match(lg, /: `Logged in Wrought \(\$\{written\.length\} thing/, 'the confirmation does not name Wrought');
+  assert.match(lg, /OPEN WITH "Logged in Wrought"/);
+  assert.match(lg, /never say "Logged in Wrought" unless this reply is in front of you/);
+  const tool = mcp.slice(mcp.indexOf("name: 'log',"), mcp.indexOf("name: 'log_activity'"));
+  assert.match(tool, /CONFIRM WITH THE WORDS "Logged in Wrought"/, 'the rule is not on the tool description');
+  const { GPT_INSTRUCTIONS } = await import('../netlify/functions/lib/gpt_instructions.js');
+  assert.match(GPT_INSTRUCTIONS, /confirmed with the exact words "Logged in Wrought"/);
+  assert.ok(GPT_INSTRUCTIONS.length <= 8000, `the GPT sheet is ${GPT_INSTRUCTIONS.length} chars`);
+});
+
 await test('every calorie in the burn is accounted for — each input on its own line, counted or set aside, with the reason', async () => {
   // The founder, reading "Estimated burn: 3,426 — 2,473 resting + 953
   // active" on his phone: "they should tell you how much your burn was. It

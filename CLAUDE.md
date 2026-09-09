@@ -1805,6 +1805,17 @@ was built to end, one layer up.
   the burn into "resting + active". Tested across shift-over-watch,
   watch-over-shift, no watch, a projection and a watch that has not sent.
 
+**"Logged in Wrought" — the three words are the receipt.** The founder, on a
+confirmation that worked: *"for the lack of confusion, let's say logged in
+Wrought."* After a month of replies saying *"logged"* about food that lived
+only in the conversation, the word on its own tells the person nothing. A
+model can write *"logged"* unaided; it can only relay `say`'s line after a
+write actually landed. So `log`'s confirmation opens with **Logged in
+Wrought** (quiet and normal alike), the note and the tool description say
+to repeat the phrase exactly and never to use *"logged"* or *"saved"* about
+food without it, and never to say it without the reply in front of the
+model. The GPT sheet carries the same rule. Tested on all three surfaces.
+
 ### A custom ChatGPT — the same tools by Actions, and the sheet it will actually read
 
 `netlify/functions/actions.js` + `lib/gpt_instructions.js` +
@@ -4418,7 +4429,7 @@ self-reporting scale removes the most-abandoned manual entry), then Strava.
 
 ## Conventions
 
-- `npm test` runs `test/harness.mjs` — 720 offline tests, no network, no database.
+- `npm test` runs `test/harness.mjs` — 721 offline tests, no network, no database.
   Run it before every push. It covers the JSON-RPC envelope (which fails as an
   uninformative "could not connect" inside ChatGPT) and all the arithmetic
   (which fails as a confidently wrong number in somebody's verdict).
