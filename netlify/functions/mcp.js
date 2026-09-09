@@ -392,7 +392,7 @@ const TOOLS = [
   {
     name: 'log',
     title: 'Log anything, in plain words',
-    description: 'THE main tool, and the one that must fire the moment food is MENTIONED — not when they ask for it to be saved. A meal acknowledged in conversation and never written is the commonest way a day ends up short: the record is right, the recital is wrong, and nobody finds out until the total looks small. IF YOU ESTIMATE A MEAL\'S CALORIES IN YOUR REPLY, OR WRITE A "TODAY SO FAR" TOTAL, YOU MUST HAVE CALLED THIS IN THE SAME TURN: the estimate you wrote in prose but did not log lives only in the chat and vanishes with the tab, and "Did you log it?" then answers "only when you asked" — the exact failure this tool exists to prevent. Never quote a meal figure or a running total without logging first; the running total comes only from this tool\'s day_total, never from arithmetic in your head. If you find yourself saying "you\'re right, I missed that", the next thing you do is call this, never arithmetic. Records whatever the user said about their day — food, training, weight, measurements, sleep, mood, supplements. Pass their words AND your structured reading of them; both are required. "Two eggs and black coffee, pushed 40 minutes upper body, 182 on the scale" becomes three separate entries with macros estimated and the weight converted. Pass their words VERBATIM; do not tidy, summarise or ask for detail first. Use this for every log unless the user is giving only a weight or only a measurement, which have their own tools. IF THIS CONNECTOR WAS UNAVAILABLE EARLIER IN THE CONVERSATION, everything discussed since is unlogged: flush it all in ONE call the moment you can, with a time_hint on each item so breakfast lands at breakfast rather than the whole day landing at the catch-up minute. "Recorded in this chat" is the opposite of logged.',
+    description: 'THE main tool, and the one that must fire the moment food is MENTIONED — not when they ask for it to be saved. CONFIRM WITH THE WORDS "Logged in Wrought" — the reply\'s `say` opens with them; repeat them exactly, then each item with its calories and time. Never say "logged" or "saved" about food without "in Wrought", and never say "Logged in Wrought" without this tool\'s reply in front of you: the phrase is how the person tells a write that landed from food you only acknowledged. A meal acknowledged in conversation and never written is the commonest way a day ends up short: the record is right, the recital is wrong, and nobody finds out until the total looks small.IF YOU ESTIMATE A MEAL\'S CALORIES IN YOUR REPLY, OR WRITE A "TODAY SO FAR" TOTAL, YOU MUST HAVE CALLED THIS IN THE SAME TURN: the estimate you wrote in prose but did not log lives only in the chat and vanishes with the tab, and "Did you log it?" then answers "only when you asked" — the exact failure this tool exists to prevent. Never quote a meal figure or a running total without logging first; the running total comes only from this tool\'s day_total, never from arithmetic in your head. If you find yourself saying "you\'re right, I missed that", the next thing you do is call this, never arithmetic. Records whatever the user said about their day — food, training, weight, measurements, sleep, mood, supplements. Pass their words AND your structured reading of them; both are required. "Two eggs and black coffee, pushed 40 minutes upper body, 182 on the scale" becomes three separate entries with macros estimated and the weight converted. Pass their words VERBATIM; do not tidy, summarise or ask for detail first. Use this for every log unless the user is giving only a weight or only a measurement, which have their own tools. IF THIS CONNECTOR WAS UNAVAILABLE EARLIER IN THE CONVERSATION, everything discussed since is unlogged: flush it all in ONE call the moment you can, with a time_hint on each item so breakfast lands at breakfast rather than the whole day landing at the catch-up minute. "Recorded in this chat" is the opposite of logged.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -1531,12 +1531,18 @@ async function log(args, user) {
     // same rule as every other number in this server.
     say: [
       foldSay,
+      // "LOGGED IN WROUGHT" — the words are the receipt. The founder, after
+      // a run of replies that said "logged" about food that lived only in
+      // the conversation: "for the lack of confusion, let's say logged in
+      // Wrought". A model can write "logged" unaided; it can only relay
+      // THIS line after a write actually landed, so the phrase names where
+      // the record is and the person can tell the two apart at a glance.
       written.length
         ? (args.quiet
-          ? `Logged: ${written.map(e => itemSay(e)).join('; ')}.`
+          ? `Logged in Wrought: ${written.map(e => itemSay(e)).join('; ')}.`
           // Each meal with the clock it was filed under, so "at 7:32pm" is
           // read back and a meal eaten an hour ago gets its time corrected.
-          : `Logged ${written.length} thing${written.length === 1 ? '' : 's'}: ${written.map(e => itemSay(e) + (
+          : `Logged in Wrought (${written.length} thing${written.length === 1 ? '' : 's'}): ${written.map(e => itemSay(e) + (
               (e.event_type === 'food' || e.event_type === 'drink') && e.occurred_at
                 ? ` at ${clockString(localMinutesFor(profile.timezone, new Date(e.occurred_at)))}` : '')).join('; ')}.` +
             (day.food.meals ? ` Today so far: ${day.food.say}.` : ''))
@@ -1554,7 +1560,8 @@ async function log(args, user) {
     ...(bridged.error ? { sets_error: bridged.error } : {}),
     ...(bridged.skipped ? { sets_skipped: bridged.skipped, sets_note: bridged.say } : {}),
     ...(bridged.deduped ? { sets_deduped: true } : {}),
-    note: (fullRead ? 'THEY ASKED WHERE THE DAY STANDS: read day_read.say out LINE BY LINE — every item with its calories, the session, the work, the steps, the burn added up, the net, each goal with its percentage, the week. Never just the food total. ' : '') +
+    note: (written.length ? 'OPEN WITH "Logged in Wrought" — say the phrase exactly, then each item with its calories and time as `say` reads them. Those three words are the receipt: the person uses them to tell a write that landed from food you merely acknowledged. Never say "logged" or "saved" about food without "in Wrought", and never say "Logged in Wrought" unless this reply is in front of you. ' : '') +
+      (fullRead ? 'THEY ASKED WHERE THE DAY STANDS: read day_read.say out LINE BY LINE — every item with its calories, the session, the work, the steps, the burn added up, the net, each goal with its percentage, the week. Never just the food total. ' : '') +
       (workLike.length ? 'WORK_CHECK FIRST: a workout that reads as a shift is on the record — ask in one clause whether it was work, and if so log_activity with hours on task then undo_last naming the workout. ' : '') +
       (folded && !folded.error && !written.length
       ? `This went INTO the workout already running — it is NOT a separate entry, so never describe it as one. Say in half a clause that the sets are on the session, then carry on with log_set for the rest of it (session_status shows where it stands) and end_session when they stop. ${folded.skipped.length ? 'The lifts already logged set by set were left exactly as they were, not doubled.' : ''}`
