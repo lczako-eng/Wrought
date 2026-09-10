@@ -1816,6 +1816,20 @@ to repeat the phrase exactly and never to use *"logged"* or *"saved"* about
 food without it, and never to say it without the reply in front of the
 model. The GPT sheet carries the same rule. Tested on all three surfaces.
 
+**And the next day proved why.** *"Including your two eggs and half Costco
+cheddar bagel from breakfast, you're at approximately 1,050 calories today
+so far."* — *"What are you talking about? I never had that today, that was
+yesterday."* The database and the API logs settle it: on the 9th at 12:12
+(*"Logged for today, Broski"*) and at lunch on the 10th, **the connector was
+not called once** — no token lookup, no write. The only connector activity
+on the 10th was the midday brief tap at noon, which opens a different chat.
+So the *Work* conversation has WROUGHT switched off, both replies were
+composed from chat memory, and the 1,050 was the model adding yesterday's
+breakfast to today's lunch in prose. The per-chat toggle has no server-side
+fix; the tell is a *"logged"* without *"in Wrought"*. All four items were
+filed by hand through the connector (`detail.repaired` says so) at the
+times they were said.
+
 ### A custom ChatGPT — the same tools by Actions, and the sheet it will actually read
 
 `netlify/functions/actions.js` + `lib/gpt_instructions.js` +
