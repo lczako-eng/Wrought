@@ -1830,6 +1830,26 @@ fix; the tell is a *"logged"* without *"in Wrought"*. All four items were
 filed by hand through the connector (`detail.repaired` says so) at the
 times they were said.
 
+**Every item with ALL of its numbers, and the day broken down the same
+way.** The founder, on a dinner that came back as *"~1,130–1,450
+calories"*: *"it doesn't show the grams of fat and all the other nutrients —
+that should always do that, a total always of everything you've eaten and
+broken down."* The row held protein 70, carbs 100, fat 50, sugar 10, fibre
+11, saturated 20; the confirmation read the calories off it and stopped,
+and `dayFacts` summed protein, carbs and fat while sugar, fibre and
+saturated fat sat on every row and were summed nowhere.
+
+- **`macroLine()` in `lib/wrought.js` is the one renderer for a food line**
+  — *1,150 kcal · 70g protein · 100g carbs (10g sugar, 11g fibre) · 50g fat
+  (20g saturated)* — used by the log confirmation, `day_total`, the receipt
+  and the whole-day read, so an item can never be read out four different
+  ways. A figure not on the row is left out and named as missing, never
+  shown as a zero; nothing at all says so.
+- **`day_total.breakdown`** is every item of the day with its numbers and
+  the total underneath in the same shape; `log`'s note says to read it out,
+  never a bare calorie figure. `dayFacts.food` now carries `sugar_g`,
+  `fibre_g` and `sat_fat_g`, and its one-line summary says them.
+
 ### A custom ChatGPT — the same tools by Actions, and the sheet it will actually read
 
 `netlify/functions/actions.js` + `lib/gpt_instructions.js` +
@@ -4443,7 +4463,7 @@ self-reporting scale removes the most-abandoned manual entry), then Strava.
 
 ## Conventions
 
-- `npm test` runs `test/harness.mjs` — 721 offline tests, no network, no database.
+- `npm test` runs `test/harness.mjs` — 722 offline tests, no network, no database.
   Run it before every push. It covers the JSON-RPC envelope (which fails as an
   uninformative "could not connect" inside ChatGPT) and all the arithmetic
   (which fails as a confidently wrong number in somebody's verdict).

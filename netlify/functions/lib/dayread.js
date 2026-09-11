@@ -21,6 +21,7 @@
 // which is what lets a line here never disagree with a panel or a brief.
 
 import { outSay } from './receipt.js';
+import { macroLine } from './wrought.js';
 
 const n = v => (Number.isFinite(Number(v)) ? Math.round(Number(v)) : null);
 const money = v => (n(v) == null ? '—' : n(v).toLocaleString());
@@ -41,16 +42,26 @@ export function dayReadout({ day = null, balance = null, receipt = null, scored 
 
   // ── IN ────────────────────────────────────────────────────────────────────
   const food = (day.log || []).filter(e => e.type === 'food' || e.type === 'drink');
+  // Every item with ALL of its numbers, and the total in the same shape —
+  // "a total always of everything you've eaten and broken down." macroLine
+  // is the one renderer, shared with the log confirmation and the receipt.
   const inn = {
     total: n(day.food?.calories) || 0,
     protein_g: n(day.food?.protein_g) || 0, carbs_g: n(day.food?.carbs_g) || 0, fat_g: n(day.food?.fat_g) || 0,
-    items: food.map(e => ({ at: e.at, what: e.summary, calories: e.calories, estimated: e.estimated })),
+    // Null when the day never carried them, never a zero standing in.
+    sugar_g: n(day.food?.sugar_g), fibre_g: n(day.food?.fibre_g), sat_fat_g: n(day.food?.sat_fat_g),
+    items: food.map(e => ({
+      at: e.at, what: e.summary, calories: e.calories,
+      protein_g: e.protein_g ?? null, carbs_g: e.carbs_g ?? null, fat_g: e.fat_g ?? null,
+      sugar_g: e.sugar_g ?? null, fibre_g: e.fibre_g ?? null, sat_fat_g: e.sat_fat_g ?? null,
+      estimated: e.estimated,
+    })),
     without_calories: n(day.food?.meals_uncounted) || 0,
   };
   lines.push(food.length
-    ? `IN — ${money(inn.total)} kcal · ${inn.protein_g}g protein · ${inn.carbs_g}g carbs · ${inn.fat_g}g fat${day.food?.estimated ? ' (estimated)' : ''}`
+    ? `IN — ${macroLine({ ...inn, calories: inn.total })}${day.food?.estimated ? ' (estimated)' : ''}`
     : 'IN — nothing logged');
-  for (const it of inn.items) lines.push(`  ${it.at ? `${it.at} ` : ''}${it.what} — ${it.calories == null ? 'no calories on it' : money(it.calories)}`);
+  for (const it of inn.items) lines.push(`  ${it.at ? `${it.at} ` : ''}${it.what} — ${macroLine(it)}`);
   if (inn.without_calories) lines.push(`  (${inn.without_calories} with no calories, so the real intake is higher)`);
 
   // ── TRAINED / WORKED — off the receipt's own itemisation, never re-priced ──

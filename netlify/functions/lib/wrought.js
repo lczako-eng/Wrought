@@ -410,12 +410,19 @@ export async function dayFacts(userId, profile, date) {
   // Food — every calorie from a plain-English meal is an inference, and the
   // whole product's credibility rests on saying so.
   const meals = evs.filter(e => e.event_type === 'food' || e.event_type === 'drink');
+  // ALL of it, not the big three. The founder: "it doesn't show the grams of
+  // fat and all the other nutrients — that should always do that, a total
+  // always of everything you've eaten and broken down." Sugar, fibre and
+  // saturated fat were on every stored row and summed nowhere.
   const food = meals.reduce((a, e) => ({
     calories:  a.calories  + num(e.detail?.calories),
     protein_g: a.protein_g + num(e.detail?.protein_g),
     carbs_g:   a.carbs_g   + num(e.detail?.carbs_g),
     fat_g:     a.fat_g     + num(e.detail?.fat_g),
-  }), { calories: 0, protein_g: 0, carbs_g: 0, fat_g: 0 });
+    sugar_g:   a.sugar_g   + num(e.detail?.sugar_g),
+    fibre_g:   a.fibre_g   + num(e.detail?.fibre_g),
+    sat_fat_g: a.sat_fat_g + num(e.detail?.sat_fat_g),
+  }), { calories: 0, protein_g: 0, carbs_g: 0, fat_g: 0, sugar_g: 0, fibre_g: 0, sat_fat_g: 0 });
   const foodEstimated = meals.some(e => e.estimated);
 
   // A meal with no calorie figure is UNKNOWN, not zero, and the difference is
@@ -489,7 +496,7 @@ export async function dayFacts(userId, profile, date) {
         // zero here is the single easiest way to be confidently wrong.
         : mealsUncounted === meals.length
           ? `${meals.length} thing${meals.length === 1 ? '' : 's'} logged, no macros on ${meals.length === 1 ? 'it' : 'any of them'} yet — the total is unknown rather than zero.`
-          : `${Math.round(food.calories)} kcal · ${Math.round(food.protein_g)}g protein · ${Math.round(food.carbs_g)}g carbs · ${Math.round(food.fat_g)}g fat` +
+          : `${Math.round(food.calories)} kcal · ${Math.round(food.protein_g)}g protein · ${Math.round(food.carbs_g)}g carbs (${Math.round(food.sugar_g)}g sugar, ${Math.round(food.fibre_g)}g fibre) · ${Math.round(food.fat_g)}g fat (${Math.round(food.sat_fat_g)}g saturated)` +
             (foodEstimated ? ' (estimated from what you described)' : '') +
             (mealsUncounted ? ` — and ${mealsUncounted} logged with no macros, so the real total is higher.` : ''),
     },
@@ -584,6 +591,9 @@ export async function dayFacts(userId, profile, date) {
       protein_g: e.detail?.protein_g != null ? Math.round(num(e.detail.protein_g)) : null,
       carbs_g:   e.detail?.carbs_g   != null ? Math.round(num(e.detail.carbs_g))   : null,
       fat_g:     e.detail?.fat_g     != null ? Math.round(num(e.detail.fat_g))     : null,
+      sugar_g:   e.detail?.sugar_g   != null ? Math.round(num(e.detail.sugar_g))   : null,
+      fibre_g:   e.detail?.fibre_g   != null ? Math.round(num(e.detail.fibre_g))   : null,
+      sat_fat_g: e.detail?.sat_fat_g != null ? Math.round(num(e.detail.sat_fat_g)) : null,
     })),
   };
 }
@@ -594,7 +604,35 @@ function roundMacros(f) {
     protein_g: Math.round(f.protein_g),
     carbs_g:   Math.round(f.carbs_g),
     fat_g:     Math.round(f.fat_g),
+    sugar_g:   Math.round(f.sugar_g || 0),
+    fibre_g:   Math.round(f.fibre_g || 0),
+    sat_fat_g: Math.round(f.sat_fat_g || 0),
   };
+}
+
+/**
+ * One item's numbers as words — "1,150 kcal · 70g protein · 100g carbs
+ * (10g sugar, 11g fibre) · 50g fat (20g saturated)". The ONE renderer for a
+ * food line, used by the log confirmation, the day total, the receipt and the
+ * whole-day read, so an item can never be read out four different ways. A
+ * figure that is not on the row is left out rather than shown as zero; no
+ * figures at all says so.
+ */
+export function macroLine(x = {}) {
+  const n = v => (v == null || v === '' || !Number.isFinite(Number(v)) ? null : Math.round(Number(v)));
+  const c = n(x.calories), p = n(x.protein_g), cb = n(x.carbs_g), f = n(x.fat_g);
+  const su = n(x.sugar_g), fi = n(x.fibre_g), sf = n(x.sat_fat_g);
+  if (c == null && p == null && cb == null && f == null) return 'no calories or macros on it yet';
+  const parts = [];
+  if (c != null) parts.push(`${c.toLocaleString()} kcal`);
+  if (p != null) parts.push(`${p}g protein`);
+  if (cb != null) {
+    const inner = [su != null ? `${su}g sugar` : null, fi != null ? `${fi}g fibre` : null].filter(Boolean);
+    parts.push(`${cb}g carbs${inner.length ? ` (${inner.join(', ')})` : ''}`);
+  }
+  if (f != null) parts.push(`${f}g fat${sf != null ? ` (${sf}g saturated)` : ''}`);
+  const missing = [p == null ? 'protein' : null, cb == null ? 'carbs' : null, f == null ? 'fat' : null].filter(Boolean);
+  return parts.join(' · ') + (missing.length ? ` — ${missing.join(', ')} not on it` : '');
 }
 
 // ── Reading a stretch of days ───────────────────────────────────────────────
