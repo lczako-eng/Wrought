@@ -4655,11 +4655,14 @@ await test('"where am I at" is the whole day — every item, the session, the wo
   assert.equal(bare.partial, false);
   // The file computes nothing of its own — every figure is another tool's.
   const src = readFileSync(new URL('../netlify/functions/lib/dayread.js', import.meta.url), 'utf8');
-  assert.ok(!/from '\.\/(training|activity|wrought)\.js'|\* 7700/.test(src), 'the readout is pricing something itself');
-  // The one thing it borrows is the receipt's RENDERER for the burn — words,
-  // not arithmetic — so the receipt and the whole-day read cannot account
-  // for the same burn two different ways.
+  assert.ok(!/from '\.\/(training|activity)\.js'|\* 7700/.test(src), 'the readout is pricing something itself');
+  // The two things it borrows are RENDERERS — words, not arithmetic: the
+  // receipt's burn block and wrought's macro line — so the receipt, the log
+  // confirmation and the whole-day read cannot read the same figures out
+  // four different ways. Nothing else from wrought.js may be imported here.
   assert.match(src, /import \{ outSay \} from '\.\/receipt\.js'/);
+  assert.match(src, /import \{ macroLine \} from '\.\/wrought\.js'/);
+  assert.equal((src.match(/from '\.\/wrought\.js'/g) || []).length, 1);
 
   // WIRED. get_day is the whole day and says so; a log whose sentence asked
   // where the day stands carries the same read; both tell the model to read
@@ -4696,6 +4699,46 @@ await test('"where am I at" is the whole day — every item, the session, the wo
   assert.match(lg, /work_check: \{/);
   assert.match(lg, /never re-type it on your own — a long hike is a real workout/);
   assert.ok(!/event_type = 'activity'|event_type: 'activity'/.test(lg.slice(lg.indexOf('const workLike'))), 'log re-types a workout on its own');
+});
+
+await test('every item carries all of its numbers, and the day is broken down the same way — never a bare calorie figure', async () => {
+  // The founder, on a dinner confirmation that said "~1,130–1,450 calories":
+  // "it doesn't show the grams of fat and all the other nutrients — that
+  // should always do that, a total always of everything you've eaten and
+  // broken down." The row held protein 70, carbs 100, fat 50, sugar 10,
+  // fibre 11, saturated 20; the line read the calories off it and stopped.
+  const { macroLine } = await import('../netlify/functions/lib/wrought.js');
+  assert.equal(
+    macroLine({ calories: 1150, protein_g: 70, carbs_g: 100, fat_g: 50, sugar_g: 10, fibre_g: 11, sat_fat_g: 20 }),
+    '1,150 kcal · 70g protein · 100g carbs (10g sugar, 11g fibre) · 50g fat (20g saturated)');
+  // A figure not on the row is left out, never shown as zero; nothing at all says so.
+  assert.equal(macroLine({ calories: 400 }), '400 kcal — protein, carbs, fat not on it');
+  assert.equal(macroLine({ calories: 400, protein_g: 20, carbs_g: 30, fat_g: 10 }), '400 kcal · 20g protein · 30g carbs · 10g fat');
+  assert.equal(macroLine({}), 'no calories or macros on it yet');
+
+  // ONE renderer, on every surface that reads a food line out.
+  const mcp = readFileSync(new URL('../netlify/functions/mcp.js', import.meta.url), 'utf8');
+  assert.match(mcp, /function itemSay\(e\) \{[\s\S]{0,300}macroLine\(nums\)/, 'the log confirmation does not carry the macros');
+  const dt = mcp.slice(mcp.indexOf('function dayTotal('), mcp.indexOf('function itemSay('));
+  assert.match(dt, /sugar_g: day\.food\.sugar_g,\s*fibre_g: day\.food\.fibre_g,\s*sat_fat_g: day\.food\.sat_fat_g/);
+  assert.match(dt, /breakdown: \[/);
+  assert.match(dt, /macroLine\(e\)/);
+  const lg = mcp.slice(mcp.indexOf('async function log(args, user)'), mcp.indexOf('async function reviewIntakeDays('));
+  assert.match(lg, /each item with ALL its numbers/);
+  assert.match(lg, /day_total\.breakdown is every item of the day/);
+  const receipt = readFileSync(new URL('../netlify/functions/lib/receipt.js', import.meta.url), 'utf8');
+  assert.match(receipt, /lines\.push\(`  \$\{l\.what\} — \$\{macroLine\(l\)\}`\)/);
+  const dayread = readFileSync(new URL('../netlify/functions/lib/dayread.js', import.meta.url), 'utf8');
+  assert.match(dayread, /\$\{it\.what\} — \$\{macroLine\(it\)\}/);
+  const { GPT_INSTRUCTIONS } = await import('../netlify/functions/lib/gpt_instructions.js');
+  assert.match(GPT_INSTRUCTIONS, /calories, protein, carbs \(sugar, fibre\), fat \(saturated\)/);
+  assert.ok(GPT_INSTRUCTIONS.length <= 8000, `the GPT sheet is ${GPT_INSTRUCTIONS.length} chars`);
+
+  // dayFacts sums the three that were on every row and summed nowhere.
+  const wrought = readFileSync(new URL('../netlify/functions/lib/wrought.js', import.meta.url), 'utf8');
+  assert.match(wrought, /sugar_g:\s+a\.sugar_g\s+\+ num\(e\.detail\?\.sugar_g\)/);
+  assert.match(wrought, /sat_fat_g: a\.sat_fat_g \+ num\(e\.detail\?\.sat_fat_g\)/);
+  assert.match(wrought, /g carbs \(\$\{Math\.round\(food\.sugar_g\)\}g sugar, \$\{Math\.round\(food\.fibre_g\)\}g fibre\)/);
 });
 
 await test('"Logged in Wrought" — the confirmation names where the record is, on the tool, the reply and the sheet', async () => {

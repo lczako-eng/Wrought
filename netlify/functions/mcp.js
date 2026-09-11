@@ -22,7 +22,7 @@ import {
   getProfile, getMemory, getGoals, getWindow, windowStatus,
   dayFacts, rangeFacts, summariseRange, scoreGoals, careFlags, CARE_WINDOW_DAYS, lastDays,
   parseLog, eventsFromClient, needsMacros, needsDuration, matchEntries, duplicateItems, setupNeeded, insertEvents, eventTimestamp, writeVerdict, rememberFact,
-  fastLength, fastingSummary,
+  fastLength, fastingSummary, macroLine,
 } from './lib/wrought.js';
 import { allowed } from './lib/membership.js';
 import { pendingVoice } from './lib/voice.js';
@@ -1316,6 +1316,9 @@ function dayTotal(day) {
     protein_g: day.food.protein_g,
     carbs_g: day.food.carbs_g,
     fat_g: day.food.fat_g,
+    sugar_g: day.food.sugar_g,
+    fibre_g: day.food.fibre_g,
+    sat_fat_g: day.food.sat_fat_g,
     meals: day.food.meals,
     estimated: day.food.estimated,
     meals_without_macros: day.food.meals_uncounted,
@@ -1327,9 +1330,20 @@ function dayTotal(day) {
       .map(e => ({
         at: e.at, summary: e.summary, calories: e.calories,
         protein_g: e.protein_g, carbs_g: e.carbs_g, fat_g: e.fat_g,
+        sugar_g: e.sugar_g, fibre_g: e.fibre_g, sat_fat_g: e.sat_fat_g,
         estimated: e.estimated,
       })),
     say: day.food.say,
+    // THE DAY BROKEN DOWN, every item with all of its numbers and the total
+    // underneath in the same shape. The founder: "a total always of
+    // everything you've eaten and broken down." Composed here, once, so the
+    // model reads it out rather than assembling its own.
+    breakdown: [
+      ...(day.log || [])
+        .filter(e => e.type === 'food' || e.type === 'drink')
+        .map(e => `  ${e.at ? `${e.at} ` : ''}${e.summary} — ${macroLine(e)}`),
+      `TODAY — ${day.food.say}`,
+    ].join('\n'),
     // THE RECONCILIATION, because the server cannot do it and the model can.
     //
     // "Total so far: ~880 calories." — "Huh, what about breakfast???" — "You're
@@ -1377,9 +1391,16 @@ function dayTotal(day) {
 // somebody nothing they did not already know — they were there when they ate
 // it. The number is the thing they cannot supply themselves, and it is the
 // thing they can correct.
+// EVERY ITEM WITH ALL OF ITS NUMBERS. The founder, on a confirmation that
+// gave calories alone: "it doesn't show the grams of fat and all the other
+// nutrients — that should always do that." The macros were on the stored
+// row and the line read only the calories off it. macroLine is the one
+// renderer, shared with the day total, the receipt and the whole-day read.
 function itemSay(e) {
-  const c = itemNumbers(e.detail || {}).calories;
-  return c == null ? e.summary : `${e.summary} (${c.toLocaleString()} kcal)`;
+  const nums = itemNumbers(e.detail || {});
+  return (e.event_type === 'food' || e.event_type === 'drink' || nums.calories != null)
+    ? `${e.summary} — ${macroLine(nums)}`
+    : e.summary;
 }
 
 function itemNumbers(detail = {}) {
@@ -1389,6 +1410,9 @@ function itemNumbers(detail = {}) {
     protein_g: n(detail.protein_g),
     carbs_g:   n(detail.carbs_g),
     fat_g:     n(detail.fat_g),
+    sugar_g:   n(detail.sugar_g),
+    fibre_g:   n(detail.fibre_g),
+    sat_fat_g: n(detail.sat_fat_g),
   };
 }
 
@@ -1573,7 +1597,7 @@ async function log(args, user) {
     ...(bridged.error ? { sets_error: bridged.error } : {}),
     ...(bridged.skipped ? { sets_skipped: bridged.skipped, sets_note: bridged.say } : {}),
     ...(bridged.deduped ? { sets_deduped: true } : {}),
-    note: (written.length ? 'OPEN WITH "Logged in Wrought" — say the phrase exactly, then each item with its calories and time as `say` reads them. Those three words are the receipt: the person uses them to tell a write that landed from food you merely acknowledged. Never say "logged" or "saved" about food without "in Wrought", and never say "Logged in Wrought" unless this reply is in front of you. ' : '') +
+    note: (written.length ? 'OPEN WITH "Logged in Wrought" — say the phrase exactly, then each item with ALL its numbers exactly as `say` reads them: calories, protein, carbs (sugar, fibre), fat (saturated), and the time. Then the day broken down the same way — day_total.breakdown is every item of the day with its numbers and the total underneath; read it out, never only a calorie figure. Those three words are the receipt: the person uses them to tell a write that landed from food you merely acknowledged. Never say "logged" or "saved" about food without "in Wrought", and never say "Logged in Wrought" unless this reply is in front of you. ' : '') +
       (fullRead ? 'THEY ASKED WHERE THE DAY STANDS: read day_read.say out LINE BY LINE — every item with its calories, the session, the work, the steps, the burn added up, the net, each goal with its percentage, the week. Never just the food total. ' : '') +
       (workLike.length ? 'WORK_CHECK FIRST: a workout that reads as a shift is on the record — ask in one clause whether it was work, and if so log_activity with hours on task then undo_last naming the workout. ' : '') +
       (folded && !folded.error && !written.length

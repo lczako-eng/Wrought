@@ -32,6 +32,8 @@
 // why, every time it happens. Silence there is how a correct number loses an
 // argument it should win.
 
+import { macroLine } from './wrought.js';
+
 const n = v => (Number.isFinite(Number(v)) ? Math.round(Number(v)) : 0);
 const money = v => n(v).toLocaleString();
 
@@ -65,6 +67,7 @@ export function dayReceipt({ day = null, balance = null, date = null, today = nu
       at: e.at, what: e.summary,
       calories: e.calories,
       protein_g: e.protein_g, carbs_g: e.carbs_g, fat_g: e.fat_g,
+      sugar_g: e.sugar_g ?? null, fibre_g: e.fibre_g ?? null, sat_fat_g: e.sat_fat_g ?? null,
       estimated: e.estimated,
       ...(e.calories == null ? { counts_as: 0, why: 'no calories on it, so it adds nothing to the total' } : {}),
     }));
@@ -75,6 +78,9 @@ export function dayReceipt({ day = null, balance = null, date = null, today = nu
     protein_g: n(day.food?.protein_g),
     carbs_g: n(day.food?.carbs_g),
     fat_g: n(day.food?.fat_g),
+    sugar_g: day.food?.sugar_g != null ? n(day.food.sugar_g) : null,
+    fibre_g: day.food?.fibre_g != null ? n(day.food.fibre_g) : null,
+    sat_fat_g: day.food?.sat_fat_g != null ? n(day.food.sat_fat_g) : null,
     items: inLines.length,
     without_calories: n(day.food?.meals_uncounted),
     estimated: !!day.food?.estimated,
@@ -330,9 +336,14 @@ function otherNote(balance, a) {
 function receiptSay(inn, out, net, partial = false) {
   const lines = [];
 
-  lines.push(`IN — ${money(inn.total)}${inn.items ? '' : ' (nothing logged)'}`);
+  // Every item with all of its numbers, and the total in the same shape —
+  // never a bare calorie figure. macroLine is the one renderer for a food
+  // line, shared with the log confirmation and the whole-day read.
+  lines.push(inn.items
+    ? `IN — ${macroLine({ ...inn, calories: inn.total })}`
+    : `IN — ${money(inn.total)} (nothing logged)`);
   for (const l of inn.lines) {
-    lines.push(`  ${l.what} — ${l.calories == null ? 'no calories on it' : money(l.calories)}`);
+    lines.push(`  ${l.what} — ${macroLine(l)}`);
   }
 
   // The add-up is ON the total line — "my basal rate should be on there, plus
