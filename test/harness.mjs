@@ -11503,7 +11503,7 @@ await test('the installed dashboard honours the whole iPhone frame', () => {
   assert.match(app, /safe-area-inset-top/);
   assert.match(app, /safe-area-inset-bottom/);
   assert.equal(manifest.orientation, undefined, 'the dashboard is still locked to portrait');
-  assert.match(worker, /wrought-shell-v10/,
+  assert.match(worker, /wrought-shell-v11/,
     'installed phones can keep the old shell after the cover page changed');
 });
 
@@ -11591,6 +11591,35 @@ await test('mutable presentation cannot strand an installed phone on an old rele
     'a worker update can reload over a half-written log or password');
   assert.match(native, /cachePolicy: \.reloadIgnoringLocalCacheData/,
     'the native frame can relaunch an old HTML document');
+});
+
+await test('the cover shows the burn and the rings, and never slides sideways', () => {
+  const home = page('index.html');
+
+  // BOTH figures, because the founder asked for both to be visual: "can you
+  // make it both look visual". The single 420 arc answers what the day cost;
+  // the five verdict rings answer whether it landed. Neither replaces the other.
+  assert.match(home, /class="score-ring"/, 'the 420 energy arc left the cover');
+  assert.match(home, /id="goalgrid"/, 'the goal rings left the cover');
+  const goals = (home.match(/\{v:'[^']+',of:'[^']+',cap:'[^']+',pct:\d+,met:(?:true|false)\}/g) || []);
+  assert.equal(goals.length, 5, 'the cover no longer carries all five targets');
+  assert.match(home, /'moss'\s*:\s*'temper'/, 'the rings stopped colouring by verdict');
+
+  // The ARC animates; the FIGURE does not. A calorie counting up from zero puts
+  // a number on screen that was never true — the same rule that keeps the
+  // dashboard's heroes from counting, applied to the cover.
+  assert.doesNotMatch(home, /requestAnimationFrame\(step\)|textContent\s*=\s*paint\(/,
+    'a health figure on the cover counts through values that were never true');
+
+  // The sideways scroll the founder complained about twice. A decorative
+  // ::before at inset:7% -10% 2% sat ten percent past the stage on each side,
+  // and an abspos child counts toward scrollable overflow even at z-index -1.
+  const pseudo = [...home.matchAll(/::(?:before|after)\{[^}]*inset:([^;}]+)/g)].map(m => m[1].trim());
+  for (const v of pseudo) {
+    assert.ok(!/-\d/.test(v), `a decorative pseudo-element reaches outside its box (inset:${v}) — that is what makes the page scroll sideways`);
+  }
+  assert.match(home, /body\{overflow-x:clip\}/,
+    'nothing stops the cover scrolling sideways; clip is used rather than hidden so the sticky nav survives');
 });
 
 await test('one file owns the shell name, and every precached file exists', () => {

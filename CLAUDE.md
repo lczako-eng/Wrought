@@ -1220,7 +1220,7 @@ copying a link into three pages.
 The smaller public doors use `public/shell.css`. It deliberately owns only the
 room — atmosphere, surface depth, safe areas and touch finish — while each page
 keeps its own layout and behaviour. `shell.css` and `app-info.json` are part of
-the service-worker shell, currently `wrought-shell-v10`. A public redesign that
+the service-worker shell, currently `wrought-shell-v11`. A public redesign that
 does not bump that name has not reached the installed product.
 
 **The cover page is the one from BEFORE the Forge 03 redesign.** Codex
@@ -1274,6 +1274,55 @@ cheap checks settle it before anything is touched: the file's hash against the
 intended version, Netlify's published `commit_ref`, and one fetch of the live
 URL. All three said shipped. Reverting a second time would have changed
 nothing and hidden the real fault.
+
+### The rings on the cover, and the glow that made the page slide
+
+The founder, on the restored cover: *"you see those like rings where it shows
+your calories and it gives you an idea of how much you worked out and burnt
+… I want that back"*, and then the shape of it: *"Go back to the original
+rings that were animated that had multiple colours … I wanna keep the theme
+of the first picture which is on the iPhone that style is perfect … I don't
+want the scroll left or right to be much like it is right now it's way over
+the top."*
+
+**Three surfaces were being confused, and naming them settled it.** His two
+screenshots were not two versions of one page. The *"Here's the day."* card
+with the single orange 420 arc was `645e558` — **already live**, the cover
+restored days earlier. The iPhone module (*"Today in command."*,
+*"Energy position · today"*, *"Talk to your record"*) was Forge 03, deleted
+by `b2afed6` — the revert he himself asked for, which is why his own
+instruction had removed the thing he now wanted. And the **multi-colour**
+rings were in a third place again: `targetsPanel` on the dashboard, five of
+them, `--temper` on the way and `--moss` met. Three places, one word.
+
+- **Both, never one instead of the other.** *"Can you work around it like can
+  you make it both look visual"* — so the 420 arc answers what the day cost
+  and the five verdict rings answer whether it landed, in the same card. The
+  cover carries the same five the dashboard scores, coloured the same way.
+- **The page is the screen, not a picture of one.** A device frame was
+  proposed and he rejected it in the right words: *"it's supposed to look
+  like that on the phone not a picture of a phone frame."* The treatment goes
+  on the document; nothing draws a phone around content already being read on
+  one.
+- **The arc animates, the figure never does.** A calorie counting up from
+  zero puts a number on screen that was never true. Same rule as the
+  dashboard heroes, now pinned on the cover by a test.
+
+**And the sideways scroll was two decorative glows.** `.brief-stage::before`
+sat at `inset:7% -10% 2%` and `.moment::after` at `inset:auto -40px -80px` —
+ten percent and forty pixels PAST their own boxes. **An absolutely-positioned
+child counts toward scrollable overflow even at `z-index:-1`**, so two blurs
+nobody can point at were what made the page slide under his thumb: 405px of
+scroll width in a 390px screen. Both held inside their boxes now, with
+`body{overflow-x:clip}` as the backstop — **clip rather than hidden on
+purpose**, because hidden makes the body a scroll container and kills the
+sticky nav.
+
+The harness scans every `::before`/`::after` for a negative `inset` rather
+than pinning the two that were found — and it immediately found the second
+one, which was invisible behind the new backstop. Verified to fail when
+either is put back. Measured at 320, 360, 390 and 430 on the cover and the
+dashboard alike: scroll width equals client width at every one.
 
 ### Two classes called `.bar`, and the header they flattened
 
@@ -4544,7 +4593,7 @@ self-reporting scale removes the most-abandoned manual entry), then Strava.
 
 ## Conventions
 
-- `npm test` runs `test/harness.mjs` — 723 offline tests, no network, no database.
+- `npm test` runs `test/harness.mjs` — 724 offline tests, no network, no database.
   Run it before every push. It covers the JSON-RPC envelope (which fails as an
   uninformative "could not connect" inside ChatGPT) and all the arithmetic
   (which fails as a confidently wrong number in somebody's verdict).
