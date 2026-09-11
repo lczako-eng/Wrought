@@ -11503,7 +11503,7 @@ await test('the installed dashboard honours the whole iPhone frame', () => {
   assert.match(app, /safe-area-inset-top/);
   assert.match(app, /safe-area-inset-bottom/);
   assert.equal(manifest.orientation, undefined, 'the dashboard is still locked to portrait');
-  assert.match(worker, /wrought-shell-v11/,
+  assert.match(worker, /wrought-shell-v12/,
     'installed phones can keep the old shell after the cover page changed');
 });
 
@@ -11620,6 +11620,31 @@ await test('the cover shows the burn and the rings, and never slides sideways', 
   }
   assert.match(home, /body\{overflow-x:clip\}/,
     'nothing stops the cover scrolling sideways; clip is used rather than hidden so the sticky nav survives');
+});
+
+await test('the dashboard opens on the number AND the rings, not five panels apart', () => {
+  const app = page('app.html');
+
+  // "I want it all like that" — the cover shows the day's figure and the five
+  // verdict rings in one card, and the dashboard was burying the rings under
+  // momentum, food, training and the record check. What the day cost and
+  // whether it landed are one question, so they share the opening stage.
+  const stage = app.slice(
+    app.indexOf(`out.push('<div class="overview-stage">')`),
+    app.indexOf('out.push(coachSetupPanel(d))'));
+  assert.ok(stage.length > 40 && stage.length < 1200, 'the overview stage could not be read');
+  assert.match(stage, /out\.push\(hero\(d\)\)/, 'the hero left the opening stage');
+  assert.match(stage, /if \(targets\) out\.push\(targets\)/,
+    'the goal rings no longer ride beside the day figure');
+  // and never drawn a second time further down the same view
+  assert.equal((app.match(/out\.push\(targetsPanel\(d\)\)/g) || []).length, 0,
+    'targetsPanel is still pushed separately as well — the rings would draw twice');
+
+  // A grid track is min-width:auto by default, so a bare 1fr let the hero
+  // figure shove UNDER / ROUGHLY past a panel that clips at overflow:hidden.
+  // At 390px the caption read "UNDE ROUGHL". Clipped text is a bug.
+  assert.match(app, /\.balance-reading \{ display: grid; grid-template-columns: minmax\(0,1fr\) auto;/,
+    'the hero reading is back on a bare 1fr and will clip its own caption');
 });
 
 await test('one file owns the shell name, and every precached file exists', () => {

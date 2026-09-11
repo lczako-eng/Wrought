@@ -2074,7 +2074,11 @@ body::after {
 .balance-head > h2 { color: var(--ash); }
 .balance-live { display: flex; align-items: center; gap: 7px; color: var(--ash); font: 700 8px/1 var(--mono); letter-spacing: .13em; text-transform: uppercase; }
 .balance-live::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: #75E39B; box-shadow: 0 0 10px rgba(117,227,155,.75); }
-.balance-reading { display: grid; grid-template-columns: 1fr auto; gap: 12px; align-items: end; margin-block: 22px 17px; }
+/* minmax(0,1fr), never a bare 1fr. A grid track defaults to min-width:auto, so
+   the hero figure refused to shrink and pushed UNDER / ROUGHLY past the panel,
+   which clips at overflow:hidden — at 390px the caption read "UNDE ROUGHL".
+   Measured: the caption reached 379.8px inside a panel ending at 374. */
+.balance-reading { display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 12px; align-items: end; margin-block: 22px 17px; }
 .balance-number { font: 900 clamp(82px, 10vw, 136px)/.7 var(--grotesk); letter-spacing: -.075em; color: var(--bright); font-variant-numeric: tabular-nums; }
 .balance-state { padding-bottom: 5px; color: var(--heat-3); font: 800 10px/1.35 var(--mono); letter-spacing: .14em; text-align: right; text-transform: uppercase; }
 .balance-state.under { color: #83BFE1; }.balance-state.level { color: var(--amber); }
@@ -8345,11 +8349,21 @@ function render(d) {
   // fourteen-day lines, because context is not the same thing as changing the
   // selected range.
   const momentum = momentumPanel(d);
+  // THE RINGS RIDE BESIDE THE NUMBER, not five panels below it. The founder,
+  // on the dashboard: "I want it all like that" — the cover shows the day's
+  // figure and the five verdict rings in one card, and the screen he opens
+  // every morning was burying them under momentum, food, training and the
+  // record check. What the day cost and whether it landed are one question.
+  const targets = targetsPanel(d);
   if (!(d.care_flags || []).length) out.push(`<a class="workout-launch" href="/workout.html"><div class="launch-copy"><span class="launch-kicker">TRAIN / ROUND COACH</span><strong>Your next round starts here.</strong><span class="launch-note">Custom work and recovery intervals. A focused timer on the web, with haptics and live effort in the new Watch companion.</span></div><span class="launch-action">Set your rounds ↗</span></a>`);
   out.push('<div class="overview-stage">');
   out.push(hero(d));
-  if (momentum) out.push(momentum);
+  // The stage is a two-column grid. Targets take the second slot; momentum
+  // falls back into it when there are no goals to draw, so the stage is never
+  // a half-empty row, and drops below when both exist.
+  if (targets) out.push(targets); else if (momentum) out.push(momentum);
   out.push('</div>');
+  if (targets && momentum) out.push(momentum);
   out.push(coachSetupPanel(d));
 
   // THE DAY IN PLAIN WORDS, before any more arithmetic — what was eaten and
@@ -8366,7 +8380,7 @@ function render(d) {
   // above it, printed twice.
   out.push(windowPanel(d));
 
-  out.push(targetsPanel(d));
+  // targetsPanel now rides in the overview stage beside the hero, above.
   // Where a target would have been invented. Only drawn when nothing is set.
   out.push(targetOptionsPanel(d));
   out.push(readingsPanel(d));
