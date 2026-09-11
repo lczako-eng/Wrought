@@ -11447,7 +11447,7 @@ await test('the installed dashboard honours the whole iPhone frame', () => {
   assert.match(app, /safe-area-inset-top/);
   assert.match(app, /safe-area-inset-bottom/);
   assert.equal(manifest.orientation, undefined, 'the dashboard is still locked to portrait');
-  assert.match(worker, /wrought-shell-v9/,
+  assert.match(worker, /wrought-shell-v10/,
     'installed phones can keep the old dashboard shell after this redesign');
 });
 
