@@ -1220,8 +1220,18 @@ copying a link into three pages.
 The smaller public doors use `public/shell.css`. It deliberately owns only the
 room — atmosphere, surface depth, safe areas and touch finish — while each page
 keeps its own layout and behaviour. `shell.css` and `app-info.json` are part of
-the service-worker shell, currently `wrought-shell-v6`. A public redesign that
+the service-worker shell, currently `wrought-shell-v10`. A public redesign that
 does not bump that name has not reached the installed product.
+
+**The cover page is the one from BEFORE the Forge 03 redesign.** Codex
+redesigned `index.html` on 5 September (*"Your day. Already understood."*,
+`data-release="forge-03"`) and the founder, six days later: *"the cover page
+has been changed and I don't really like it — go back to where it was, just
+the cover page."* So `public/index.html` is restored to the 4 September
+version (*"Your AI forgets. WROUGHT doesn't."*) and nothing else moved: the
+dashboard behind sign-in keeps the Forge 03 layout, the palette is the same
+on both sides, and the harness pins the cover to NOT carry the Forge 03
+release mark. The shell name was bumped so installed phones fetch it.
 
 ### Two classes called `.bar`, and the header they flattened
 
