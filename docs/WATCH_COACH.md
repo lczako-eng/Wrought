@@ -2,7 +2,7 @@
 
 ## Implemented in source
 
-- Existing cover page unchanged. Dashboard performance surfaces use the existing dark/orange palette, animated trend paths, rounded cards and a prominent round-coach entrance.
+- Existing cover page unchanged. The performance dashboard redesign was rejected and rolled back to the exact pre-release `8f651e3` dashboard. No new stylesheet or workout promotional panel remains on that shared website/iPhone surface. The separate round timer and native Watch code are retained, not represented as installed.
 - `/workout.html`: configurable rounds/work/recovery, browser sound cues, pause/resume, partial-completion receipt, reduced motion. It pauses when hidden rather than falsely promising iOS background execution. Browser completion hands a receipt to the user's assistant; it does not invent a saved workout.
 - `prepare_rounds`: the connector returns a configured timer URL using the durations the person requested. It does not remotely start a Watch or claim a session was logged.
 - Native watchOS 10+ target embedded in iPhone 1.1 (8). Watch owns an `HKWorkoutSession` and `HKLiveWorkoutBuilder`; reads HR and estimated active energy; saves one workout into HealthKit. Existing iPhone HealthCourier observes workouts and imports their stable HealthKit UUIDs through the existing idempotent ingest path. No second writer is added.
