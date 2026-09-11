@@ -24,6 +24,7 @@ final class WatchCoach: NSObject, ObservableObject {
     private var elapsedBeforePause: TimeInterval = 0
     private var lastPosition: RoundClock.Position?
     private var finishing = false
+    private var finishedAt: Date?
     private var pendingPlan: WorkoutPlan?
     private var elapsed: TimeInterval { elapsedBeforePause + (running && !paused ? ProcessInfo.processInfo.systemUptime - startedUptime : 0) }
 
@@ -65,7 +66,7 @@ final class WatchCoach: NSObject, ObservableObject {
             elapsedBeforePause = 0
             startedUptime = ProcessInfo.processInfo.systemUptime
             heartRate = nil; heartDate = nil; calories = nil
-            running = true; paused = false; finishing = false; lastPosition = nil
+            running = true; paused = false; finishing = false; finishedAt = nil; lastPosition = nil
             message = "Watch controls the workout."
             tick()
             timer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in
@@ -78,7 +79,7 @@ final class WatchCoach: NSObject, ObservableObject {
     }
 
     func togglePause() {
-        guard running, !finishing else { return }
+        guard running, !finishing, !busy else { return }
         if paused {
             startedUptime = ProcessInfo.processInfo.systemUptime
             paused = false; workout?.resume()
@@ -98,7 +99,13 @@ final class WatchCoach: NSObject, ObservableObject {
         if cue > 0 { pulse(cue) }
         if lastPosition != next { publish() }
         lastPosition = next
-        if next.phase == "complete" { Task { await finish() } }
+        if next.phase == "complete" {
+            // Keep the workout entitlement active until all three final taps play.
+            // The saved collection still ends at the actual round boundary.
+            finishedAt = Date().addingTimeInterval(-max(0, elapsed - Double(plan.totalSeconds)))
+            timer?.invalidate(); timer = nil; busy = true
+            Task { await pulseTask?.value; await finish() }
+        }
     }
 
     private func pulse(_ count: Int) {
@@ -123,7 +130,7 @@ final class WatchCoach: NSObject, ObservableObject {
         message = "Saving to Apple Health…"
         workout?.end()
         do {
-            try await builder?.endCollection(at: Date())
+            try await builder?.endCollection(at: finishedAt ?? Date())
             let saved = try await builder?.finishWorkout()
             guard saved != nil else { throw NSError(domain: "Wrought", code: 1, userInfo: [NSLocalizedDescriptionKey: "No workout receipt returned."]) }
             message = partial ? "Partial workout saved to Apple Health." : "Workout saved to Apple Health."
