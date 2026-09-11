@@ -45,7 +45,7 @@ struct WatchCoachView: View {
                         .font(.caption2).foregroundStyle(.secondary)
                 }
                 Text(coach.message).font(.caption2).foregroundStyle(.secondary)
-            }.padding(.horizontal, 5)
+            }.padding(.horizontal, 5).disabled(coach.busy)
         }
         .confirmationDialog("End and save this workout?", isPresented: $confirmEnd) {
             Button("End and save") { Task { await coach.finish() } }

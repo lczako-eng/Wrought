@@ -40,6 +40,9 @@ for(let round=1;round<=30;round++) {
   assert.equal(one,round);assert.equal(two,round);assert.equal(three,round);
 }
 const watchInfo=readFileSync(new URL('../ios/WatchInfo.plist',import.meta.url),'utf8');
+const coach=readFileSync(new URL('../ios/WroughtWatch/WatchCoach.swift',import.meta.url),'utf8');
+assert.match(coach,/await pulseTask\?\.value; await finish\(\)/, 'finish cannot revoke background haptics before all final taps');
+assert.match(coach,/endCollection\(at: finishedAt \?\? Date\(\)\)/, 'the haptic tail must not extend the saved workout');
 assert.match(watchInfo,/<key>WKBackgroundModes<\/key><array><string>workout-processing<\/string>/);
 const bridge=readFileSync(new URL('../ios/Wrought/WatchBridge.swift',import.meta.url),'utf8');
 assert.match(bridge,/message.frameInfo.isMainFrame/);
