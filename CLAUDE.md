@@ -1888,13 +1888,28 @@ the tell, exactly as written above. Asked *"where is it added?"*, ChatGPT
 answered *"Only in this chat's running food log — not in @Wrought. I don't
 currently have access to the Wrought connector here, so I shouldn't have said
 it was added."* **That is the never-claim-a-save rule landing in production
-for the first time**: it refused to assert a write it had not made. The
-founder pushed back, and the row went in a minute later — 14:24:11Z, 360 kcal,
-`source: agent`, once, no duplicate and no hand repair needed. So the toggle
-had been reachable all along and the model was reasoning about its absence
-rather than trying. Nothing here is a server-side fix: the durable answer is
-still the custom GPT in `docs/CUSTOM_GPT.md`, whose Actions are always
-attached and whose sheet is read every turn.
+for the first time**: it refused to assert a write it had not made.
+
+**The connector was attached the whole time.** Pushed back on, it looked
+again and found it — its own account: *"I found the Wrought connector. I
+missed it earlier because it wasn't initially surfaced in my available
+tools."* Not the per-chat toggle this time but a tool list that arrived late,
+which from the outside is indistinguishable and is just as far out of reach
+from here: a model that cannot see the tools cannot read the sheet telling it
+to look twice. The durable answer is unchanged — the custom GPT in
+`docs/CUSTOM_GPT.md`, whose Actions are always attached and whose sheet is
+read every turn.
+
+**And the confirmation that followed was `macroLine` entire, relayed rather
+than composed.** *"Logged in Wrought: sourdough toast with butter and cheddar
+— 360 calories, 13g protein, 32g carbs (3g sugar, 2g fibre), and 20g fat (12g
+saturated) at 10:24 a.m. Today's total is the same."* Every figure matches the
+stored row exactly — `protein_g 13, carbs_g 32, sugar_g 3, fibre_g 2, fat_g
+20, sat_fat_g 12` — filed once at 14:24:11Z, `source: agent`, no duplicate and
+no hand repair needed. The receipt phrase, the full macro line, the time said
+back, and the day kept distinct from the item: four entries of this file
+arriving in a single reply, on the chat that had been composing food out of
+memory two days earlier.
 
 **Every item with ALL of its numbers, and the day broken down the same
 way.** The founder, on a dinner that came back as *"~1,130–1,450
