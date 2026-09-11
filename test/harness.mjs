@@ -2116,6 +2116,19 @@ group('Sign-in — a password, not a link');
 // revert that nothing else would notice.
 
 const page = f => readFileSync(new URL(`../public/${f}`, import.meta.url), 'utf8');
+
+// A rule worth enforcing is worth explaining next to the code it governs — and
+// the explanation names the very thing the rule forbids. Grepping the warning
+// instead of the breach has now caught this harness four times (.bar, .setpill,
+// the preflight prohibitions, and the shell version below), so any assertion
+// that searches for a forbidden literal reads the source through here first.
+// Line comments only when they lead the line, or every https:// in the repo
+// loses its second half.
+const decomment = src => String(src)
+  .replace(/<!--[\s\S]*?-->/g, '')
+  .replace(/\/\*[\s\S]*?\*\//g, '')
+  .replace(/^\s*\/\/.*$/gm, '');
+
 const AUTH_PAGES = ['app.html', 'authorize.html', 'connect.html'];
 
 await test('no page falls back to emailing a sign-in link', () => {
@@ -11558,7 +11571,17 @@ await test('mutable presentation cannot strand an installed phone on an old rele
   assert.match(config, /for = "\/sw\.js"[\s\S]*?no-cache, no-store, must-revalidate/);
   assert.match(config, /for = "\/\*\.html"[\s\S]*?no-cache, no-store, must-revalidate/);
   assert.match(refresh, /startsWith\('wrought-shell-'\)/);
-  assert.match(refresh, /name\s*!==\s*'wrought-shell-v8'/,
+  // The recovery page kept its own copy of the shell name — 'wrought-shell-v8',
+  // correct the day it was written. Two bumps later it was deleting the CURRENT
+  // cache and preserving the stale one, so the page whose whole job is
+  // unsticking a phone was the thing holding it on the old build. The name is
+  // read off sw.js now, which owns it; this assertion pins the reading rather
+  // than the value, so it cannot go stale the way the literal did.
+  assert.doesNotMatch(decomment(refresh), /wrought-shell-v\d/,
+    'the recovery page names a shell version of its own — sw.js owns that value');
+  assert.match(refresh, /fetch\('\/sw\.js',\s*\{\s*cache:\s*'no-store'\s*\}\)/,
+    'the recovery page does not read the current shell name back off sw.js');
+  assert.match(refresh, /name\s*!==\s*keep/,
     'the recovery page deletes the complete current offline shell it just installed');
   assert.match(worker, /k\.startsWith\('wrought-shell-'\)\s*&&\s*k\s*!==\s*SHELL/,
     'activation deletes unrelated Cache API data');
@@ -11568,6 +11591,32 @@ await test('mutable presentation cannot strand an installed phone on an old rele
     'a worker update can reload over a half-written log or password');
   assert.match(native, /cachePolicy: \.reloadIgnoringLocalCacheData/,
     'the native frame can relaunch an old HTML document');
+});
+
+await test('one file owns the shell name, and every precached file exists', () => {
+  const worker = page('sw.js');
+
+  // A shell version typed anywhere but sw.js is a copy, and a copy drifts in
+  // silence. refresh.html proved it: it held 'wrought-shell-v8' through two
+  // bumps and went on preserving the stale cache it was written to clear, so a
+  // shipped fix looked to the founder exactly like a fix that never shipped.
+  const strays = readdirSync(new URL('../public/', import.meta.url))
+    .filter(f => /\.(html|js|json|css|webmanifest)$/.test(f) && f !== 'sw.js')
+    .filter(f => /wrought-shell-v\d/.test(decomment(page(f))));
+  assert.deepEqual(strays, [],
+    `a shell version is hardcoded outside sw.js: ${strays.join(', ')}`);
+
+  // caches.addAll() rejects ENTIRELY if a single request fails, and a rejected
+  // install means skipWaiting() never runs — so one missing file strands every
+  // installed phone on the worker it already has. Nothing errors anywhere a
+  // person can see it; the update simply never arrives.
+  const list = worker.slice(worker.indexOf('const SHELL_FILES'), worker.indexOf("self.addEventListener('install'"));
+  const precached = [...list.matchAll(/'\/([^']+)'/g)].map(m => m[1]);
+  assert.ok(precached.length >= 10, 'the precache list could not be read out of sw.js');
+  for (const f of precached) {
+    assert.ok(fs.existsSync(new URL(`../public/${f}`, import.meta.url)),
+      `sw.js precaches /${f}, which does not exist — caches.addAll() rejects and no phone gets the new worker`);
+  }
 });
 
 await test('the app facts on the website match the native project', () => {

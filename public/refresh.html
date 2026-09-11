@@ -17,8 +17,19 @@ main{width:min(560px,100%);border:1px solid var(--edge);background:linear-gradie
 <body data-release="forge-03">
 <main><p class="code">WROUGHT / Forge 03 / Clean handoff</p><h1>Loading the new record.</h1><p id="status">Replacing only WROUGHT’s old display files. Your sign-in, notification permission and health record stay untouched.</p><div class="rail" aria-hidden="true"><i></i></div><button id="retry" type="button" hidden>Continue to WROUGHT</button></main>
 <script>
+// THE NAME OF THE CURRENT SHELL IS READ, NEVER TYPED HERE. This page used to
+// keep 'wrought-shell-v8' and delete the rest — correct on the day it was
+// written and wrong at the next bump, because sw.js owns that value and this
+// file had its own copy. Two shells later it was deleting the CURRENT cache
+// and preserving the stale one: the page whose whole job is unsticking a phone
+// was the thing holding it on the old build, and the symptom was a shipped fix
+// that looked like it had never shipped. sw.js is no-store, so reading the
+// name back off it is always the truth. Unreadable means keep nothing — with
+// the shell in doubt, a cleared cache refills on the very next navigation,
+// while a wrong one survives.
 const status=document.getElementById('status'),retry=document.getElementById('retry');
-const go=async()=>{try{if('serviceWorker'in navigator){const reg=await navigator.serviceWorker.register('/sw.js',{updateViaCache:'none'});await Promise.race([reg.update().catch(()=>null),new Promise(resolve=>setTimeout(resolve,8000))])}if('caches'in window){const names=await caches.keys();await Promise.all(names.filter(name=>name.startsWith('wrought-shell-')&&name!=='wrought-shell-v8').map(name=>caches.delete(name)))}location.replace(`/app.html?fresh=forge-03-${Date.now()}`)}catch{status.textContent='The automatic refresh could not finish. Nothing was removed from your account.';retry.hidden=false}};
+const currentShell=async()=>{try{const src=await fetch('/sw.js',{cache:'no-store'}).then(r=>r.text());return (src.match(/const SHELL\s*=\s*'([^']+)'/)||[])[1]||null}catch{return null}};
+const go=async()=>{try{if('serviceWorker'in navigator){const reg=await navigator.serviceWorker.register('/sw.js',{updateViaCache:'none'});await Promise.race([reg.update().catch(()=>null),new Promise(resolve=>setTimeout(resolve,8000))])}if('caches'in window){const keep=await currentShell();const names=await caches.keys();await Promise.all(names.filter(name=>name.startsWith('wrought-shell-')&&name!==keep).map(name=>caches.delete(name)))}location.replace(`/app.html?fresh=${Date.now()}`)}catch{status.textContent='The automatic refresh could not finish. Nothing was removed from your account.';retry.hidden=false}};
 retry.addEventListener('click',go);go();
 </script>
 </body>
