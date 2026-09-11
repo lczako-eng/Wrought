@@ -13,7 +13,17 @@ import WebKit
 
 @MainActor
 final class WebViewStore: NSObject, ObservableObject {
+    static let shared = WebViewStore()
     let webView: WKWebView
+    private let watchBridge = WatchBridge()
+
+    func openWorkout(_ url: URL) {
+        guard url.scheme == "wrought", url.host == "workout" else { return }
+        let allowed = Set(["name", "rounds", "workSeconds", "restSeconds", "warningSeconds", "activity"])
+        var destination = URLComponents(string: "https://wrought.fit/workout.html")!
+        destination.queryItems = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.filter { allowed.contains($0.name) }
+        if let target = destination.url { webView.load(URLRequest(url: target)) }
+    }
 
     override init() {
         let config = WKWebViewConfiguration()
@@ -24,6 +34,8 @@ final class WebViewStore: NSObject, ObservableObject {
         webView.backgroundColor = UIColor(red: 0.078, green: 0.067, blue: 0.059, alpha: 1)
         webView.scrollView.backgroundColor = webView.backgroundColor
         super.init()
+        watchBridge.webView = webView
+        config.userContentController.add(watchBridge, name: "wroughtWatch")
         webView.navigationDelegate = self
         // The native shell persists cookies and localStorage, but the HTML is
         // deliberately fetched fresh. Otherwise relaunching the app can revive

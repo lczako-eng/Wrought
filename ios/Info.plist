@@ -36,6 +36,8 @@
 -->
 <plist version="1.0">
 <dict>
+	<key>NSSupportsLiveActivities</key><true/>
+	<key>CFBundleURLTypes</key><array><dict><key>CFBundleURLName</key><string>fit.wrought.workout</string><key>CFBundleURLSchemes</key><array><string>wrought</string></array></dict></array>
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>

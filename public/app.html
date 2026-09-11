@@ -2335,6 +2335,7 @@ body::after {
   .motion-pending { opacity: 1 !important; transform: none !important; filter: none !important; }
 }
 </style>
+<link rel="stylesheet" href="/performance.css">
 <link rel="icon" href="/icon.svg" type="image/svg+xml">
 <link rel="icon" href="/icon-32.png" sizes="32x32" type="image/png">
 <link rel="icon" href="/favicon.ico" sizes="32x32">
@@ -2459,6 +2460,7 @@ body::after {
         <button class="range view" data-view="log" aria-pressed="false">Log</button>
         <button class="range view" data-view="calendar" aria-pressed="false">Calendar</button>
         <button class="range view" data-view="trainer" aria-pressed="false">Trainer</button>
+        <a class="range" href="/workout.html">Rounds ↗</a>
         <button class="range view" data-view="photos" aria-pressed="false">Photos</button>
         <button class="range view" data-view="account" aria-pressed="false">Account</button>
         <button class="range view" data-view="admin" aria-pressed="false" id="admintab" hidden>Admin</button>
@@ -8343,6 +8345,7 @@ function render(d) {
   // fourteen-day lines, because context is not the same thing as changing the
   // selected range.
   const momentum = momentumPanel(d);
+  if (!(d.care_flags || []).length) out.push(`<a class="workout-launch" href="/workout.html"><div class="launch-copy"><span class="launch-kicker">TRAIN / ROUND COACH</span><strong>Your next round starts here.</strong><span class="launch-note">Custom work and recovery intervals. A focused timer on the web, with haptics and live effort in the new Watch companion.</span></div><span class="launch-action">Set your rounds ↗</span></a>`);
   out.push('<div class="overview-stage">');
   out.push(hero(d));
   if (momentum) out.push(momentum);

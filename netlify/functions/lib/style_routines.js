@@ -79,7 +79,7 @@ export const STYLE_ROUTINES = {
       lift('Medicine ball rotational throw', 3, 12, 45, ['core'], 'each side, against a wall', 'Turn the hips first; the arms only finish it.'),
       lift('Inverted Row', 3, 12, 60, ['back', 'arms']),
       timed('Plank', 3, '3 × 60 s', ['core']),
-      timed('Rowing Machine', 10, '10 × (1 min hard, 1 min easy) — the recovery between rounds is what this builds', ['full body']),
+      timed('Rowing Machine', 20, '10 × (1 min hard, 1 min easy) — the recovery between rounds is what this builds', ['full body']),
     ],
   },
   sparring_volume: {

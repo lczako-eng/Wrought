@@ -5,7 +5,7 @@
   "type": "module",
   "description": "WROUGHT — the honest personal trainer that lives inside your AI. MCP server, Supabase memory, wearable ingest.",
   "scripts": {
-    "test": "node scripts/build-all-sql.mjs && node scripts/undeclared.mjs netlify/functions/*.js netlify/functions/lib/*.js public/*.html && node test/harness.mjs",
+    "test": "node scripts/build-all-sql.mjs && node scripts/undeclared.mjs netlify/functions/*.js netlify/functions/lib/*.js public/*.html && node test/harness.mjs && node test/workout-clock.mjs",
     "sql": "node scripts/build-all-sql.mjs"
   },
   "dependencies": {
