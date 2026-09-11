@@ -1220,7 +1220,7 @@ copying a link into three pages.
 The smaller public doors use `public/shell.css`. It deliberately owns only the
 room — atmosphere, surface depth, safe areas and touch finish — while each page
 keeps its own layout and behaviour. `shell.css` and `app-info.json` are part of
-the service-worker shell, currently `wrought-shell-v11`. A public redesign that
+the service-worker shell, currently `wrought-shell-v12`. A public redesign that
 does not bump that name has not reached the installed product.
 
 **The cover page is the one from BEFORE the Forge 03 redesign.** Codex
@@ -1323,6 +1323,44 @@ than pinning the two that were found — and it immediately found the second
 one, which was invisible behind the new backstop. Verified to fail when
 either is put back. Measured at 320, 360, 390 and 430 on the cover and the
 dashboard alike: scroll width equals client width at every one.
+
+### "Not just the homepage" — and the judgement call that was wrong
+
+Told the cover was done, the founder: *"You didn't change yet you just
+changed the homepage … it should've been the full thing … and the HDMI and
+the app the iOS."* He was right, and the failure was mine and avoidable: he
+had already said *"All of them should get like that styling homepage and
+same with you when you login I want it all like that"*, and I decided the
+dashboard was **already like that** and reported that decision back instead
+of doing the work. **A judgement call that overrides a clear instruction is
+not a judgement call, it is a refusal with a rationale attached.**
+
+The instruction was also right on the merits, which is the part worth
+keeping. The dashboard **did** have the rings — buried five panels down,
+under momentum, food, training and the record check. The cover now shows the
+day's figure and the five verdict rings in one card; the screen he opens
+every morning made him scroll past four panels to reach the same answer.
+`targetsPanel` rides in the `overview-stage` beside the hero now, and
+momentum drops below it. **What the day cost and whether it landed are one
+question.** The stage is a two-column grid, so targets take the second slot
+and momentum falls back into it when there are no goals to draw — the stage
+is never a half-empty row.
+
+**`UNDE ROUGHL`.** Found while looking at the reordered screen: the hero's
+caption was being cut off at 390px. `.balance-reading` was
+`grid-template-columns: 1fr auto`, and **a grid track is `min-width:auto` by
+default**, so the big figure refused to shrink and shoved `UNDER / ROUGHLY`
+out to 379.8px inside a panel that ends at 374 and clips at
+`overflow:hidden`. `minmax(0,1fr)` and it sits at 353. Pre-existing, on the
+first screen of the product, and nobody had measured it.
+
+**The iOS app needed no native work, and that is the architecture paying
+out.** `ios/Wrought/WebView.swift:44` loads `https://wrought.fit/app.html`
+live rather than a bundled copy, so the phone renders the dashboard this
+deploy ships — no rebuild, no App Store round trip. The claim is checkable
+at that line rather than asserted, which is the point: *"the same stuff on
+the website is on the app"* is only true while nothing native holds its own
+copy of a screen.
 
 ### Two classes called `.bar`, and the header they flattened
 
@@ -4593,7 +4631,7 @@ self-reporting scale removes the most-abandoned manual entry), then Strava.
 
 ## Conventions
 
-- `npm test` runs `test/harness.mjs` — 724 offline tests, no network, no database.
+- `npm test` runs `test/harness.mjs` — 725 offline tests, no network, no database.
   Run it before every push. It covers the JSON-RPC envelope (which fails as an
   uninformative "could not connect" inside ChatGPT) and all the arithmetic
   (which fails as a confidently wrong number in somebody's verdict).
