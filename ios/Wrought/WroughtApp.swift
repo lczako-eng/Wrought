@@ -30,6 +30,7 @@ struct WroughtApp: App {
         WindowGroup {
             ContentView()
                 .environmentObject(courier)
+                .onOpenURL { WebViewStore.shared.openWorkout($0) }
                 .preferredColorScheme(.dark)   // the forge is dark; a white flash on launch reads as a glitch
         }
     }

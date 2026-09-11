@@ -1,9 +1,10 @@
 {
   "name": "Wrought for iPhone",
-  "version": "1.0",
-  "build": "7",
-  "updated_label": "4 Sep 2026",
-  "release_note": "The dashboard updates from wrought.fit without another native release.",
+  "version": "1.1",
+  "build": "8",
+  "updated_label": "10 Sep 2026",
+  "native_release_status": "device_testing_required",
+  "release_note": "Source build 1.1 (8) adds the Apple Watch round coach. Not yet a verified public native release: installation and on-wrist testing are still required. Website visuals and the browser timer update separately.",
   "download_url": "",
   "download_label": "Get the app"
 }

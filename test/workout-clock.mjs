@@ -1,0 +1,55 @@
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { DEFAULT_PLAN as p, position, cue, validatePlan, totalSeconds, workoutLink } from '../public/workout-clock.js';
+import { handleRpc, prepareRounds } from '../netlify/functions/mcp.js';
+const prepared = await prepareRounds({rounds:8,workSeconds:180,restSeconds:60});
+assert.equal(prepared.error,undefined);
+assert.equal(prepared.total_seconds,1860);
+const invalid = await prepareRounds({rounds:8});
+assert.equal(invalid.error,'missing_intervals');
+const listed = await handleRpc({id:1,method:'tools/list'},null);
+assert.ok(listed.result.tools.find(tool=>tool.name==='prepare_rounds'));
+assert.equal(totalSeconds(p), 1860);
+assert.deepEqual(position(p, 0), {phase:'work',round:1,remaining:180,duration:180,key:'1-work'});
+assert.equal(cue(p, null, position(p,0)), 2);
+assert.equal(cue(p, position(p,149), position(p,150)), 1);
+assert.equal(cue(p, position(p,150), position(p,151)), 0);
+assert.equal(cue(p, position(p,179), position(p,180)), 3);
+assert.equal(cue(p, position(p,239), position(p,240)), 2);
+assert.equal(position(p,1860).phase, 'complete');
+assert.equal(cue(p,position(p,1859),position(p,1860)),3);
+assert.equal(cue(p,position(p,1860),position(p,2000)),0);
+assert.equal(cue(p,position(p,1),position(p,480)),2, 'resume must not replay missed rounds');
+const short=validatePlan({rounds:1,workSeconds:20,restSeconds:0});
+assert.equal(totalSeconds(short),20);
+assert.equal(cue(short,position(short,0),position(short,1)),0,'no warning on rounds shorter than warning');
+assert.equal(position({...short,rounds:2},20).phase,'work');
+for(const bad of [{rounds:0},{rounds:31},{rounds:1.5},{workSeconds:NaN},{workSeconds:9},{restSeconds:-1},{warningSeconds:61},{name:'<'.repeat(81)},{rounds:30,workSeconds:1800}]) assert.throws(()=>validatePlan(bad));
+const link=new URL(workoutLink({...p,name:'Boxing & footwork'}));
+assert.equal(link.searchParams.get('name'),'Boxing & footwork');
+assert.equal(link.origin,'https://wrought.fit');
+for(let round=1;round<=30;round++) {
+  const plan=validatePlan({rounds:round,workSeconds:60,restSeconds:30});
+  let previous=null,one=0,two=0,three=0;
+  for(let second=0;second<=totalSeconds(plan);second++) {
+    const next=position(plan,second), count=cue(plan,previous,next);
+    if(count===1)one++;if(count===2)two++;if(count===3)three++;
+    assert.ok(next.remaining>=0);assert.ok(next.round<=round);
+    previous=next;
+  }
+  assert.equal(one,round);assert.equal(two,round);assert.equal(three,round);
+}
+const watchInfo=readFileSync(new URL('../ios/WatchInfo.plist',import.meta.url),'utf8');
+assert.match(watchInfo,/<key>WKBackgroundModes<\/key><array><string>workout-processing<\/string>/);
+const bridge=readFileSync(new URL('../ios/Wrought/WatchBridge.swift',import.meta.url),'utf8');
+assert.match(bridge,/message.frameInfo.isMainFrame/);
+assert.match(bridge,/securityOrigin.host == "wrought.fit"/);
+assert.match(bridge,/securityOrigin.protocol == "https"/);
+assert.doesNotMatch(bridge,/access_token|storedKey\(/);
+const web=readFileSync(new URL('../public/workout.js',import.meta.url),'utf8');
+assert.match(web,/document.hidden && running && !paused/);
+assert.match(web,/watchState.heartTimestamp < 15000/);
+assert.match(web,/No heart-rate or calorie readings were recorded/);
+const sw=readFileSync(new URL('../public/sw.js',import.meta.url),'utf8');
+for(const file of ['workout.html','workout.js','workout.css','workout-clock.js','performance.css']) assert.ok(sw.includes(`'/${file}'`));
+console.log('Round coach: boundaries, all 30 round counts, cue counts, no trailing rest, limits, origin checks and offline assets passed.');

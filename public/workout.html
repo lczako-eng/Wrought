@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#14110F"><title>Train · WROUGHT</title>
+  <link rel="icon" href="/icon.svg"><link rel="manifest" href="/site.webmanifest">
+  <link rel="stylesheet" href="/workout.css">
+</head>
+<body>
+  <header class="workout-header"><a href="/app.html" class="wordmark"><img src="/icon.svg" width="32" height="32" alt=""> WROUGHT</a><a href="/app.html#trainer">Your training record ↗</a></header>
+  <main>
+    <div class="heading"><div><p class="eyebrow">TRAIN / ROUND COACH</p><h1>Your next round.<br><em>Your full attention.</em></h1></div><p class="intro">Set the work. Take the recovery.<br>One round at a time.</p></div>
+    <section class="workout-grid" aria-label="Workout timer">
+      <div class="clock-panel">
+        <div class="panel-top"><span id="plan-name">Boxing</span><span class="status-pill" id="source">BROWSER TIMER</span></div>
+        <div class="dial" id="dial">
+          <svg viewBox="0 0 300 300" aria-hidden="true"><circle class="track" cx="150" cy="150" r="135"/><circle class="progress" id="arc" cx="150" cy="150" r="135" pathLength="1"/></svg>
+          <div class="dial-content"><p id="phase">READY TO START</p><div id="countdown" role="timer" aria-label="Time remaining">3:00</div><p id="round">ROUND 1 / 8</p></div>
+        </div>
+        <div class="round-track" id="round-track" aria-label="Completed rounds"></div>
+        <p id="instruction" class="instruction" aria-live="polite">Your plan is ready. Start when you are.</p>
+        <div class="controls"><button id="start" class="primary">Start workout</button><button id="pause" hidden>Pause</button><button id="end" hidden>End workout</button></div>
+        <p class="small">Browser timers need this screen open. For locked-screen haptics, use the native Watch companion.</p>
+      </div>
+      <div class="side-stack">
+        <section class="metrics-panel"><div class="panel-top"><h2>Live effort</h2><span id="freshness">NO SENSOR CONNECTED</span></div>
+          <div class="metric-row"><div><span class="metric-label">Heart rate</span><strong id="heart">—</strong><span class="unit">bpm</span></div><div><span class="metric-label">Active energy · estimate</span><strong id="energy">—</strong><span class="unit">kcal</span></div></div>
+          <svg id="heart-chart" viewBox="0 0 480 120" role="img" aria-label="Heart rate from the last two minutes. No readings yet."><defs><linearGradient id="heart-fill" x1="0" x2="0" y1="0" y2="1"><stop stop-color="#F26419" stop-opacity=".3"/><stop offset="1" stop-color="#F26419" stop-opacity="0"/></linearGradient></defs><path class="gridline" d="M0 30H480M0 60H480M0 90H480"/><path id="heart-area" fill="url(#heart-fill)"/><path id="heart-line"/></svg>
+          <p class="small" id="sensor-note">No simulated readings. Live heart rate appears when the Watch companion is connected to this iPhone app.</p>
+        </section>
+        <section class="plan-panel"><div class="panel-top"><h2>Your session</h2><span id="total">31 MIN</span></div>
+          <form id="plan-form"><label>Session name<input id="name" maxlength="80" value="Boxing" required></label><label>Activity<select id="activity"><option value="boxing">Boxing</option><option value="hiit">Intervals / HIIT</option><option value="strength">Timed strength work</option><option value="running">Indoor run intervals</option></select></label><div class="input-row"><label>Rounds<input id="rounds" type="number" min="1" max="30" value="8" required></label><label>Work · seconds<input id="work" type="number" min="10" max="1800" value="180" required></label><label>Rest · seconds<input id="rest" type="number" min="0" max="600" value="60" required></label></div>
+          <button type="submit">Update session</button></form>
+          <button id="send-watch" class="watch-button">Send plan to Apple Watch ↗</button>
+          <a id="open-native" class="native-link" href="wrought://workout">Open this plan in the iPhone app ↗</a>
+          <p class="small" id="watch-status" role="status">On a website or Home Screen shortcut? Your timer works here. Sending to Watch needs the updated native iPhone app.</p>
+        </section>
+      </div>
+    </section>
+    <section class="cue-strip" aria-label="Watch haptic cues"><div><b>•</b><h2>30 seconds left</h2><p>One tap. Finish the round.</p></div><div><b>•••</b><h2>Round complete</h2><p>Three taps. Take your recovery.</p></div><div><b>••</b><h2>Back to work</h2><p>Two taps. Start the next round.</p></div></section>
+    <section id="summary" class="summary" hidden><p class="eyebrow">SESSION RECEIPT</p><h2 id="summary-title">Workout complete.</h2><p id="summary-text"></p><a id="log-workout" class="primary" href="/go.html">Review and log with your coach ↗</a><p class="small">The browser timer does not silently add a workout to your record. Watch workouts are saved to Apple Health and imported by your connected iPhone.</p></section>
+    <footer><a href="/app.html">Back to your day</a><p>Training support, not a medical device. Stop if you feel unwell.</p></footer>
+  </main>
+  <script type="module" src="/workout.js"></script>
+</body>
+</html>

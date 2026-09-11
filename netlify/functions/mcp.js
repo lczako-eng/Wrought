@@ -63,6 +63,7 @@ import { resolvePlace, placeEquipment, listPlaces, bumpPlace, applyPlaces, sessi
 import { dayReceipt } from './lib/receipt.js';
 import { dayReadout } from './lib/dayread.js';
 import { mealTiming } from './lib/timing.js';
+import { validatePlan, totalSeconds, workoutLink } from '../../public/workout-clock.js';
 
 // Newest first. The icons on serverInfo are only honoured by clients speaking
 // the newer revisions, so blindly answering 2025-06-18 quietly costs the tile.
@@ -389,6 +390,18 @@ const MOVEMENT_ITEM = {
 };
 
 const TOOLS = [
+  {
+    name: 'prepare_rounds',
+    description: 'Prepare the round timer the user explicitly requested (boxing, interval work or recovery). Take their round count, work duration and rest duration; never invent a training prescription. Return the link to the configured WROUGHT timer. This does not start, log, or send a workout to Watch: the user opens the link, reviews it and starts on the device. Watch haptics require the new native WROUGHT companion. One cue at 30 seconds left, three at round end, two at next round start. Do not promise a remotely started workout.',
+    inputSchema: { type: 'object', properties: {
+      name: { type: 'string', maxLength: 80 },
+      activity: { type: 'string', enum: ['boxing', 'hiit', 'strength', 'running'], description: 'HealthKit activity label. Running here means indoor intervals. Strength means timed work, not automatic rep detection.' },
+      rounds: { type: 'integer', minimum: 1, maximum: 30 },
+      workSeconds: { type: 'integer', minimum: 10, maximum: 1800 },
+      restSeconds: { type: 'integer', minimum: 0, maximum: 600 },
+      warningSeconds: { type: 'integer', minimum: 0, maximum: 60 },
+    }, required: ['rounds', 'workSeconds', 'restSeconds'], additionalProperties: false },
+  },
   {
     name: 'log',
     title: 'Log anything, in plain words',
@@ -5878,7 +5891,18 @@ async function recall(args, user) {
 
 // ── Protocol ────────────────────────────────────────────────────────────────
 
+export async function prepareRounds(args) {
+    try {
+      if (!args || !['rounds', 'workSeconds', 'restSeconds'].every(k => Number.isInteger(args[k]))) return { error: 'missing_intervals', say: 'Tell me the number of rounds, seconds of work, and seconds of recovery.' };
+      const plan = validatePlan(args);
+      return { plan, total_seconds: totalSeconds(plan), url: workoutLink(plan),
+        say: `${plan.rounds} rounds: ${plan.workSeconds} seconds of work, ${plan.restSeconds} seconds recovery between rounds. Open the timer to review and start.`,
+        note: 'No trailing recovery after the final round. This is a prepared timer, not a logged workout. Browser works without the app; native Watch haptics need the updated companion installed.' };
+    } catch (error) { return { error: 'invalid_intervals', say: error.message }; }
+}
+
 const IMPL = {
+  prepare_rounds: prepareRounds,
   log, review_intake_days: reviewIntakeDays, brief, progress,
   whats_next: whatsNext,
   suggest_workout: suggestWorkout,

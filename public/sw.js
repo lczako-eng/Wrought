@@ -11,11 +11,16 @@
 // yesterday's numbers with confidence, so anything carrying data is network
 // first and only falls back to cache when the network genuinely fails.
 
-const SHELL = 'wrought-shell-v8';
+const SHELL = 'wrought-shell-v9';
 
 // Only the frame: markup, icons, manifest. No API responses ever.
 const SHELL_FILES = [
   '/app.html',
+  '/performance.css',
+  '/workout.html',
+  '/workout.css',
+  '/workout.js',
+  '/workout-clock.js',
   '/connect.html',
   '/shell.css',
   '/app-info.json',
