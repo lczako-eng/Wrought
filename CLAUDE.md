@@ -1233,6 +1233,48 @@ dashboard behind sign-in keeps the Forge 03 layout, the palette is the same
 on both sides, and the harness pins the cover to NOT carry the Forge 03
 release mark. The shell name was bumped so installed phones fetch it.
 
+### The page that existed to unstick a phone was the thing holding it stale
+
+The founder asked for the cover page back a second time, in the same words.
+It was already restored and live: `public/index.html` byte-identical to the
+4 September version, Netlify's published deploy `b2afed6`, and `wrought.fit`
+serving *"Your AI forgets. WROUGHT doesn't."* The fix had shipped and looked
+to him exactly like a fix that never had.
+
+`public/refresh.html` is the clean handoff — register the worker, clear the
+old shell, land on the dashboard. It cleared every `wrought-shell-*` cache
+**except `wrought-shell-v8`**: correct the day it was written, and a copy of a
+value `sw.js` owns. Two bumps later (v9 with the Watch surfaces, v10 with the
+cover revert) it was deleting the CURRENT cache and **preserving the stale
+one**. The one page whose entire job is unsticking a phone was what held it on
+the old build.
+
+- **The name is read, never typed.** `sw.js` is `no-store`, so taking `SHELL`
+  back off it is always the truth. Unreadable means keep nothing — with the
+  shell in doubt a cleared cache refills on the very next navigation, while a
+  wrong one survives.
+- **The assertion guarding it had drifted with the file.** Its message was
+  right — *"the recovery page deletes the complete current offline shell it
+  just installed"* — but it pinned the literal `v8` rather than the
+  relationship, so it went stale alongside the bug and went on passing. **A
+  test that names a value cannot outlive the value.** It pins the READING now,
+  and nothing under `public/` except `sw.js` may name a shell version at all.
+- **`caches.addAll()` rejects ENTIRELY on one bad request**, and a rejected
+  install means `skipWaiting()` never runs — so a single missing file strands
+  every installed phone on the worker it already has, with nothing erroring
+  anywhere a person can see. Every path in `SHELL_FILES` is asserted to exist
+  now. Both tests were verified to fail against the bugs they guard.
+- **Fourth time the explanation was mistaken for the breach.** The comment
+  naming `wrought-shell-v8` failed the rule forbidding it. `decomment()` is
+  shared now, after `.bar`, `.setpill` and the preflight prohibitions each hit
+  this separately.
+
+**And "it looks unchanged" is a report about delivery, not about code.** Three
+cheap checks settle it before anything is touched: the file's hash against the
+intended version, Netlify's published `commit_ref`, and one fetch of the live
+URL. All three said shipped. Reverting a second time would have changed
+nothing and hidden the real fault.
+
 ### Two classes called `.bar`, and the header they flattened
 
 Worth keeping because it cost an evening and looked like six different bugs. A
@@ -1839,6 +1881,20 @@ breakfast to today's lunch in prose. The per-chat toggle has no server-side
 fix; the tell is a *"logged"* without *"in Wrought"*. All four items were
 filed by hand through the connector (`detail.repaired` says so) at the
 times they were said.
+
+**The next morning the same chat proved the doctrine works.** Breakfast came
+back as *"added for today"* with a running total and no *"Logged in Wrought"* —
+the tell, exactly as written above. Asked *"where is it added?"*, ChatGPT
+answered *"Only in this chat's running food log — not in @Wrought. I don't
+currently have access to the Wrought connector here, so I shouldn't have said
+it was added."* **That is the never-claim-a-save rule landing in production
+for the first time**: it refused to assert a write it had not made. The
+founder pushed back, and the row went in a minute later — 14:24:11Z, 360 kcal,
+`source: agent`, once, no duplicate and no hand repair needed. So the toggle
+had been reachable all along and the model was reasoning about its absence
+rather than trying. Nothing here is a server-side fix: the durable answer is
+still the custom GPT in `docs/CUSTOM_GPT.md`, whose Actions are always
+attached and whose sheet is read every turn.
 
 **Every item with ALL of its numbers, and the day broken down the same
 way.** The founder, on a dinner that came back as *"~1,130–1,450
@@ -4473,7 +4529,7 @@ self-reporting scale removes the most-abandoned manual entry), then Strava.
 
 ## Conventions
 
-- `npm test` runs `test/harness.mjs` — 722 offline tests, no network, no database.
+- `npm test` runs `test/harness.mjs` — 723 offline tests, no network, no database.
   Run it before every push. It covers the JSON-RPC envelope (which fails as an
   uninformative "could not connect" inside ChatGPT) and all the arithmetic
   (which fails as a confidently wrong number in somebody's verdict).
