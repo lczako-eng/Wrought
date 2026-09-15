@@ -2475,6 +2475,81 @@ the rack screen uses — and the rule is on the tool and the sheet: an errored
 `log_set` is followed by `session_status`, never by a verdict; a set it shows
 is never logged again, a set it does not show is logged now.
 
+### The bench press filed as a leg exercise — the muscles were the model's guess
+
+`lib/muscles.js` + `muscleFor` / `musclesForRow` / `muscleFixes` + `resyncMuscles`.
+Found while sizing an illustration purchase, which needed to know which
+movements the founder actually trains. What the query turned up instead:
+**33 sets on the record, six tagged right, eight tagged not at all, nineteen
+tagged wrong.** Bench press filed three times as *legs, glutes*. Barbell row
+as *core*. Romanian deadlift as *core*. Hammer Strength shoulder press as
+*legs, glutes*.
+
+`log_set` and `log` took `muscles` from the language model and wrote it
+verbatim; nothing on the server ever checked it against the exercise name,
+**even though `lib/library.js` had held the correct muscles for thirty
+movements all along.** The invented-number failure in the one field nobody
+looks at — the model reached for a plausible value because the right one was
+never put in front of it, and as always the fix is not more forbidding, it is
+removing the vacuum.
+
+- **The immediate cause was one line in the bridge.** `setRowsFromWorkout`
+  read `d.muscles` — the union stamped on the WHOLE workout event — for every
+  exercise it expanded, so a session containing a squat and a bench press gave
+  every derived set both sets of muscles. That is exactly where the bench
+  press picked up *legs, glutes* three times over.
+- **What it was costing:** `weeklyVolume` — hard sets per muscle per week, the
+  first question any qualified coach asks of a programme — counts these tags,
+  so the panel was reporting that his bench worked his legs. `focusCall`, the
+  matrix and `neglected_muscles` read the same field, and the eight untagged
+  sets counted toward nothing at all.
+- **Over-splitting is safe for a LOAD; over-merging is safe for a MUSCLE.**
+  `exerciseKey` must stay over-split — a broad key puts another lift's weight
+  on the bar, which is how this product injures somebody. `muscleFor` wants
+  the opposite bias: Hammer Strength row, seated row machine and barbell row
+  are three different loads and one back, and a wrong muscle costs a set
+  counted in the wrong column with nothing going on a bar. Same reasoning,
+  inverted, because what the wrong answer costs is inverted. **Two functions,
+  and a test greps for the attempt to merge them.**
+- **Two stages, because one lookup is not enough.** Keying all thirty curated
+  movements gives a table of thirty; searching the founder's twelve real keys
+  in it hits **three**. The nine misses are the machines and the treadmill
+  rows carrying their setup in the name — `incline treadmill level 12 at 2 5
+  mph` will never be in anybody's table. So the curated table is the reference
+  and goes first, then fourteen ordered word rules catch what nobody curated.
+  All twelve resolve.
+- **The order is load-bearing, and two rules sit where they do on purpose.**
+  CARRY above CARDIO, because a Farmer's *walk* is a loaded carry and not a
+  stroll — the same word that already needed a lookaround in
+  `TIMED_MOVEMENT`. The LOWER-BODY rules above ARMS, because a leg *curl* and
+  a leg *extension* are not arm exercises. And **`hammer` never appears bare**:
+  the founder trains on Hammer Strength machines and a bare match would file
+  his machine row as a curl. All three are tests.
+- **It invents nothing.** An unrecognised key falls back to whatever was
+  reported, and with nothing reported returns null — counted toward nothing
+  and said out loud, never an empty array pretending to be an answer. Same
+  refusal as a working weight with no history. `muscle_source` rides on
+  `log_set`'s reply (`library` / `pattern` / `reported` / `unknown`), the same
+  shape as `effort_read`, so a wrong reading gets corrected out loud.
+- **The sweep overwrites, and that is the one judgement call.** The standing
+  rule is that a save never rewrites real data to fit a theory — it is why a
+  treadmill genuinely programmed as 4×10 keeps its 4×10. The distinction here
+  is that **these tags were never theirs**: nobody was asked for them and
+  nobody has ever seen them. So the bounds are tight and tested — only a
+  `library` or `pattern` answer overwrites, an unrecognised key never touches
+  a stored tag, and it can only correct or fill, **never empty a row**.
+- **Muscles follow the KEY, so `resyncMuscles` chains off `rekeySets`**
+  rather than racing it in the same `Promise.all` — a row retagged from a key
+  that is about to change gets the wrong answer written confidently. Chained
+  with `.then` in both callers so it stays one batch rather than two serial
+  hops.
+- **Two harness assertions had pinned punctuation rather than meaning** and
+  failed on a reformatted `return` and a reformatted `Promise.all`. Both were
+  right about the relationship and wrong to name a literal — the shell-version
+  lesson (*a test that names a value cannot outlive the value*), in two more
+  places. Repinned. Every new test was verified to fail against the bug it
+  guards.
+
 ### A migration applied mid-set took the connector down — and the flush that followed nearly doubled the night
 
 The most expensive minute in this file was mine, and the logs are exact.
@@ -4631,7 +4706,7 @@ self-reporting scale removes the most-abandoned manual entry), then Strava.
 
 ## Conventions
 
-- `npm test` runs `test/harness.mjs` — 725 offline tests, no network, no database.
+- `npm test` runs `test/harness.mjs` — 734 offline tests, no network, no database.
   Run it before every push. It covers the JSON-RPC envelope (which fails as an
   uninformative "could not connect" inside ChatGPT) and all the arithmetic
   (which fails as a confidently wrong number in somebody's verdict).

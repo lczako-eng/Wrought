@@ -13,7 +13,7 @@ import {
   rangeFacts, summariseRange, dayFacts, careFlags, scoreGoals, duplicateItems, duplicateExtra, supabase,
 } from './lib/wrought.js';
 import { orderInsight, earnedRoom, energyBalance, exerciseKey, deviceMatrix, weekdayPattern, focusCall, lastSession,
-         weekSoFar, weekTargets, readiness, targetOptions, estimatedMax, liftTrend, readMovement, backfillDerivedSets, goalsToSet, rekeySets } from './lib/training.js';
+         weekSoFar, weekTargets, readiness, targetOptions, estimatedMax, liftTrend, readMovement, backfillDerivedSets, goalsToSet, rekeySets, resyncMuscles } from './lib/training.js';
 import { weeklyVolume } from './lib/volume.js';
 import { planRead } from './lib/plan.js';
 import { calibration } from './lib/adapt.js';
@@ -125,7 +125,12 @@ export const handler = async (event) => {
     // Keys the old normaliser merged — the incline press filed as the
     // overhead press — put back under their own lift, before the lift record
     // and the progression below read them.
-    rekeySets(user.id),
+    //
+    // Muscles are derived FROM the key, so the retag chains off the re-key
+    // rather than racing it: a row retagged from a key that is about to
+    // change gets the wrong answer written confidently. Chained rather than
+    // awaited separately so this stays one batch and not two serial hops.
+    rekeySets(user.id).then(() => resyncMuscles(user.id)),
   ]);
 
   const to   = params.to || localDateFor(profile.timezone);

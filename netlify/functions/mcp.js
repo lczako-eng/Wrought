@@ -48,7 +48,7 @@ import { nutritionTotals, composition, macroMatrix, yearOverYear } from './lib/n
 import {
   exerciseKey, lastPerformance, progressionCall, TIERS,
   restingBurn, energyBalance, planFromRoutine, sessionTotals, earnedRoom,
-  orderPlan, orderInsight, deviceMatrix, weekdayPattern, weekSoFar, weekTargets, goalCall, baselineFromClaim, readiness, nextSetLoad, rekeySets,
+  orderPlan, orderInsight, deviceMatrix, weekdayPattern, weekSoFar, weekTargets, goalCall, baselineFromClaim, readiness, nextSetLoad, rekeySets, resyncMuscles,
   normaliseMovement, readMovement, syncSetsFromWorkouts,
   ACTIVITY,
   targetOptions, goalsToSet,
@@ -2834,7 +2834,13 @@ async function brief(args, user) {
   // And the set keys the old normaliser merged, put back under their own
   // lift — the brief is the read most people make, so the repair rides here
   // as well as on the dashboard. Independent of the sweep; together.
-  await Promise.all([closeStaleSessions(user.id, profile), rekeySets(user.id)]);
+  // The retag chains off the re-key rather than racing it — muscles are
+  // derived from the key, so a row retagged from a key that is about to
+  // change gets the wrong answer written confidently.
+  await Promise.all([
+    closeStaleSessions(user.id, profile),
+    rekeySets(user.id).then(() => resyncMuscles(user.id)),
+  ]);
 
   const [day, range] = await Promise.all([
     dayFacts(user.id, profile, date),
