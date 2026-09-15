@@ -11511,8 +11511,17 @@ await test('the installed dashboard honours the whole iPhone frame', () => {
   assert.match(app, /safe-area-inset-top/);
   assert.match(app, /safe-area-inset-bottom/);
   assert.equal(manifest.orientation, undefined, 'the dashboard is still locked to portrait');
-  assert.match(worker, /wrought-shell-v12/,
-    'installed phones can keep the old shell after the cover page changed');
+  // THE SHELL NAME IS PINNED AS A SHAPE, NEVER A NUMBER. This assertion used
+  // to name the literal `wrought-shell-v12`, which is the same trap that let
+  // refresh.html go on deleting the current cache and preserving the stale one
+  // while its guard passed: a test that names a value cannot outlive the
+  // value. It goes stale on the very next bump — which is a release doing
+  // exactly the right thing — and a stale assertion fails for a reason that
+  // has nothing to do with the bug it was written to catch. Third time.
+  // "Every precached file exists" and "one file owns the shell name" carry the
+  // real guarantees; this one only asserts the worker declares a shell at all.
+  assert.match(worker, /const SHELL = 'wrought-shell-v\d+';/,
+    'the worker no longer declares a versioned offline shell');
 });
 
 await test('the public site sells the whole daily loop, not a different product', () => {
@@ -11637,13 +11646,30 @@ await test('the dashboard opens on the number AND the rings, not five panels apa
   // verdict rings in one card, and the dashboard was burying the rings under
   // momentum, food, training and the record check. What the day cost and
   // whether it landed are one question, so they share the opening stage.
-  const stage = app.slice(
-    app.indexOf(`out.push('<div class="overview-stage">')`),
-    app.indexOf('out.push(coachSetupPanel(d))'));
+  const open = app.indexOf(`out.push('<div class="overview-stage">')`);
+  const stage = app.slice(open, app.indexOf(`out.push('</div>')`, open));
   assert.ok(stage.length > 40 && stage.length < 1200, 'the overview stage could not be read');
   assert.match(stage, /out\.push\(hero\(d\)\)/, 'the hero left the opening stage');
   assert.match(stage, /if \(targets\) out\.push\(targets\)/,
     'the goal rings no longer ride beside the day figure');
+
+  // AN ADVERT IS NOT THE DAY. The round-coach card stood 245px tall directly
+  // above the stage, so at 390x844 it owned the bottom third of the first
+  // screen and pushed the day's figure to 942px — below the fold — with the
+  // rings at 1507. It belongs under the day, not over it.
+  assert.ok(!/workout-launch/.test(stage), 'the advert is inside the opening stage');
+  assert.ok(app.indexOf('workout-launch') > open,
+    'the round-coach advert is above the day again — it pushes the figure below the fold');
+
+  // And the rings hold ONE row on a phone. `auto-fit` wrapped five of them
+  // onto three rows inside a 390px screen: a 397px block for five two-digit
+  // figures, which is why they sat a screen and a half below the number they
+  // answer. Both steps are pinned — 320px is a real phone and a 52px dial
+  // overflows its own cell there.
+  assert.match(app, /@media \(max-width: 700px\) \{\s*\.targets \{ grid-template-columns: repeat\(5,/,
+    'the goal rings can wrap to three rows on a phone again');
+  assert.match(app, /@media \(max-width: 360px\) \{\s*\.targets \{ gap: 3px; \}/,
+    'the 320px step is gone — the dials overflow their cells on the narrowest phones');
   // and never drawn a second time further down the same view
   assert.equal((app.match(/out\.push\(targetsPanel\(d\)\)/g) || []).length, 0,
     'targetsPanel is still pushed separately as well — the rings would draw twice');
