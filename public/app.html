@@ -357,6 +357,43 @@ main { padding-block: 34px 0; display: flex; flex-direction: column; gap: 26px; 
 .tgt .tick { position: absolute; top: 8px; right: 9px; color: var(--moss); font-size: 12px; }
 .tgt.unscored { opacity: .55; }
 .tgt.unscored .num { color: var(--ash-dim); font-size: 14px; }
+/* ONE ROW ON A PHONE. `auto-fit` at minmax(104px,1fr) wraps five rings onto
+   three rows inside a 390px screen — a 397px block, measured — which is most
+   of a screen spent on five figures that are each two digits. Held to five
+   columns and shrunk to fit, the same five come to 137px and land directly
+   under the day's number instead of a screen and a half below it.
+   Explicit columns rather than a smaller minmax: auto-fit would still be free
+   to wrap, and "whether the day landed" reading as one row is the point. */
+@media (max-width: 700px) {
+  .targets { grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 4px; }
+  .tgt { padding: 9px 2px 8px; border-radius: 11px; }
+  .tgt svg { width: 52px; height: 52px; }
+  .tgt .mid { top: 9px; height: 52px; }
+  .tgt .num { font-size: 12.5px; }
+  .tgt .num.long { font-size: 10.5px; }
+  .tgt .of { font-size: 8px; margin-top: 1px; }
+  .tgt .lab { font-size: 8px; letter-spacing: .05em; margin-top: 4px; }
+  .tgt .tick { top: 5px; right: 5px; font-size: 10px; }
+  .tgt.unscored .num { font-size: 11px; }
+}
+/* 320px is a real phone and five columns there leaves about 47px a cell, so a
+   52px dial overflowed its own box — measured, not guessed. Caught only
+   because the check walks 320/360/390/430 rather than the one width the
+   screenshot happened to use. */
+@media (max-width: 360px) {
+  .targets { gap: 3px; }
+  .tgt { padding: 7px 1px 7px; }
+  .tgt svg { width: 42px; height: 42px; }
+  .tgt .mid { top: 7px; height: 42px; }
+  .tgt .num { font-size: 10.5px; }
+  .tgt .num.long { font-size: 9px; }
+  /* "of 2,300" is the longest caption any target carries and at 7px it
+     measured 33.4px against a 32.5px dial interior — crossing the stroke it
+     sits inside. The same ugliness `.num.long` already exists to prevent, one
+     line down. Found by measuring every tile at 320/360/390, not by looking. */
+  .tgt .of { font-size: 6.5px; letter-spacing: -.01em; }
+  .tgt .lab { font-size: 7px; letter-spacing: .02em; }
+}
 
 /* ── Calendar ─────────────────────────────────────────────────────────────
    Everything else here is arithmetic ABOUT the record. This is the record laid
@@ -8355,7 +8392,6 @@ function render(d) {
   // every morning was burying them under momentum, food, training and the
   // record check. What the day cost and whether it landed are one question.
   const targets = targetsPanel(d);
-  if (!(d.care_flags || []).length) out.push(`<a class="workout-launch" href="/workout.html"><div class="launch-copy"><span class="launch-kicker">TRAIN / ROUND COACH</span><strong>Your next round starts here.</strong><span class="launch-note">Custom work and recovery intervals. A focused timer on the web, with haptics and live effort in the new Watch companion.</span></div><span class="launch-action">Set your rounds ↗</span></a>`);
   out.push('<div class="overview-stage">');
   out.push(hero(d));
   // The stage is a two-column grid. Targets take the second slot; momentum
@@ -8363,6 +8399,18 @@ function render(d) {
   // a half-empty row, and drops below when both exist.
   if (targets) out.push(targets); else if (momentum) out.push(momentum);
   out.push('</div>');
+  // AN ADVERT IS NOT THE DAY, and it was sitting above one. Measured on the
+  // founder's own screen at 390x844: the round-coach card began at 518px and
+  // stood 245px tall, so it owned the bottom third of the first screen and
+  // pushed the day's figure to 942 — below the fold — with the rings at 1507,
+  // nearly two screens down. Moving it under the stage puts the figure at 679.
+  //
+  // The rings-beside-the-number fix was half-delivered and this is the half
+  // that was missed: `.overview-stage` collapses to one column under 860px, so
+  // "beside the hero" is only true on a desktop. On a phone it means BELOW the
+  // hero's full height, and nothing had measured what stood above the stage.
+  // Verified in a browser at 390 and 430, not asserted.
+  if (!(d.care_flags || []).length) out.push(`<a class="workout-launch" href="/workout.html"><div class="launch-copy"><span class="launch-kicker">TRAIN / ROUND COACH</span><strong>Your next round starts here.</strong><span class="launch-note">Custom work and recovery intervals. A focused timer on the web, with haptics and live effort in the new Watch companion.</span></div><span class="launch-action">Set your rounds ↗</span></a>`);
   if (targets && momentum) out.push(momentum);
   out.push(coachSetupPanel(d));
 

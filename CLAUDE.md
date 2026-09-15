@@ -1220,7 +1220,7 @@ copying a link into three pages.
 The smaller public doors use `public/shell.css`. It deliberately owns only the
 room — atmosphere, surface depth, safe areas and touch finish — while each page
 keeps its own layout and behaviour. `shell.css` and `app-info.json` are part of
-the service-worker shell, currently `wrought-shell-v12`. A public redesign that
+the service-worker shell, currently `wrought-shell-v13`. A public redesign that
 does not bump that name has not reached the installed product.
 
 **The cover page is the one from BEFORE the Forge 03 redesign.** Codex
@@ -1361,6 +1361,55 @@ deploy ships — no rebuild, no App Store round trip. The claim is checkable
 at that line rather than asserted, which is the point: *"the same stuff on
 the website is on the app"* is only true while nothing native holds its own
 copy of a screen.
+
+### An advert above the day — the rings fix that was only true on a desktop
+
+The entry above says `targetsPanel` rides in the `overview-stage` beside the
+hero. On a desktop that is true. **On a phone it was never true**, and nothing
+had measured it: `.overview-stage` collapses to `grid-template-columns: 1fr`
+under 860px, so *beside the hero* means **below the hero's full 625px**. The
+same PR measured `UNDE ROUGHL` at 390px and checked the caption for clipping —
+and never checked the fold.
+
+**And a 245px advert stood above the whole stage.** The round-coach card
+(`769aaae`) sat between the title and the record. Measured on a 390×844 screen:
+
+- the advert began at **518px** and owned the bottom third of the first screen
+- the day's figure was at **942px** — below the fold
+- the rings were at **1507px**, nearly two screens down, in a **397px** block
+  because `auto-fit` at `minmax(104px,1fr)` wraps five dials onto three rows
+
+Three changes, each measured in a browser rather than asserted: the advert
+moves **under** the stage (an advert is not the day — the same principle as the
+wordmark not throwing somebody out to a sales pitch from inside their own
+record), the rings hold **one row** on a phone at an explicit `repeat(5, …)`,
+and a `360px` step shrinks the dial because **320px is a real phone** and a
+52px dial overflows its own cell there. Figure **942 → 679**, on screen one;
+rings **1507 → 1184** in a 212px block.
+
+- **Explicit columns, not a smaller `minmax`.** `auto-fit` would still be free
+  to wrap, and *whether the day landed* reading as one row is the whole point.
+- **The caption was crossing its own ring.** *"of 2,300"* measured 33.4px
+  against a 32.5px dial interior at 320 and 360 — the ugliness `.num.long`
+  already exists to prevent, one line along. Found by measuring every tile at
+  four widths; at 390px it fits, which is why looking at one screenshot missed
+  it.
+- **Both guards were verified to fail** against the advert put back above the
+  stage and against the 320px step removed — the browser confirmed the clipping
+  returns.
+- **A third test named a value it could not outlive.** *"The installed
+  dashboard honours the whole iPhone frame"* pinned the literal
+  `wrought-shell-v12`, so bumping the shell — a release doing exactly the right
+  thing — failed an assertion that has nothing to do with the bug it guards.
+  After `refresh.html`'s `v8` and the `.bar` comment, the rule is flat: **pin
+  the shape, never the number.** It now matches `wrought-shell-v\d+`, and the
+  two dedicated shell tests carry the real guarantees.
+
+**The lesson is where the checking happened, not what was checked.** A fix
+verified at the width it was written for, on the panel it touched, will miss
+what stands above that panel. The check walks 320/360/390/430 and reads
+positions against the fold now, because *"it should've been the full thing"*
+was about the first screen, and the first screen is a measurement.
 
 ### Two classes called `.bar`, and the header they flattened
 
