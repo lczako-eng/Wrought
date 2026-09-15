@@ -38,6 +38,7 @@ import { sessionTotals, sessionsCanCarryAim, setsCanCarryClientId, exerciseKey, 
 import { sessionProgress } from './warmup.js';
 import { sessionEffort, splitWork, windowedActive } from './effort.js';
 import { sessionsCanCarryPlace } from './places.js';
+import { muscleFor, musclesForRow } from './muscles.js';
 
 // How long a gap means the session is over rather than resting. Real sets sit
 // minutes apart; four hours is not a rest, it is somebody who left. Generous on
@@ -321,6 +322,7 @@ export async function recordSet(userId, { session, current, plan = [], today,
   // arguments proves a write was composed, never that it landed — and the
   // words on a set are the field most often composed and least often checked.
   let row = null;
+  let read = { muscles: null, source: 'unknown' };
 
   // A TICK SENT TWICE LANDS ONCE. The rack screen queues a set it could not
   // send and retries when the signal returns; a retry whose first attempt
@@ -346,6 +348,10 @@ export async function recordSet(userId, { session, current, plan = [], today,
   } else {
     const name = exercise || current.name;
     const key  = exercise ? exerciseKey(exercise) : current.key;
+    // Carried back on the reply as `muscle_source`, the same shape as
+    // `effort_read`: a derived answer says how it was derived, so a wrong one
+    // gets corrected out loud instead of sitting in the record unnoticed.
+    read = muscleFor(key, current.muscles);
     const { data: stored, error } = await supabase.from('wrought_sets').insert([{
       ...(cid && canDedupe ? { client_id: cid } : {}),
       user_id: userId, session_id: session.id,
@@ -357,7 +363,11 @@ export async function recordSet(userId, { session, current, plan = [], today,
       reps: reps != null ? Math.round(Number(reps)) : (parseInt(String(current.reps), 10) || null),
       weight_kg: weightKg != null ? Number(weightKg) : null,
       rpe: rpe != null ? Number(rpe) : null,
-      muscles: current.muscles || [],
+      // Worked out from the lift's own key, not taken from whatever the plan
+      // is carrying — a plan's muscles came from the same model guess this is
+      // replacing. What the plan holds is passed as the reported fallback,
+      // used only when nothing recognises the key.
+      muscles: read.muscles || [],
       note: note ? String(note).slice(0, 500) : null,
       local_date: today,
     }]).select('id, exercise, set_number, reps, weight_kg, rpe, note').single();
@@ -394,7 +404,10 @@ export async function recordSet(userId, { session, current, plan = [], today,
     await supabase.from('wrought_sessions').update({ cursor_index: cursor }).eq('id', session.id);
   }
 
-  return { sets_done: done, cursor, finished: cursor >= plan.length, more_here: moreHere, row };
+  return {
+    sets_done: done, cursor, finished: cursor >= plan.length, more_here: moreHere, row,
+    ...(skip ? {} : { muscle_source: read.source }),
+  };
 }
 
 /**
@@ -442,13 +455,16 @@ export function foldPlan({ plan = [], sessionSets = [], exercises = [] }) {
     const n = Math.min(Math.max(parseInt(x.sets, 10) || 1, 1), 10);
     const reps = x.reps != null ? Math.round(Number(x.reps)) || null : null;
     const kg = x.weight_kg != null ? Number(x.weight_kg) || null : null;
-    const muscles = Array.isArray(x.muscles) ? x.muscles : [];
+    const reported = Array.isArray(x.muscles) ? x.muscles : [];
     let idx = planKeys.get(key);
     if (idx == null) {
       // A planned lift told the short way lands in its own slot, not a new one.
       const slot = plan.find(e => e?.name && sameLift(e.name, name));
       if (slot) { key = slot.key || exerciseKey(slot.name); idx = planKeys.get(key); }
     }
+    // After the key is final, never before — a lift that lands in a planned
+    // slot takes that slot's key, and the muscles follow the key.
+    const muscles = musclesForRow(key, reported);
     if (idx == null) {
       idx = nextIndex++;
       additions.push({

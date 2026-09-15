@@ -26,6 +26,7 @@ import {
   orderPlan, orderInsight, deviceMatrix, weekdayPattern, ACTIVITY, focusCall,
   trainingBurn, targetOptions, liftTrend, goalsToSet,
 } from '../netlify/functions/lib/training.js';
+import { muscleFor, musclesForRow, muscleFixes, MUSCLE_GROUPS, MUSCLE_VOCAB } from '../netlify/functions/lib/muscles.js';
 import { activityBurn, activityTotal, matchActivity, ACTIVITIES, EFFORTS } from '../netlify/functions/lib/activity.js';
 import { eventTimestamp } from '../netlify/functions/lib/wrought.js';
 import { warmupFor, sessionProgress } from '../netlify/functions/lib/warmup.js';
@@ -7838,7 +7839,11 @@ await test('their words go on the row — felt as well as note, verbatim', () =>
   const sess = readFileSync(new URL('../netlify/functions/lib/session.js', import.meta.url), 'utf8');
   const rs = sess.slice(sess.indexOf('export async function recordSet('), sess.indexOf('export async function closeStaleSessions('));
   assert.match(rs, /\.select\('id, exercise, set_number, reps, weight_kg, rpe, note'\)\.single\(\)/);
-  assert.match(rs, /more_here: moreHere, row \}/);
+  // The STORED row rides back, whatever else joins it on the return — pinned
+  // as the relationship rather than the punctuation, because a test that
+  // names a literal cannot outlive the literal.
+  assert.match(rs, /more_here: moreHere, row[,\s}]/);
+  assert.match(rs, /row = stored \|\| null/, 'the arguments are echoed instead of the stored row');
 
   // The note field says whose words it takes.
   const t = TOOLS.find(x => x.name === 'log_set');
@@ -8712,7 +8717,10 @@ await test('walking out of the gym does not delete the session', () => {
   // to be started first.
   // Awaited — inside a Promise.all with the other independent sweeps, never
   // as its own serial hop.
-  assert.match(mcp, /await Promise\.all\(\[closeStaleSessions\(user\.id, profile\)/);
+  // Pinned as the relationship — inside a Promise.all, not on its own line —
+  // rather than as one line's exact punctuation, which a later sweep joining
+  // the batch would break without anything actually being wrong.
+  assert.match(mcp, /await Promise\.all\(\[\s*(\/\/[^\n]*\n\s*)*closeStaleSessions\(user\.id, profile\)/);
   const api = readFileSync(new URL('../netlify/functions/api-progress.js', import.meta.url), 'utf8');
   assert.match(api, /closeStaleSessions\(user\.id, profile\)/);
   // And the pre-bridge backfill rides beside it — the training logged while
@@ -13548,6 +13556,230 @@ await test('the food box is on the page, and never in the demo', () => {
   // than a sentence is one nobody keeps.
   const box = page.slice(page.indexOf('id="qaform"'), page.indexOf('id="qaform"') + 900);
   assert.equal((box.match(/<input /g) || []).length, 1, 'the one-line box grew a second field');
+});
+
+// ── The muscles, derived rather than taken on trust ──────────────────────────
+
+await test('every curated movement derives its own muscles', () => {
+  // The table IS the curated library, keyed through exerciseKey. This catches
+  // a movement whose name stops keying to itself — which is exactly how the
+  // incline press ended up standing as the overhead press's history.
+  for (const m of MOVEMENTS) {
+    const got = muscleFor(exerciseKey(m.name));
+    assert.equal(got.source, 'library', `${m.name} fell out of the table`);
+    assert.deepEqual([...(got.muscles || [])].sort(), [...(m.muscles || [])].sort(), m.name);
+  }
+  assert.equal(MOVEMENTS.length, 30, 'the curated set changed size — check the coverage arithmetic');
+});
+
+await test('the founder\'s twelve real lifts all resolve', () => {
+  // Pinned as named regression cases, the way the 5:2 crash pattern is pinned
+  // in the care-flag tests. These twelve keys are what was actually on the
+  // record when the bug was found: 33 sets, six tagged right, eight tagged
+  // not at all, nineteen tagged wrong. A rule reordering that breaks one of
+  // these fails the build.
+  const real = [
+    ['bench press',                                ['chest', 'shoulders', 'arms'],  'library'],
+    ['row',                                        ['back', 'arms'],                'library'],
+    ['overhead press',                             ['shoulders', 'arms', 'core'],   'library'],
+    ['incline press',                              ['chest', 'shoulders', 'arms'],  'pattern'],
+    ['pec-deck chest fly',                         ['chest', 'shoulders', 'arms'],  'pattern'],
+    ['hammer strength shoulder press',             ['shoulders', 'arms'],           'pattern'],
+    ['seated row machine',                         ['back', 'arms'],                'pattern'],
+    ['hammer strength row',                        ['back', 'arms'],                'pattern'],
+    ['romanian deadlift rdl smith machine',        ['back', 'legs', 'glutes'],      'pattern'],
+    ['incline treadmill walking',                  ['legs'],                        'pattern'],
+    ['incline treadmill level 12 at 2 5 mph',      ['legs'],                        'pattern'],
+    ['incline treadmill incline 12 5 2 5 3 0 mph', ['legs'],                        'pattern'],
+  ];
+  for (const [key, want, source] of real) {
+    const got = muscleFor(key);
+    assert.equal(got.source, source, key);
+    assert.deepEqual([...(got.muscles || [])].sort(), [...want].sort(), key);
+  }
+
+  // The bench press is NOT a leg exercise, however many times the record said
+  // so — the single sentence this whole file exists to make true.
+  assert.ok(!muscleFor('bench press').muscles.includes('legs'));
+  assert.ok(!muscleFor('row').muscles.includes('core'));
+  assert.ok(!muscleFor('hammer strength row').muscles.includes('glutes'));
+});
+
+await test('the rule order cannot drift', () => {
+  // First match wins, so every one of these is a rule sitting above another
+  // one on purpose. Each was a real trap found while writing them.
+  assert.ok(!muscleFor('hammer strength shoulder press').muscles.includes('chest'),
+    'the generic press rule ran before the shoulder rule');
+  assert.ok(!muscleFor('leg press').muscles.includes('chest'),
+    'a leg press became a chest exercise');
+  assert.deepEqual(muscleFor('leg curl').muscles, ['legs', 'glutes'],
+    'a leg curl became an arm exercise');
+  assert.deepEqual(muscleFor('leg extension').muscles, ['legs', 'glutes']);
+  assert.deepEqual(muscleFor('farmer s walk').muscles.sort(), ['arms', 'back', 'core'],
+    'a loaded carry became cardio — the same word that needed a lookaround in TIMED_MOVEMENT');
+  assert.deepEqual(muscleFor('rowing machine').muscles, ['full body'],
+    'the erg became a back exercise');
+  assert.deepEqual(muscleFor('back extension').muscles.sort(), ['back', 'glutes', 'legs']);
+  assert.deepEqual(muscleFor('upright row').muscles, ['shoulders']);
+
+  // `hammer` NEVER appears bare in a rule. The founder trains on Hammer
+  // Strength machines and a bare match would file his machine row as a curl.
+  assert.deepEqual(muscleFor('hammer curl').muscles, ['arms']);
+  const src = readFileSync(new URL('../netlify/functions/lib/muscles.js', import.meta.url), 'utf8');
+  const rules = src.slice(src.indexOf('const RULES = ['), src.indexOf('function clean('));
+  assert.ok(!/\\bhammer\|/.test(rules) && !/\|hammer\\b/.test(rules) && !/\\bhammer\\b/.test(rules),
+    'a bare `hammer` rule would eat every Hammer Strength machine');
+});
+
+await test('an unrecognised lift invents nothing', () => {
+  // The refusal is the safest thing here — the same shape as progressionCall
+  // declining to name a weight for a lift with no history.
+  assert.deepEqual(muscleFor('zercher widget thing'), { muscles: null, source: 'unknown' });
+  assert.equal(muscleFor('').source, 'unknown');
+  assert.equal(muscleFor(null).source, 'unknown');
+
+  // Nothing recognised, but the model said something usable: it stands, and
+  // it is FLAGGED, because it is a guess and the reader deserves to know.
+  const said = muscleFor('zercher widget thing', ['chest', 'nonsense', 'CHEST']);
+  assert.deepEqual(said.muscles, ['chest'], 'rubbish reached a row, or a duplicate did');
+  assert.equal(said.source, 'reported');
+
+  // A derived answer always beats a reported one — the record beats the
+  // memory, in the third place that rule has been needed.
+  assert.equal(muscleFor('bench press', ['legs', 'glutes']).source, 'library');
+  assert.deepEqual(muscleFor('bench press', ['legs', 'glutes']).muscles, ['chest', 'shoulders', 'arms']);
+
+  // The row takes [] for unknown — the column has always held an array, and
+  // every reader already skips an empty one. The absence rides on `source`.
+  assert.deepEqual(musclesForRow('zercher widget thing'), []);
+});
+
+await test('every muscle written is in the vocabulary', () => {
+  // A typo'd muscle draws its own line in the volume panel and looks like a
+  // real finding. Nothing outside the seven groups plus `full body` may reach
+  // a row, from any stage.
+  assert.deepEqual(MUSCLE_VOCAB, [...MUSCLE_GROUPS, 'full body']);
+  assert.equal(MUSCLE_GROUPS.length, 7);
+
+  const probes = [...MOVEMENTS.map(m => exerciseKey(m.name)),
+    'hammer strength row', 'incline press', 'pec-deck chest fly', 'seated row machine',
+    'leg curl', 'back extension', 'lateral raise', 'push-up', 'treadmill', 'burpees',
+    'russian twist', 'tricep pushdown', 'glute bridge', 'farmer s walk'];
+  for (const k of probes) {
+    for (const m of muscleFor(k).muscles || []) {
+      assert.ok(MUSCLE_VOCAB.includes(m), `${k} produced "${m}", which is not a muscle`);
+    }
+  }
+});
+
+await test('the muscle read is never folded into the key', () => {
+  // THE WHOLE DESIGN RESTS ON THE TWO HAVING OPPOSITE BIASES. exerciseKey
+  // over-splits because a broad key puts another lift's weight on the bar;
+  // muscleFor over-merges because a broad muscle costs a set counted in the
+  // wrong column and nothing goes on a bar. Merging them re-opens the
+  // incline-press injury bug.
+  const training = readFileSync(new URL('../netlify/functions/lib/training.js', import.meta.url), 'utf8');
+  const fn = training.slice(training.indexOf('export function exerciseKey('),
+                            training.indexOf('export function rekeyRows('));
+  assert.ok(!/muscleFor|musclesForRow|MUSCLE_/.test(fn), 'the muscle read leaked into exerciseKey');
+
+  // And the rule is written down where the next person will look for it.
+  const src = readFileSync(new URL('../netlify/functions/lib/muscles.js', import.meta.url), 'utf8');
+  assert.match(src, /Over-splitting is safe for a LOAD\. Over-merging is safe for a MUSCLE\./);
+});
+
+await test('the repair can only correct or fill, never empty a row', () => {
+  // The one judgement call: this sweep overwrites, against the standing rule
+  // that a save never rewrites real data to fit a theory. It is allowed
+  // because THESE TAGS WERE NEVER THEIRS — nobody was asked and nobody has
+  // seen them. So the bounds are tight, and they are tested rather than
+  // asserted in a comment.
+  const rows = [
+    { id: 1, exercise_key: 'bench press',        muscles: ['legs', 'glutes'] },   // wrong → fixed
+    { id: 2, exercise_key: 'bench press',        muscles: [] },                   // blank → filled
+    { id: 3, exercise_key: 'bench press',        muscles: ['chest', 'shoulders', 'arms'] }, // right → untouched
+    { id: 4, exercise_key: 'hammer strength row', muscles: ['legs', 'glutes'] },  // machine → pattern
+    { id: 5, exercise_key: 'zercher widget',     muscles: ['chest'] },            // unknown → untouched
+    { id: 6, exercise_key: 'zercher widget',     muscles: [] },                   // unknown+blank → untouched
+  ];
+  const fixes = muscleFixes(rows);
+  assert.deepEqual(fixes.map(f => f.id), [1, 2, 4], 'the wrong rows were fixed, or a safe one was touched');
+  assert.deepEqual(fixes[0].muscles, ['chest', 'shoulders', 'arms']);
+  assert.equal(fixes[0].source, 'library');
+  assert.equal(fixes[2].source, 'pattern');
+
+  // AN UNRECOGNISED KEY NEVER WIPES A TAG, and a correct row is left alone
+  // rather than rewritten to an identical value.
+  assert.ok(!fixes.some(f => f.id === 5 || f.id === 6), 'an unknown key reached a stored tag');
+  assert.ok(!fixes.some(f => !f.muscles.length), 'the sweep emptied a row');
+
+  assert.deepEqual(muscleFixes([]), []);
+  assert.deepEqual(muscleFixes(null), []);
+});
+
+await test('every write path derives, and the sweep runs after the re-key', () => {
+  const sess = readFileSync(new URL('../netlify/functions/lib/session.js', import.meta.url), 'utf8');
+  // recordSet — the rack-screen tick and log_set share this one insert.
+  assert.match(sess, /muscles: read\.muscles \|\| \[\]/, 'recordSet stores the plan\'s guess again');
+  assert.match(sess, /read = muscleFor\(key, current\.muscles\)/);
+  assert.match(sess, /muscle_source: read\.source/, 'the reply does not say how the muscles were read');
+  // foldPlan — a workout re-told to `log` while a session is running. The
+  // derivation has to come AFTER the key is final, because a lift landing in
+  // a planned slot takes that slot's key.
+  const fold = sess.slice(sess.indexOf('export function foldPlan('), sess.indexOf('export async function foldIntoSession('));
+  assert.match(fold, /const muscles = musclesForRow\(key, reported\)/);
+  assert.ok(fold.indexOf('const muscles = musclesForRow') > fold.indexOf('idx = planKeys.get(key)'),
+    'the muscles were derived from a key that was about to change');
+
+  // setRowsFromWorkout — THE ONE THAT CAUSED IT. This line read `d.muscles`,
+  // the union stamped on the whole workout, so every derived set of a mixed
+  // session got every muscle in it. That is where the bench press picked up
+  // "legs, glutes" three times over.
+  const training = readFileSync(new URL('../netlify/functions/lib/training.js', import.meta.url), 'utf8');
+  const bridge = training.slice(training.indexOf('export function setRowsFromWorkout('));
+  assert.match(bridge.slice(0, 2600), /muscles: musclesForRow\(key, d\.muscles\)/,
+    'the bridge gives every exercise the whole workout\'s muscles again');
+
+  // Muscles follow the KEY, so the retag chains off the re-key rather than
+  // racing it — in both sweep callers.
+  for (const f of ['mcp.js', 'api-progress.js']) {
+    const src = readFileSync(new URL(`../netlify/functions/${f}`, import.meta.url), 'utf8');
+    assert.match(src, /rekeySets\(user\.id\)\.then\(\(\) => resyncMuscles\(user\.id\)\)/, f);
+  }
+});
+
+await test('the derived muscles reach what actually reads them', () => {
+  // The bridge is the path most people log by — telling the AI afterwards —
+  // and it is where the wrong tags came from. One mixed workout, end to end.
+  const rows = setRowsFromWorkout('u1', {
+    id: 'e1', local_date: '2026-09-14', occurred_at: '2026-09-14T18:00:00.000Z',
+    detail: {
+      // The workout's own union, exactly as a model would stamp it.
+      muscles: ['legs', 'glutes', 'chest'],
+      exercises: [
+        { name: 'Bench press', sets: 2, reps: 8, weight_kg: 84 },
+        { name: 'Back squat', sets: 2, reps: 5, weight_kg: 100 },
+        { name: 'Hammer Strength row', sets: 2, reps: 10 },
+      ],
+    },
+  });
+  const by = n => rows.filter(r => r.exercise === n)[0].muscles;
+  assert.deepEqual(by('Bench press'), ['chest', 'shoulders', 'arms']);
+  assert.deepEqual(by('Back squat').sort(), ['core', 'glutes', 'legs']);
+  assert.deepEqual(by('Hammer Strength row'), ['back', 'arms']);
+  assert.ok(!by('Bench press').includes('legs'), 'the bench press inherited the workout\'s legs again');
+  assert.ok(!by('Back squat').includes('chest'), 'the squat inherited the workout\'s chest again');
+
+  // And weeklyVolume — the read this bug was corrupting — now counts them
+  // under the right muscle. Three lifts, two sets each.
+  const sets = rows.map(r => ({ muscles: r.muscles, local_date: r.local_date, reps: r.reps, rpe: null }));
+  const vol = weeklyVolume(sets, { today: '2026-09-14', weeks: 1 });
+  const got = Object.fromEntries(vol.muscles.map(m => [m.muscle, m.sets_7d]));
+  assert.equal(got.chest, 2, 'the chest count is not the bench press alone');
+  assert.equal(got.back, 2);
+  assert.equal(got.legs, 2);
+  assert.equal(got.glutes, 2);
+  assert.ok(!(got.legs > 2), 'the bench press is still being counted as legs');
 });
 
 // ── Report ──────────────────────────────────────────────────────────────────

@@ -9,6 +9,7 @@
 
 import { supabase, daysBetween, kgToLb, SET_TARGETS_URL } from './wrought.js';
 import { activityTotal } from './activity.js';
+import { musclesForRow, muscleFixes } from './muscles.js';
 
 // ── Matching an exercise across time ────────────────────────────────────────
 // "Barbell Bench Press", "bench press", "Bench (BB)" and "benching" are one
@@ -126,6 +127,48 @@ export async function rekeySets(userId) {
     }
   }
   return { rekeyed };
+}
+
+/**
+ * Put the muscles right on the rows already written.
+ *
+ * Fixing the write paths fixed the NEXT set and did nothing for the ones
+ * already filed — the half of the bug nobody can see, exactly as with the
+ * shifts that stayed typed as notes. Runs beside `rekeySets` on the way into
+ * the dashboard and the brief: one read when there is nothing to do, a
+ * handful of UPDATEs grouped by key the first time.
+ *
+ * ORDER MATTERS with `rekeySets`. The muscles follow the KEY, so re-keying
+ * has to happen first or a row gets its muscles derived from a key that is
+ * about to change. Every caller runs them in that order.
+ *
+ * The decision itself is `muscleFixes` — pure, tested with no database, and
+ * bounded so it can only correct or fill, never empty a row and never touch a
+ * key nothing recognised. The error is returned rather than swallowed: a
+ * silent repair is the same class of failure as the bug it undoes.
+ */
+export async function resyncMuscles(userId) {
+  const { data: rows, error } = await supabase.from('wrought_sets')
+    .select('id, exercise_key, muscles').eq('user_id', userId).limit(5000);
+  if (error) return { retagged: 0, error: error.message };
+
+  const fixes = muscleFixes(rows || []);
+  if (!fixes.length) return { retagged: 0 };
+
+  const byKey = new Map();
+  for (const f of fixes) {
+    const k = `${f.exercise_key}|${f.muscles.join(',')}`;
+    if (!byKey.has(k)) byKey.set(k, { muscles: f.muscles, ids: [] });
+    byKey.get(k).ids.push(f.id);
+  }
+  let retagged = 0;
+  for (const [, { muscles, ids }] of byKey) {
+    const { error: upErr } = await supabase.from('wrought_sets')
+      .update({ muscles }).eq('user_id', userId).in('id', ids);
+    if (upErr) return { retagged, error: upErr.message };
+    retagged += ids.length;
+  }
+  return { retagged };
 }
 
 // Lower-body lifts take bigger jumps than upper — 2.5kg on a bench is a real
@@ -2251,7 +2294,13 @@ export function setRowsFromWorkout(userId, event = {}, { skipExercises = [] } = 
         reps,
         weight_kg: kg,
         rpe: null,
-        muscles: Array.isArray(d.muscles) ? d.muscles : [],
+        // PER EXERCISE, never the workout's own list. This line used to read
+        // `d.muscles` — the union stamped on the whole event — so a workout
+        // containing a squat and a bench press gave EVERY derived set both
+        // sets of muscles. That is where the founder's bench press picked up
+        // "legs, glutes" three times over. The event's list is still passed
+        // as what was reported, used only if the key is unrecognised.
+        muscles: musclesForRow(key, d.muscles),
         note: null,
         local_date: event.local_date,
         ...(loggedAt ? { logged_at: loggedAt } : {}),
