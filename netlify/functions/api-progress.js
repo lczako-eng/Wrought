@@ -19,7 +19,7 @@ import { planRead } from './lib/plan.js';
 import { calibration } from './lib/adapt.js';
 import { recordCheck } from './lib/integrity.js';
 import { intakeState } from './lib/intake.js';
-import { STYLES } from './lib/design.js';
+import { STYLES, stylesList } from './lib/design.js';
 import { listPlaces } from './lib/places.js';
 import { STYLE_ROUTINES } from './lib/style_routines.js';
 import { mealTiming } from './lib/timing.js';
@@ -849,12 +849,7 @@ export const handler = async (event) => {
         : null,
       // Where they train, with what is at each — the record the coach builds to.
       places: places.map(p => ({ name: p.name, kind: p.kind, equipment: p.equipment || [], last_used_on: p.last_used_on, times_used: p.times_used })),
-      styles: Object.entries(STYLES).map(([key, v]) => ({
-        key, say: v.say, provenance: v.provenance,
-        lineage: v.lineage || null, tradition: v.tradition || null,
-        discipline: v.discipline || 'Other', emphasis: v.emphasis || null,
-        voice: v.voice ? { register: v.voice.register, intensity: v.voice.intensity, attitude: v.voice.attitude } : null,
-      })),
+      styles: stylesList().styles,
       coach: {
         push_devices: pushSubs,
         morning: checkins?.morning_hour != null ? `${checkins.morning_hour}:${String(checkins.morning_minute || 0).padStart(2, '0')}` : null,

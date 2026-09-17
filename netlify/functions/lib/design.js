@@ -111,7 +111,7 @@ export const STYLES = {
     lineage: "Cus D'Amato", discipline: 'Boxing',
     tradition: "in the tradition of Cus D'Amato — the same few movements drilled until they are reflex, with the head kept moving",
     provenance: "the drilled-repetition shape of a traditional boxing gym — fundamentals in high volume, core and footwork. Published fight-training structure, not his programme and not an endorsement.",
-    emphasis: 'Conditioning-led, higher reps, shorter rests; the same patterns repeated rather than variety.',
+    emphasis: 'The same few movements over and over until they are reflex — repetition rather than variety.',
     match: /d'?amato|peek.?a.?boo|drilled/i,
     focus_default: 'conditioning',
     sets: { beginner: 3, other: 4 }, reps: 12, rest_s: 45,
@@ -121,7 +121,7 @@ export const STYLES = {
     lineage: 'Angelo Dundee', discipline: 'Boxing',
     tradition: 'in the tradition of Angelo Dundee — fight-specific preparation, engine and core, nothing that does not serve the rounds',
     provenance: 'fight-specific conditioning — rounds, engine, core, pulling. Published fight-preparation structure, not his programme and not an endorsement.',
-    emphasis: 'Conditioning-led with moderate reps and a minute between efforts.',
+    emphasis: 'Built around the rounds: engine and core, and nothing in it that does not serve the fight.',
     match: /dundee|corner\s*craft/i,
     focus_default: 'conditioning',
     sets: { beginner: 3, other: 4 }, reps: 12, rest_s: 60,
@@ -131,7 +131,7 @@ export const STYLES = {
     lineage: 'Emanuel Steward', discipline: 'Boxing',
     tradition: 'in the tradition of Emanuel Steward — high technical volume, long rounds, the engine built by doing the work',
     provenance: 'high-volume fight conditioning — long rounds, short rests, technical repetition. Published camp structure, not his programme and not an endorsement.',
-    emphasis: 'The most reps and the shortest rests of the boxing styles.',
+    emphasis: 'High volume with short rests. The engine gets built by doing the work, not by resting between it.',
     match: /steward|kronk|sparring/i,
     focus_default: 'conditioning',
     sets: { beginner: 3, other: 4 }, reps: 20, rest_s: 45,
@@ -141,7 +141,7 @@ export const STYLES = {
     lineage: 'Freddie Roach', discipline: 'Boxing',
     tradition: 'in the tradition of Freddie Roach — mitt-work volume, roadwork and core, the camp shape that builds a fighter’s engine',
     provenance: 'the conditioning shape of a traditional boxing camp — rounds, footwork, engine and core. The published structure of fight conditioning, not any named coach’s corner and not an endorsement.',
-    emphasis: 'Rounds: conditioning blocks, higher reps, a minute’s rest.',
+    emphasis: 'Worked in rounds, the way a camp runs — conditioning blocks with a breather between them.',
     match: /roach|box(ing|er)?|fight\s*camp|combat/i,
     focus_default: 'conditioning',
     sets: { beginner: 3, other: 4 }, reps: 15, rest_s: 60,
@@ -153,7 +153,7 @@ export const STYLES = {
     lineage: 'Louie Simmons', discipline: 'Powerlifting',
     tradition: 'in the tradition of Louie Simmons’ conjugate method — a max-effort lift, a speed lift, and the assistance work that props them up',
     provenance: 'max-effort and dynamic-effort work with rotating variations and heavy assistance. Published conjugate methodology, not his programme and not an endorsement.',
-    emphasis: 'Low reps across many sets, with real rest; the first movement is the heavy one.',
+    emphasis: 'One heavy thing first while you are fresh, then the work that props it up.',
     match: /simmons|westside|conjugate|max.?effort|dynamic.?effort/i,
     sets: { beginner: 3, other: 6 }, reps: 3, rest_s: 120,
   },
@@ -162,7 +162,7 @@ export const STYLES = {
     lineage: 'Boris Sheiko', discipline: 'Powerlifting',
     tradition: 'in the tradition of Boris Sheiko — the competition lifts often, at moderate loads, until the technique cannot be done wrong',
     provenance: 'high-frequency, moderate-intensity practice of the competition lifts with plenty of sets. Published Russian powerlifting methodology, not his programme and not an endorsement.',
-    emphasis: 'Many sets of few reps, none of them near failure; the same lifts come back often.',
+    emphasis: 'The same lifts come back often and never near failure — technique practised until it cannot be done wrong.',
     match: /sheiko|high.?frequency|technique\s*practice/i,
     sets: { beginner: 3, other: 6 }, reps: 4, rest_s: 150,
   },
@@ -171,7 +171,7 @@ export const STYLES = {
     lineage: 'Bill Starr', discipline: 'Powerlifting',
     tradition: 'in the tradition of Bill Starr — five sets of five on the big lifts, a heavy day, a light day and a medium day',
     provenance: 'five sets of five on compound lifts with a heavy / light / medium week. Standard published strength methodology, not his programme and not an endorsement.',
-    emphasis: 'Five sets of five, long rests, compounds first. The heavy/light/medium week is yours to set by day.',
+    emphasis: 'Fives on the big lifts with long rests. Plain, heavy, and much the same every week.',
     match: /starr|5\s*x\s*5|five\s*by\s*five|heavy.?light.?medium/i,
     sets: { beginner: 3, other: 5 }, reps: 5, rest_s: 180,
   },
@@ -180,7 +180,7 @@ export const STYLES = {
     lineage: 'Mark Rippetoe', discipline: 'Powerlifting',
     tradition: 'in the tradition of Mark Rippetoe — three sets of five on a handful of barbell compounds, adding a little every session while it still adds',
     provenance: 'three sets of five on barbell compounds with per-session progression. Standard published novice methodology, not his programme and not an endorsement.',
-    emphasis: 'Few movements, three sets of five, long rests. Loads still come from your own history.',
+    emphasis: 'A handful of barbell lifts, nothing clever, a little more each session while that still works.',
     match: /rippetoe|starting\s*strength|novice\s*linear|3\s*x\s*5/i,
     sets: { beginner: 3, other: 3 }, reps: 5, rest_s: 180, max_movements: 4,
   },
@@ -189,7 +189,7 @@ export const STYLES = {
     lineage: 'Jim Wendler', discipline: 'Powerlifting',
     tradition: 'in the tradition of Jim Wendler — sub-maximal work on the main lift, small monthly jumps, assistance kept simple',
     provenance: 'sub-maximal main-lift work progressed by the month with simple assistance. Standard published intermediate methodology, not his programme and not an endorsement.',
-    emphasis: 'Three working sets on the main lift, moderate reps, nothing to failure; the assistance is plain.',
+    emphasis: 'Nothing taken to failure. The main lift moves in small steps and the assistance stays plain.',
     match: /wendler|5\s*\/\s*3\s*\/\s*1|531|sub.?max/i,
     sets: { beginner: 3, other: 3 }, reps: 5, rest_s: 150,
   },
@@ -197,7 +197,7 @@ export const STYLES = {
     say: 'Powerlifting strength',
     discipline: 'Powerlifting',
     provenance: 'competition-lift strength work — low reps, long rests, the big three first. Standard published strength methodology.',
-    emphasis: 'Fives with long rests, the big three first.',
+    emphasis: 'The big three first and heavy, with long rests. Strength is the only thing being chased.',
     match: /power\s*lift|strength\s*first|heavy\s*(triples|singles)/i,
     sets: { beginner: 3, other: 5 }, reps: 5, rest_s: 210,
   },
@@ -205,7 +205,7 @@ export const STYLES = {
     say: 'Strongman-style',
     discipline: 'Powerlifting',
     provenance: 'carries, hinges and overhead work in the strongman shape. Published event-training structure, no named athlete’s programme.',
-    emphasis: 'Carries and overhead work, moderate reps, real rest.',
+    emphasis: 'Carrying, lifting and pressing awkward loads — the work that makes you useful outside a gym.',
     match: /strong\s*man|carries|farmer/i,
     focus_default: 'full body',
     sets: { beginner: 3, other: 4 }, reps: 8, rest_s: 150,
@@ -217,7 +217,7 @@ export const STYLES = {
     lineage: 'Charles Poliquin', discipline: 'Strength & conditioning',
     tradition: 'in the tradition of Charles Poliquin — every rep on a tempo, the weak links brought up so the strong ones can go further',
     provenance: 'tempo-controlled lifting with structural-balance assistance and short training phases. Published strength-coaching methodology, not his programme and not an endorsement.',
-    emphasis: 'Moderate reps at a controlled tempo, shorter rests; the cue on every movement is the tempo.',
+    emphasis: 'Every rep on a count: slowed down, no bouncing, and the weak links brought up so the strong ones can go further.',
     match: /poliquin|tempo|structural\s*balance/i,
     sets: { beginner: 3, other: 4 }, reps: 8, rest_s: 90,
   },
@@ -226,7 +226,7 @@ export const STYLES = {
     lineage: 'Tudor Bompa', discipline: 'Strength & conditioning',
     tradition: 'in the tradition of Tudor Bompa — training in phases with a purpose and an end, volume first, intensity later',
     provenance: 'classic periodisation — accumulation, intensification, a planned deload. Published periodisation methodology, not his programme and not an endorsement.',
-    emphasis: 'Moderate reps and volume for the accumulation phase. The phases themselves are a block: start_block schedules them, with the deload already in the calendar.',
+    emphasis: 'Volume first, intensity later. This builds the volume half; the phases themselves run over months.',
     match: /bompa|periodi[sz]|block\s*training|phases/i,
     sets: { beginner: 3, other: 4 }, reps: 8, rest_s: 120,
   },
@@ -234,7 +234,7 @@ export const STYLES = {
     say: 'Athletic conditioning',
     discipline: 'Strength & conditioning',
     provenance: 'field-sport conditioning — explosive lower work, pulling, engine. Standard published athletic-prep structure.',
-    emphasis: 'Explosive lower work and pulling, low reps, two minutes’ rest.',
+    emphasis: 'Fast rather than heavy — jumping, throwing, and driving the bar up with speed.',
     match: /athlet|explosive|sport\s*perform/i,
     focus_default: 'full body',
     sets: { beginner: 3, other: 4 }, reps: 6, rest_s: 120,
@@ -244,7 +244,7 @@ export const STYLES = {
     lineage: 'Bill Bowerman', discipline: 'Running',
     tradition: 'in the tradition of Bill Bowerman — a hard day is earned by an easy one; recovery is training',
     provenance: 'alternating hard and easy days, conditioning with strength support. Standard published running-coach structure, not his programme and not an endorsement.',
-    emphasis: 'This builds the HARD day: a long conditioning block plus supporting strength. Tomorrow is the easy day — a walk or an easy run, logged in a sentence.',
+    emphasis: 'This is the hard day. Tomorrow is deliberately easy, because the easy day is what earns the hard one.',
     match: /bowerman|hard.?easy|oregon/i,
     focus_default: 'conditioning',
     sets: { beginner: 3, other: 4 }, reps: 8, rest_s: 90, long_conditioning: 0.5,
@@ -254,7 +254,7 @@ export const STYLES = {
     lineage: 'Arthur Lydiard', discipline: 'Running',
     tradition: 'in the tradition of Arthur Lydiard — months of easy miles first, speed only once the engine is built',
     provenance: 'long steady aerobic work as the foundation, speed added later. Published endurance methodology, not his programme and not an endorsement.',
-    emphasis: 'Most of the session is one long steady effort at a conversational pace; the strength work is light support. The base itself is built over months — the runs panel tracks it.',
+    emphasis: 'Mostly one long steady effort you could hold a conversation through, with light strength around it.',
     match: /lydiard|aerobic\s*base|base\s*build|easy\s*miles|zone\s*2/i,
     focus_default: 'conditioning',
     sets: { beginner: 2, other: 3 }, reps: 10, rest_s: 60, long_conditioning: 0.75,
@@ -266,7 +266,7 @@ export const STYLES = {
     lineage: 'Pavel Tsatsouline', discipline: 'Kettlebell',
     tradition: 'in the tradition of Pavel Tsatsouline — low reps, many sets, stop while it is still crisp; practise strength, do not test it',
     provenance: 'low-rep, high-set strength practice stopped well short of failure, kettlebell and barbell alike. Published strength-practice methodology, not his programme and not an endorsement.',
-    emphasis: 'Threes and fives across many sets with full rest; every set ends with reps in the tank.',
+    emphasis: 'Every set stops while it is still crisp. Strength gets practised here, never tested.',
     match: /pavel|tsatsouline|kettlebell|grease\s*the\s*groove|simple\s*(and|&)\s*sinister|never\s*to\s*failure/i,
     sets: { beginner: 3, other: 5 }, reps: 3, rest_s: 120,
   },
@@ -275,7 +275,7 @@ export const STYLES = {
     lineage: 'Dan John', discipline: 'Kettlebell',
     tradition: 'in the tradition of Dan John — a few fundamental movements, done well, done often, never turned into a grind',
     provenance: 'a handful of fundamental patterns at easy loads, done frequently. Published simple-strength methodology, not his programme and not an endorsement.',
-    emphasis: 'Never more than four movements, two or three easy sets each, and out. The point is showing up again tomorrow.',
+    emphasis: 'A few movements, a couple of easy sets each, and out. The point is showing up again tomorrow.',
     match: /dan\s*john|easy\s*strength|simple\s*strength|fundamental/i,
     focus_default: 'full body',
     sets: { beginner: 2, other: 3 }, reps: 5, rest_s: 120, max_movements: 4,
@@ -287,7 +287,7 @@ export const STYLES = {
     lineage: 'Joe Weider', discipline: 'Bodybuilding',
     tradition: 'in the tradition of Joe Weider — the published principles: pyramids, supersets, instinctive training, the muscle worked from more than one angle',
     provenance: 'the classic bodybuilding training principles — pyramiding, supersets, angle variety. Published methodology, not his programme and not an endorsement.',
-    emphasis: 'Four sets of ten, a minute’s rest, more angles on each muscle.',
+    emphasis: 'Each muscle worked from more than one angle, and kept under tension rather than rushed.',
     match: /weider|principles|pyramid|superset/i,
     sets: { beginner: 3, other: 4 }, reps: 10, rest_s: 60,
   },
@@ -296,7 +296,7 @@ export const STYLES = {
     lineage: 'Vince Gironda', discipline: 'Bodybuilding',
     tradition: 'in the tradition of Vince Gironda — strict form on isolation work, short rests, eight sets of eight',
     provenance: 'strict-form isolation work in many short-rest sets. Published old-school bodybuilding methodology, not his programme and not an endorsement.',
-    emphasis: 'Eights across many sets with only half a minute between them; strict, no momentum.',
+    emphasis: 'Strict form, almost no rest and no momentum anywhere. Isolation work done properly.',
     match: /gironda|8\s*x\s*8|eight\s*by\s*eight|strict\s*isolation/i,
     sets: { beginner: 3, other: 6 }, reps: 8, rest_s: 30,
   },
@@ -305,7 +305,7 @@ export const STYLES = {
     lineage: 'Arthur Jones', discipline: 'Bodybuilding',
     tradition: 'in the tradition of Arthur Jones — one set per movement, taken to the point where another rep is not there, then move on',
     provenance: 'high-intensity training: a single working set to momentary failure per movement, full-body. Published HIT methodology, not his programme and not an endorsement.',
-    emphasis: 'One working set of about ten per movement, taken hard, with a couple of minutes before the next movement. Short session, full body.',
+    emphasis: 'One set per movement, taken to where another rep is not there, then move on. Short, and it bites.',
     match: /arthur\s*jones|nautilus|\bhit\b|one\s*hard\s*set|single\s*set/i,
     focus_default: 'full body',
     sets: { beginner: 1, other: 1 }, reps: 10, rest_s: 120,
@@ -315,7 +315,7 @@ export const STYLES = {
     lineage: 'Mike Mentzer', discipline: 'Bodybuilding',
     tradition: 'in the tradition of Mike Mentzer — very few sets, very hard, and more days off than most people are comfortable with',
     provenance: 'very-low-volume, high-intensity training with long recovery between sessions. Published high-intensity methodology, not his programme and not an endorsement.',
-    emphasis: 'One heavy set of six per movement with three minutes’ rest, and the next session is days away.',
+    emphasis: 'Very few sets taken very hard, then more days off than most people are comfortable with.',
     match: /mentzer|heavy\s*duty|brief\s*(and|&)\s*infrequent/i,
     sets: { beginner: 1, other: 1 }, reps: 6, rest_s: 180,
   },
@@ -324,7 +324,7 @@ export const STYLES = {
     lineage: 'Hany Rambod', discipline: 'Bodybuilding',
     tradition: 'in the tradition of Hany Rambod — ordinary working sets, then the last movement for the muscle done as seven short-rest sets',
     provenance: 'standard working sets with a seven-set, short-rest finisher on the final movement. Published physique-training methodology, not his programme and not an endorsement.',
-    emphasis: 'Normal sets of ten, then the last movement becomes seven sets with thirty seconds between them.',
+    emphasis: 'Ordinary work, and then the last movement for that muscle is hammered with short rests until it is done.',
     match: /rambod|fst.?7|seven.?set|finisher/i,
     sets: { beginner: 3, other: 4 }, reps: 10, rest_s: 60, finisher: { sets: 7, rest_s: 30 },
   },
@@ -333,7 +333,7 @@ export const STYLES = {
     lineage: 'Arnold Schwarzenegger', discipline: 'Bodybuilding',
     tradition: 'in the tradition of the 1970s golden era — the volume and the double-split that Arnold Schwarzenegger trained with',
     provenance: 'the high-volume style of 1970s bodybuilding — the era Arnold Schwarzenegger trained in. Published era methodology, not his programme and not an endorsement.',
-    emphasis: 'Five sets of ten across more movements than most, ninety seconds between.',
+    emphasis: 'More movements and more sets than most — the high-volume way the 1970s gyms trained.',
     match: /golden\s*era|arnold|schwarzen|old.?school\s*bodybuild|venice\s*beach|bodybuild/i,
     sets: { beginner: 3, other: 5 }, reps: 10, rest_s: 90,
   },
@@ -347,6 +347,79 @@ export const STYLE_DISCIPLINES = [...new Set(Object.values(STYLES).map(s => s.di
 // the trainer standing there uses. Kept in lib/voices.js so this file stays
 // about the session's shape; merged here so a style is one object.
 for (const [key, voice] of Object.entries(STYLE_VOICES)) if (STYLES[key]) STYLES[key].voice = voice;
+
+// ── The shelf, read out ────────────────────────────────────────────────────
+// The founder: "I want to learn about where are they? Where can I find them?
+// It should be like a quick button to push on them and I should have a brief
+// description of each. What each one does."
+//
+// Everything needed to answer him already existed and was spread across three
+// fields nobody could scan: `emphasis` is a sentence, `tradition` is a
+// sentence, `provenance` is a sentence, and the panel set all three LARGER
+// than the name of the style they describe. Twenty-four of those is not a
+// list somebody browses; it is ten screens of uppercase prose.
+//
+// So one function builds the list, and BOTH the website and the connector
+// read it. Two readers is how the styles somebody is SHOWN and the styles
+// somebody is TOLD drift apart, and then neither is worth reading — the same
+// rule that put `planRead` behind `my_plan` and the plan panel alike.
+//
+// `shape` is DERIVED from the same sets/reps/rest_s that designSession
+// actually builds with, never written by hand. A hand-written "heavy triples"
+// beside a style that builds fives is the drift this file exists to prevent,
+// and it is the cheap end of the invented-number failure: a description of a
+// session that is not the session.
+const SHAPE_REST = s => s < 60 ? `${s}s rest` : `${Math.round(s / 60 * 10) / 10} min rest`.replace('.0 ', ' ');
+
+export function styleShape(st, { terse = false } = {}) {
+  if (!st) return null;
+  const sets = typeof st.sets === 'object' ? (st.sets.other ?? st.sets.beginner) : st.sets;
+  if (sets == null || st.reps == null) return null;
+  const core = `${sets} × ${st.reps} · ${SHAPE_REST(Number(st.rest_s) || 60)}`;
+  if (terse) return core;
+  const bits = [core];
+  if (st.long_conditioning) bits.push(`${Math.round(st.long_conditioning * 100)}% one long effort`);
+  if (st.max_movements) bits.push(`${st.max_movements} movements`);
+  if (st.finisher) bits.push(`${st.finisher.sets}-set finisher`);
+  return bits.join(' · ');
+}
+
+/**
+ * Every style, in one shape, for every surface that lists them.
+ *
+ * Nothing here is a claim this file is not entitled to make: `does` is the
+ * style's own emphasis, `shape` is computed from its own numbers, `tradition`
+ * credits the lineage and `provenance` rides along — a style shown without its
+ * provenance is the wink the doctrine forbids, so it travels with every entry
+ * rather than being something a caller may choose to drop.
+ *
+ * NEVER A WEIGHT. Not here either: a list of styles is exactly where a
+ * plausible-looking load would read as pedigree rather than invention.
+ */
+export function stylesList({ coach = null } = {}) {
+  const items = Object.entries(STYLES).map(([key, st]) => ({
+    key,
+    say: st.say,
+    discipline: st.discipline || 'Other',
+    lineage: st.lineage || null,
+    tradition: st.tradition || (st.lineage ? `in the tradition of ${st.lineage}` : null),
+    does: st.emphasis || null,
+    shape: styleShape(st),
+    shape_short: styleShape(st, { terse: true }),
+    focus_default: st.focus_default || null,
+    provenance: st.provenance || null,
+    voice: st.voice
+      ? { register: st.voice.register, intensity: st.voice.intensity, attitude: st.voice.attitude }
+      : null,
+    is_coach: coach != null && key === coach,
+  }));
+  const by = [];
+  for (const it of items) {
+    const g = by.find(x => x.discipline === it.discipline);
+    if (g) g.styles.push(it); else by.push({ discipline: it.discipline, styles: [it] });
+  }
+  return { count: items.length, disciplines: by, styles: items };
+}
 
 export function styleFrom(text) {
   const t = String(text || '').trim();
