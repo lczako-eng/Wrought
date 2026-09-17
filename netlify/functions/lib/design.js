@@ -396,13 +396,15 @@ export function styleShape(st, { terse = false } = {}) {
  * NEVER A WEIGHT. Not here either: a list of styles is exactly where a
  * plausible-looking load would read as pedigree rather than invention.
  */
-export function stylesList({ coach = null } = {}) {
+export function stylesList({ coach = null, recommended = null } = {}) {
+  const rec = new Map((recommended?.marked || []).map(m => [m.key, m.because]));
   const items = Object.entries(STYLES).map(([key, st]) => ({
     key,
     say: st.say,
     discipline: st.discipline || 'Other',
     lineage: st.lineage || null,
     tradition: st.tradition || (st.lineage ? `in the tradition of ${st.lineage}` : null),
+    credit: st.lineage ? `in the tradition of ${st.lineage}` : null,
     does: st.emphasis || null,
     shape: styleShape(st),
     shape_short: styleShape(st, { terse: true }),
@@ -412,6 +414,8 @@ export function stylesList({ coach = null } = {}) {
       ? { register: st.voice.register, intensity: st.voice.intensity, attitude: st.voice.attitude }
       : null,
     is_coach: coach != null && key === coach,
+    recommended: rec.has(key),
+    because: rec.get(key) || null,
   }));
   const by = [];
   for (const it of items) {
@@ -419,6 +423,149 @@ export function stylesList({ coach = null } = {}) {
     if (g) g.styles.push(it); else by.push({ discipline: it.discipline, styles: [it] });
   }
   return { count: items.length, disciplines: by, styles: items };
+}
+
+// ── Which of them suits you ────────────────────────────────────────────────
+// The founder: "you should be able to like put a dot on there like a check
+// box to see what your training style should recommend."
+//
+// The danger is the one this whole file is written around. A recommendation
+// nobody computed is a recommendation the model INVENTED, and "this is the
+// style for you" is a prescription. So every mark is produced by a rule
+// reading a field the person actually filled in, it carries the fact that
+// produced it, and it never claims to be the only answer.
+//
+// What it refuses to do, and each refusal has a precedent here:
+//
+// - **A thin record gets no dots**, and says what would produce them. The
+//   same refusal progressionCall makes rather than inventing a working
+//   weight: the honest answer to "which suits me" with nothing on file is
+//   that nothing on file says.
+// - **At most three.** A shelf where half the cards are ticked has said
+//   nothing — the athlete read caps its recommendations for the same reason.
+// - **It only ever ADDS a mark.** Nothing is drawn as a cross, a warning or a
+//   colour meaning "wrong for you". A style somebody likes is theirs to pick
+//   and the shelf is not a gate — `drop_goal`'s doctrine, one screen along.
+//   The tier rule below therefore withholds a MARK; it never hides a style.
+// - **A care flag silences it entirely**, exactly as it silences the athlete
+//   read and every coaching alert. Choosing a training style is coaching.
+// - **Never a load, here either.**
+
+// What a person says their sport is, mapped onto the discipline that trains
+// for it. Deliberately narrow: a sport it does not recognise produces no mark
+// rather than a guess, because "you said hockey so here is a boxing camp" is
+// the invented answer wearing a tick.
+const SPORT_DISCIPLINE = [
+  [/\bbox|fight|mma|muay|kickbox|sparring\b/i, 'Boxing'],
+  [/\brun(ning|ner)?\b|\b5k\b|\b10k\b|marathon|jog|triathlon/i, 'Running'],
+  [/\bpowerlift|\bmeet\b|squat.*bench.*deadlift/i, 'Powerlifting'],
+  [/\bstrongman\b/i, 'Powerlifting'],
+];
+
+const setsOf = st => (typeof st.sets === 'object' ? (st.sets.other ?? st.sets.beginner) : st.sets);
+
+// A beginner is never MARKED with a method built on going to failure, on
+// max-effort singles and doubles, or on rests too short to keep form — the
+// tier gate the movement library already applies, read off the style's own
+// numbers rather than a hand-written tag that could drift from them.
+function tooHard(st) {
+  const sets = setsOf(st);
+  if (sets === 1) return 'built on taking a set to failure';
+  if (st.reps != null && st.reps <= 3) return 'built on max-effort singles and doubles';
+  if (st.rest_s != null && st.rest_s < 45) return 'built on rests too short to hold form while learning it';
+  return null;
+}
+
+/**
+ * @param profile  the record: tier, train_days, equipment, track, sport
+ * @param intent   'lose' | 'gain' | 'recomp' | null, off the body goal
+ * @param flagged  true when a care flag stands — silences the whole read
+ */
+export function recommendStyles({ profile = {}, log = null, flagged = false } = {}) {
+
+  const tier = profile.tier || null;
+  const soften = flagged || tier === 'beginner';
+  const days = Number(profile.train_days) || null;
+  const kit = (profile.equipment || []).join(' ').toLowerCase();
+  const sport = profile.sport || null;
+  const hasKit = (profile.equipment || []).length > 0;
+
+  // NOTHING ON FILE IS A REFUSAL, NOT A GUESS.
+  const known = [sport, tier, days, hasKit || null, (log && log.sets >= 20) || null].filter(Boolean).length;
+  if (!known) {
+    return { marked: [], count: 0, thin: true,
+      missing: ['your sport', 'how many days a week you train', 'how experienced you are', 'what kit you have'],
+      say: 'Nothing on your record yet says which of these would suit you. Tell it your sport, how many days you train and what kit you have — or just train, and the shape of your own log starts marking them.' };
+  }
+
+  const out = [];
+  const take = (key, because) => {
+    if (out.length >= 3 || out.some(m => m.key === key)) return;
+    const st = STYLES[key];
+    if (!st) return;
+    if (soften && tooHard(st)) return;           // withholds a mark, never the style
+    out.push({ key, because });
+  };
+  const keysWhere = test => Object.keys(STYLES).filter(k => test(STYLES[k], k));
+
+  // 1. THEIR SPORT, which is the strongest thing the record can say and the
+  //    one that needs no interpretation at all.
+  const disc = sport ? (SPORT_DISCIPLINE.find(([re]) => re.test(sport)) || [])[1] : null;
+  if (disc) for (const k of keysWhere(st => st.discipline === disc)) {
+    take(k, `${sport} is on your record, and this trains for it`);
+  }
+
+  // 2. THE KIT THEY OWN. A kettlebell method with no kettlebell is a session
+  //    nobody can run — the same rule that makes the library match equipment.
+  if (hasKit && /\bkettlebells?\b|\bkb\b/.test(kit)) {
+    for (const k of keysWhere(st => st.discipline === 'Kettlebell')) take(k, 'you have kettlebells');
+  }
+
+  // 3. TWO DAYS A WEEK IS A CEILING, NEVER AMBITION. A method that only works
+  //    on high frequency is the wrong thing to mark for somebody who told us
+  //    they train twice — so the brief, capped ones are marked instead.
+  if (days && days <= 2) {
+    for (const k of keysWhere(st => st.max_movements != null || setsOf(st) === 1)) {
+      take(k, `${days} session${days === 1 ? '' : 's'} a week — this one is built to be brief`);
+    }
+  }
+
+  // 4. STARTING OUT. Simple, moderate reps, real rest — read off the numbers,
+  //    and the failure/max-effort methods are already withheld above.
+  if (tier === 'beginner') {
+    for (const k of keysWhere(st => st.reps >= 5 && st.reps <= 10 && st.rest_s >= 90 && setsOf(st) <= 5)) {
+      take(k, 'you are starting out, and this one is simple and unhurried');
+    }
+  }
+
+  // 5. HOW THEY ALREADY TRAIN — the strongest thing the record itself says,
+  //    because it is the only signal here made of what somebody DID rather
+  //    than of what they once typed into a form. A log running at eights and
+  //    twelves is a bodybuilding log whatever its owner calls it; a log of
+  //    heavy triples is a powerlifting one. It needs enough sets to mean
+  //    anything, and the middle of the range is deliberately SILENT — five to
+  //    seven reps is everybody, and marking on it would be reading tea leaves.
+  if (log && log.sets >= 20 && log.avg_reps != null) {
+    const r = log.avg_reps;
+    const band = r >= 8.5
+      ? st => st.discipline === 'Bodybuilding' && st.reps >= 8
+      : r <= 5.5
+        ? st => st.discipline === 'Powerlifting' && st.reps <= 5
+        : st => st.reps >= 5 && st.reps <= 8 && st.rest_s >= 90 && st.rest_s <= 180;
+    for (const k of keysWhere(band)) {
+      take(k, `your log runs at about ${Math.round(r)} reps a set, and this tradition is built in that band`);
+    }
+  }
+
+  if (!out.length) {
+    return { marked: [], count: 0,
+      say: 'Nothing on your record picks between these yet — they are all a genuine choice.' };
+  }
+  return {
+    marked: out,
+    count: out.length,
+    say: `${out.length} of ${Object.keys(STYLES).length} match what you have told us. They are a starting point, not a rule — any of the others is a real choice.`,
+  };
 }
 
 export function styleFrom(text) {

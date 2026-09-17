@@ -7407,7 +7407,7 @@ await test('every session is itemised from the same pass that totals them', () =
 
 group('Building a workout WITH somebody, to a name they chose');
 
-const { FOCUSES, FOCUS_NAMES, focusFrom, designSession, designQuestions, movementCount, designNote, STYLES, styleFrom, stylesList, styleShape } =
+const { FOCUSES, FOCUS_NAMES, focusFrom, designSession, designQuestions, movementCount, designNote, STYLES, styleFrom, stylesList, styleShape, recommendStyles: recStyles } =
   await import('../netlify/functions/lib/design.js');
 
 await test('not one weight comes out of a designed session', () => {
@@ -12159,7 +12159,7 @@ await test('twenty-one lineages: named for the method, credited as a tradition, 
   assert.match(src, /tradition: STYLES\[style\]\.tradition/, 'the response never credits the lineage');
   assert.match(src, /never their own programme, never an endorsement/, 'the tool description drops the rule');
   const api = readFileSync(new URL('../netlify/functions/api-progress.js', import.meta.url), 'utf8');
-  assert.match(api, /stylesList\(\)/, 'the dashboard no longer draws the styles from the one shared list');
+  assert.match(api, /stylesList\(/, 'the dashboard no longer draws the styles from the one shared list');
   for (const st of stylesList().styles) {
     if (!st.lineage) continue;                    // the three generic shapes have no lineage to credit
     assert.ok(st.tradition && /in the tradition of/.test(st.tradition),
@@ -12169,9 +12169,10 @@ await test('twenty-one lineages: named for the method, credited as a tradition, 
   const stylesSrc = app.slice(app.indexOf('function stylesPanel'), app.indexOf('async function setCoach'));
   assert.ok(stylesSrc.length > 200, 'stylesPanel moved and this test can no longer see it');
   assert.match(stylesSrc, /class="stylegrp"/, 'the panel is not grouped by discipline');
-  const cardTpl = stylesSrc.slice(stylesSrc.indexOf('const card = st =>'), stylesSrc.indexOf('return `<section'));
+  const cardTpl = stylesSrc.slice(stylesSrc.indexOf('const card ='), stylesSrc.indexOf('return `<section'));
   assert.ok(cardTpl.length > 200, 'the style card template moved and this test can no longer see it');
-  assert.match(cardTpl, /class="strad">[^<\n]*trad\(st\)/, 'the style card never renders the tradition it credits');
+  assert.match(cardTpl, /class="slin">[^<\n]*st\.credit/, 'the closed style card never names the tradition it credits');
+  assert.match(cardTpl, /class="strad">[^<\n]*trad(?:What)?\(st\)/, 'the style card never says what that tradition does');
   assert.match(cardTpl, /class="sprov">[^<\n]*st\.provenance/, 'the style card never renders the honest line');
   assert.match(stylesSrc, /in the tradition of \$\{st\.lineage\}/, 'a style with no tradition of its own loses its credit entirely');
   assert.ok(!/ambassador/i.test(app) && !/ambassador/i.test(src), '"ambassador" made it into the product');
@@ -12223,7 +12224,7 @@ await test('every style has a voice — a register that changes delivery and not
   const app = page('app.html');
   assert.match(app, /class="vint \$\{esc\(st\.voice\.intensity\)\}"/, 'the styles panel never shows the intensity');
   const api = readFileSync(new URL('../netlify/functions/api-progress.js', import.meta.url), 'utf8');
-  assert.match(api, /stylesList\(\)/, 'the dashboard no longer draws the styles from the one shared list');
+  assert.match(api, /stylesList\(/, 'the dashboard no longer draws the styles from the one shared list');
   for (const st of stylesList().styles) {
     assert.ok(st.voice && st.voice.register && st.voice.intensity && st.voice.attitude,
       `${st.key} reaches the dashboard with no voice to show`);
@@ -12330,6 +12331,143 @@ await test('what a style does is said in plain English, and the numbers are deri
     assert.ok(!seen.has(st.shape), `${st.key} and ${seen.get(st.shape)} print the identical shape "${st.shape}"`);
     seen.set(st.shape, st.key);
   }
+});
+
+await test('which style suits you is computed, evidenced, capped — and never invented', () => {
+  const { recommendStyles } = { recommendStyles: recStyles };
+  const nameOf = k => STYLES[k].say;
+
+  // NOTHING ON FILE IS A REFUSAL, NOT A GUESS — progressionCall's rule, in a
+  // new place. A model asked "which suits me" and handed nothing is the
+  // invented-2,600 shape; the honest answer is that nothing on file says.
+  const thin = recommendStyles({ profile: {} });
+  assert.equal(thin.marked.length, 0, 'a recommendation was produced from an empty record');
+  assert.ok(thin.thin && thin.missing?.length, 'the thin read does not say what would produce a mark');
+  assert.ok(!/best|optimal|ideal|perfect|should/i.test(thin.say), `the thin line prescribes: "${thin.say}"`);
+
+  // AT MOST THREE. A shelf where half the cards are ticked has said nothing —
+  // the athlete read caps for the same reason.
+  const many = recommendStyles({ profile: { train_days: 4, sport: 'boxing' }, log: { sets: 90, avg_reps: 11 } });
+  assert.ok(many.marked.length <= 3, `${many.marked.length} styles marked`);
+
+  // EVERY MARK CARRIES ITS EVIDENCE, and the evidence is a fact about the
+  // record rather than the style's own sales pitch.
+  for (const m of many.marked) {
+    assert.ok(m.because && m.because.length > 10, `${m.key} is marked with no reason`);
+    assert.ok(!/best|optimal|ideal|perfect match|most effective/i.test(m.because),
+      `${m.key}'s reason is a superlative nothing here ran: "${m.because}"`);
+    // NEVER A LOAD, here either — and no number the shape did not derive.
+    assert.ok(!/\b\d+\s*(kg|lb|lbs|kcal|calories)\b/i.test(m.because), `${m.key}'s reason invents a figure`);
+  }
+
+  // A CARE FLAG ONLY EVER SOFTENS. It does not hide the read — silence would
+  // ship a feature invisible to somebody with a flag standing, on a surface
+  // they navigated to — but nothing taken to failure, no max-effort work and
+  // no rests too short to hold form may be marked while one stands.
+  const hard = { profile: { train_days: 2, equipment: ['dumbbells'] } };
+  const open = recommendStyles(hard);
+  const soft = recommendStyles({ ...hard, flagged: true });
+  assert.ok(open.marked.length > 0 && soft.marked.length > 0,
+    'a care flag silenced the shelf read instead of softening it');
+  for (const m of soft.marked) {
+    const st = STYLES[m.key];
+    const sets = typeof st.sets === 'object' ? (st.sets.other ?? st.sets.beginner) : st.sets;
+    assert.ok(sets !== 1, `${m.key} is a set to failure and was marked under a care flag`);
+    assert.ok(!(st.reps <= 3), `${m.key} is max-effort work and was marked under a care flag`);
+    assert.ok(!(st.rest_s < 45), `${m.key} rests under 45s and was marked under a care flag`);
+  }
+  // And softening never ADDS something the open read refused.
+  const openKeys = new Set(open.marked.map(m => m.key));
+  const added = soft.marked.filter(m => !openKeys.has(m.key));
+  for (const m of added) {
+    const st = STYLES[m.key];
+    const sets = typeof st.sets === 'object' ? (st.sets.other ?? st.sets.beginner) : st.sets;
+    assert.ok(sets !== 1 && !(st.reps <= 3) && st.rest_s >= 45,
+      `${m.key} was added under a flag and is harder than what it replaced`);
+  }
+
+  // THE WORD-BOUNDARY BUG, which this repo has now hit four times: `bells?\b`
+  // matches the "bells" inside DUMBBELLS, so everybody with dumbbells was told
+  // they had kettlebells. Same shape as `row` inside "seated row machine".
+  const dumbbells = recommendStyles({ profile: { train_days: 4, equipment: ['dumbbells', 'bench'] } });
+  for (const m of dumbbells.marked) {
+    assert.ok(!/kettlebell/i.test(m.because),
+      `dumbbells were read as kettlebells: ${m.key} — "${m.because}"`);
+  }
+  const real = recommendStyles({ profile: { train_days: 4, equipment: ['kettlebells'] } });
+  assert.ok(real.marked.some(m => /kettlebell/i.test(m.because)), 'real kettlebells are not recognised');
+
+  // THE MIDDLE OF THE REP RANGE IS THE COMMONEST TRAINING SHAPE and had no
+  // answer at all — measured against the live record, the founder's own log
+  // averages 7.3 and fell in the silent gap, so the feature he asked for
+  // marked nothing for him.
+  const middle = recommendStyles({ profile: { train_days: 3, equipment: ['full gym'] }, log: { sets: 30, avg_reps: 7.33 } });
+  assert.ok(middle.marked.length > 0, 'a mid-rep log still gets no answer');
+  assert.ok(/reps a set/.test(middle.marked[0].because), 'the mark does not cite the log it read');
+
+  // A LOG TOO THIN TO READ IS NOT READ.
+  const fewSets = recommendStyles({ profile: { train_days: 3, equipment: ['full gym'] }, log: { sets: 4, avg_reps: 7.33 } });
+  assert.ok(!fewSets.marked.some(m => /reps a set/.test(m.because)), 'four sets were read as a training shape');
+
+  // THE ABSENCE OF A MARK IS NEVER A VERDICT: every style stays on the shelf,
+  // in its own discipline, whatever is ticked.
+  const fit = recommendStyles({ profile: { train_days: 4, sport: 'boxing' } });
+  const listed = stylesList({ recommended: fit });
+  assert.equal(listed.count, Object.keys(STYLES).length, 'a style was dropped from the shelf for not being marked');
+  assert.equal(listed.styles.filter(x => x.recommended).length, fit.marked.length,
+    'the shelf and the read disagree about what is marked');
+  for (const x of listed.styles) {
+    assert.equal(x.recommended, fit.marked.some(m => m.key === x.key), `${x.key} is marked out of step with the read`);
+    if (x.recommended) assert.ok(x.because, `${x.key} is ticked with no reason to show`);
+  }
+
+  // The page draws the tick and its reason from the server, and never decides
+  // either for itself.
+  const code = decomment(page('app.html'));
+  const panel = code.slice(code.indexOf('function stylesPanel'), code.indexOf('async function setCoach'));
+  assert.match(panel, /st\.recommended/, 'the card never draws the mark the server computed');
+  assert.match(panel, /st\.because/, 'the card never shows why a style is marked');
+  assert.ok(!/avg_reps|train_days|\bsport\b/.test(panel), 'the page is deciding the recommendation for itself');
+});
+
+await test('the twenty-one trainers are readable without opening anything', () => {
+  // The founder asked twice about "the twenty famous trainers" while all
+  // twenty-one were already built — because their names only ever rendered
+  // one tap in, so the shelf read as twenty-four method names belonging to
+  // nobody. The credit is on the face of the card now.
+  const list = stylesList().styles;
+  const credited = list.filter(st => st.credit);
+  assert.equal(credited.length, list.filter(st => st.lineage).length,
+    'a style names a lineage and does not carry the short credit that shows it');
+  assert.ok(credited.length >= 21, `only ${credited.length} traditions are credited on the card`);
+
+  for (const st of list) {
+    if (!st.lineage) { assert.equal(st.credit, null, `${st.key} credits nobody yet carries a credit line`); continue; }
+    // NEVER A BARE SURNAME. "Arnold Schwarzenegger" beside a method name reads
+    // as authorship; the credit form is what keeps this a reference to
+    // published work rather than a claimed endorsement.
+    assert.equal(st.credit, `in the tradition of ${st.lineage}`,
+      `${st.key}'s credit is not in the tradition form`);
+    // The METHOD name still carries no surname — the older rule, unmoved.
+    assert.ok(!st.say.includes(st.lineage.split(' ').pop()),
+      `${st.key}'s method name carries the surname it only credits`);
+  }
+
+  // And the connector answers the same question the same way: a list of bare
+  // method names tells nobody which trainers these are.
+  const mcpSrc = decomment(readFileSync(new URL('../netlify/functions/mcp.js', import.meta.url), 'utf8'));
+  const handler = mcpSrc.slice(mcpSrc.indexOf('async function trainerStyles'), mcpSrc.indexOf('async function dropGym'));
+  assert.match(handler, /s\.lineage \? `\$\{s\.say\} \(\$\{s\.lineage\}\)`/,
+    'the shelf read names the methods without naming the traditions');
+
+  // The card shows the credit ONCE: the closed face names the tradition, the
+  // body says what that tradition does.
+  const code = decomment(page('app.html'));
+  const cardTpl = code.slice(code.indexOf('const card ='), code.indexOf('return `<section class="panel" id="styles"'));
+  assert.ok(cardTpl.length > 200, 'the style card template moved');
+  assert.match(cardTpl, /class="slin">[^<\n]*st\.credit/, 'the closed card does not name the tradition');
+  assert.ok(!/class="strad">[^<\n]*\btrad\(st\)/.test(cardTpl),
+    'the body prints the whole tradition sentence again under the credit it already shows');
 });
 
 await test('the shelf is on screen one of Trainer, and the assistant can read it out', async () => {
@@ -12817,14 +12955,14 @@ await test('everywhere the app said tell-your-assistant is now one tap', () => {
   assert.match(code, /gptLink\('Gym bro \\u2014 set me up properly/, 'the assessment is still a phrase to retype');
   assert.match(code, /gptLink\('Gym bro \\u2014 I want to set my goals/, 'the goals invitation is still a phrase to retype');
   assert.match(code, /function stylesPanel/, 'the styles have no panel');
-  assert.match(code, /stylesPanel\(\{ styles: lastPayload\?\.styles, coach: lastPayload\?\.plan\?\.coach \|\| null \}\)/, 'the styles panel is never rendered on Trainer');
+  assert.match(code, /stylesPanel\(\{[^}]*styles: lastPayload\?\.styles/, 'the styles panel is never rendered on Trainer');
 
   // THE LIST COMES FROM THE SERVER, so the page cannot drift from what
   // design_workout actually recognises — and the provenance travels with it,
   // because a style shown without its honest line is the wink the doctrine
   // forbids.
   const api = readFileSync(new URL('../netlify/functions/api-progress.js', import.meta.url), 'utf8');
-  assert.match(api, /styles: stylesList\(\)/, 'the page is no longer handed the server\'s own style list');
+  assert.match(api, /styles: stylesList\(/, 'the page is no longer handed the server\'s own style list');
   // And the page writes none of it down. A style name hardcoded in the markup
   // is a list that drifts from what design_workout recognises the moment one
   // is added, renamed or retired.

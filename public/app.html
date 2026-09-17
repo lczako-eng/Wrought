@@ -1347,6 +1347,29 @@ table.matrix td.rh.cold { color: var(--heat-3); }
   color: var(--muted); flex: 0 1 auto; max-width: 100%; text-align: right;
 }
 /* What it does. Prose — so it is set as prose: no uppercase, no tracking. */
+.scard .srec {
+  flex: 0 0 auto; font-size: 10.5px; letter-spacing: .08em; text-transform: uppercase;
+  padding: 1px 6px; border-radius: 6px; border: 1px solid #3d6b46; color: #8fc79a;
+  font-family: var(--mono); max-width: 100%;
+}
+/* Why it is ticked, said on the face of the card — a mark whose reason is one
+   tap in is a mark nobody trusts. */
+.scard .swhy {
+  flex: 1 1 100%; font-size: 12px; line-height: 1.35; font-weight: 400;
+  letter-spacing: 0; text-transform: none; color: #8fc79a;
+  font-family: inherit; max-width: 100%;
+}
+.scard.fits { border-color: #3d6b46; }
+.swhyall { margin: 2px 0 6px; font-size: 12.5px; line-height: 1.4; color: #8fc79a; }
+/* The credit, on the closed card — its own line, its own rule, never
+   inheriting anything: this is a person's name and it is the reason the
+   shelf reads as twenty-one traditions rather than twenty-four inventions.
+   The body then says what that tradition DOES, not the credit again. */
+.scard .slin {
+  flex: 1 1 100%; font-size: 12px; line-height: 1.35; font-weight: 400;
+  letter-spacing: 0; text-transform: none; color: var(--muted);
+  font-family: inherit; max-width: 100%; margin-top: 1px;
+}
 .scard .sdoes {
   flex: 1 1 100%; font-size: 13px; line-height: 1.4; font-weight: 400;
   letter-spacing: 0; text-transform: none; color: var(--ash);
@@ -4553,7 +4576,7 @@ function renderTrainer(d) {
       <p class="caveat">${esc(d.say)}</p></section>
       ${notConnectedCallout()}
       ${routinesPanel({ routines: trainerRoutinesFull.length ? trainerRoutinesFull : (d.routines?.length ? d.routines : trainerRoutines) }, { editable: true })}
-      ${stylesPanel({ styles: lastPayload?.styles, coach: lastPayload?.plan?.coach || null })}
+      ${stylesPanel({ styles: lastPayload?.styles, coach: lastPayload?.plan?.coach || null, fit_say: lastPayload?.style_fit?.say || null })}
       ${athletePanel(lastPayload || {})}
       ${traditionsPanel({ traditions: lastPayload?.traditions, routines: trainerRoutinesFull })}
       ${placesPanel({ places: lastPayload?.places })}`;
@@ -7021,12 +7044,18 @@ function stylesPanel(d) {
     ? `<button class="ghost style-off" type="button" data-key="${esc(st.key)}">Stop coaching me like this</button>`
     : `<button class="ghost style-on" type="button" data-key="${esc(st.key)}">Make my coach</button>`);
   const groups = [];
+  const fits = list.filter(st => st.recommended);
   for (const st of list) {
     const g = groups.find(x => x.name === (st.discipline || 'Other'));
     if (g) g.items.push(st); else groups.push({ name: st.discipline || 'Other', items: [st] });
   }
   const trad = st => st.tradition || (st.lineage ? `in the tradition of ${st.lineage}` : '');
   const cap = t => t ? t.charAt(0).toUpperCase() + t.slice(1) : '';
+  const tradWhat = st => {
+    const full = trad(st);
+    const cut = full.indexOf(' \u2014 ');
+    return cut > -1 ? full.slice(cut + 3) : full;
+  };
   // One card, closed. The founder: "a quick button to push on them and I
   // should have a brief description of each. What each one does."
   //
@@ -7036,15 +7065,18 @@ function stylesPanel(d) {
   // tradition, the voice, the provenance and the two actions are one tap in:
   // the credit is not the pitch, and a wall of provenance is what made the
   // old panel ten screens of prose nobody read.
-  const card = st => `<details class="scard${st.key === coach ? ' iscoach' : ''}">
+  const card = (st, showWhy = false) => `<details class="scard${st.key === coach ? ' iscoach' : st.recommended ? ' fits' : ''}">
       <summary>
         <span class="sname">${esc(st.say)}${st.key === coach ? '<span class="coachtag">your coach</span>' : ''}</span>
         ${st.shape_short ? `<span class="sshape">${esc(st.shape_short)}</span>` : ''}
+        ${st.recommended ? '<span class="srec">\u2713 for you</span>' : ''}
+        ${st.credit ? `<span class="slin">${esc(st.credit)}</span>` : ''}
+        ${showWhy && st.because ? `<span class="swhy">${esc(cap(st.because))}.</span>` : ''}
         ${st.does ? `<span class="sdoes">${esc(st.does)}</span>` : ''}
       </summary>
       <div class="sbody">
         ${st.shape && st.shape !== st.shape_short ? `<p class="sshapefull">Builds ${esc(st.shape)}.</p>` : ''}
-        ${trad(st) ? `<p class="strad">${esc(cap(trad(st)))}.</p>` : ''}
+        ${trad(st) ? `<p class="strad">${esc(cap(tradWhat(st)))}.</p>` : ''}
         ${st.voice ? `<p class="svoice"><b class="vint ${esc(st.voice.intensity)}">${esc(st.voice.intensity)}</b> ${esc(st.voice.register)} — ${esc(st.voice.attitude)}</p>` : ''}
         ${st.provenance ? `<p class="sprov">${esc(cap(st.provenance))}</p>` : ''}
         <div class="sacts">${coachBtn(st)}${gptLink(`Gym bro — design me a ${st.say} workout${st.lineage ? ` (${trad(st)})` : ''} for my gym, about 45 minutes, coach it in that style's voice, and offer to save it.`, 'Build me one')}</div>
@@ -7058,6 +7090,14 @@ function stylesPanel(d) {
     <p class="sub dim">Real published methods, each named for the method and credited to the tradition it comes from —
     never a named coach’s programme, never an endorsement. A style changes the session’s shape and the voice it is
     coached in; every weight still comes from your own history.</p>
+    ${fits.length ? (() => {
+      const why = [...new Set(fits.map(f => f.because).filter(Boolean))];
+      const one = why.length === 1 ? why[0] : null;
+      return `<h3 class="stylegrp">For you · ${fits.length}</h3>
+        ${one ? `<p class="swhyall">${esc(cap(one))}.</p>` : ''}
+        <div class="shelf">${fits.map(f => card(f, !one)).join('')}</div>`;
+    })() : ''}
+    ${d.fit_say ? `<p class="sub dim">${esc(d.fit_say)}</p>` : ''}
     ${groups.map(g => `<h3 class="stylegrp">${esc(g.name)} · ${g.items.length}</h3><div class="shelf">${g.items.map(card).join('')}</div>`).join('')}
   </section>`;
 }

@@ -55,7 +55,7 @@ import {
   PACES, PUSH, sessionsCanCarryAim, sessionWorth,
 } from './lib/training.js';
 import { PROGRAMMES, GOALS, MOVEMENTS, movementsFor, pickProgramme, buildProgramme, buildBlock, blockPosition, BLOCK_LENGTHS } from './lib/library.js';
-import { FOCUSES, FOCUS_NAMES, focusFrom, designSession, designQuestions, designNote, STYLES, styleFrom, stylesList } from './lib/design.js';
+import { FOCUSES, FOCUS_NAMES, focusFrom, designSession, designQuestions, designNote, STYLES, styleFrom, stylesList, recommendStyles } from './lib/design.js';
 import { styleRoutine } from './lib/style_routines.js';
 import { pickDue } from './lib/morning.js';
 import { athleteRows, athleteRead, TESTS, parseTestValue, ATHLETE_COMMITMENT } from './lib/athlete.js';
@@ -2521,10 +2521,30 @@ async function myGyms(_args, user) {
 //
 // Same list the website draws, out of stylesList, so the shelf somebody is
 // TOLD and the shelf somebody LOOKS at cannot disagree.
+// Which styles suit them, read off the same record the dashboard reads. The
+// recommendation is COMPUTED — never the model's impression of what a person
+// who trains like this ought to do — and a care flag silences it, because
+// choosing how to train is coaching.
+async function styleFitFor(user, profile) {
+  const today = localDateFor(profile.timezone);
+  const careRange = await rangeFacts(user.id, profile, addDays(today, -(CARE_WINDOW_DAYS - 1)), today);
+  const flags = careFlags(careRange, profile, { openDate: today });
+  const { data: rows } = await supabase
+    .from('wrought_sets').select('reps')
+    .eq('user_id', user.id).not('reps', 'is', null).limit(400);
+  const reps = (rows || []).filter(r => r.reps > 0);
+  return recommendStyles({
+    profile,
+    log: reps.length ? { sets: reps.length, avg_reps: reps.reduce((n, r) => n + r.reps, 0) / reps.length } : null,
+    flagged: (flags || []).length > 0,
+  });
+}
+
 async function trainerStyles(args, user) {
   const profile = await getProfile(user.id);
   const coach = profile.coach_style && STYLES[profile.coach_style] ? profile.coach_style : null;
-  const all = stylesList({ coach });
+  const fit = await styleFitFor(user, profile);
+  const all = stylesList({ coach, recommended: fit });
 
   // One style, in full — "what is Fight camp", "how does Arnold style work".
   const wanted = args.style ? styleFrom(args.style) : null;
@@ -2555,9 +2575,11 @@ async function trainerStyles(args, user) {
   return {
     count: args.discipline ? groups.reduce((n, g) => n + g.styles.length, 0) : all.count,
     your_coach: coach ? (all.styles.find(s => s.key === coach)?.say || coach) : null,
+    for_you: fit.marked.map(m => ({ ...m, say: STYLES[m.key]?.say })),
+    for_you_say: fit.say,
     disciplines: groups,
-    say: `${groups.reduce((n, g) => n + g.styles.length, 0)} trainer styles${coach ? `, and yours is ${all.styles.find(s => s.key === coach)?.say}` : ''}. ${groups.map(g => `${g.discipline}: ${g.styles.map(s => s.say).join(', ')}`).join('. ')}.`,
-    note: 'Read them out grouped by discipline with the ONE LINE of what each does — never the whole provenance for every style, which is a wall nobody reads. They can take one for a single session (design_workout style) or make it the standing coach (set_plan style), and change it in one sentence any time. A style changes the session\'s SHAPE and the coaching VOICE and nothing else: every load still comes from their own history, and a care flag silences the voice entirely. They are on the website too, at the top of the Trainer tab.',
+    say: `${groups.reduce((n, g) => n + g.styles.length, 0)} trainer styles${coach ? `, and yours is ${all.styles.find(s => s.key === coach)?.say}` : ''}. ${groups.map(g => `${g.discipline}: ${g.styles.map(s => s.lineage ? `${s.say} (${s.lineage})` : s.say).join(', ')}`).join('. ')}.`,
+    note: 'Say the FOR_YOU ones first with the reason beside each — they are computed from their record and you may never add, drop or reorder one, nor mark a style the server did not. An empty for_you means the record does not pick between them yet: say so, never guess one. Then read the rest grouped by discipline with the ONE LINE of what each does, and NAME THE TRADITION beside the method — "Golden-era volume bodybuilding, in the tradition of Arnold Schwarzenegger" — because the method is the product\'s and the person is the credit, and a list of bare method names answers nobody who asked which trainers these are — never the whole provenance for every style, which is a wall nobody reads. They can take one for a single session (design_workout style) or make it the standing coach (set_plan style), and change it in one sentence any time. A style changes the session\'s SHAPE and the coaching VOICE and nothing else: every load still comes from their own history, and a care flag silences the voice entirely. They are on the website too, at the top of the Trainer tab.',
     not_an_endorsement: 'Each is named for its published METHOD and credits the person as a tradition — never their programme, never an endorsement.',
   };
 }
