@@ -3531,6 +3531,36 @@ it away: **never say "everything you have logged with me"** — the conversation
 is not the record, the two are routinely different, and that difference is the
 thing the person actually needs told.
 
+### And then that door answered every successful write with a sign-out
+
+**One `web` row has ever been written. 10 August. Never another.** The door
+built specifically so nobody has to get a model to write for them was
+unusable, and the record says so in one number.
+
+`load` is `async function load(token)` and builds its own `Authorization`
+header from that parameter. All three post-write reloads on the log panel —
+add a meal, take one off, refile a workout as work — called `load()` **bare**.
+So the write landed, `api-progress` was asked for the refreshed day with
+`Bearer undefined`, answered 401, and the catch replaced `#content` with
+*"Could not load. Try signing in again."* The quick-add box lives inside
+`#content`, so the successful write **destroyed the form and its own
+"Logged." line on the way past.**
+
+- **A 401 painted over a write that worked is the worst shape of wrong**, and
+  it is the failure the offline card and the CDN card were each rewritten to
+  avoid: *a network or a plumbing failure is never answered with a password
+  form.* Here it was not even a failure — the row was on the record, and the
+  screen said the session was gone. Nobody types a second meal into a box that
+  just told them they were signed out.
+- **The test pinned the bug.** The assertion guarding this panel matched
+  `await load\(\);` literally, so it held the bare call in place and went on
+  passing. After `refresh.html`'s `v8` and `wrought-shell-v12`, this is the
+  third form of the same trap and the sharpest: **a test that names a value
+  cannot outlive the value, and one that names the bug outlives the fix.** It
+  pins the relationship now — the reload after a write carries the session
+  token — and reads the page through `decomment` first, because the comment
+  explaining the bug names the bare call.
+
 ### The morning brief closes yesterday, restates the deal, then asks
 
 `lib/morning.js` + the morning pass in `brief-nightly.js`. The founder's shape
@@ -4755,7 +4785,7 @@ self-reporting scale removes the most-abandoned manual entry), then Strava.
 
 ## Conventions
 
-- `npm test` runs `test/harness.mjs` — 734 offline tests, no network, no database.
+- `npm test` runs `test/harness.mjs` — 735 offline tests, no network, no database.
   Run it before every push. It covers the JSON-RPC envelope (which fails as an
   uninformative "could not connect" inside ChatGPT) and all the arithmetic
   (which fails as a confidently wrong number in somebody's verdict).
