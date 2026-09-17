@@ -7534,7 +7534,9 @@ async function refileAsWork(id, btn) {
       if (btn) { btn.disabled = false; btn.textContent = was; }
       return;
     }
-    await load();
+    // The token, or the write that worked reads as a sign-out — the note on
+    // quickAddFood has the whole of it.
+    await load(data.session.access_token);
   } catch {
     alert('Could not reach the server — nothing was changed.');
     if (btn) { btn.disabled = false; btn.textContent = was; }
@@ -7567,7 +7569,16 @@ async function quickAddFood(ev) {
     }
     input.value = '';
     if (out) { out.textContent = body.say || 'Logged.'; out.className = 'qasay good'; }
-    await load();
+    // THE TOKEN, OR THE WRITE THAT WORKED LOOKS LIKE A SIGN-OUT. `load` is
+    // `async function load(token)` and uses that parameter for its own
+    // Authorization header, so a bare `load()` sends `Bearer undefined`,
+    // api-progress answers 401, and the catch replaces #content with
+    // "Try signing in again." The row HAS landed; the screen says the session
+    // is gone. It is the sign-in-gate-as-error-message failure the offline
+    // card and the CDN card were both rewritten to avoid, on the one door that
+    // does not need an assistant — and the record shows the cost: exactly one
+    // `web` row has ever been written, on 10 August, and never another.
+    await load(data.session.access_token);
   } catch {
     if (out) { out.textContent = 'Could not reach the server — nothing was saved.'; out.className = 'qasay bad'; }
   }
@@ -7590,7 +7601,9 @@ async function removeFood(id, btn) {
     });
     const body = await res.json().catch(() => ({}));
     if (!res.ok) { alert(body.say || 'That did not come off.'); if (btn) { btn.disabled = false; btn.textContent = 'Remove'; } return; }
-    await load();
+    // The token, or the write that worked reads as a sign-out — the note on
+    // quickAddFood has the whole of it.
+    await load(data.session.access_token);
   } catch {
     alert('Could not reach the server — nothing was removed.');
     if (btn) { btn.disabled = false; btn.textContent = 'Remove'; }

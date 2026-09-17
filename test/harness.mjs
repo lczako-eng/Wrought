@@ -13577,7 +13577,18 @@ await test('the food box is on the page, and never in the demo', () => {
   assert.match(page, /const box = DEMO \? '' :/);
   // The write re-reads the whole dashboard rather than patching the DOM from a
   // guess: the burn, the net, the rings and the calendar all just changed too.
-  assert.match(page, /out\.className = 'qasay good'; \}\s*\n\s*await load\(\);/);
+  // Pinned as the RELATIONSHIP — a reload carrying the session token — rather
+  // than as the literal call it used to be. The old form spelled `await
+  // load();` out, so it pinned the bug: a bare reload sends `Bearer undefined`
+  // and the write that landed comes back as the sign-in gate. A test that
+  // names a value cannot outlive the value; one that names the bug outlives
+  // the fix, which is worse.
+  // Comments stripped first: the note explaining the bug names the bare call,
+  // and grepping the warning rather than the breach is a trap this harness has
+  // now fallen into four times.
+  const code = decomment(page);
+  const after = code.slice(code.indexOf("body.say || 'Logged.'; out.className = 'qasay good'"));
+  assert.match(after.slice(0, 300), /await load\(data\.session\.access_token\);/);
   // One box, not a form. The oldest doctrine here is that a log costing more
   // than a sentence is one nobody keeps.
   const box = page.slice(page.indexOf('id="qaform"'), page.indexOf('id="qaform"') + 900);
@@ -13806,6 +13817,31 @@ await test('the derived muscles reach what actually reads them', () => {
   assert.equal(got.legs, 2);
   assert.equal(got.glutes, 2);
   assert.ok(!(got.legs > 2), 'the bench press is still being counted as legs');
+});
+
+await test('a write that landed never answers with the sign-in gate', () => {
+  // THE ONE DOOR THAT DOES NOT NEED AN ASSISTANT, AND IT LOOKED LIKE A
+  // SIGN-OUT. `load` is `async function load(token)` and builds its own
+  // Authorization header from that parameter, so the three post-write reloads
+  // on the log panel — add a meal, take one off, refile a workout as work —
+  // called `load()` bare, sent `Bearer undefined`, took a 401 and replaced
+  // #content with "Could not load. Try signing in again." The row had already
+  // landed. The quick-add form lives inside #content, so the write destroyed
+  // the form and its own "Logged." line on the way past.
+  //
+  // It is the failure the offline card and the CDN card were each rewritten to
+  // avoid — answering something that is not an auth problem with a password
+  // prompt — and the record shows what it cost: exactly ONE `web` row has ever
+  // been written, on 10 August, and never another.
+  const app = page('app.html');
+  assert.match(app, /async function load\(token\)/, 'load no longer takes its token');
+  assert.match(app, /Authorization: `Bearer \$\{token\}`/, 'load stopped using the token it is given');
+  assert.equal((app.match(/await load\(\);/g) || []).length, 0,
+    'a bare load() is back — it sends "Bearer undefined" and paints the sign-in card over a write that worked');
+  // Each of the three sites has the session in hand already; there is no
+  // excuse for a bare call.
+  assert.ok((app.match(/await load\(data\.session\.access_token\)/g) || []).length >= 3,
+    'the post-write reloads no longer carry the token');
 });
 
 // ── Report ──────────────────────────────────────────────────────────────────
