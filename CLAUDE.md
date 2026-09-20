@@ -2265,6 +2265,193 @@ The Trainer-styles and Tradition-workouts panels show the intensity stamp,
 the register and the attitude line, so picking a style is picking a coach with
 eyes open.
 
+### "Where are they?" — the shelf was built, and set in the label style at the bottom of the fifth tab
+
+`stylesList()` / `styleShape()` in `lib/design.js` + the `trainer_styles` tool
++ the rebuilt Trainer-styles panel + a *Pick who coaches you* group in the
+manual. The founder: *"this project training styles I want to learn about —
+where are they? Where can I find them? It should be like a quick button to
+push on them and I should have a brief description of each. What each one
+does."*
+
+**Every part of it existed and none of it was findable**, which is this file's
+most repeated shape and the one whose lesson is written down hardest: *a
+judgement call that overrides a clear instruction is not a judgement call, it
+is a refusal with a rationale attached.* Answering him with "it ships on the
+Trainer tab" would have been that refusal. Measured in a browser at 390px
+instead:
+
+- the panel began at **3,947px — 4.7 screens down**, on the fifth tab
+- it sat under a **2,705px** list of the twenty-one written sessions
+- it was itself **9,760px tall** — about ten more screens to read
+- **each row was 407px**: a name and three lines of prose stacked with two
+  buttons
+
+**And the type was inverted, which is why it could not be scanned.**
+`.planrow .lbl` is written for short uppercase SETTING labels — PACE, PUSH —
+and `.planrow.style .lbl` reused it for a style's NAME and three sentences of
+English. Measured: *Drilled fundamentals* rendered at **10.5px monospace
+uppercase in the dimmest grey**, while its own lineage rendered at 12.5px and
+brighter and its own description at 12px. **The captions were larger than the
+headings they captioned**, and every sentence was uppercase and letter-spaced.
+That is `.stat span`, `.leg`, `.bar` and `.setpill` for the **fifth** time, so
+the rule is restated flat: **a descendant selector that styles "the text in
+this thing" will find the heading too.** The card's classes are its own and
+every rule is scoped to its own element.
+
+- **The name leads, the shape is derived, the line says what it is for.**
+  `styleShape()` computes `4 × 12 · 45s rest` from the same sets, reps and
+  rest `designSession` actually builds with, so a card can never describe a
+  session the builder does not build — and that frees the prose to stop
+  quoting parameters. **Twelve of the twenty-four descriptions failed that
+  bar** and were rewritten: two named an internal tool or screen
+  (*"start_block schedules them"*, *"the runs panel tracks it"*) on a card a
+  person reads; one was a superlative that only parses beside its siblings;
+  and `corner_craft` called 12 reps *"moderate"* while its neighbour called
+  the same 12 *"higher"* — hand-written descriptions drifting from the sets
+  they describe. The test now forbids a set count that **contradicts** the
+  shape rather than one that mentions a number, because *"one set per
+  movement"* is the whole identity of `one_hard_set` and agrees with the 1 it
+  builds.
+- **The three shape fields are in the chip.** `bodybuilding_principles` and
+  `seven_set_finisher` both build 4 × 10 at a minute and differ only by the
+  finisher, so a chip that dropped it printed two styles identically. With the
+  finisher, the movement cap and the long steady effort, all twenty-four
+  shapes are distinct — tested.
+- **ONE list, both surfaces.** `api-progress` and `trainer_styles` both read
+  `stylesList()`, so the shelf somebody is SHOWN and the shelf somebody is
+  TOLD cannot disagree — `planRead`'s rule, applied to the styles. The page
+  hardcodes not one style name, and a test asserts it.
+- **Fifty-eight tools and not one listed them.** *"What trainer styles are
+  there"* had nothing to land on, so the model answered from its own memory —
+  the *"what account am I on"* failure with a coach's name on it. Worse, the
+  phrasebook actively **mis-routed** it: *coach* and *trainer* are claimed as
+  ways of ADDRESSING Wrought and map to `brief`, so *"who can coach me"*
+  returned the daily verdict. **The subject decides**, exactly as with the
+  misheard spellings: being called coach is a brief, asking which coaches
+  exist is the shelf. `my_plan` had returned the standing coach on every call
+  since it shipped and never said so in its description.
+- **Saved workouts stays first.** The shelf moves from last to SECOND — above
+  the athlete read, the written sessions and the places — because between
+  sessions the question is *what am I doing next*, and who coaches it is the
+  next question, not the first. **3,947px → 721px**, on screen one at 320,
+  360, 390 and 430 alike; the panel 9,760px → 3,099px with every description
+  visible; the median card 84px.
+- **A nowrap chip beside the name cost 371px in a 320px screen**, and squeezed
+  the names into a column too narrow to hold them — the panel came back twice
+  as tall. Found by measuring, not by looking. Nothing in the card refuses to
+  break and nothing exceeds the gutters.
+- **It disappears during a session, and that is correct.** The active branch
+  is the rack screen; twenty-four coaches under a live workout is not a glance.
+- **The manual had eight groups and none of them mentioned a style.** *Pick
+  who coaches you* is the ninth, with the sentence that finds them.
+
+**A guard had already gone dead, and it was found by reading rather than by
+failing.** The assertion *"the panel never shows the tradition"* grepped the
+whole page for `class="lineage"` — a class the styles panel stopped using and
+`placesPanel` still carries for a gym's kind — so it passed off an unrelated
+panel, and deleting the credit from every card would not have tripped it.
+**Four more assertions pinned the literal payload expression** in
+`api-progress` and failed the moment the payload moved onto the shared list —
+the change that made the guarantee stronger. *Pin the shape, never the
+spelling*, for the fifth and sixth time; they now assert the relationship,
+against `stylesList()`'s own output. Every new test was verified to fail
+against the bug it guards, and the first replacement guard was itself too weak
+— it matched the helper's DEFINITION rather than its USE, so deleting the line
+that renders the credit still passed.
+
+### A tick that had to be earned — and the twenty-one names that were one tap out of sight
+
+`recommendStyles()` in `lib/design.js` + `credit` on `stylesList` + the *For
+you* group and the `✓ FOR YOU` mark on the shelf + `for_you` on
+`trainer_styles`. The founder: *"you should be able to like put a dot on there
+like a check box to see what your training style should recommend — that
+secondly 20 famous trainers I was asking about earlier and their styles, built
+Schwarzenegger and some of the…"*
+
+**The second half was a rendering fault, not a missing feature.** All
+twenty-one lineages were built and every one of them only ever appeared when a
+card was OPENED, so the shelf read as twenty-four method names belonging to
+nobody and he asked where the trainers were for a second time. `credit` is the
+short form — *"in the tradition of Arnold Schwarzenegger"* — on the face of
+every card; the body now says what that tradition DOES rather than printing the
+same eight words directly underneath. **Never a bare surname**: a name beside a
+method reads as authorship, and the credit form is the whole reason this is a
+reference to published work rather than a claimed endorsement. The tool names
+them too — a list of bare method names answers nobody who asked which trainers
+these are. It costs 441px on a 390px phone and that is what showing twenty-one
+names costs.
+
+**The dot had to be earned, and the first version had not earned it.** A
+recommendation nobody computed is one the model invented — the 2,600 shape,
+pointed at how somebody trains. So every mark comes from a rule reading a field
+the record actually holds, carries the fact that produced it, and is capped at
+three, because a shelf where half the cards are ticked has said nothing.
+
+**Walking real records through it caught three faults before any of it
+shipped**, and querying the live database caught a fourth that would have made
+the whole feature invisible to the man who asked for it:
+
+- **`bells?\b` matched the "bells" inside DUMBBELLS**, so every person with
+  dumbbells was told they had kettlebells. The word-boundary bug for the
+  **fourth** time, after `row` inside *seated row machine*, `run` inside
+  *crunch* and `back` inside *back squat*. The boundary has to be on the FRONT
+  of the word too.
+- **The intent rule was a fabricated connection and was deleted.** Every style
+  with `focus_default: 'conditioning'` is a boxing or running tradition, so
+  *"you want to lose weight"* was marking fight camps at people with no
+  interest in fighting. The deeper objection is the doctrine's own: **the
+  deficit does the losing, not the training style**, so no style can honestly
+  be recommended FOR fat loss and none is.
+- **`wrought_profile` has no `tier` column at all** — checked against the live
+  database, not assumed — so `profile.tier` reads null for everybody and the
+  beginner gate was inert. The softening is carried by the care flag instead,
+  and the tier branch stays because the moment a tier is on file it is the
+  right gate.
+- **The founder would have seen ZERO dots.** His real record: `train_days` 3,
+  no tier, `equipment: ["full gym"]`, 30 sets averaging **7.33 reps** — which
+  fell straight into the silent middle of the rep bands. The middle of the
+  range is the commonest training shape in the product and had no answer at
+  all. It answers now, and his three are Starr, Rippetoe and Wendler, matched
+  to the log he actually keeps.
+
+**A care flag SOFTENS this read; it does not hide it.** Blanket silence was the
+first answer and the live record showed what it costs — a low-intake flag
+stands on his account today, so silence would have shipped a feature invisible
+to the person who requested it, on a surface he navigated to himself. The
+distinction that makes showing it safe is what the flags are actually for: a
+flag stops the product PUSHING — more sessions, harder work, a deficit — and a
+mark here adds no session and no set. What a flag does do is withhold the marks
+that lean on intensity: nothing taken to failure, no max-effort singles, no
+rests too short to hold form. Verified to bite — *One hard set*, *Strict
+isolation* and *Conjugate method* each drop out under a flag and the read
+backfills from the same rule, so somebody still gets three. **It only ever
+softens**, which is readiness's rule in a new place.
+
+- **The strongest signal is what they DID, not what they typed.** Sport, kit,
+  days and tier are stored settings; the set record is the only signal made of
+  training that happened. A log at eights and twelves is a bodybuilding log
+  whatever its owner calls it. Under twenty sets it is not read at all.
+- **Nothing on file is a refusal, not a guess** — and it says which answer
+  would turn a dot on.
+- **The absence of a mark is never a verdict.** Every style stays on the shelf,
+  in its own discipline, in its own order; the *For you* group is a shortcut to
+  the marked ones, never a different set, so *Bodybuilding · 6* still means
+  six. Nothing is greyed, crossed or coloured as wrong-for-you: a style
+  somebody likes is theirs to pick and the shelf is not a gate.
+- **One reason, said once.** When one rule fired — the ordinary case — the
+  same sentence printed on three cards in a row.
+- Green rather than heat, because heat is the standing coach's colour and two
+  heat chips on one card read as two of the same thing. It is `.vint.calm`'s
+  existing green, so it is not a new verdict colour.
+
+**And four more assertions pinned an exact argument list**, two of which I had
+written myself one change earlier while repinning the last set. The lesson has
+a narrower form than *a test that names a value cannot outlive the value*:
+**never name the thing the change you are inviting would have to touch.** A
+guard on WHERE the style list comes from must not name that call's arguments,
+and a guard on the card template must not slice on its parameter list.
+
 ### The shelf — the twenty-one listed, taken from in a tap, and in the morning
 
 The founder: *"this should go in your morning brief, and this should be added

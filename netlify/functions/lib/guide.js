@@ -110,6 +110,24 @@ export const GUIDE = {
         'go lighter — the body gets a veto, never a spur.',
     },
     {
+      title: 'Pick who coaches you',
+      short: 'Twenty-four styles, one sentence.',
+      note: 'A style changes the shape of the session and the voice it is coached in. Never the weight.',
+      lines: [
+        'what trainer styles are there',
+        'what is Fight camp',
+        'build me a leg day in the golden-era style',
+        'coach me like a boxer from now on',
+        'make the conjugate one my coach',
+        'back to the plain trainer',
+      ],
+      after:
+        'Each is named for its published METHOD and credits the person as a ' +
+        'tradition — never their programme, never an endorsement. Take one for a ' +
+        'single session or make it your standing coach; change it in one sentence ' +
+        'any time. They are all on the Trainer tab, with what each one does.',
+    },
+    {
       title: 'At the rack',
       short: 'How it felt beats the number.',
       note: 'Say what happened. Anything about how it FELT is worth more than the number.',

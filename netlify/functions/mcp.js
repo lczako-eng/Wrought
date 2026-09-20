@@ -55,7 +55,7 @@ import {
   PACES, PUSH, sessionsCanCarryAim, sessionWorth,
 } from './lib/training.js';
 import { PROGRAMMES, GOALS, MOVEMENTS, movementsFor, pickProgramme, buildProgramme, buildBlock, blockPosition, BLOCK_LENGTHS } from './lib/library.js';
-import { FOCUSES, FOCUS_NAMES, focusFrom, designSession, designQuestions, designNote, STYLES, styleFrom } from './lib/design.js';
+import { FOCUSES, FOCUS_NAMES, focusFrom, designSession, designQuestions, designNote, STYLES, styleFrom, stylesList, recommendStyles } from './lib/design.js';
 import { styleRoutine } from './lib/style_routines.js';
 import { pickDue } from './lib/morning.js';
 import { athleteRows, athleteRead, TESTS, parseTestValue, ATHLETE_COMMITMENT } from './lib/athlete.js';
@@ -191,7 +191,8 @@ HOW PEOPLE ACTUALLY ASK. Nobody says "call the brief tool". They say one of a hu
   my_alerts — "what reminders do I have", "what are you telling me about", "am I set up for notifications", "turn my notifications on"
   drop_alert — "stop telling me about my calories", "turn off the nine o'clock one", "no more training reminders", "stop notifying me"
   training_volume — "am I doing enough back", "how much volume am I doing", "how many sets a week", "am I under-training my arms", "is my chest getting enough work", "what am I neglecting", "how much is too much". Hard SETS per muscle per week, which is what a programme is actually built on — different from the focus on suggest_workout, which counts sessions and cannot tell two sets of flyes from twelve sets of pressing. A light week is answered with more sets or better frequency, NEVER with a heavier bar.
-  my_plan — "what's my plan", "what am I on", "what am I actually doing", "what am I aiming for", "why that number", "what's my target", "remind me what this is", "what's my route" (dictation for WROUGHT), "how does this work for me"
+  trainer_styles — "what trainer styles are there", "show me the styles", "where are the styles", "what coaches can I pick", "who can coach me", "what are my coaching options", "show me the coaches", "what is Fight camp", "how does the conjugate one work", "what would Arnold style do", "tell me about the boxing ones". NOTE "coach" and "trainer" are also how people ADDRESS Wrought itself ("hey coach, how am I doing") — the SUBJECT decides, exactly as with the misheard spellings: being called coach is a brief, asking WHICH coaches there are is the shelf. The shelf is on the SERVER — naming the styles from memory invents a coach that does not exist. Read them out grouped by discipline with the one line of what each DOES; the whole provenance for all twenty-four is a wall nobody reads.
+  my_plan — "what's my plan", "what am I on", "what am I actually doing", "what am I aiming for", "why that number", "what's my target", "remind me what this is", "what's my route" (dictation for WROUGHT), "how does this work for me", "who is coaching me", "what style am I on"
   set_plan — "make it aggressive", "I want this off faster", "go harder on me", "chase me", "ease off", "nothing drastic", "stop nagging me", "leave me alone a bit", "make it four days a week", "I can only do three", "change my plan"
   log_activity — "I was at work all day", "worked at the petting zoo", "did a double shift", "on site since six", "been on my feet since seven", "spent the afternoon digging", "moved house today", "was doing the garden", "shovelled the drive", "long shift", "physical day", "grafting all day"
   save_routine — "save that", "add that to my list", "add it to my home workout", "put that in", "remember this as my chest day", "call it my S-tier workout", "keep that one", "that was good, keep it", "add calf raises to my leg day", "make it four sets", "write it up for me"
@@ -844,7 +845,7 @@ const TOOLS = [
   {
     name: 'my_plan',
     title: 'What plan am I on',
-    description: 'The whole plan in one read: what they are aiming at, how fast it is paced, how hard WROUGHT is meant to push, how many sessions a week, what tier they train at, and the daily calorie and protein targets that fall out of it. Call it whenever they ask "what am I actually doing", "what plan am I on", "what am I aiming for", "why that number" — and ALWAYS before their first session, so nobody starts training without being told what they are training toward. If nothing has been chosen yet it comes back with what to ask, in one message.',
+    description: 'The whole plan in one read: what they are aiming at, how fast it is paced, how hard WROUGHT is meant to push, how many sessions a week, what tier they train at, and the daily calorie and protein targets that fall out of it. Call it whenever they ask "what am I actually doing", "what plan am I on", "what am I aiming for", "why that number" — and ALWAYS before their first session, so nobody starts training without being told what they are training toward. If nothing has been chosen yet it comes back with what to ask, in one message. Also names the STANDING COACH — the trainer style every built session comes in, and the voice it is coached in. trainer_styles is the shelf to pick a different one from.',
     inputSchema: { type: 'object', properties: {} },
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   },
@@ -1225,6 +1226,16 @@ const TOOLS = [
       required: ['name'],
     },
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+  },
+  {
+    name: 'trainer_styles',
+    title: 'The trainer styles you can be coached in',
+    description: 'THE SHELF, READ OUT. Every trainer style with what it DOES to a session, the shape it builds, and the voice it coaches in. "What trainer styles are there", "show me the coaches", "who can coach me", "what styles can I pick", "what is Fight camp", "how does the conjugate one work", "what would Arnold style do". ALWAYS a tool call: naming the styles from memory is how a connector invents a coach that does not exist. Picking one for good is set_plan style; for one session it is design_workout style.',
+    inputSchema: { type: 'object', properties: {
+      style: { type: 'string', description: 'One style, in full, instead of the whole shelf. A method name ("Fight camp") or the famous name people say ("Arnold style", "Louie Simmons").' },
+      discipline: { type: 'string', description: 'Only this discipline: Boxing, Powerlifting, Strength & conditioning, Running, Kettlebell, Bodybuilding.' },
+    } },
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   },
   {
     name: 'my_gyms',
@@ -2497,6 +2508,79 @@ async function myGyms(_args, user) {
       ? `${places.length} place${places.length === 1 ? '' : 's'}: ${places.map(p => `${p.name} (${p.kind}${p.equipment?.length ? `, ${p.equipment.length} items` : p.kind === 'outdoor' ? '' : ', no kit listed'})`).join('; ')}. Main gym kit on the profile: ${(profile.equipment || []).join(', ') || 'none listed'}.`
       : `No places on file yet. The main gym's kit on the profile: ${(profile.equipment || []).join(', ') || 'none listed'}.`,
     note: 'When they say where they are, pass place to the training tool. A place with no kit listed is asked once, in one clause.',
+  };
+}
+
+// THE SHELF, READ OUT. The founder: "I want to learn about where are they?
+// Where can I find them? … a brief description of each. What each one does."
+//
+// Fifty-eight tools and not one of them listed the styles, so "what trainer
+// styles are there" had nothing to land on — and a model asked a question and
+// handed nothing INVENTS, which is the failure this whole file is written
+// around. The fix is never more forbidding; it is removing the vacuum.
+//
+// Same list the website draws, out of stylesList, so the shelf somebody is
+// TOLD and the shelf somebody LOOKS at cannot disagree.
+// Which styles suit them, read off the same record the dashboard reads. The
+// recommendation is COMPUTED — never the model's impression of what a person
+// who trains like this ought to do — and a care flag silences it, because
+// choosing how to train is coaching.
+async function styleFitFor(user, profile) {
+  const today = localDateFor(profile.timezone);
+  const careRange = await rangeFacts(user.id, profile, addDays(today, -(CARE_WINDOW_DAYS - 1)), today);
+  const flags = careFlags(careRange, profile, { openDate: today });
+  const { data: rows } = await supabase
+    .from('wrought_sets').select('reps')
+    .eq('user_id', user.id).not('reps', 'is', null).limit(400);
+  const reps = (rows || []).filter(r => r.reps > 0);
+  return recommendStyles({
+    profile,
+    log: reps.length ? { sets: reps.length, avg_reps: reps.reduce((n, r) => n + r.reps, 0) / reps.length } : null,
+    flagged: (flags || []).length > 0,
+  });
+}
+
+async function trainerStyles(args, user) {
+  const profile = await getProfile(user.id);
+  const coach = profile.coach_style && STYLES[profile.coach_style] ? profile.coach_style : null;
+  const fit = await styleFitFor(user, profile);
+  const all = stylesList({ coach, recommended: fit });
+
+  // One style, in full — "what is Fight camp", "how does Arnold style work".
+  const wanted = args.style ? styleFrom(args.style) : null;
+  if (args.style && !wanted) {
+    return {
+      error: 'unknown_style',
+      say: `No style by that name. The shelf: ${all.styles.map(s => s.say).join(', ')}.`,
+      styles: all.styles.map(s => ({ key: s.key, say: s.say, discipline: s.discipline })),
+      note: 'Never guess which one they meant when the name misses — say the shelf and let them pick.',
+    };
+  }
+  if (wanted) {
+    const st = all.styles.find(s => s.key === wanted);
+    return {
+      style: st,
+      is_your_coach: st.is_coach,
+      say: `${st.say} — ${st.does} Builds ${st.shape}. ${st.tradition}. Coached ${st.voice ? `${st.voice.intensity}: ${st.voice.register.toLowerCase()}` : 'in the plain trainer\'s voice'}.`,
+      note: 'Say what it DOES before whose tradition it is — the tradition is the credit, not the pitch. Offer both doors: one session (design_workout style) or every session from now on (set_plan style). NEVER a weight: every load still comes from the person\'s own history.',
+      not_an_endorsement: st.provenance,
+    };
+  }
+
+  const only = args.discipline
+    ? all.disciplines.filter(g => g.discipline.toLowerCase().includes(String(args.discipline).toLowerCase()))
+    : all.disciplines;
+  const groups = only.length ? only : all.disciplines;
+
+  return {
+    count: args.discipline ? groups.reduce((n, g) => n + g.styles.length, 0) : all.count,
+    your_coach: coach ? (all.styles.find(s => s.key === coach)?.say || coach) : null,
+    for_you: fit.marked.map(m => ({ ...m, say: STYLES[m.key]?.say })),
+    for_you_say: fit.say,
+    disciplines: groups,
+    say: `${groups.reduce((n, g) => n + g.styles.length, 0)} trainer styles${coach ? `, and yours is ${all.styles.find(s => s.key === coach)?.say}` : ''}. ${groups.map(g => `${g.discipline}: ${g.styles.map(s => s.lineage ? `${s.say} (${s.lineage})` : s.say).join(', ')}`).join('. ')}.`,
+    note: 'Say the FOR_YOU ones first with the reason beside each — they are computed from their record and you may never add, drop or reorder one, nor mark a style the server did not. An empty for_you means the record does not pick between them yet: say so, never guess one. Then read the rest grouped by discipline with the ONE LINE of what each does, and NAME THE TRADITION beside the method — "Golden-era volume bodybuilding, in the tradition of Arnold Schwarzenegger" — because the method is the product\'s and the person is the credit, and a list of bare method names answers nobody who asked which trainers these are — never the whole provenance for every style, which is a wall nobody reads. They can take one for a single session (design_workout style) or make it the standing coach (set_plan style), and change it in one sentence any time. A style changes the session\'s SHAPE and the coaching VOICE and nothing else: every load still comes from their own history, and a care flag silences the voice entirely. They are on the website too, at the top of the Trainer tab.',
+    not_an_endorsement: 'Each is named for its published METHOD and credits the person as a tradition — never their programme, never an endorsement.',
   };
 }
 
@@ -5966,6 +6050,7 @@ const IMPL = {
   athlete_report: athleteReport,
   add_gym: addGym,
   my_gyms: myGyms,
+  trainer_styles: trainerStyles,
   drop_gym: dropGym,
   log_activity: logActivity,
   structure_entries: structureEntries,
