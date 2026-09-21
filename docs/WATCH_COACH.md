@@ -5,14 +5,18 @@
 - Existing cover page unchanged. Dashboard performance surfaces use the existing dark/orange palette, animated trend paths, rounded cards and a prominent round-coach entrance.
 - `/workout.html`: configurable rounds/work/recovery, browser sound cues, pause/resume, partial-completion receipt, reduced motion. It pauses when hidden rather than falsely promising iOS background execution. Browser completion hands a receipt to the user's assistant; it does not invent a saved workout.
 - `prepare_rounds`: the connector returns a configured timer URL using the durations the person requested. It does not remotely start a Watch or claim a session was logged.
-- Native watchOS 10+ target embedded in iPhone 1.1 (8). Watch owns an `HKWorkoutSession` and `HKLiveWorkoutBuilder`; reads HR and estimated active energy; saves one workout into HealthKit. Existing iPhone HealthCourier observes workouts and imports their stable HealthKit UUIDs through the existing idempotent ingest path. No second writer is added.
+- Native watchOS 10+ target embedded in the iPhone source project (1.0 (12)). **Not in the shipped TestFlight build — 1.0 (12) reports `Apple Watch: No`.** Watch owns an `HKWorkoutSession` and `HKLiveWorkoutBuilder`; reads HR and estimated active energy; saves one workout into HealthKit. Existing iPhone HealthCourier observes workouts and imports their stable HealthKit UUIDs through the existing idempotent ingest path. No second writer is added.
 - 1 click at 30 seconds remaining, 3 at work end, 2 at next work start. No trailing rest. Rounds at/below the warning duration do not play a redundant warning. Clicks are spaced 450 ms, not fired simultaneously. Haptics briefly interrupt HR collection on Apple Watch; readings are never interpolated to hide this.
 - `WatchConnectivity` transfers a validated plan from a trusted HTTPS main frame on wrought.fit. It carries no credentials. Incoming plans queue until the current workout has finished.
 - Native lock-screen / Dynamic Island Live Activity reflects Watch round state. It is read-only: pause/end stay on Watch. Stale telemetry is explicitly marked, not projected indefinitely.
 
 ## Not a verified native release
 
-An unsigned Xcode build is NOT an installed app, TestFlight upload, App Store release, or physical haptic test. `app-info.json` marks the source build as requiring device testing. No download URL is fabricated.
+An unsigned Xcode build is NOT an installed app, TestFlight upload, App Store release, or physical haptic test.
+
+**This warning was right, and the website contradicted it.** `app-info.json`'s release note claimed build 1.1 (8) "adds the Apple Watch round coach" while the build anyone could install was 1.0 (12), which TestFlight reports as having no Watch app at all — and the homepage, the dashboard manual and the connect page all printed that note. The harness test comparing `app-info.json` to the Xcode project passed throughout, because both were wrong together. **When the native version is in question, read TestFlight, not the repo.**
+
+No download URL is fabricated: the public link lives in App Store Connect, and the homepage renders no button rather than a dead one.
 
 ## Physical acceptance test (required before native distribution)
 
