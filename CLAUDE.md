@@ -2452,6 +2452,62 @@ a narrower form than *a test that names a value cannot outlive the value*:
 guard on WHERE the style list comes from must not name that call's arguments,
 and a guard on the card template must not slice on its parameter list.
 
+### Two files agreeing with each other is not evidence — the website advertised a build nobody has
+
+Asked where to find the trainer styles on the app, the honest answer was read
+off `public/app-info.json`: `download_url: ""`, `native_release_status:
+"device_testing_required"`, and a note saying *"Not yet a verified public
+native release: installation and on-wrist testing are still required."* So the
+founder was told there was no build. He replied: *"Yes there's a TestFlight
+build"*, and sent the screenshots.
+
+**TestFlight says Wrought Fit 1.0 (12), released 3 September.** The repo said
+1.1 (8) — a HIGHER marketing version and a LOWER build number, which is the
+shape of a version bumped in source and never uploaded while four more builds
+went out from somewhere the version fields never tracked.
+
+**And the harness test passed the whole time.** *"The app facts on the website
+match the native project"* compares `app-info.json` against the Xcode
+project's `MARKETING_VERSION` and `CURRENT_PROJECT_VERSION` — and both were
+wrong, together, in exactly the same way. **A test comparing two files that
+are edited in the same commit cannot catch them drifting from the world**; it
+only catches one of them drifting from the other. It is still worth having —
+verified to fail when either side moves alone — but it is a consistency check
+wearing a correctness check's name, and it bought nothing here.
+
+The only evidence that settles what shipped is the phone. There is no offline
+test for it, so this is doctrine rather than an assertion: **when the native
+version is in question, read TestFlight, not the repo.**
+
+- **"Apple Watch: No"**, on the build he has. `app-info.json`'s note claimed
+  *"Source build 1.1 (8) adds the Apple Watch round coach"* — and the Watch
+  target is genuinely in the project with three Swift files. It is simply not
+  in the build anyone can install, which is precisely what
+  `docs/WATCH_COACH.md` already warned in as many words: *"An unsigned Xcode
+  build is NOT an installed app, TestFlight upload, App Store release, or
+  physical haptic test."* The warning was right and the release note
+  contradicted it on three public pages.
+- **`native_release_status` is read by nothing.** Six words of documentation
+  in a file three pages fetch, and no code has ever branched on it — so it
+  drifted silently for a fortnight. The fields that actually render are
+  `version`, `build`, `updated_label`, `release_note` and `download_url`.
+- **`download_url` stays empty**, because the public TestFlight link lives in
+  App Store Connect and the screenshots are the tester side. A URL invented to
+  fill a field is the invented-2,600 failure with a link on it, and the
+  homepage's `if (info.download_url)` correctly renders no button rather than
+  a dead one.
+- **The version could not be bumped forward to make room for the next
+  upload.** App Store Connect refuses a duplicate build number, so the next
+  archive must be 13+ — but `app-info.json` describes what is RELEASED, and
+  advertising 13 would name a build nobody can install. Both sit at 12 and
+  move together at the next upload, which is what the file was for.
+
+**The part that needed no fix at all**: `ios/Wrought/WebView.swift:43` loads
+`wrought.fit/app.html` with `cachePolicy: .reloadIgnoringLocalCacheData`, so
+the TestFlight build already showed the new shelf without a rebuild. The
+architecture paid out exactly as written — the only thing wrong was the file
+describing it.
+
 ### The shelf — the twenty-one listed, taken from in a tap, and in the morning
 
 The founder: *"this should go in your morning brief, and this should be added

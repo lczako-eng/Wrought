@@ -1,10 +1,10 @@
 {
   "name": "Wrought for iPhone",
-  "version": "1.1",
-  "build": "8",
-  "updated_label": "10 Sep 2026",
-  "native_release_status": "device_testing_required",
-  "release_note": "Source build 1.1 (8) adds the Apple Watch round coach. Not yet a verified public native release: installation and on-wrist testing are still required. Website visuals and the browser timer update separately.",
+  "version": "1.0",
+  "build": "12",
+  "updated_label": "3 Sep 2026",
+  "native_release_status": "testflight",
+  "release_note": "Build 1.0 (12) is on TestFlight, from 3 September. The Watch round coach is written but is not in that build — TestFlight reports no Watch app on it. The dashboard the app frames is served from the website, so the screens change without a new build.",
   "download_url": "",
   "download_label": "Get the app"
 }

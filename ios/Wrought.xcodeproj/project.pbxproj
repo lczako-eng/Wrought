@@ -12,8 +12,8 @@
 		C00000000000000000000006 = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
 		C00000000000000000000007 = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
 		C00000000000000000000008 = {isa = XCConfigurationList; buildConfigurations = (C00000000000000000000009, C0000000000000000000000A); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
-		C00000000000000000000009 = {isa = XCBuildConfiguration; name = Debug; buildSettings = {CODE_SIGN_STYLE = Automatic; DEVELOPMENT_TEAM = XV2M8W934A; CURRENT_PROJECT_VERSION = 8; MARKETING_VERSION = 1.1; GENERATE_INFOPLIST_FILE = NO; INFOPLIST_FILE = WidgetInfo.plist; PRODUCT_BUNDLE_IDENTIFIER = fit.wrought.app.workout-widget; PRODUCT_NAME = "$(TARGET_NAME)"; SDKROOT = iphoneos; IPHONEOS_DEPLOYMENT_TARGET = 16.4; TARGETED_DEVICE_FAMILY = "1,2"; SKIP_INSTALL = YES; APPLICATION_EXTENSION_API_ONLY = YES; SWIFT_VERSION = 5.0; }; };
-		C0000000000000000000000A = {isa = XCBuildConfiguration; name = Release; buildSettings = {CODE_SIGN_STYLE = Automatic; DEVELOPMENT_TEAM = XV2M8W934A; CURRENT_PROJECT_VERSION = 8; MARKETING_VERSION = 1.1; GENERATE_INFOPLIST_FILE = NO; INFOPLIST_FILE = WidgetInfo.plist; PRODUCT_BUNDLE_IDENTIFIER = fit.wrought.app.workout-widget; PRODUCT_NAME = "$(TARGET_NAME)"; SDKROOT = iphoneos; IPHONEOS_DEPLOYMENT_TARGET = 16.4; TARGETED_DEVICE_FAMILY = "1,2"; SKIP_INSTALL = YES; APPLICATION_EXTENSION_API_ONLY = YES; SWIFT_VERSION = 5.0; }; };
+		C00000000000000000000009 = {isa = XCBuildConfiguration; name = Debug; buildSettings = {CODE_SIGN_STYLE = Automatic; DEVELOPMENT_TEAM = XV2M8W934A; CURRENT_PROJECT_VERSION = 12; MARKETING_VERSION = 1.0; GENERATE_INFOPLIST_FILE = NO; INFOPLIST_FILE = WidgetInfo.plist; PRODUCT_BUNDLE_IDENTIFIER = fit.wrought.app.workout-widget; PRODUCT_NAME = "$(TARGET_NAME)"; SDKROOT = iphoneos; IPHONEOS_DEPLOYMENT_TARGET = 16.4; TARGETED_DEVICE_FAMILY = "1,2"; SKIP_INSTALL = YES; APPLICATION_EXTENSION_API_ONLY = YES; SWIFT_VERSION = 5.0; }; };
+		C0000000000000000000000A = {isa = XCBuildConfiguration; name = Release; buildSettings = {CODE_SIGN_STYLE = Automatic; DEVELOPMENT_TEAM = XV2M8W934A; CURRENT_PROJECT_VERSION = 12; MARKETING_VERSION = 1.0; GENERATE_INFOPLIST_FILE = NO; INFOPLIST_FILE = WidgetInfo.plist; PRODUCT_BUNDLE_IDENTIFIER = fit.wrought.app.workout-widget; PRODUCT_NAME = "$(TARGET_NAME)"; SDKROOT = iphoneos; IPHONEOS_DEPLOYMENT_TARGET = 16.4; TARGETED_DEVICE_FAMILY = "1,2"; SKIP_INSTALL = YES; APPLICATION_EXTENSION_API_ONLY = YES; SWIFT_VERSION = 5.0; }; };
 		C0000000000000000000000B = {isa = PBXBuildFile; fileRef = C00000000000000000000001; settings = {ATTRIBUTES = (RemoveHeadersOnCopy); }; };
 		C0000000000000000000000C = {isa = PBXCopyFilesBuildPhase; buildActionMask = 2147483647; dstPath = ""; dstSubfolderSpec = 13; files = (C0000000000000000000000B); name = "Embed App Extensions"; runOnlyForDeploymentPostprocessing = 0; };
 		C0000000000000000000000D = {isa = PBXContainerItemProxy; containerPortal = A1B2C3D4E5F600000000000A; proxyType = 1; remoteGlobalIDString = C00000000000000000000004; remoteInfo = WroughtWidgets; };
@@ -26,8 +26,8 @@
 		B00000000000000000000006 = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
 		B00000000000000000000007 = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
 		B00000000000000000000008 = {isa = XCConfigurationList; buildConfigurations = (B00000000000000000000009, B0000000000000000000000A); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
-		B00000000000000000000009 = {isa = XCBuildConfiguration; name = Debug; buildSettings = {CODE_SIGN_STYLE = Automatic; CODE_SIGN_ENTITLEMENTS = WroughtWatch/WroughtWatch.entitlements; DEVELOPMENT_TEAM = XV2M8W934A; CURRENT_PROJECT_VERSION = 8; MARKETING_VERSION = 1.1; GENERATE_INFOPLIST_FILE = NO; INFOPLIST_FILE = WatchInfo.plist; ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon; PRODUCT_BUNDLE_IDENTIFIER = fit.wrought.app.watchkitapp; PRODUCT_NAME = "$(TARGET_NAME)"; SDKROOT = watchos; SUPPORTED_PLATFORMS = "watchos watchsimulator"; WATCHOS_DEPLOYMENT_TARGET = 10.0; TARGETED_DEVICE_FAMILY = 4; SKIP_INSTALL = YES; SWIFT_VERSION = 5.0; }; };
-		B0000000000000000000000A = {isa = XCBuildConfiguration; name = Release; buildSettings = {CODE_SIGN_STYLE = Automatic; CODE_SIGN_ENTITLEMENTS = WroughtWatch/WroughtWatch.entitlements; DEVELOPMENT_TEAM = XV2M8W934A; CURRENT_PROJECT_VERSION = 8; MARKETING_VERSION = 1.1; GENERATE_INFOPLIST_FILE = NO; INFOPLIST_FILE = WatchInfo.plist; ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon; PRODUCT_BUNDLE_IDENTIFIER = fit.wrought.app.watchkitapp; PRODUCT_NAME = "$(TARGET_NAME)"; SDKROOT = watchos; SUPPORTED_PLATFORMS = "watchos watchsimulator"; WATCHOS_DEPLOYMENT_TARGET = 10.0; TARGETED_DEVICE_FAMILY = 4; SKIP_INSTALL = YES; SWIFT_VERSION = 5.0; }; };
+		B00000000000000000000009 = {isa = XCBuildConfiguration; name = Debug; buildSettings = {CODE_SIGN_STYLE = Automatic; CODE_SIGN_ENTITLEMENTS = WroughtWatch/WroughtWatch.entitlements; DEVELOPMENT_TEAM = XV2M8W934A; CURRENT_PROJECT_VERSION = 12; MARKETING_VERSION = 1.0; GENERATE_INFOPLIST_FILE = NO; INFOPLIST_FILE = WatchInfo.plist; ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon; PRODUCT_BUNDLE_IDENTIFIER = fit.wrought.app.watchkitapp; PRODUCT_NAME = "$(TARGET_NAME)"; SDKROOT = watchos; SUPPORTED_PLATFORMS = "watchos watchsimulator"; WATCHOS_DEPLOYMENT_TARGET = 10.0; TARGETED_DEVICE_FAMILY = 4; SKIP_INSTALL = YES; SWIFT_VERSION = 5.0; }; };
+		B0000000000000000000000A = {isa = XCBuildConfiguration; name = Release; buildSettings = {CODE_SIGN_STYLE = Automatic; CODE_SIGN_ENTITLEMENTS = WroughtWatch/WroughtWatch.entitlements; DEVELOPMENT_TEAM = XV2M8W934A; CURRENT_PROJECT_VERSION = 12; MARKETING_VERSION = 1.0; GENERATE_INFOPLIST_FILE = NO; INFOPLIST_FILE = WatchInfo.plist; ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon; PRODUCT_BUNDLE_IDENTIFIER = fit.wrought.app.watchkitapp; PRODUCT_NAME = "$(TARGET_NAME)"; SDKROOT = watchos; SUPPORTED_PLATFORMS = "watchos watchsimulator"; WATCHOS_DEPLOYMENT_TARGET = 10.0; TARGETED_DEVICE_FAMILY = 4; SKIP_INSTALL = YES; SWIFT_VERSION = 5.0; }; };
 		B0000000000000000000000B = {isa = PBXBuildFile; fileRef = B00000000000000000000001; settings = {ATTRIBUTES = (RemoveHeadersOnCopy); }; };
 		B0000000000000000000000C = {isa = PBXCopyFilesBuildPhase; buildActionMask = 2147483647; dstPath = "$(CONTENTS_FOLDER_PATH)/Watch"; dstSubfolderSpec = 16; files = (B0000000000000000000000B); name = "Embed Watch Content"; runOnlyForDeploymentPostprocessing = 0; };
 		B0000000000000000000000D = {isa = PBXContainerItemProxy; containerPortal = A1B2C3D4E5F600000000000A; proxyType = 1; remoteGlobalIDString = B00000000000000000000004; remoteInfo = WroughtWatch; };
@@ -222,7 +222,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = Wrought/Wrought.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 8;
+				CURRENT_PROJECT_VERSION = 12;
 				DEVELOPMENT_TEAM = XV2M8W934A;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
@@ -232,7 +232,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.1;
+				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = fit.wrought.app;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
@@ -248,7 +248,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = Wrought/Wrought.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 8;
+				CURRENT_PROJECT_VERSION = 12;
 				DEVELOPMENT_TEAM = XV2M8W934A;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
@@ -258,7 +258,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.1;
+				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = fit.wrought.app;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
