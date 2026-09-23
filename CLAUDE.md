@@ -2452,6 +2452,32 @@ a narrower form than *a test that names a value cannot outlive the value*:
 guard on WHERE the style list comes from must not name that call's arguments,
 and a guard on the card template must not slice on its parameter list.
 
+### The credit as a headline — the name promoted, never without its lead-in
+
+`creditLine()` in `app.html` + `styleCredit()` in `lib/design.js` + `credit` on
+the tradition workouts. The founder: *"does it give credit to Schwarzenegger and
+all that — it should be like almost a headline."* It did, on every closed card,
+at **12px in grey** under the method name, which is the same as not doing it.
+
+- **The name is set in the slab at the method name's size, in the warm tone**,
+  under a small *IN THE TRADITION OF* label. Same size, never larger: the style
+  is named for its method and credits the person, and a card whose biggest word
+  is a famous name reads as that person's product — the endorsement the
+  tradition form exists to avoid. A test holds the name within a pixel of the
+  method name and never above it.
+- **The name only reaches the headline with its lead-in.** Both halves are cut
+  from the server's one `credit` string, never re-typed on the page; a credit
+  that does not end in the name, or is only the name, prints whole and promotes
+  nothing. Tested for all twenty-one and against both failure shapes.
+- **The tradition workouts credit the same person the same way.** Their saved
+  names carry *"(Freddie Roach tradition)"* in brackets and have to — it is the
+  name the routine is saved and matched under — so only the DISPLAY strips the
+  tail, and a test asserts every one ends in exactly that tail. `styleCredit()`
+  is the one place the words are put together for both panels.
+- **What it costs**, measured: about 5px a card at 390px and 16px at 320px,
+  where the name drops under its label. The shelf still starts on screen one
+  at every width; nothing overflows; 16.9:1 contrast on the name.
+
 ### Two files agreeing with each other is not evidence — the website advertised a build nobody has
 
 Asked where to find the trainer styles on the app, the honest answer was read
@@ -5028,7 +5054,7 @@ self-reporting scale removes the most-abandoned manual entry), then Strava.
 
 ## Conventions
 
-- `npm test` runs `test/harness.mjs` — 735 offline tests, no network, no database.
+- `npm test` runs `test/harness.mjs` — 742 offline tests, no network, no database.
   Run it before every push. It covers the JSON-RPC envelope (which fails as an
   uninformative "could not connect" inside ChatGPT) and all the arithmetic
   (which fails as a confidently wrong number in somebody's verdict).

@@ -12171,7 +12171,7 @@ await test('twenty-one lineages: named for the method, credited as a tradition, 
   assert.match(stylesSrc, /class="stylegrp"/, 'the panel is not grouped by discipline');
   const cardTpl = stylesSrc.slice(stylesSrc.indexOf('const card ='), stylesSrc.indexOf('return `<section'));
   assert.ok(cardTpl.length > 200, 'the style card template moved and this test can no longer see it');
-  assert.match(cardTpl, /class="slin">[^<\n]*st\.credit/, 'the closed style card never names the tradition it credits');
+  assert.match(cardTpl, /\$\{creditLine\(st\)\}/, 'the closed style card never names the tradition it credits');
   assert.match(cardTpl, /class="strad">[^<\n]*trad(?:What)?\(st\)/, 'the style card never says what that tradition does');
   assert.match(cardTpl, /class="sprov">[^<\n]*st\.provenance/, 'the style card never renders the honest line');
   assert.match(stylesSrc, /in the tradition of \$\{st\.lineage\}/, 'a style with no tradition of its own loses its credit entirely');
@@ -12465,9 +12465,77 @@ await test('the twenty-one trainers are readable without opening anything', () =
   const code = decomment(page('app.html'));
   const cardTpl = code.slice(code.indexOf('const card ='), code.indexOf('return `<section class="panel" id="styles"'));
   assert.ok(cardTpl.length > 200, 'the style card template moved');
-  assert.match(cardTpl, /class="slin">[^<\n]*st\.credit/, 'the closed card does not name the tradition');
+  assert.match(cardTpl, /\$\{creditLine\(st\)\}/, 'the closed card does not name the tradition');
   assert.ok(!/class="strad">[^<\n]*\btrad\(st\)/.test(cardTpl),
     'the body prints the whole tradition sentence again under the credit it already shows');
+});
+
+await test('the credit is a headline, and the name never reaches it without its lead-in', async () => {
+  // "Does it give credit to Schwarzenegger and all that — it should be like
+  // almost a headline." It did, at 12px in grey. Now the person's name is set
+  // in the slab at the method name's size — and the doctrine that made the
+  // credit safe to print rides with it: the name is ONLY ever promoted with
+  // "in the tradition of" in front of it, and never larger than the method.
+  const code = decomment(page('app.html'));
+  const fn = code.match(/function creditLine\(st\) \{[\s\S]*?\n\}\n/);
+  assert.ok(fn, 'creditLine moved and this test can no longer see it');
+  const esc = v => String(v ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  const creditLine = new Function('esc', `${fn[0]}; return creditLine;`)(esc);
+  const text = h => h.replace(/<[^>]+>/g, '').replace(/&#39;|&amp;/g, m => (m === '&amp;' ? '&' : "'")).replace(/\s+/g, ' ').trim();
+  const { stylesList } = await import('../netlify/functions/lib/design.js');
+  let promoted = 0;
+  for (const st of stylesList().styles) {
+    const html = creditLine(st);
+    if (!st.credit) { assert.equal(html, '', `${st.key} credits nobody and still draws a credit line`); continue; }
+    // What a person reads is the server's credit, word for word — nothing
+    // dropped, nothing re-typed on the page.
+    assert.equal(text(html), st.credit, `${st.key}'s headline does not read as its credit`);
+    const who = html.match(/class="slin-who">([^<]*)</);
+    assert.ok(who, `${st.key}'s credited name is not set as the headline`);
+    assert.equal(who[1], esc(st.lineage), `${st.key} promotes something other than the name it credits`);
+    assert.match(html, /class="slin-lead">in the tradition of</, `${st.key}'s name reaches the headline without its lead-in`);
+    promoted++;
+  }
+  assert.ok(promoted >= 21, `only ${promoted} traditions are set as a headline`);
+  // A credit the page cannot split is printed whole and nothing is promoted —
+  // a bare name in the slab is exactly what the lead-in exists to prevent.
+  const odd = creditLine({ credit: 'after the methods of Somebody', lineage: 'Somebody Else' });
+  assert.ok(!/slin-who/.test(odd), 'a credit that does not end in its name still promoted a name');
+  assert.equal(text(odd), 'after the methods of Somebody');
+  assert.ok(!/slin-who/.test(creditLine({ credit: 'Somebody', lineage: 'Somebody' })),
+    'a credit that is ONLY the name was promoted with no lead-in at all');
+
+  // Same size as the method, never larger: the style is named for its method
+  // and credits the person, and a card whose biggest word is a famous name
+  // reads as that person's product.
+  const css = decomment(page('app.html'));
+  const px = sel => {
+    const m = css.match(new RegExp(`(^|\\n)${sel.replace(/[.]/g, '\\.')} \\{[^}]*?font-size:\\s*([\\d.]+)px`));
+    assert.ok(m, `${sel} has no font-size this test can read`);
+    return Number(m[2]);
+  };
+  const name = px('.scard .sname'), who = px('.slin-who'), lead = px('.slin-lead');
+  assert.ok(who <= name, `the credited name (${who}px) is set larger than the method it credits (${name}px)`);
+  assert.ok(who >= name - 1, `the credited name (${who}px) is not a headline beside a ${name}px method name`);
+  assert.ok(lead < who, 'the lead-in outranks the name it introduces');
+
+  // The tradition workouts carry the SAME credit the same way — two panels on
+  // one tab must not credit one person two different ways. The saved name
+  // keeps its brackets (it is the name the routine is matched under); the
+  // display strips them only because every one ends in exactly that tail.
+  const api = readFileSync(new URL('../netlify/functions/api-progress.js', import.meta.url), 'utf8');
+  const trad = api.slice(api.indexOf('traditions: Object.entries(STYLE_ROUTINES)'), api.indexOf('traditions: Object.entries(STYLE_ROUTINES)') + 600);
+  assert.match(trad, /credit: styleCredit\(/, 'the tradition workouts reach the page without the shared credit');
+  const tp = code.slice(code.indexOf('function traditionsPanel'), code.indexOf('function traditionsPanel') + 4000);
+  assert.match(tp, /\$\{creditLine\(t\)\}/, 'the tradition workouts do not set the credit as the shelf does');
+  const { STYLE_ROUTINES } = await import('../netlify/functions/lib/style_routines.js');
+  const { STYLES } = await import('../netlify/functions/lib/design.js');
+  for (const [key, r] of Object.entries(STYLE_ROUTINES)) {
+    const lin = STYLES[key]?.lineage;
+    if (!lin) continue;
+    assert.ok(r.name.endsWith(` (${lin} tradition)`),
+      `"${r.name}" does not end in its credit, so the panel would print the name twice`);
+  }
 });
 
 await test('the shelf is on screen one of Trainer, and the assistant can read it out', async () => {

@@ -1361,15 +1361,37 @@ table.matrix td.rh.cold { color: var(--heat-3); }
 }
 .scard.fits { border-color: #3d6b46; }
 .swhyall { margin: 2px 0 6px; font-size: 12.5px; line-height: 1.4; color: #8fc79a; }
-/* The credit, on the closed card — its own line, its own rule, never
-   inheriting anything: this is a person's name and it is the reason the
-   shelf reads as twenty-one traditions rather than twenty-four inventions.
+/* The credit, on the closed card, set as a HEADLINE: the lead-in is a small
+   label and the person's name is set in the slab at the method name's own
+   size, in the warm tone, so "in the tradition of Arnold Schwarzenegger"
+   reads across a room rather than as a footnote. Its own classes and its own
+   rules, never inheriting anything — this is a person's name and it is the
+   reason the shelf reads as twenty-one traditions rather than twenty-four
+   inventions. The name is the same size as the method, never larger: the
+   style is named for its method and credits the person, and a card whose
+   biggest word is a famous name reads as that person's product.
+   The same three classes carry the credit on the tradition workouts, so the
+   two panels on one tab set one person's name one way.
    The body then says what that tradition DOES, not the credit again. */
-.scard .slin {
-  flex: 1 1 100%; font-size: 12px; line-height: 1.35; font-weight: 400;
+.slin {
+  display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 6px;
+  font-size: 12px; line-height: 1.3; font-weight: 400;
   letter-spacing: 0; text-transform: none; color: var(--muted);
-  font-family: inherit; max-width: 100%; margin-top: 1px;
+  font-family: inherit; max-width: 100%; min-width: 0; margin: 2px 0 1px;
 }
+.scard .slin { flex: 1 1 100%; }
+.slin-lead {
+  font-family: var(--mono); font-size: 10.5px; letter-spacing: .08em;
+  text-transform: uppercase; color: var(--muted); flex: 0 0 auto;
+}
+.slin-who {
+  font-family: var(--stamp); font-weight: 700; font-size: 15px; line-height: 1.25;
+  letter-spacing: 0; text-transform: none; color: var(--heat-5);
+  min-width: 0; max-width: 100%; overflow-wrap: anywhere;
+}
+/* A tradition workout's row: the session name, then its credit under it. */
+.rout .rhead { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.rout .rhead .rn { flex: none; }
 .scard .sdoes {
   flex: 1 1 100%; font-size: 13px; line-height: 1.4; font-weight: 400;
   letter-spacing: 0; text-transform: none; color: var(--ash);
@@ -6947,12 +6969,21 @@ function traditionsPanel(d) {
     if (g) g.items.push(t); else groups.push({ name: t.discipline || 'Other', items: [t] });
   }
   const howMuch = m => m.sets && m.reps ? `${m.sets}×${esc(String(m.reps))}` : m.minutes ? `${m.minutes} min` : '';
+  // The saved name carries the credit in brackets — "Fight camp (Freddie Roach
+  // tradition)" — and it has to, because it is the name the routine is saved
+  // and matched under. On this panel the brackets come off the DISPLAY only
+  // and the credit is set as the same headline the shelf uses, so the two
+  // panels on one tab cannot credit the same person two different ways.
+  const title = t => {
+    const tail = t.lineage ? ` (${t.lineage} tradition)` : null;
+    return t.credit && tail && t.name.endsWith(tail) ? t.name.slice(0, -tail.length) : t.name;
+  };
   const row = t => {
     const have = byName(t.name);
     const inUse = have && have.active !== false;
     return `<details class="rout trad">
       <summary>
-        <span class="rn">${esc(t.name)}</span>
+        <span class="rhead"><span class="rn">${esc(title(t))}</span>${creditLine(t)}</span>
         <span class="chip${inUse ? ' on' : ''}">${inUse ? 'in your workouts' : `${t.est_minutes || '?'} min`}</span>
       </summary>
       <div class="rbody">
@@ -7027,6 +7058,26 @@ function placesPanel(d) {
   </section>`;
 }
 
+// The credit, set as a headline. The founder: "does it give credit to
+// Schwarzenegger and all that — it should be like almost a headline." It did,
+// at 12px in grey under the name, which is the same as not doing it.
+//
+// So the PERSON'S NAME is set in the slab at the size of the method name — and
+// it is only ever set there with its lead-in, because the lead-in is the
+// whole legal and honest difference between crediting a tradition and
+// claiming an endorsement. Both halves come off the server's one `credit`
+// string rather than being re-typed here: when the credit does not end in the
+// name, the credit is printed whole and nothing is promoted, so a name can
+// never reach the headline without "in the tradition of" in front of it.
+function creditLine(st) {
+  const credit = st?.credit;
+  if (!credit) return '';
+  const who = st.lineage && credit.endsWith(st.lineage) ? st.lineage : null;
+  const lead = who ? credit.slice(0, credit.length - who.length).trim() : '';
+  if (!who || !lead) return `<span class="slin">${esc(credit)}</span>`;
+  return `<span class="slin"><span class="slin-lead">${esc(lead)}</span> <b class="slin-who">${esc(who)}</b></span>`;
+}
+
 // The twenty-one lineages, grouped by discipline. Each style is named for its
 // METHOD and credits the person as the tradition it comes from — never as the
 // author, never as an endorser. The founder asked whether he would get sued
@@ -7070,7 +7121,7 @@ function stylesPanel(d) {
         <span class="sname">${esc(st.say)}${st.key === coach ? '<span class="coachtag">your coach</span>' : ''}</span>
         ${st.shape_short ? `<span class="sshape">${esc(st.shape_short)}</span>` : ''}
         ${st.recommended ? '<span class="srec">\u2713 for you</span>' : ''}
-        ${st.credit ? `<span class="slin">${esc(st.credit)}</span>` : ''}
+        ${creditLine(st)}
         ${showWhy && st.because ? `<span class="swhy">${esc(cap(st.because))}.</span>` : ''}
         ${st.does ? `<span class="sdoes">${esc(st.does)}</span>` : ''}
       </summary>

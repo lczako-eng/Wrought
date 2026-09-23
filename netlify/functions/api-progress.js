@@ -19,7 +19,7 @@ import { planRead } from './lib/plan.js';
 import { calibration } from './lib/adapt.js';
 import { recordCheck } from './lib/integrity.js';
 import { intakeState } from './lib/intake.js';
-import { STYLES, stylesList, recommendStyles } from './lib/design.js';
+import { STYLES, stylesList, recommendStyles, styleCredit } from './lib/design.js';
 import { listPlaces } from './lib/places.js';
 import { STYLE_ROUTINES } from './lib/style_routines.js';
 import { mealTiming } from './lib/timing.js';
@@ -851,7 +851,7 @@ export const handler = async (event) => {
       traditions: Object.entries(STYLE_ROUTINES).map(([key, r]) => ({
         key, name: r.name, kind: r.kind, tier: r.tier, est_minutes: r.est_minutes,
         notes: r.notes, exercises: r.exercises,
-        lineage: STYLES[key]?.lineage || null, discipline: STYLES[key]?.discipline || null,
+        lineage: STYLES[key]?.lineage || null, credit: styleCredit(STYLES[key]), discipline: STYLES[key]?.discipline || null,
         emphasis: STYLES[key]?.emphasis || null,
         voice: STYLES[key]?.voice ? { register: STYLES[key].voice.register, intensity: STYLES[key].voice.intensity, attitude: STYLES[key].voice.attitude } : null,
       })),
