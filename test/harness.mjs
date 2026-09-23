@@ -3920,6 +3920,19 @@ await test('the manual shows somebody talking before it describes talking', () =
     assert.ok(s.short.length <= 40, `"${s.short}" is not short`);
     assert.ok(s.after, `"${s.title}" lost its long form, which the tool still needs`);
   }
+  // THE PAGE CARRIES EVERY SECTION THE TOOL DOES. The copy on the page exists
+  // so the manual works signed out — and it silently missed "Pick who coaches
+  // you" for a release: the assistant's manual taught the trainer styles and
+  // the website's did not. Same titles, same short line, same sentences.
+  const pageSecs = new Function(`return ${app.slice(app.indexOf('const GUIDE_SECTIONS = ['), app.indexOf('const GUIDE_REFUSES'))
+    .replace('const GUIDE_SECTIONS = ', '').trim().replace(/;\s*$/, '')}`)();
+  for (const g of GUIDE.sections) {
+    const onPage = pageSecs.find(x => x.title === g.title);
+    assert.ok(onPage, `the website's manual is missing "${g.title}"`);
+    assert.equal(onPage.short, g.short, `"${g.title}" says something different on the website`);
+    assert.deepEqual(onPage.lines, g.lines, `"${g.title}" teaches different sentences on the website`);
+  }
+  assert.equal(pageSecs.length, GUIDE.sections.length, 'the website manual has a section the assistant does not');
   const view = app.slice(app.indexOf('function guideView()'), app.indexOf('function playGuideDemo('));
   assert.ok(!/sec\.after/.test(view), 'the long prose is still being printed on the screen');
   assert.match(view, /sec\.short \|\| sec\.note/);
@@ -12457,8 +12470,7 @@ await test('the twenty-one trainers are readable without opening anything', () =
   // method names tells nobody which trainers these are.
   const mcpSrc = decomment(readFileSync(new URL('../netlify/functions/mcp.js', import.meta.url), 'utf8'));
   const handler = mcpSrc.slice(mcpSrc.indexOf('async function trainerStyles'), mcpSrc.indexOf('async function dropGym'));
-  assert.match(handler, /s\.lineage \? `\$\{s\.say\} \(\$\{s\.lineage\}\)`/,
-    'the shelf read names the methods without naming the traditions');
+  assert.match(handler, /shelfSay\(/, 'the shelf read names the methods without naming the traditions');
 
   // The card shows the credit ONCE: the closed face names the tradition, the
   // body says what that tradition does.
@@ -12536,6 +12548,136 @@ await test('the credit is a headline, and the name never reaches it without its 
     assert.ok(r.name.endsWith(` (${lin} tradition)`),
       `"${r.name}" does not end in its credit, so the panel would print the name twice`);
   }
+});
+
+await test('the assistant says every trainer with the credit the card shows, and can add the written session whole', async () => {
+  // "Also make sure it works with the AI so it knows what it is." The card sets
+  // "in the tradition of Arnold Schwarzenegger" as a headline; the connector
+  // was still reading the shelf out as "Golden-era volume bodybuilding (Arnold
+  // Schwarzenegger)" — a bare name in brackets beside a method, which reads as
+  // authorship. And it had no door to the twenty-one written sessions at all:
+  // "add the Arnold workout" meant a model retyping eight movements.
+  const { stylesList, creditedName, shelfSay, STYLES, styleFrom } = await import('../netlify/functions/lib/design.js');
+  const { STYLE_ROUTINES } = await import('../netlify/functions/lib/style_routines.js');
+  const list = stylesList();
+  const said = shelfSay(list.disciplines);
+  for (const st of list.styles) {
+    if (!st.lineage) {
+      assert.equal(creditedName(st), st.say, `${st.key} credits nobody and still reads with a credit`);
+      continue;
+    }
+    // The method, then the credit, in the same breath — never the name alone.
+    assert.equal(creditedName(st), `${st.say}, in the tradition of ${st.lineage}`, `${st.key} is not said with its credit`);
+    assert.ok(said.includes(`${st.say}, in the tradition of ${st.lineage}`), `the shelf read drops ${st.lineage}`);
+    assert.ok(!said.includes(`(${st.lineage})`), `the shelf read puts ${st.lineage} in bare brackets`);
+    // The same words off the raw STYLES entry, so no caller can phrase it twice.
+    assert.equal(creditedName(STYLES[st.key]), creditedName(st), `${st.key} is credited two different ways`);
+  }
+  assert.ok(!/ambassador|endorsed by/i.test(said), 'the shelf read claims an endorsement');
+
+  // The famous name people SAY finds the tradition — including what dictation
+  // makes of the one people say most.
+  for (const [k, st] of Object.entries(STYLES)) if (st.lineage) assert.equal(styleFrom(st.lineage), k, `"${st.lineage}" does not find ${k}`);
+  for (const t of ['Arnold', 'arnie', 'Schwarzenegger', 'Swarzenegger', 'Schwartzenegger', 'Shwarzenegger', 'the Arnold workout'])
+    assert.equal(styleFrom(t), 'golden_era', `"${t}" does not find the Schwarzenegger tradition`);
+
+  // Every surface the model reads carries the credit form and the add door.
+  const tool = TOOLS.find(t => t.name === 'trainer_styles');
+  assert.match(tool.description, /twenty-one[^.]*Freddie Roach[^.]*Louie Simmons/, 'the tool never tells the model which trainers are on the shelf');
+  assert.match(tool.description, /in the tradition of Arnold Schwarzenegger/, 'the tool does not show the credit form');
+  assert.match(tool.description, /never "Arnold\\?'s workout"/i, 'the tool does not forbid the bare-name form');
+  assert.match(SERVER_INSTRUCTIONS, /"do you have Arnold's workout"/, 'the phrasebook does not map the question people ask about a trainer');
+  assert.match(SERVER_INSTRUCTIONS, /save_routine tradition/, 'the phrasebook has no door to add a tradition workout');
+  const { GPT_INSTRUCTIONS } = await import('../netlify/functions/lib/gpt_instructions.js');
+  assert.match(GPT_INSTRUCTIONS, /in the tradition of Arnold Schwarzenegger/, 'the ChatGPT sheet does not carry the credit form');
+  assert.ok(GPT_INSTRUCTIONS.length <= 8000, `the ChatGPT sheet is ${GPT_INSTRUCTIONS.length} characters, over the cap`);
+  const guide = await import('../netlify/functions/lib/guide.js');
+  const styleGroup = (guide.GUIDE || guide.default).sections.find(x => /coach/i.test(x.title));
+  assert.ok(styleGroup.lines.some(l => /Schwarzenegger|Roach/.test(l)), 'the manual never shows a sentence naming a trainer');
+
+  // The replies build their words from the shared helpers, never re-typed.
+  const mcpSrc = decomment(readFileSync(new URL('../netlify/functions/mcp.js', import.meta.url), 'utf8'));
+  const handler = mcpSrc.slice(mcpSrc.indexOf('async function trainerStyles'), mcpSrc.indexOf('async function dropGym'));
+  assert.match(handler, /shelfSay\(groups\)/, 'the shelf read is not the shared credited read');
+  assert.match(handler, /credited: creditedName\(st\)/, 'one style is not said with its credit');
+  assert.ok(!/\(\$\{s\.lineage\}\)/.test(handler), 'the bare-bracket credit is back');
+
+  // save_routine takes a tradition and the SERVER writes the written session:
+  // the movements come off STYLE_ROUTINES, never off the model's arguments.
+  const save = TOOLS.find(t => t.name === 'save_routine');
+  assert.ok(save.inputSchema.properties.tradition, 'save_routine has no door for a tradition workout');
+  assert.ok(!(save.inputSchema.required || []).includes('name'), 'a tradition add still demands a name the server already knows');
+  const addFn = mcpSrc.slice(mcpSrc.indexOf('async function addTraditionWorkout'), mcpSrc.indexOf('async function listRoutines'));
+  assert.ok(addFn.length > 300, 'the tradition door moved and this test can no longer see it');
+  assert.match(mcpSrc, /if \(args\.tradition\) return addTraditionWorkout\(/, 'save_routine does not route a tradition to the server-written door');
+  assert.match(addFn, /exercises: \(written\.exercises/, 'the tradition door does not write the written session');
+  assert.ok(!/args\.exercises|args\.add|args\.notes/.test(addFn), 'the tradition door takes movements from the model');
+  assert.ok(!/\b\d+\s*(kg|lb|lbs)\b/i.test(addFn), 'the tradition door invents a load');
+
+  // RUN it, against a table held in memory — a grep for "already" passes
+  // with the guard switched off. Already there is said, never merged over (a
+  // merge would put back every movement they took out); one taken out comes
+  // back as they left it; the reply is read back off the table.
+  const rows = [];
+  const writes = [];
+  const fake = {
+    from(table) {
+      const q = { filters: [], op: 'select', payload: null };
+      const b = {
+        select() { return b; }, order() { return b; },
+        eq(k, v) { q.filters.push(r => String(r[k]) === String(v)); return b; },
+        ilike(k, v) { q.filters.push(r => String(r[k]).toLowerCase() === String(v).toLowerCase()); return b; },
+        insert(arr) { q.op = 'insert'; q.payload = arr; return b; },
+        update(patch) { q.op = 'update'; q.payload = patch; return b; },
+        then(res, rej) {
+          try {
+            assert.equal(table, 'wrought_routines', `the tradition door touched ${table}`);
+            if (q.op === 'insert') { writes.push('insert'); for (const r of q.payload) rows.push({ id: String(rows.length + 1), active: true, ...r }); return Promise.resolve({ data: null, error: null }).then(res, rej); }
+            const hit = rows.filter(r => q.filters.every(f => f(r)));
+            if (q.op === 'update') { writes.push('update'); hit.forEach(r => Object.assign(r, q.payload)); }
+            return Promise.resolve({ data: hit.map(r => ({ ...r })), error: null }).then(res, rej);
+          } catch (e) { return Promise.reject(e).then(res, rej); }
+        },
+      };
+      return b;
+    },
+  };
+  const { normaliseMovement } = await import('../netlify/functions/lib/training.js');
+  const { styleRoutine } = await import('../netlify/functions/lib/style_routines.js');
+  const addTraditionWorkout = new Function('supabase', 'styleFrom', 'styleRoutine', 'STYLE_ROUTINES', 'STYLES', 'creditedName', 'normaliseMovement',
+    `${addFn}; return addTraditionWorkout;`)(fake, styleFrom, styleRoutine, STYLE_ROUTINES, STYLES, creditedName, normaliseMovement);
+  const user = { id: 'u1' };
+  const written = STYLE_ROUTINES.golden_era;
+
+  const first = await addTraditionWorkout('Arnold', user);
+  assert.equal(first.did, 'added');
+  assert.equal(rows.length, 1, 'the first add did not write one row');
+  assert.equal(rows[0].name, written.name, 'the tradition was saved under a name it is not matched by');
+  assert.deepEqual(rows[0].exercises.map(e => e.name), written.exercises.map(e => e.name), 'the written movements did not all land');
+  assert.equal(rows[0].notes, written.notes, 'the write-up did not land');
+  assert.ok(rows[0].exercises.every(e => e.weight_kg == null && e.load_kg == null), 'a load was written onto a tradition workout');
+  assert.match(first.say, /in the tradition of Arnold Schwarzenegger/, 'the add is not said with its credit');
+  assert.equal(first.on_file.verified, true, 'the add is not read back off the record');
+
+  rows[0].exercises = rows[0].exercises.slice(0, 3);          // they took four out
+  const again = await addTraditionWorkout('schwarzenegger', user);
+  assert.equal(again.did, 'already', 'a second add is not said as already there');
+  assert.equal(rows.length, 1, 'a second add doubled the workout');
+  assert.equal(rows[0].exercises.length, 3, 'a second add put back movements they took out');
+  assert.deepEqual(writes, ['insert'], 'a second add wrote to a workout that was already theirs');
+
+  rows[0].active = false;                                     // they retired it
+  const back = await addTraditionWorkout('golden era', user);
+  assert.equal(back.did, 'put_back', 'a retired tradition workout was not put back');
+  assert.equal(rows.length, 1, 'putting it back wrote a second copy beside the retired one');
+  assert.equal(rows[0].active, true);
+  assert.equal(rows[0].exercises.length, 3, 'putting it back overwrote what they had left it as');
+
+  const unknown = await addTraditionWorkout('Dorian Yates', user);
+  assert.equal(unknown.error, 'unknown_tradition', 'an unknown trainer was guessed rather than refused');
+  assert.match(unknown.say, /in the tradition of Freddie Roach/, 'the refusal does not say what is on the shelf');
+  assert.equal(rows.length, 1, 'an unknown trainer wrote something');
+  for (const [k, r] of Object.entries(STYLE_ROUTINES)) assert.equal(styleFrom(STYLES[k].lineage), k, `${r.name} cannot be added by its trainer's name`);
 });
 
 await test('the shelf is on screen one of Trainer, and the assistant can read it out', async () => {

@@ -115,7 +115,9 @@ export const GUIDE = {
       note: 'A style changes the shape of the session and the voice it is coached in. Never the weight.',
       lines: [
         'what trainer styles are there',
-        'what is Fight camp',
+        'show me the Arnold Schwarzenegger style',
+        'add the Freddie Roach workout to my workouts',
+        'what does the Louie Simmons one do',
         'build me a leg day in the golden-era style',
         'coach me like a boxer from now on',
         'make the conjugate one my coach',

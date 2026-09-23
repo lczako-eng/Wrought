@@ -55,8 +55,8 @@ import {
   PACES, PUSH, sessionsCanCarryAim, sessionWorth,
 } from './lib/training.js';
 import { PROGRAMMES, GOALS, MOVEMENTS, movementsFor, pickProgramme, buildProgramme, buildBlock, blockPosition, BLOCK_LENGTHS } from './lib/library.js';
-import { FOCUSES, FOCUS_NAMES, focusFrom, designSession, designQuestions, designNote, STYLES, styleFrom, stylesList, recommendStyles } from './lib/design.js';
-import { styleRoutine } from './lib/style_routines.js';
+import { FOCUSES, FOCUS_NAMES, focusFrom, designSession, designQuestions, designNote, STYLES, styleFrom, stylesList, recommendStyles, creditedName, shelfSay } from './lib/design.js';
+import { styleRoutine, STYLE_ROUTINES } from './lib/style_routines.js';
 import { pickDue } from './lib/morning.js';
 import { athleteRows, athleteRead, TESTS, parseTestValue, ATHLETE_COMMITMENT } from './lib/athlete.js';
 import { resolvePlace, placeEquipment, listPlaces, bumpPlace, applyPlaces, sessionsCanCarryPlace, PLACE_KINDS } from './lib/places.js';
@@ -191,7 +191,7 @@ HOW PEOPLE ACTUALLY ASK. Nobody says "call the brief tool". They say one of a hu
   my_alerts — "what reminders do I have", "what are you telling me about", "am I set up for notifications", "turn my notifications on"
   drop_alert — "stop telling me about my calories", "turn off the nine o'clock one", "no more training reminders", "stop notifying me"
   training_volume — "am I doing enough back", "how much volume am I doing", "how many sets a week", "am I under-training my arms", "is my chest getting enough work", "what am I neglecting", "how much is too much". Hard SETS per muscle per week, which is what a programme is actually built on — different from the focus on suggest_workout, which counts sessions and cannot tell two sets of flyes from twelve sets of pressing. A light week is answered with more sets or better frequency, NEVER with a heavier bar.
-  trainer_styles — "what trainer styles are there", "show me the styles", "where are the styles", "what coaches can I pick", "who can coach me", "what are my coaching options", "show me the coaches", "what is Fight camp", "how does the conjugate one work", "what would Arnold style do", "tell me about the boxing ones". NOTE "coach" and "trainer" are also how people ADDRESS Wrought itself ("hey coach, how am I doing") — the SUBJECT decides, exactly as with the misheard spellings: being called coach is a brief, asking WHICH coaches there are is the shelf. The shelf is on the SERVER — naming the styles from memory invents a coach that does not exist. Read them out grouped by discipline with the one line of what each DOES; the whole provenance for all twenty-four is a wall nobody reads.
+  trainer_styles — "what trainer styles are there", "show me the styles", "where are the styles", "what coaches can I pick", "who can coach me", "what are my coaching options", "show me the coaches", "which famous trainers are there", "whose styles are these", "do you have Arnold's workout", "the Schwarzenegger one", "what is Fight camp", "how does the conjugate one work", "what would Arnold style do", "tell me about the boxing ones". Every style is said WITH its credit, as the website card sets it: "Golden-era volume bodybuilding, in the tradition of Arnold Schwarzenegger" — never "Arnold's workout", never "(Arnold Schwarzenegger)", never his programme, never endorsed by him. "Add the Arnold workout", "put the Freddie Roach one in my list" = save_routine tradition, which writes the whole written session — never retyped by you. NOTE "coach" and "trainer" are also how people ADDRESS Wrought itself ("hey coach, how am I doing") — the SUBJECT decides, exactly as with the misheard spellings: being called coach is a brief, asking WHICH coaches there are is the shelf. The shelf is on the SERVER — naming the styles from memory invents a coach that does not exist. Read them out grouped by discipline with the one line of what each DOES; the whole provenance for all twenty-four is a wall nobody reads.
   my_plan — "what's my plan", "what am I on", "what am I actually doing", "what am I aiming for", "why that number", "what's my target", "remind me what this is", "what's my route" (dictation for WROUGHT), "how does this work for me", "who is coaching me", "what style am I on"
   set_plan — "make it aggressive", "I want this off faster", "go harder on me", "chase me", "ease off", "nothing drastic", "stop nagging me", "leave me alone a bit", "make it four days a week", "I can only do three", "change my plan"
   log_activity — "I was at work all day", "worked at the petting zoo", "did a double shift", "on site since six", "been on my feet since seven", "spent the afternoon digging", "moved house today", "was doing the garden", "shovelled the drive", "long shift", "physical day", "grafting all day"
@@ -636,7 +636,8 @@ const TOOLS = [
     inputSchema: {
       type: 'object',
       properties: {
-        name:      { type: 'string', description: 'Their words — "leg day", "push A", "Tuesday football".' },
+        name:      { type: 'string', description: 'Their words — "leg day", "push A", "Tuesday football". Not needed with `tradition`.' },
+        tradition: { type: 'string', description: 'Add one of the twenty-one WRITTEN tradition workouts to their workouts, whole — "add the Arnold workout", "put the Freddie Roach one in my list", "add Fight camp". Pass the method or the famous name they said. The server writes the entire written session — its name, every movement, the write-up — exactly as the website\'s Add button does; pass nothing else, never retype the movements, never add a load. Already in their workouts is said, never doubled; one they took out is put back as they left it.' },
         kind:      { type: 'string', enum: ['strength','cardio','sport','mobility','hybrid'] },
         tier:      { type: 'string', enum: ['beginner','intermediate','advanced'],
                      description: 'Difficulty. Defaults to their profile. Beginner sessions are shorter and every movement gets explained.' },
@@ -655,7 +656,6 @@ const TOOLS = [
           description: 'Append exercises to an existing routine instead of replacing it. Use for "add calf raises to my leg day" — a plan grows over weeks, and rebuilding it from scratch to add one movement is how people stop using it. Takes the SAME full shape as exercises: pass minutes and detail for anything timed, and put EVERY movement they named in this one call rather than one per turn.',
           items: MOVEMENT_ITEM },
       },
-      required: ['name'],
     },
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   },
@@ -1230,7 +1230,7 @@ const TOOLS = [
   {
     name: 'trainer_styles',
     title: 'The trainer styles you can be coached in',
-    description: 'THE SHELF, READ OUT. Every trainer style with what it DOES to a session, the shape it builds, and the voice it coaches in. "What trainer styles are there", "show me the coaches", "who can coach me", "what styles can I pick", "what is Fight camp", "how does the conjugate one work", "what would Arnold style do". ALWAYS a tool call: naming the styles from memory is how a connector invents a coach that does not exist. Picking one for good is set_plan style; for one session it is design_workout style.',
+    description: 'THE SHELF, READ OUT. Every trainer style with what it DOES to a session, the shape it builds, the voice it coaches in, and the famous trainer whose tradition it comes from — twenty-one of them, Arnold Schwarzenegger, Freddie Roach, Louie Simmons, Mike Mentzer and the rest. "What trainer styles are there", "show me the coaches", "who can coach me", "which famous trainers do you have", "whose styles are these", "what is Fight camp", "how does the conjugate one work", "what would Arnold style do", "do you have Arnold\'s workout", "the Freddie Roach one". ALWAYS a tool call: naming the styles from memory is how a connector invents a coach that does not exist. Say each method WITH its credit — "Golden-era volume bodybuilding, in the tradition of Arnold Schwarzenegger" — never "Arnold\'s workout", never an endorsement. Picking one for good is set_plan style; for one session design_workout style; adding its written session to their workouts is save_routine tradition.',
     inputSchema: { type: 'object', properties: {
       style: { type: 'string', description: 'One style, in full, instead of the whole shelf. A method name ("Fight camp") or the famous name people say ("Arnold style", "Louie Simmons").' },
       discipline: { type: 'string', description: 'Only this discipline: Boxing, Powerlifting, Strength & conditioning, Running, Kettlebell, Bodybuilding.' },
@@ -2558,11 +2558,32 @@ async function trainerStyles(args, user) {
   }
   if (wanted) {
     const st = all.styles.find(s => s.key === wanted);
+    // The written session in this tradition, and whether it is already one of
+    // theirs — so "do you have Arnold's workout" is answered with the actual
+    // workout and one door to add it, never a session composed from memory.
+    const written = styleRoutine(wanted);
+    let inYours = null;
+    if (written) {
+      const { data: have } = await supabase.from('wrought_routines')
+        .select('name, active').eq('user_id', user.id).ilike('name', written.name);
+      inYours = (have || []).some(r => r.active && String(r.name).toLowerCase() === written.name.toLowerCase());
+    }
     return {
       style: st,
+      credited: creditedName(st),
       is_your_coach: st.is_coach,
-      say: `${st.say} — ${st.does} Builds ${st.shape}. ${st.tradition}. Coached ${st.voice ? `${st.voice.intensity}: ${st.voice.register.toLowerCase()}` : 'in the plain trainer\'s voice'}.`,
-      note: 'Say what it DOES before whose tradition it is — the tradition is the credit, not the pitch. Offer both doors: one session (design_workout style) or every session from now on (set_plan style). NEVER a weight: every load still comes from the person\'s own history.',
+      ...(written ? {
+        written: {
+          name: written.name, est_minutes: written.est_minutes, notes: written.notes,
+          movements: (written.exercises || []).map(e => e.minutes ? `${e.name} ${e.minutes} min` : `${e.name} ${e.sets}\u00d7${e.reps}`),
+        },
+        in_your_workouts: inYours,
+      } : {}),
+      say: `${creditedName(st)}. ${st.does} Builds ${st.shape}. Coached ${st.voice ? `${st.voice.intensity}: ${st.voice.register.toLowerCase()}` : 'in the plain trainer\'s voice'}.` +
+        (written ? ` There is a written session in this tradition, "${written.name}", ${(written.exercises || []).length} movements${inYours ? ' — already in your workouts' : ''}.` : ''),
+      note: 'Say the method WITH its credit in the same breath, exactly as `credited` reads — "Golden-era volume bodybuilding, in the tradition of Arnold Schwarzenegger" — the way the website card sets it as a headline. Never drop the lead-in: never "Arnold\'s workout", never "(Arnold Schwarzenegger)", never "his programme", never endorsed. Then what it does. Offer the doors: one session (design_workout style), every session from now on (set_plan style)' +
+        (written ? (inYours ? ', and the written session is already theirs — start_session with its name.' : ', or add the written session to their workouts (save_routine tradition — the server writes it whole; never retype it).') : '.') +
+        ' NEVER a weight: every load still comes from the person\'s own history.',
       not_an_endorsement: st.provenance,
     };
   }
@@ -2578,8 +2599,9 @@ async function trainerStyles(args, user) {
     for_you: fit.marked.map(m => ({ ...m, say: STYLES[m.key]?.say })),
     for_you_say: fit.say,
     disciplines: groups,
-    say: `${groups.reduce((n, g) => n + g.styles.length, 0)} trainer styles${coach ? `, and yours is ${all.styles.find(s => s.key === coach)?.say}` : ''}. ${groups.map(g => `${g.discipline}: ${g.styles.map(s => s.lineage ? `${s.say} (${s.lineage})` : s.say).join(', ')}`).join('. ')}.`,
-    note: 'Say the FOR_YOU ones first with the reason beside each — they are computed from their record and you may never add, drop or reorder one, nor mark a style the server did not. An empty for_you means the record does not pick between them yet: say so, never guess one. Then read the rest grouped by discipline with the ONE LINE of what each does, and NAME THE TRADITION beside the method — "Golden-era volume bodybuilding, in the tradition of Arnold Schwarzenegger" — because the method is the product\'s and the person is the credit, and a list of bare method names answers nobody who asked which trainers these are — never the whole provenance for every style, which is a wall nobody reads. They can take one for a single session (design_workout style) or make it the standing coach (set_plan style), and change it in one sentence any time. A style changes the session\'s SHAPE and the coaching VOICE and nothing else: every load still comes from their own history, and a care flag silences the voice entirely. They are on the website too, at the top of the Trainer tab.',
+    written_sessions: Object.keys(STYLE_ROUTINES).length,
+    say: `${groups.reduce((n, g) => n + g.styles.length, 0)} trainer styles${coach ? `, and yours is ${creditedName(all.styles.find(s => s.key === coach) || { say: coach })}` : ''}. ${shelfSay(groups)}.`,
+    note: 'Say the FOR_YOU ones first with the reason beside each — they are computed from their record and you may never add, drop or reorder one, nor mark a style the server did not. An empty for_you means the record does not pick between them yet: say so, never guess one. Then read the rest grouped by discipline, each METHOD WITH ITS CREDIT in the same breath, exactly as `say` has it — "Golden-era volume bodybuilding, in the tradition of Arnold Schwarzenegger" — the way the website card sets the credit as a headline: the method is the product\'s and the person is the credit, and a list of bare method names answers nobody who asked which trainers these are. Never drop the lead-in ("Arnold\'s workout", "(Arnold Schwarzenegger)", "endorsed by" are all wrong), and never the whole provenance for every style, which is a wall nobody reads. Add the ONE LINE of what each does when they want more than the names. Each credited style also has a WRITTEN session: trainer_styles with that style returns it, and save_routine tradition adds it to their workouts whole. They can take a style for a single session (design_workout style) or make it the standing coach (set_plan style), and change it in one sentence any time. A style changes the session\'s SHAPE and the coaching VOICE and nothing else: every load still comes from their own history, and a care flag silences the voice entirely. They are on the website too, near the top of the Trainer tab.',
     not_an_endorsement: 'Each is named for its published METHOD and credits the person as a tradition — never their programme, never an endorsement.',
   };
 }
@@ -4653,6 +4675,7 @@ async function previousBest(userId, key, excludeSessionId) {
 }
 
 async function saveRoutine(args, user) {
+  if (args.tradition) return addTraditionWorkout(args.tradition, user);
   const profile = await getProfile(user.id);
   const name = String(args.name || '').trim();
   if (!name) return { error: 'A name is required.' };
@@ -4846,6 +4869,77 @@ async function saveRoutine(args, user) {
       'Say the count and the names from on_file — read back from the record AFTER the write, the only thing that distinguishes a real save from a claimed one. Read the exercise list back once too, so a mis-captured lift gets caught now.' +
       (row.notes ? '' : ' NO WRITE-UP ON IT YET. Offer one in half a line — how to run it, what to push, what to leave in the tank — and write it with save_routine notes if they want it. It is what turns a saved list of names into a workout, and it is shown at the top every time the session starts.'),
     next_actions: [`start_session with routine "${name}"`, 'save_routine with add[] to grow it later'],
+  };
+}
+
+// A TRADITION WORKOUT, TAKEN OFF THE SHELF WHOLE. "Add the Arnold workout"
+// used to mean the model retyping eight movements and a write-up out of a
+// design_workout reply — and a model retyping a list is how half a workout
+// gets saved. The server holds the written session, so the server writes it,
+// exactly as the website's Add button does: same name, same movements, same
+// write-up, no loads anywhere.
+//
+// Already there is SAID, never doubled or merged over — merging the written
+// session into their copy would put back every movement they took out. One
+// they retired comes back as they left it, which is what the website's "Put
+// back" does. And the reply is read back off the record after the write, the
+// same proof save_routine gives: a claimed save is the worst failure here.
+async function addTraditionWorkout(said, user) {
+  const key = styleFrom(said);
+  const written = key ? styleRoutine(key) : null;
+  if (!written) {
+    const shelf = Object.keys(STYLE_ROUTINES).map(k => creditedName(STYLES[k]));
+    return {
+      error: 'unknown_tradition',
+      say: `No written tradition workout by that name. The twenty-one: ${shelf.join('; ')}.`,
+      note: 'Never guess which one they meant — say the list and let them pick. Never compose one from memory instead.',
+    };
+  }
+
+  const { data: rows, error: readErr } = await supabase.from('wrought_routines')
+    .select('id, name, active').eq('user_id', user.id).ilike('name', written.name);
+  if (readErr) return { error: readErr.message };
+  // ilike is a pattern, not an equality — the exact name is checked here.
+  const same = (rows || []).filter(r => String(r.name).toLowerCase() === written.name.toLowerCase());
+  const live = same.find(r => r.active);
+  const retired = same.find(r => !r.active);
+
+  let did;
+  if (live) did = 'already';
+  else if (retired) {
+    const { error } = await supabase.from('wrought_routines')
+      .update({ active: true, updated_at: new Date().toISOString() }).eq('id', retired.id).eq('user_id', user.id);
+    if (error) return { error: error.message };
+    did = 'put_back';
+  } else {
+    const { error } = await supabase.from('wrought_routines').insert([{
+      user_id: user.id, name: written.name, kind: written.kind || 'strength',
+      tier: written.tier || 'intermediate',
+      exercises: (written.exercises || []).map(e => normaliseMovement(e)).filter(e => e.name),
+      notes: written.notes || null, est_minutes: written.est_minutes || null, active: true,
+    }]);
+    if (error) return { error: error.message };
+    did = 'added';
+  }
+
+  const { data: onFile } = await supabase.from('wrought_routines')
+    .select('name, exercises').eq('user_id', user.id).eq('active', true)
+    .order('updated_at', { ascending: false });
+  const all = onFile || [];
+  const mine = all.find(r => String(r.name).toLowerCase() === written.name.toLowerCase());
+  const credited = creditedName(STYLES[key]);
+  const moves = (mine?.exercises || written.exercises || []).map(e => e.name);
+
+  return {
+    saved: written.name, tradition: credited, did,
+    exercise_names: moves,
+    on_file: {
+      is: 'every saved workout on this account, read back AFTER the write',
+      count: all.length, names: all.map(r => r.name), verified: !!mine,
+    },
+    say: `${did === 'already' ? 'Already in your workouts' : did === 'put_back' ? 'Put back in your workouts' : 'Added to your workouts'}: "${written.name}" — ${credited}. ${moves.length} movements: ${moves.join(', ')}. You now have ${all.length} saved workout${all.length === 1 ? '' : 's'}.`,
+    note: `Say the name WITH its credit, as said here — "${credited}" — never "his workout" and never as an endorsement: ${STYLES[key].provenance || 'published methodology, not his programme and not an endorsement'}. Say the count from on_file, the only proof the save is real. No loads are written: the rack works every weight out from their own history or gives an RPE. It is on the Trainer tab under Saved workouts, and starts when they say its name.`,
+    next_actions: [`start_session with routine "${written.name}"`],
   };
 }
 
