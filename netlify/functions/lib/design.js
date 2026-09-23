@@ -385,6 +385,17 @@ export function styleShape(st, { terse = false } = {}) {
 }
 
 /**
+ * The short credit — the ONE place the words are put together, so the shelf,
+ * the tradition workouts and the tool cannot phrase a person's name three
+ * ways. Never a bare surname: "Arnold Schwarzenegger" beside a method reads as
+ * authorship, and the lead-in is the whole difference between crediting a
+ * tradition and claiming an endorsement.
+ */
+export function styleCredit(st) {
+  return st?.lineage ? `in the tradition of ${st.lineage}` : null;
+}
+
+/**
  * Every style, in one shape, for every surface that lists them.
  *
  * Nothing here is a claim this file is not entitled to make: `does` is the
@@ -404,7 +415,7 @@ export function stylesList({ coach = null, recommended = null } = {}) {
     discipline: st.discipline || 'Other',
     lineage: st.lineage || null,
     tradition: st.tradition || (st.lineage ? `in the tradition of ${st.lineage}` : null),
-    credit: st.lineage ? `in the tradition of ${st.lineage}` : null,
+    credit: styleCredit(st),
     does: st.emphasis || null,
     shape: styleShape(st),
     shape_short: styleShape(st, { terse: true }),
