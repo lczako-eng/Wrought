@@ -334,7 +334,7 @@ export const STYLES = {
     tradition: 'in the tradition of the 1970s golden era — the volume and the double-split that Arnold Schwarzenegger trained with',
     provenance: 'the high-volume style of 1970s bodybuilding — the era Arnold Schwarzenegger trained in. Published era methodology, not his programme and not an endorsement.',
     emphasis: 'More movements and more sets than most — the high-volume way the 1970s gyms trained.',
-    match: /golden\s*era|arnold|schwarzen|old.?school\s*bodybuild|venice\s*beach|bodybuild/i,
+    match: /golden\s*era|arnold|\barnie\b|\bs(?:ch|h|c)?wart?ze|old.?school\s*bodybuild|venice\s*beach|bodybuild/i,
     sets: { beginner: 3, other: 5 }, reps: 10, rest_s: 90,
   },
 };
@@ -393,6 +393,25 @@ export function styleShape(st, { terse = false } = {}) {
  */
 export function styleCredit(st) {
   return st?.lineage ? `in the tradition of ${st.lineage}` : null;
+}
+
+/**
+ * A style said the way the card shows it: the method, then its credit in the
+ * same breath. The founder wanted the credit "almost a headline", and a reply
+ * is where an assistant's headline is — so the credit rides WITH the name,
+ * never as a footnote after the description, and never without its lead-in:
+ * "Golden-era volume bodybuilding, in the tradition of Arnold Schwarzenegger",
+ * never "(Arnold Schwarzenegger)" and never "Arnold's workout". The method is
+ * the product's; the person is the credit.
+ */
+export function creditedName(st) {
+  const credit = st?.credit ?? styleCredit(st);
+  return credit ? `${st.say}, ${credit}` : st.say;
+}
+
+/** The shelf read aloud, grouped by discipline, every credit said. */
+export function shelfSay(groups) {
+  return groups.map(g => `${g.discipline}: ${g.styles.map(creditedName).join('; ')}`).join('. ');
 }
 
 /**

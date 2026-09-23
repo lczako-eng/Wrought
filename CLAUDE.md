@@ -2478,6 +2478,42 @@ at **12px in grey** under the method name, which is the same as not doing it.
   where the name drops under its label. The shelf still starts on screen one
   at every width; nothing overflows; 16.9:1 contrast on the name.
 
+### The assistant says the credit the card shows — and adds the written session whole
+
+`creditedName()` / `shelfSay()` in `lib/design.js` + `save_routine tradition`
+(`addTraditionWorkout()` in `mcp.js`) + the *Pick who coaches you* section on
+the website's manual. The founder, right after the headline credit shipped:
+*"also make sure it works with the AI so it knows what it is."*
+
+- **The connector was reading the shelf out as "Golden-era volume
+  bodybuilding (Arnold Schwarzenegger)"** — a bare name in brackets beside a
+  method, which reads as authorship: the one form the tradition doctrine
+  forbids, in the surface people hear most. Every reply now says the method
+  with its credit in the same breath — *"Golden-era volume bodybuilding, in the
+  tradition of Arnold Schwarzenegger"* — off one helper, so the card, the
+  shelf read, one style, the add confirmation and the unknown-name refusal
+  cannot phrase a person's name two ways. The tool description, the
+  phrasebook, the ChatGPT sheet and the replies' notes all show that form and
+  forbid *"Arnold's workout"*, the brackets and any endorsement.
+- **The twenty-one written sessions had no door from the conversation.**
+  *"Add the Arnold workout"* meant a model retyping seven movements and a
+  write-up out of a `design_workout` reply — and a model retyping a list is
+  how half a workout gets saved. `save_routine` takes `tradition` now and the
+  SERVER writes the written session, exactly as the website's Add button
+  does. **Already theirs is said, never merged over** — a merge would put back
+  every movement they took out; one they retired is put back as they left it;
+  the reply is read back off the record. Tested by running the function
+  against a table held in memory, because the first guard was a grep for the
+  word "already" that passed with the check switched off.
+- **The website's manual never got the styles section.** `lib/guide.js` had
+  *Pick who coaches you* since the shelf shipped; the page's own copy — kept so
+  the manual works signed out — did not, and nothing compared them. A test now
+  holds every section, short line and sentence equal on both.
+- **The manual teaches the names people say.** *"what is Fight camp"* became
+  *"what does the Louie Simmons one do"* — the page may not hardcode a style's
+  method name, and people ask by the trainer anyway. *arnie* and dictation's
+  *Swarzenegger* / *Schwartzenegger* / *Shwarzenegger* now find the tradition.
+
 ### Two files agreeing with each other is not evidence — the website advertised a build nobody has
 
 Asked where to find the trainer styles on the app, the honest answer was read
@@ -5054,7 +5090,7 @@ self-reporting scale removes the most-abandoned manual entry), then Strava.
 
 ## Conventions
 
-- `npm test` runs `test/harness.mjs` — 742 offline tests, no network, no database.
+- `npm test` runs `test/harness.mjs` — 743 offline tests, no network, no database.
   Run it before every push. It covers the JSON-RPC envelope (which fails as an
   uninformative "could not connect" inside ChatGPT) and all the arithmetic
   (which fails as a confidently wrong number in somebody's verdict).
