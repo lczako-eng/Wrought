@@ -2452,6 +2452,99 @@ a narrower form than *a test that names a value cannot outlive the value*:
 guard on WHERE the style list comes from must not name that call's arguments,
 and a guard on the card template must not slice on its parameter list.
 
+### The standing coach shapes the day — rhythm and register, never food, never more
+
+`STYLE_DAYS` in `lib/voices.js` + `coachDay()` / `coachRegister()` /
+`coachPaused()` in `lib/plan.js`, relayed by the 07:30 push, `brief`,
+`my_plan`, `set_plan`, `suggest_workout`, `end_session`, `log` and the
+dashboard. The founder: *"is there a way you can get these training styles into
+our daily plan with the GPT? I want the same aggressiveness — the same
+lifestyle that needs to be done to achieve this — on a daily."*
+
+A standing coach changed how a BUILT session was shaped and how the trainer
+talked between sets, and nothing else: the morning push, the brief, the plan
+and the nudge were identical whoever was coaching. Now the tradition runs the
+day, and the design is three independent designs judged into one spec.
+
+- **"The same lifestyle" is the RHYTHM and the HABIT, never the food.** Each
+  of the 24 has a weekly rhythm (`steady`, `daily`, `camp`, `spaced` with
+  rest days, `hard_easy`, `base`), one habit sentence, one line per state of
+  the day, and a `never` clause naming what its day never includes here — the
+  exclusions each tradition is most tempting towards: every boxing style
+  rules out a weight cut, the golden era rules out the double split, the
+  novice progression rules out eating big. A tradition's diet delivered as
+  coaching would be the invented-target failure with a famous name on it.
+- **"The same aggressiveness" is the REGISTER, not more work.** The voice's
+  intensity words the day's line; relentless is clipped and absolute, and for
+  the low-volume traditions the absolute is about REST. `push_offer` is
+  authored, not derived — Mike Mentzer's tradition talks relentlessly and
+  wants to be left alone for days — and is OFFERED once when the coach is
+  set, written only on a yes. The tradition's usual week (`per_week`) is
+  offered the same way; their own commitment stands.
+- **One computation, relayed everywhere.** `coachDay()` is pure — no
+  database, no clock, no model — and decides the state with the doctrine as
+  its precedence: care flag (null) > trained today > week met > the body's
+  veto > their commitment > the tradition's rhythm. **A coach only ever
+  removes an offer**: a rest, easy, held, met or done day withholds "Up next"
+  and NEXT, and a rest day quiets the week nudge. It never adds a session, a
+  set, a load, a target, a line or a notification. A spaced tradition's rest
+  yields the moment resting would make their own week impossible.
+- **The openers stay nameless.** The tap lands in a new ChatGPT chat whose
+  connector may be off; a famous name in the opener is an invitation to invent
+  that tradition's day from memory. The opener says to speak as the coach
+  ONLY if `brief` returns `coach_day`.
+- **The morning `brief` reads today's row for a coach user.** A morning read's
+  range stops at yesterday, so without it the conversation the push opened
+  would miss the readiness veto the push itself read, and say "camp day"
+  under a lock screen that said "light day".
+- **A silenced coach is said, not left silent.** Under a care flag
+  `coach_day` is null on every surface and `coach_paused` says why, on the
+  plan panel and in the brief. The founder's own record, read the day this
+  shipped, still carried a lingering low-intake reading — the pause is what he
+  would see, and the review door is the way out, never a softer flag.
+- **Two holes found on the way.** The scheduled morning had a readiness line
+  that nothing ever handed a reading, so a strained morning still offered
+  "Up next" — for everybody; `buildMorningFor` passes it now. And
+  `start_session`'s voice was the one voice door a care flag did not silence.
+- **The Record screen measured, not assumed.** A coach card above the day's
+  figure pushed it to 863px at 320 — below the fold. The coach's line takes
+  the place of the intro's generic sentence instead: +19px, and the longest
+  line any tradition says still leaves the whole figure on screen one at
+  320/360/390/430.
+- **Every new guard was broken on purpose and failed**, and one did not the
+  first time: the "passes the care flags" check matched the word `flags` and
+  passed with `flags: []`. It pins the real variable now.
+
+**The adversarial review ran the code and found eight things wrong**, and
+every one of them is the shape of a rule this file already states:
+
+- **`brief` takes any date, and the coach read that date's window.** *"How
+  was last Tuesday"* computed today's coach from a month that ended weeks ago
+  — its care flags clean while one stands today, and the sessions since
+  missing, so a met week read as a training day. The coach reads its own
+  thirty days and its own flags, ending today. *A window is not a memory*,
+  a fifth time.
+- **`set_plan` promised a voice a flag had silenced** — *"your morning brief
+  now speaks in its register"* to somebody who would then hear nothing. It
+  says *set, and paused* now, and the plan panel and the shelf stop drawing
+  the tradition's rhythm and habit while the pause stands: how often a
+  tradition trains is exactly what a flag says to stop raising.
+- **The lock screen offered NEXT on a strained morning** when no coach was
+  set; the long form had always withheld "Up next". Both read the same
+  readiness now. And under a flag the readiness LINE goes (a read of the body
+  is coaching) while the withholding stays.
+- **The lock screen dropped goals to make room for NEXT and then dropped NEXT
+  too.** A fill now, not a sequence of cuts: the briefing first, then the
+  other goals, then NEXT, each only if it fits.
+- **Hard/easy chained easy days.** Somebody training daily was told *easy*
+  every day, because yesterday always had a session in it. The run of
+  consecutive training days is counted: hard, easy, hard.
+- **A spaced tradition's never-clause forbade back-to-back days** — the exact
+  day its own commitment rule hands them when resting would break their week.
+  Each now rules out two-a-days, which no rule ever overrides. And four met
+  lines claimed session TYPES (*"heavy and speed days are in for the week"*)
+  when a met week only means the count was reached.
+
 ### The credit as a headline — the name promoted, never without its lead-in
 
 `creditLine()` in `app.html` + `styleCredit()` in `lib/design.js` + `credit` on
@@ -5090,7 +5183,7 @@ self-reporting scale removes the most-abandoned manual entry), then Strava.
 
 ## Conventions
 
-- `npm test` runs `test/harness.mjs` — 743 offline tests, no network, no database.
+- `npm test` runs `test/harness.mjs` — 761 offline tests, no network, no database.
   Run it before every push. It covers the JSON-RPC envelope (which fails as an
   uninformative "could not connect" inside ChatGPT) and all the arithmetic
   (which fails as a confidently wrong number in somebody's verdict).

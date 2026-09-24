@@ -15,7 +15,7 @@ import {
 import { orderInsight, earnedRoom, energyBalance, exerciseKey, deviceMatrix, weekdayPattern, focusCall, lastSession,
          weekSoFar, weekTargets, readiness, targetOptions, estimatedMax, liftTrend, readMovement, backfillDerivedSets, goalsToSet, rekeySets, resyncMuscles } from './lib/training.js';
 import { weeklyVolume } from './lib/volume.js';
-import { planRead } from './lib/plan.js';
+import { planRead, coachDay, coachPaused } from './lib/plan.js';
 import { calibration } from './lib/adapt.js';
 import { recordCheck } from './lib/integrity.js';
 import { intakeState } from './lib/intake.js';
@@ -606,9 +606,20 @@ export const handler = async (event) => {
   // The same one line the assistant gets, on the screen. Preemptive is not a
   // conversation feature — somebody who opened the dashboard is exactly as
   // entitled to be told the one thing worth knowing without asking for it.
+  // TODAY IN THE STANDING COACH'S TRADITION — the same function the morning
+  // push, brief and my_plan relay, off the same week and readiness this page
+  // prints, so the screen and the conversation cannot disagree about the day.
+  // Only for today: a coach does not speak about a past date somebody paged to.
+  const isToday = to === localDateFor(profile.timezone);
+  const coachDayRead = isToday
+    ? coachDay({ profile, flags, days: recent.days, today: to, week: trainingWeek, readiness: ready })
+    : null;
+  const coachPausedRead = coachPaused({ profile, flags });
+
   const nudge = nextNudge({
     push: profile.plan_push || null,
     flags, trainingWeek, plan, cardio, day: today,
+    coachState: coachDayRead?.state || null,
   });
 
   // The shadow technique leaves in the record — never a claim about the lifter,
@@ -865,6 +876,9 @@ export const handler = async (event) => {
       places: places.map(p => ({ name: p.name, kind: p.kind, equipment: p.equipment || [], last_used_on: p.last_used_on, times_used: p.times_used })),
       styles: stylesList({ coach: plan?.coach || null, recommended: styleFit }).styles,
       style_fit: styleFit,
+      // Never `coach` — that key is the check-in schedule below.
+      coach_day: coachDayRead,
+      coach_paused: coachPausedRead,
       coach: {
         push_devices: pushSubs,
         morning: checkins?.morning_hour != null ? `${checkins.morning_hour}:${String(checkins.morning_minute || 0).padStart(2, '0')}` : null,

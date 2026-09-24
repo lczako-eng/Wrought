@@ -43,11 +43,15 @@ const LEVELS = { light: 0, normal: 1, relentless: 2 };
  * @param cardio        cardioProgress() output
  * @param day           dayFacts() output for today
  * @param voicePending  count of dictated entries not yet structured
+ * @param coachState    coachDay().state, or null — a standing coach's REST day
+ *                      silences the week nudge (the rest state is only ever
+ *                      given when the week still fits without today); every
+ *                      other state and null leave this function unchanged
  * @returns { say, kind, priority } or null — null means SAY NOTHING
  */
 export function nextNudge({
   push = null, flags = [], trainingWeek = null, plan = null,
-  cardio = null, day = null, voicePending = 0,
+  cardio = null, day = null, voicePending = 0, coachState = null,
 } = {}) {
   // Rule 1. Nothing here is appropriate beside a care flag, including the
   // cheerful ones — a personal best delivered to somebody who has eaten under
@@ -105,6 +109,12 @@ export function nextNudge({
 
   // ── The week ──────────────────────────────────────────────────────────────
   // Rule 4: the level decides whether this is raised at all.
+  //
+  // A STANDING COACH CAN ONLY REMOVE A NUDGE, NEVER ADD ONE. On the day its
+  // tradition calls for rest, chasing a session would contradict the coach in
+  // the same reply — and the rest state is only ever given when the week still
+  // fits without today, so nothing is lost by staying quiet.
+  if (coachState === 'rest') return null;
   const w = trainingWeek;
   if (w && w.target) {
     if (w.met) return null;                       // Nothing to chase. Say nothing.

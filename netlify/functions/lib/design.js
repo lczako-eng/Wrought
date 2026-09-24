@@ -39,7 +39,7 @@
 //   that is a doctor's question and this is not a medical device.
 
 import { PATTERNS, movementsFor } from './library.js';
-import { STYLE_VOICES } from './voices.js';
+import { STYLE_VOICES, STYLE_DAYS } from './voices.js';
 
 // The shapes a single session actually comes in, as people name them. Ordered
 // within each: the biggest, most technical thing first while they are fresh,
@@ -347,6 +347,11 @@ export const STYLE_DISCIPLINES = [...new Set(Object.values(STYLES).map(s => s.di
 // the trainer standing there uses. Kept in lib/voices.js so this file stays
 // about the session's shape; merged here so a style is one object.
 for (const [key, voice] of Object.entries(STYLE_VOICES)) if (STYLES[key]) STYLES[key].voice = voice;
+// And how each tradition runs a DAY — its weekly rhythm, one habit, what it
+// never includes, and one line per state of the day. Read only by coachDay()
+// in lib/plan.js, so every surface that speaks for a standing coach says the
+// same thing.
+for (const [key, day] of Object.entries(STYLE_DAYS)) if (STYLES[key]) STYLES[key].day = day;
 
 // ── The shelf, read out ────────────────────────────────────────────────────
 // The founder: "I want to learn about where are they? Where can I find them?
@@ -443,6 +448,10 @@ export function stylesList({ coach = null, recommended = null } = {}) {
     voice: st.voice
       ? { register: st.voice.register, intensity: st.voice.intensity, attitude: st.voice.attitude }
       : null,
+    // How the tradition runs a day, so a card can say what having it as your
+    // coach MEANS before anybody chooses it. Static words, no numbers.
+    rhythm: st.day?.rhythm || null,
+    habit: st.day?.habit || null,
     is_coach: coach != null && key === coach,
     recommended: rec.has(key),
     because: rec.get(key) || null,
