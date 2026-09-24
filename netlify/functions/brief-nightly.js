@@ -29,7 +29,8 @@ import {
 } from './lib/wrought.js';
 import { sendPush, vapidConfigured } from './lib/push.js';
 import { eveningNotification, eveningReceipt, plainBrief } from './lib/voice.js';
-import { energyBalance, weekSoFar, weekTargets, goalsToSet } from './lib/training.js';
+import { energyBalance, weekSoFar, weekTargets, goalsToSet, readiness } from './lib/training.js';
+import { coachDay } from './lib/plan.js';
 import { dueAlerts } from './lib/alerts.js';
 import { morningBrief, morningNotification, middayBrief, morningDue, morningLink, pickDue } from './lib/morning.js';
 import { athleteRows, athleteRead } from './lib/athlete.js';
@@ -413,16 +414,26 @@ export async function buildMorningFor(userId, profile, now = new Date()) {
   // figure. A calorie number arriving unasked on a lock screen reads as a
   // decision already taken, which is the invented-2,600 failure with a
   // notification wrapped around it. set_goal is where a number gets committed.
+  // THE BODY'S VETO, finally passed. morningBrief has always had a readiness
+  // line and nothing ever handed it one, so a strained morning still offered
+  // "Up next". It only ever softens.
+  const ready = readiness({ days: recent.days, today: date });
+  // THE STANDING COACH'S DAY — computed once, from the same week this brief
+  // prints, so the lock screen, the brief and the conversation it opens cannot
+  // disagree. Null for the plain trainer and under any care flag. A throw
+  // here must never cost somebody their morning briefing.
+  let coach = null;
+  try { coach = coachDay({ profile, flags, days: recent.days, today: date, week, readiness: ready }); } catch { coach = null; }
   const out = morningBrief({
     facts: day, flags, yesterdayBalance, week, goals, yesterday, planned: dueRoutine,
     goalsToSet: goalsToSet({ goals, targets: null, stepsAvg: null }),
-    athlete,
+    athlete, readiness: ready, coach,
   });
   // Nothing worth saying sends nothing. A morning nag is how a product gets
   // muted permanently, and muted never comes back on.
   if (!out) return null;
 
-  const notice = morningNotification({ yesterdayBalance, goals, week, planned: dueRoutine, flags });
+  const notice = morningNotification({ yesterdayBalance, goals, week, planned: dueRoutine, flags, coach });
   const message = {
     title: notice.title,
     body: notice.body,
@@ -435,7 +446,8 @@ export async function buildMorningFor(userId, profile, now = new Date()) {
   };
   await storeBrief({
     userId, date, kind: 'morning', verdict: out.text,
-    facts: { date, kind: 'morning', notification: message, text: out.text },
+    facts: { date, kind: 'morning', notification: message, text: out.text,
+      coach: coach ? { coach: coach.coach, state: coach.state, say: coach.say } : null },
   });
   return { date, out, message, flags };
 }

@@ -93,27 +93,40 @@ function compactGoal(goal) {
  * training choice. A care flag changes the title to REVIEW; it never replaces
  * those answers again.
  */
-export function morningNotification({ yesterdayBalance = null, goals = [], week = null, planned = null, flags = [] } = {}) {
-  const parts = [];
-  if (yesterdayBalance?.known && yesterdayBalance.calories_out) {
-    parts.push(`YDAY BURN ~${compactNumber(yesterdayBalance.calories_out)}`);
-  }
-  const deal = goals.map(compactGoal).filter(Boolean).slice(0, 3);
-  if (deal.length) parts.push(deal.join(' / '));
-  if (week?.target) parts.push(`WEEK ${week.done || 0}/${week.target}`);
-  else if (week) parts.push(`WEEK ${week.done || 0}`);
-  if (planned?.name && !week?.met) {
-    parts.push(`NEXT ${planned.name}${planned.est_minutes ? ` ${planned.est_minutes}m` : ''}`);
-  }
+export function morningNotification({ yesterdayBalance = null, goals = [], week = null, planned = null, flags = [], coach = null } = {}) {
+  // Under a care flag the coach is ignored entirely — coaching stops, and the
+  // flagged title stays byte-for-byte what it was.
+  const c = flags.length ? null : coach;
+  const burn = yesterdayBalance?.known && yesterdayBalance.calories_out
+    ? `YDAY BURN ~${compactNumber(yesterdayBalance.calories_out)}` : null;
+  let deal = goals.map(compactGoal).filter(Boolean).slice(0, 3);
+  const weekPart = week?.target ? `WEEK ${week.done || 0}/${week.target}` : week ? `WEEK ${week.done || 0}` : null;
+  // The coach's clause only where it changes what today IS — a rest, easy or
+  // lighter day. On such a day NEXT is withheld: a coach can only remove an
+  // offer, never add one.
+  let tag = c?.tag || null;
+  const offersNext = planned?.name && !week?.met && !(c && !c.offers_session);
+  let next = offersNext ? `NEXT ${planned.name}` : null;
+  let nextMin = offersNext && planned.est_minutes ? ` ${planned.est_minutes}m` : '';
   const action = 'TAP: WHAT ARE WE TRAINING?';
-  const detail = parts.join(' · ');
-  let body = detail ? `${detail} · ${action}` : action;
-  if (body.length > 160) {
-    const room = 160 - action.length - 4; // ellipsis plus the separator
-    body = `${detail.slice(0, room)}… · ${action}`;
-  }
+  const build = () => {
+    const parts = [burn, deal.length ? deal.join(' / ') : null, weekPart, tag, next ? `${next}${nextMin}` : null].filter(Boolean);
+    const detail = parts.join(' · ');
+    return detail ? `${detail} · ${action}` : action;
+  };
+  // WHOLE CLAUSES, NEVER A CUT MID-WORD. Over 160 the least load-bearing
+  // clause goes first: the coach's tag, then goals after the first, then
+  // NEXT's minutes, then NEXT. Yesterday's burn, the week and the tap are
+  // never dropped — they are the briefing.
+  let body = build();
+  if (body.length > 160) { tag = null; body = build(); }
+  while (body.length > 160 && deal.length > 1) { deal = deal.slice(0, -1); body = build(); }
+  if (body.length > 160) { nextMin = ''; body = build(); }
+  if (body.length > 160) { next = null; body = build(); }
+  if (body.length > 160) body = `${body.slice(0, 160 - action.length - 4)}… · ${action}`;
   return {
-    title: flags.length ? 'WROUGHT · MORNING BRIEF · REVIEW' : 'WROUGHT · MORNING BRIEF',
+    title: flags.length ? 'WROUGHT · MORNING BRIEF · REVIEW'
+      : c?.title_tag ? `WROUGHT · MORNING BRIEF · ${c.title_tag}` : 'WROUGHT · MORNING BRIEF',
     body,
   };
 }
@@ -130,11 +143,12 @@ export function morningNotification({ yesterdayBalance = null, goals = [], week 
  * @param yesterday    yesterday's dayFacts, for the one backward-looking line
  * @param readiness    readiness() output, or null
  * @param planned      { name, est_minutes } — the workout most due today, or null
+ * @param coach        coachDay() output — the standing coach's day, or null
  */
 export function morningBrief({
   facts = {}, flags = [], yesterdayBalance = null, week = null,
   goals = [], goalsToSet = null, yesterday = null, readiness = null, planned = null,
-  athlete = null,
+  athlete = null, coach = null,
 } = {}) {
   const lines = [];
 
@@ -180,6 +194,16 @@ export function morningBrief({
     lines.push(readiness.say);
   }
 
+  // 4b. THE STANDING COACH'S DAY — one line, in its register, AFTER the facts
+  //     and after the body's veto, never instead of them. Only on a morning
+  //     that already has something to say: a coach never turns an empty
+  //     morning into a send. A care flag silences it (coachDay returns null
+  //     under one too; this guard is the belt).
+  const coachLine = coach?.say && !flags.length && lines.length ? coach.say : null;
+  if (coachLine) lines.push(coachLine);
+  // A coach whose day is rest, easy, lighter, met or done withholds "Up next".
+  const coachWithholds = !!(coach && !flags.length && !coach.offers_session);
+
   // 5. YESTERDAY'S INTAKE, in one clause and only if it is genuinely informative. This
   //    is the one backward-looking line allowed, and it earns its place by
   //    being the thing that sets up today rather than a verdict on a day that
@@ -197,13 +221,14 @@ export function morningBrief({
   //    the selected assistant with the goals and training question already in
   //    its prompt. A saved workout is an option, not a command, and rest stays
   //    a first-class answer even when the weekly target is already met.
+  const tail = [];
   if (lines.length || planned?.name) {
     // The saved list is offered as a LIST, not only as one pick. The founder:
     // "this should go in your morning brief… so people know what's going on
     // with this." The count is said and the tap opens the assistant asking
     // which one — the pick stays an option, never a command.
     const others = Number(planned?.saved_count) > 1 ? ` Or one of your ${planned.saved_count} saved workouts — tap to choose.` : '';
-    lines.push(planned?.name && !week?.met && !heldBack
+    tail.push(planned?.name && !week?.met && !heldBack && !coachWithholds
       ? `Up next: ${planned.name}${planned.est_minutes ? `, about ${planned.est_minutes} min` : ''}.${others || ' Tap to keep or change the plan.'}`
       : 'Tap to keep or change the goals, then choose today\'s training — or a rest day.');
   }
@@ -212,12 +237,21 @@ export function morningBrief({
   // hostage. It is last and deliberately factual: the notification title also
   // says REVIEW, while every number above remains the briefing the person set.
   const review = careNote(flags[0]);
-  if (review) lines.push(review);
+  if (review) tail.push(review);
 
-  if (!lines.length) return null;
+  if (!lines.length && !tail.length) return null;
+
+  // THE TAP AND THE REVIEW CAN NEVER FALL OFF THE END. The lines above are the
+  // head; the interaction line and the care note are the tail and are always
+  // kept. When the head is too long the coach's line goes first — it is the
+  // one line that restates rather than informs.
+  let head = lines;
+  const room = MAX_LINES - tail.length;
+  if (head.length > room && coachLine) head = head.filter(l => l !== coachLine);
+  head = head.slice(0, room);
 
   return {
-    text: lines.slice(0, MAX_LINES).join(' '),
+    text: [...head, ...tail].join(' '),
     kind: 'morning',
     only: false,
     care: !!flags.length,
@@ -256,7 +290,9 @@ const OPENERS = {
     'Ask whether I want to keep or change any of it, then ask what I want to train today — list my saved ' +
     'workouts by name from list_routines (the one due first), and say a rest day is fine. Wait for my ' +
     'answer before changing a goal or choosing or building today\'s training plan. If Wrought has a care ' +
-    'note, mention it after the briefing; never replace the briefing with it.',
+    'note, mention it after the briefing; never replace the briefing with it. Call brief with kind morning. ' +
+    'If it carries coach_day, speak as that coach for today — its one line and its register — and add nothing ' +
+    'it does not say; with no coach_day, the plain trainer.',
   // The midday opener ASKS, because the founder's midday is an assessment the
   // AI takes, not a report it reads out: it exists to collect the half-day —
   // what has been eaten, how the day feels — and the assistant's first act is
@@ -266,7 +302,7 @@ const OPENERS = {
     'Gym bro — midday check-in. Using the Wrought connector: I\'ll tell you what ' +
     "I've eaten so far and how the day is going — log it, then tell me where I " +
     'stand against my targets and what the afternoon needs. If Wrought has a care note, mention it after ' +
-    'the check-in; never replace the check-in with it.',
+    'the check-in; never replace the check-in with it. Keep my standing coach\'s register if Wrought returns one.',
   // The close is interactive for the same reason the morning is: the receipt
   // is only trustworthy if the person can correct a missing meal, workout or
   // shift in the same place it is read. Tomorrow stays tomorrow's conversation.

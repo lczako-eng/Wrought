@@ -1392,6 +1392,21 @@ table.matrix td.rh.cold { color: var(--heat-3); }
 /* A tradition workout's row: the session name, then its credit under it. */
 .rout .rhead { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .rout .rhead .rn { flex: none; }
+/* The standing coach's day on the Record and Trainer screens. Its own
+   classes, every rule scoped to its own element: a kicker, the line, the
+   credit. The heat edge is the standing coach's colour, used nowhere else. */
+.coachday {
+  margin: 0 0 10px; padding: 8px 12px; border: 1px solid var(--edge);
+  border-left: 3px solid var(--heat-3); border-radius: 10px; background: var(--scale);
+}
+.coachday .cd-kick {
+  margin: 0; font-family: var(--mono); font-size: 10.5px; line-height: 1.3; letter-spacing: .06em;
+  text-transform: uppercase; color: var(--muted); overflow-wrap: anywhere;
+}
+.coachday .cd-say {
+  margin: 3px 0 0; font-family: var(--stamp); font-weight: 700; font-size: 14.5px;
+  line-height: 1.3; letter-spacing: 0; text-transform: none; color: var(--bright);
+}
 .scard .sdoes {
   flex: 1 1 100%; font-size: 13px; line-height: 1.4; font-weight: 400;
   letter-spacing: 0; text-transform: none; color: var(--ash);
@@ -2183,6 +2198,8 @@ body::after {
 }
 .record-title em { color: var(--signal-blue); background: none; }
 .record-lead { margin: 0; max-width: 34ch; justify-self: end; color: var(--ledger-muted); font-size: 15px; }
+/* The coach's line in the lead's slot — same place, same width. */
+.record-intro .coachday { margin: 0; max-width: 40ch; justify-self: end; align-self: end; }
 .record-lead::before {
   content: "FORGE 03 / LIVE RECORD"; display: block; margin-bottom: 10px;
   color: var(--ink); font: 800 9px/1 var(--mono); letter-spacing: .14em;
@@ -2312,6 +2329,7 @@ body::after {
   .record-title { font-size: clamp(39px, 12vw, 52px); }
   .record-lead { justify-self: start; max-width: 45ch; font-size: 13px; }
   .record-lead::before { display: none; }
+  .record-intro .coachday { justify-self: stretch; max-width: none; }
   .overview-stage { grid-template-columns: 1fr; box-shadow: 7px 7px 0 var(--signal-blue); }
   #content .overview-stage .hero { padding: 22px 18px; }
   .balance-reading { margin-block: 18px 13px; }
@@ -4596,6 +4614,7 @@ function renderTrainer(d) {
     $('content').innerHTML = `<section class="panel hero">
       <h2>Trainer</h2>
       <p class="caveat">${esc(d.say)}</p></section>
+      ${coachDayLine(lastPayload)}
       ${notConnectedCallout()}
       ${routinesPanel({ routines: trainerRoutinesFull.length ? trainerRoutinesFull : (d.routines?.length ? d.routines : trainerRoutines) }, { editable: true })}
       ${stylesPanel({ styles: lastPayload?.styles, coach: lastPayload?.plan?.coach || null, fit_say: lastPayload?.style_fit?.say || null })}
@@ -6465,7 +6484,7 @@ const GUIDE_SECTIONS = [
   { title: 'Pick who coaches you',
     short: 'Twenty-four styles, one sentence.',
     note: 'A style changes the shape of the session and the voice it is coached in. Never the weight.',
-    lines: ['what trainer styles are there', 'show me the Arnold Schwarzenegger style',
+    lines: ['what trainer styles are there', 'what does my coach want today', 'show me the Arnold Schwarzenegger style',
             'add the Freddie Roach workout to my workouts', 'what does the Louie Simmons one do',
             'build me a leg day in the golden-era style', 'coach me like a boxer from now on',
             'make the conjugate one my coach', 'back to the plain trainer'],
@@ -6790,6 +6809,19 @@ function wireSetup() {
 // reads as arbitrary; beside its maintenance and the weekly rate it is a
 // decision somebody can judge. Computed in lib/plan.js, by the same reader
 // my_plan uses, so the panel and the assistant cannot state different plans.
+// A tradition's weekly shape, in words. Keyed on the server's rhythm names,
+// never on a style — the page hardcodes no style.
+const RHYTHM_WORDS = {
+  steady: 'steady training days', daily: 'a little, most days', camp: 'camp days on the clock',
+  spaced: 'rest days between sessions', hard_easy: 'a hard day, then an easy one', base: 'easy days, most days',
+};
+function rhythmWords(r) {
+  const shape = RHYTHM_WORDS[r?.rhythm] || r?.rhythm || '';
+  const [lo, hi] = r?.per_week || [];
+  const often = lo != null ? `, usually ${lo === hi ? lo : `${lo}–${hi}`} a week` : '';
+  return `${shape}${often}`;
+}
+
 function planPanel(d) {
   const p = d.plan;
   if (!p) return '';
@@ -6803,6 +6835,9 @@ function planPanel(d) {
     // comes in. Nothing is drawn when there is none: the plain trainer is a
     // complete answer, not a missing one.
     p.coach_say ? ['Coach', esc(p.coach_say)] : null,
+    // How that tradition runs its WEEK — words, never a target. Their own
+    // sessions-a-week above is the count; this is only the shape.
+    p.coach_rhythm ? ['Rhythm', esc(rhythmWords(p.coach_rhythm))] : null,
   ].filter(Boolean);
 
   // Nothing set at all: say what is missing and where it gets set, rather than
@@ -6836,6 +6871,8 @@ function planPanel(d) {
     </div>
     ${p.pace_say ? `<p class="sub dim">${esc(p.pace_say)}</p>` : ''}
     ${p.push_say ? `<p class="sub dim">${esc(p.push_say)}</p>` : ''}
+    ${p.coach_habit ? `<p class="sub dim">${esc(p.coach_habit)}</p>` : ''}
+    ${d.coach_paused?.say ? `<p class="sub">${esc(d.coach_paused.say)}</p>` : ''}
     ${calibrationBlock(d.calibration)}
     ${p.missing?.length ? `<p class="sub">Still to settle: ${esc(p.missing.join('; '))}.</p>` : ''}
     <p class="caveat">Every figure is an estimate, and the weekly trend on the scale corrects it —
@@ -7144,7 +7181,7 @@ function stylesPanel(d) {
   return `<section class="panel" id="styles">
     <h2>Trainer styles · ${list.length}</h2>
     <p class="sub">${coach
-      ? `Your coach is <strong>${esc((list.find(s => s.key === coach) || {}).say || coach)}</strong> — every session built from now on comes in that style and that voice. Change it here, or say <em>"back to the plain trainer"</em>.`
+      ? `Your coach is <strong>${esc((list.find(s => s.key === coach) || {}).say || coach)}</strong> — every session built from now on comes in that style and that voice, and your morning brief and daily reads speak in it and follow its rhythm, inside the sessions you committed to. Change it here, or say <em>"back to the plain trainer"</em>.`
       : `Tap any one to read it. <strong>Build me one</strong> takes it for a single session; <strong>Make my coach</strong> makes every session come in that style and that voice until you change it.`}</p>
     <p class="sub dim">Real published methods, each named for the method and credited to the tradition it comes from —
     never a named coach’s programme, never an endorsement. A style changes the session’s shape and the voice it is
@@ -7178,6 +7215,15 @@ async function setCoach(key) {
   const body = await res.json().catch(() => ({}));
   if (!res.ok) { alert(body.message || body.error || 'That did not save.'); return; }
   if (lastPayload) lastPayload.plan = { ...(lastPayload.plan || {}), coach: key };
+  // Re-read the record behind the screen so the plan, the coach's day and the
+  // shelf all read the NEW coach — and repaint Trainer, whose unchanged-answer
+  // guard would otherwise skip the repaint (the session did not change, the
+  // coach did) and leave the button saying "Saving…".
+  try {
+    const r = await fetch(`/.netlify/functions/api-progress?days=${days}`, { headers: { Authorization: `Bearer ${data.session.access_token}` } });
+    if (r.ok) { lastPayload = await r.json(); keepPayload(lastPayload); }
+  } catch { /* the patch above still names the coach */ }
+  trainerLastJson = '';
   if (view === 'trainer') loadTrainer();
 }
 function wireStyles() {
@@ -8414,13 +8460,36 @@ function dailyClosePanel(d) {
   </section>`;
 }
 
+// THE STANDING COACH'S DAY, on the screen opened first. The founder: "get
+// these training styles into our daily plan". One slim line — the SAME
+// computed line the morning push and the assistant say, never re-typed here:
+// a kicker, the coach's line, and the credit in the tradition form. Nothing
+// without a coach, under a care flag (the server sends null), or in the demo.
+//
+// COMPACT ON PURPOSE: it sits above the day's figure, and at 320px a
+// three-line card pushed that figure below the fold. The method name rides in
+// the kicker (a method, never a person); the full credit is on the plan panel
+// and the shelf, one tap away, and in the title for anybody who hovers.
+function coachDayLine(d) {
+  const c = d?.coach_day;
+  if (!c?.say) return '';
+  return `<section class="coachday" aria-label="Your coach today"${c.name ? ` title="${esc(c.name)}"` : ''}>
+    <p class="cd-kick">${esc(c.title_tag || 'Your coach')} · ${esc(c.tag || 'today')}</p>
+    <p class="cd-say">${esc(c.say)}</p>
+  </section>`;
+}
+
+// With a standing coach, the coach's line takes the place of the intro's
+// generic sentence rather than adding a card above the day's figure — at
+// 320px an extra card pushed that figure below the fold.
 function recordIntro(d) {
+  const coach = coachDayLine(d);
   return `<section class="record-intro">
     <div class="record-intro-main">
       <p class="record-kicker">WROUGHT / DAILY · ${esc(d.today?.date || 'today')}</p>
       <h1 class="record-title"><span>Today’s</span> <em>record.</em></h1>
     </div>
-    <p class="record-lead">What happened, what it moved, and what the longer record proves underneath it.</p>
+    ${coach || '<p class="record-lead">What happened, what it moved, and what the longer record proves underneath it.</p>'}
   </section>`;
 }
 

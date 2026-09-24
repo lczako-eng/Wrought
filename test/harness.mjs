@@ -14362,6 +14362,314 @@ await test('a write that landed never answers with the sign-in gate', () => {
     'the post-write reloads no longer carry the token');
 });
 
+// ── The standing coach runs the day ────────────────────────────────────────
+// "Get these training styles into our daily plan with the GPT — the same
+// aggressiveness, the same lifestyle, on a daily." coachDay() in lib/plan.js
+// is computed once and relayed by the morning push, brief, my_plan,
+// suggest_workout, end_session and the dashboard.
+const coachPlan = await import('../netlify/functions/lib/plan.js');
+const coachVoices = await import('../netlify/functions/lib/voices.js');
+const coachDesign = await import('../netlify/functions/lib/design.js');
+const { coachDay, coachRegister, coachPaused, DAY_STATES } = coachPlan;
+const { STYLE_DAYS, RHYTHMS } = coachVoices;
+const CD_STYLES = coachDesign.STYLES;
+// A Monday-to-Sunday fixture: 2026-09-21 is a Monday.
+const cdDays = (trained = {}) => ['2026-09-21', '2026-09-22', '2026-09-23', '2026-09-24', '2026-09-25', '2026-09-26', '2026-09-27']
+  .map(date => ({ date, sessions: trained[date] || 0 }));
+const cdProfile = (coach_style, extra = {}) => ({ coach_style, train_days: 4, ...extra });
+const FLAG = [{ flag: 'very_low_intake', evidence_dates: ['2026-09-20'] }];
+
+await test('the coach\'s day is silent without a coach, a real key or a clean record', () => {
+  assert.equal(coachDay({ profile: {}, today: '2026-09-23', days: cdDays() }), null, 'the plain trainer grew a coach');
+  assert.equal(coachDay({ profile: cdProfile('fight_camp'), today: '2026-09-23', days: cdDays() }), null, 'a stale key spoke');
+  assert.equal(coachDay({ profile: cdProfile(undefined), today: '2026-09-23', days: cdDays() }), null);
+  assert.equal(coachDay({ profile: cdProfile('golden_era'), days: cdDays() }), null, 'a coach spoke with no date');
+  // A CARE FLAG STOPS COACHING, and this is coaching — for every tradition.
+  for (const k of Object.keys(CD_STYLES)) {
+    assert.equal(coachDay({ profile: cdProfile(k), flags: FLAG, today: '2026-09-23', days: cdDays() }), null, `${k} coached past a care flag`);
+    assert.ok(coachDay({ profile: cdProfile(k), today: '2026-09-23', days: cdDays() }), `${k} has no day at all`);
+  }
+  assert.equal(coachRegister(null), null);
+  // And the silence is SAID, not left unexplained — without coaching.
+  const paused = coachPaused({ profile: cdProfile('golden_era'), flags: FLAG });
+  assert.match(paused.say, /paused/);
+  assert.ok(!/train|session|rest day|push/i.test(paused.say.replace(/coaching stops|briefs still arrive/g, '')), 'the pause note coaches');
+  assert.equal(coachPaused({ profile: cdProfile('golden_era'), flags: [] }), null);
+  assert.equal(coachPaused({ profile: {}, flags: FLAG }), null);
+});
+
+await test('every tradition has a day, and every word of it is words — never food, a body, a number or guilt', () => {
+  assert.deepEqual(Object.keys(STYLE_DAYS).sort(), Object.keys(CD_STYLES).sort(), 'a style has no day, or a day has no style');
+  const FOOD = /\b(eat\w*|food|meals?|calor\w*|kcal|diet\w*|protein|carb\w*|bulk\w*|cutting|fasting|fast|cut|supplement\w*|hydrat\w*|water)\b/i;
+  const BODY = /\b(fat|lean|shred\w*|physique|abs|skinny|weight loss|body)\b/i;
+  const LOAD = /\b(heavier|max|maximum|kg|lbs?|pounds|plates?|add (a|another) (set|rep))\b/i;
+  const GUILT = /\b(should|need to|behind|only|failed|missed|sorry|debt|lazy|make up|catch up|must)\b/i;
+  const MORNING = /\b(left|deficit|under|remaining|allowed|stop eating|burn today)\b/i;
+  for (const [k, day] of Object.entries(STYLE_DAYS)) {
+    assert.ok(RHYTHMS.includes(day.rhythm), `${k} has an unknown rhythm "${day.rhythm}"`);
+    assert.ok(Number.isInteger(day.gap_days) && day.gap_days >= 0 && day.gap_days <= 3, `${k} gap_days out of range`);
+    assert.equal(day.gap_days > 0, day.rhythm === 'spaced', `${k} has a gap without a spaced rhythm, or the reverse`);
+    const [lo, hi] = day.per_week;
+    assert.ok(lo >= 1 && hi <= 7 && lo <= hi, `${k} per_week is not a range inside a week`);
+    assert.ok(['light', 'normal', 'relentless'].includes(day.push_offer), `${k} offers an unknown push`);
+    assert.ok(day.habit?.length > 30 && day.never?.length > 30, `${k} has no real habit or never-clause`);
+    const need = ['train', 'rest', 'held', 'met', 'done', ...(['hard_easy', 'base'].includes(day.rhythm) ? ['easy'] : [])];
+    for (const st of need) assert.ok(day.lines?.[st]?.length > 10, `${k} has no ${st} line`);
+    const lineage = CD_STYLES[k].lineage;
+    const names = lineage ? lineage.split(/\s+/).filter(w => w.length > 2) : [];
+    const said = [['habit', day.habit], ...Object.entries(day.lines).map(([st, l]) => [`lines.${st}`, l])];
+    for (const [where, text] of [...said, ['never', day.never]]) {
+      assert.ok(!/\d/.test(text), `${k}.${where} states a number: "${text}"`);
+      assert.ok(!GUILT.test(text), `${k}.${where} carries a guilt word: "${text}"`);
+      assert.ok(!MORNING.test(text), `${k}.${where} carries a word the morning must never say: "${text}"`);
+      assert.ok(!/\bI am\b|\bI'm\b|ambassador|endorse/i.test(text), `${k}.${where} speaks as the person or claims an endorsement`);
+      for (const nm of names) assert.ok(!new RegExp(`\\b${nm}\\b`, 'i').test(text), `${k}.${where} names ${nm}`);
+    }
+    for (const [where, text] of said) {
+      assert.ok(!FOOD.test(text), `${k}.${where} talks about food: "${text}"`);
+      assert.ok(!BODY.test(text), `${k}.${where} talks about a body: "${text}"`);
+      assert.ok(!LOAD.test(text), `${k}.${where} talks about load: "${text}"`);
+    }
+    for (const st of ['met', 'done']) {
+      assert.ok(!/another|extra|one more|go again|bonus/i.test(day.lines[st]), `${k}'s ${st} line asks for more: "${day.lines[st]}"`);
+    }
+  }
+  // The exclusions the famous traditions are most tempted towards.
+  for (const k of ['drilled_fundamentals', 'corner_craft', 'sparring_volume', 'boxing_camp']) {
+    assert.match(STYLE_DAYS[k].never, /weight cut/i, `${k} does not rule out a weight cut`);
+  }
+  assert.match(STYLE_DAYS.golden_era.never, /double/i, 'the golden era does not rule out the double split');
+});
+
+await test('the body\'s veto, a met week and a trained day all outrank the tradition, for every coach', () => {
+  const wed = '2026-09-23';
+  for (const k of Object.keys(CD_STYLES)) {
+    const held = coachDay({ profile: cdProfile(k), today: wed, days: cdDays(), readiness: { known: true, state: 'strained' } });
+    assert.equal(held.state, 'held', `${k} trains through a strained reading`);
+    assert.equal(held.offers_session, false, `${k} offers a session on a held day`);
+    assert.equal(coachDay({ profile: cdProfile(k), today: wed, days: cdDays(), readiness: { known: true, state: 'watch' } }).state, 'held');
+    const met = coachDay({ profile: cdProfile(k, { train_days: 2 }), today: wed, days: cdDays({ '2026-09-21': 1, '2026-09-22': 1 }) });
+    assert.equal(met.state, 'met', `${k} does not stand down on a met week`);
+    assert.equal(met.offers_session, false);
+    const done = coachDay({ profile: cdProfile(k, { train_days: 2 }), today: wed, days: cdDays({ '2026-09-21': 1, '2026-09-23': 1 }) });
+    assert.equal(done.state, 'done', `${k} does not close a trained day`);
+    // Named only in the credit form, identical to the card and the shelf.
+    assert.equal(done.name, coachDesign.creditedName(CD_STYLES[k]), `${k} is named two ways`);
+    assert.ok(DAY_STATES.includes(done.state));
+  }
+  // A readiness that knows nothing is not a veto.
+  assert.notEqual(coachDay({ profile: cdProfile('golden_era'), today: wed, days: cdDays(), readiness: { known: false } }).state, 'held');
+});
+
+await test('a spaced tradition rests — until resting would break the week they committed to', () => {
+  // brief_and_infrequent: trained Monday, two a week, three days' rest.
+  const mon = { '2026-09-21': 1 };
+  const at = (today, trained = mon, extra = {}) => coachDay({ profile: cdProfile('brief_and_infrequent', { train_days: 2, ...extra }), today, days: cdDays(trained) });
+  assert.deepEqual(['2026-09-22', '2026-09-23', '2026-09-24'].map(d => [at(d).state, at(d).next_in_days]), [['rest', 3], ['rest', 2], ['rest', 1]]);
+  assert.equal(at('2026-09-25').state, 'train', 'the rest outlasted the tradition\'s own gap');
+  assert.equal(at('2026-09-22').tag, 'REST DAY');
+  assert.equal(at('2026-09-22').offers_session, false);
+  // THE COMMITMENT WINS. Five a week, one done, Thursday: four needed, three
+  // days after today — resting would make their own week impossible.
+  const cf = at('2026-09-24', mon, { train_days: 5 });
+  assert.equal(cf.state, 'train');
+  assert.equal(cf.why, 'commitment_first');
+  assert.equal(cf.fit, 'more_than_tradition');
+  // Already short whatever happens: nothing is saved by training through the
+  // rest, and nothing counts down.
+  const shortWk = at('2026-09-24', mon, { train_days: 7 });
+  assert.equal(shortWk.state, 'rest');
+  assert.ok(!/\d/.test(shortWk.say), 'a short week was counted down');
+  // one_hard_set: trained yesterday, rest today.
+  assert.equal(coachDay({ profile: cdProfile('one_hard_set', { train_days: 3 }), today: '2026-09-23', days: cdDays({ '2026-09-22': 1 }) }).state, 'rest');
+});
+
+await test('hard/easy and aerobic-base rhythms make the easy day real, and tomorrow is read the same way', () => {
+  const he = coachDay({ profile: cdProfile('hard_easy'), today: '2026-09-23', days: cdDays({ '2026-09-22': 1 }) });
+  assert.equal(he.state, 'easy');
+  assert.equal(he.offers_session, false);
+  assert.equal(he.tag, 'EASY DAY');
+  const base = coachDay({ profile: cdProfile('aerobic_base'), today: '2026-09-23', days: cdDays() });
+  assert.equal(base.state, 'easy');
+  assert.equal(base.offers_session, true, 'the base tradition\'s training day IS an easy day');
+  assert.equal(base.tag, null);
+  // end_session reads TOMORROW: after today's hard session, tomorrow is easy.
+  const tomorrow = coachDay({ profile: cdProfile('hard_easy'), today: '2026-09-24', days: cdDays({ '2026-09-23': 1 }) });
+  assert.equal(tomorrow.state, 'easy');
+  // Trained today outranks a met week.
+  assert.equal(coachDay({ profile: cdProfile('golden_era', { train_days: 1 }), today: '2026-09-23', days: cdDays({ '2026-09-23': 1 }) }).state, 'done');
+});
+
+await test('coachDay is pure — no database, no clock, no model, and nothing else reads the day\'s words', () => {
+  const src = readFileSync(new URL('../netlify/functions/lib/plan.js', import.meta.url), 'utf8');
+  const fn = src.slice(src.indexOf('export function coachDay('), src.indexOf('export const coachRegister'));
+  assert.ok(fn.length > 500, 'coachDay moved and this test can no longer see it');
+  for (const bad of ['await', 'supabase', 'new Date(', 'openai', 'Date.now']) assert.ok(!fn.includes(bad), `coachDay uses ${bad}`);
+  const input = { profile: cdProfile('hard_easy'), today: '2026-09-23', days: cdDays({ '2026-09-22': 1 }), readiness: { known: true, state: 'ready' } };
+  const before = JSON.stringify(input);
+  coachDay(input);
+  assert.equal(JSON.stringify(input), before, 'coachDay mutated its inputs');
+  // One reader of the day's words, so every surface says the same thing.
+  const lib = new URL('../netlify/functions/', import.meta.url);
+  for (const f of ['mcp.js', 'brief-nightly.js', 'api-progress.js', 'lib/morning.js', 'lib/prompt.js', 'lib/voice.js']) {
+    const code = decomment(readFileSync(new URL(f, lib), 'utf8'));
+    assert.ok(!/\.day\.(lines|gap_days)\b/.test(code), `${f} reads the coach's day words itself`);
+  }
+  assert.ok(!/\.day\.(lines|gap_days)\b/.test(decomment(page('app.html'))), 'the page reads the coach\'s day words itself');
+});
+
+await test('the morning carries the coach after the facts, never instead of them, and the tap never falls off', () => {
+  const coachAt = (state, extra = {}) => ({
+    coach: 'golden_era', state, say: `Coach line for ${state}.`, offers_session: state === 'train' || extra.base === true,
+    tag: state === 'rest' ? 'REST DAY' : state === 'held' ? 'LIGHT DAY' : state === 'easy' && !extra.base ? 'EASY DAY' : null,
+    title_tag: 'GOLDEN-ERA VOLUME BODYBUILDING', name: 'Golden-era volume bodybuilding, in the tradition of Arnold Schwarzenegger',
+  });
+  // A coach never turns an empty morning into a send.
+  assert.equal(morningBrief({ facts: {}, flags: [], coach: coachAt('train') }), null);
+  assert.equal(morningBrief({ facts: {}, flags: [], coach: coachAt('train'), yesterday: { food: { meals: 0 } } }), null);
+  const planned = { name: 'Leg day', est_minutes: 45 };
+  const week = { say: 'One of four sessions this week.', target: 4, met: false };
+  // After the facts, before the tap.
+  const trainDay = morningBrief({ facts: {}, flags: [], week, planned, coach: coachAt('train') });
+  assert.ok(trainDay.text.indexOf('One of four') < trainDay.text.indexOf('Coach line for train'), 'the coach spoke before the week');
+  assert.match(trainDay.text, /Up next: Leg day/, 'a training day lost its proposal');
+  // Every non-training state withholds "Up next" — a coach only removes offers.
+  for (const st of ['rest', 'met', 'done', 'held', 'easy']) {
+    const out = morningBrief({ facts: {}, flags: [], week, planned, coach: coachAt(st) });
+    assert.ok(!/Up next/.test(out.text), `a ${st} day still offered "Up next"`);
+    assert.match(out.text, /or a rest day/);
+  }
+  assert.match(morningBrief({ facts: {}, flags: [], week, planned, coach: coachAt('easy', { base: true }) }).text, /Up next/, 'the base tradition\'s easy training day lost its proposal');
+  // Too many lines: the coach line goes first, the tap and the review stay last.
+  const full = morningBrief({
+    facts: {}, flags: [], week, planned, coach: coachAt('train'),
+    yesterday: { logged: true }, yesterdayBalance: { known: true, calories_out: 3000 },
+    goals: [{ metric: 'calories', target_value: 2600, target_unit: 'kcal', cadence: 'daily' }],
+    athlete: { top: { say: 'Work on: speed.' } },
+    readiness: { state: 'watch', say: 'One signal off.' },
+  });
+  assert.ok(!/Coach line/.test(full.text) || full.text.split('. ').length <= 7);
+  assert.match(full.text, /(Up next|or a rest day)[^]*$/, 'the tap line fell off the end');
+  // A care flag: no coach text, the review last.
+  const flagged = morningBrief({ facts: {}, flags: [{ flag: 'very_low_intake', evidence_dates: ['2026-09-20'] }], week, planned, coach: coachAt('train') });
+  assert.ok(!/Coach line/.test(flagged.text), 'the coach spoke under a care flag');
+  assert.match(flagged.text, /review[^]*$/i, 'the care note is not last');
+});
+
+await test('the lock screen names the coach, keeps the facts, and fits in whole clauses', () => {
+  const coach = { coach: 'golden_era', state: 'rest', say: 'x', offers_session: false, tag: 'REST DAY', title_tag: 'GOLDEN-ERA VOLUME BODYBUILDING' };
+  const base = {
+    yesterdayBalance: { known: true, calories_out: 3421 },
+    goals: [{ metric: 'calories', target_value: 2600 }, { metric: 'protein_g', target_value: 180 }, { metric: 'steps', target_value: 10000 }],
+    week: { done: 1, target: 4, met: false }, planned: { name: 'Leg day', est_minutes: 45 },
+  };
+  assert.equal(morningNotification({ ...base, flags: [{ flag: 'x' }], coach }).title, 'WROUGHT · MORNING BRIEF · REVIEW', 'a flagged title changed');
+  const n1 = morningNotification({ ...base, flags: [], coach });
+  assert.equal(n1.title, 'WROUGHT · MORNING BRIEF · GOLDEN-ERA VOLUME BODYBUILDING');
+  assert.ok(n1.body.includes('REST DAY'), 'the rest day is not on the lock screen');
+  assert.ok(!n1.body.includes('NEXT'), 'a rest day still offered NEXT');
+  // The longest title_tag, every goal, the tag, a long routine: whole clauses.
+  const longest = Object.values(CD_STYLES).map(s => s.say.toUpperCase()).sort((a, b) => b.length - a.length)[0];
+  const n2 = morningNotification({ ...base, planned: { name: 'Golden-era chest and back (Arnold Schwarzenegger tradition)', est_minutes: 70 }, flags: [],
+    coach: { ...coach, state: 'train', offers_session: true, tag: null, title_tag: longest } });
+  assert.ok(n2.body.length <= 160, `the body is ${n2.body.length} characters`);
+  assert.ok(!/\w…/.test(n2.body), 'a clause was cut mid-word');
+  for (const keep of ['YDAY BURN', 'WEEK 1/4', 'WHAT ARE WE TRAINING']) assert.ok(n2.body.includes(keep), `the lock screen dropped ${keep}`);
+});
+
+await test('the openers stay nameless and carry the coach only from the tool result', async () => {
+  const { morningLink: ml } = await import('../netlify/functions/lib/morning.js');
+  const opener = which => decodeURIComponent(new URLSearchParams(ml('chatgpt', which).split('?')[1]).get('q'));
+  for (const which of ['morning', 'midday']) {
+    const o = opener(which);
+    assert.ok(/register/.test(o), `the ${which} opener does not carry the coach's register`);
+    assert.ok(!/\d/.test(o), `the ${which} opener carries a number`);
+    // A chat whose connector is off must not be handed a famous name to embellish.
+    for (const st of Object.values(CD_STYLES)) {
+      assert.ok(!o.includes(st.say), `the ${which} opener names ${st.say}`);
+      if (st.lineage) assert.ok(!o.includes(st.lineage.split(' ').pop()), `the ${which} opener names ${st.lineage}`);
+    }
+  }
+  assert.match(opener('morning'), /coach_day/);
+  const evening = opener('evening');
+  assert.ok(!/coach/i.test(evening), 'the evening close plans with the coach');
+  assert.match(evening, /Do not plan tomorrow/);
+});
+
+await test('a coach\'s rest day quiets the week nudge, and nothing else', async () => {
+  const { nextNudge } = await import('../netlify/functions/lib/prompt.js');
+  const w = { target: 4, done: 0, days_left: 4, met: false };
+  assert.ok(nextNudge({ push: 'relentless', trainingWeek: w }), 'the fixture no longer nudges');
+  assert.equal(nextNudge({ push: 'relentless', trainingWeek: w, coachState: 'rest' }), null, 'a rest day was chased');
+  assert.ok(nextNudge({ push: 'relentless', trainingWeek: w, coachState: 'train' }), 'a training day lost its nudge');
+  const best = nextNudge({ push: 'light', coachState: 'rest', trainingWeek: w,
+    cardio: { known: true, personal_best: true, reads: [{ personal_best: true, kind: 'run', latest: { km: 5, pace: '6:00' } }] } });
+  assert.equal(best?.kind, 'best', 'a rest day silenced somebody\'s best run');
+});
+
+await test('every surface computes the coach from the same function, with the flags, at today', () => {
+  const mcp = decomment(readFileSync(new URL('../netlify/functions/mcp.js', import.meta.url), 'utf8'));
+  const cron = decomment(readFileSync(new URL('../netlify/functions/brief-nightly.js', import.meta.url), 'utf8'));
+  const api = decomment(readFileSync(new URL('../netlify/functions/api-progress.js', import.meta.url), 'utf8'));
+  for (const [f, code] of [['mcp.js', mcp], ['brief-nightly.js', cron], ['api-progress.js', api]]) {
+    const calls = code.match(/coachDay\(\{[^]*?\}\)/g) || [];
+    assert.ok(calls.length, `${f} never computes the coach's day`);
+    for (const c of calls) {
+      // The REAL flags — shorthand or a variable named for them — never a
+      // literal that switches the rule off while still mentioning it.
+      assert.match(c, /\bflags(?:\s*:\s*[A-Za-z_]*[Ff]lags)?\s*[,}]/, `${f} computes the coach's day without the care flags: ${c.slice(0, 80)}`);
+      assert.ok(!/flags\s*:\s*(\[|null|undefined|false)/.test(c), `${f} passes the coach a blank set of care flags: ${c.slice(0, 80)}`);
+    }
+  }
+  const fnOf = name => mcp.slice(mcp.indexOf(`async function ${name}(`), mcp.indexOf('\nasync function ', mcp.indexOf(`async function ${name}(`) + 10));
+  assert.match(fnOf('myPlan'), /careFlags\(/, 'my_plan speaks for the coach without reading the flags');
+  assert.match(fnOf('endSession'), /careFlags\(/, 'end_session speaks for the coach without reading the flags');
+  assert.match(fnOf('endSession'), /rangeFacts\(user\.id, profile, addDays\(today, -29\)/, 'end_session reads too little to know the flags');
+  assert.match(fnOf('endSession'), /today: addDays\(today, 1\)/, 'end_session does not read tomorrow');
+  // brief speaks at TODAY — a morning read's date is yesterday.
+  assert.match(fnOf('brief'), /coachDay\(\{\s*profile, flags, days: coachDaysAll, today,/, 'brief computes the coach at the wrong date');
+  // start_session's voice is silenced by a flag like every other voice.
+  assert.match(fnOf('startSession'), /!startFlags\.length && sessionVoice\(/, 'start_session voices past a care flag');
+  // log carries the register — never on a quiet capture, never the day line.
+  const logFn = fnOf('log');
+  assert.match(logFn, /args\.quiet \? null : await nudgeFor/);
+  assert.ok(!/coach_day/.test(logFn), 'log carries the coach\'s day line');
+  // set_plan OFFERS the tradition's push and week; it never writes them.
+  const sp = fnOf('setPlan');
+  assert.ok(!/patch\.plan_push\s*=(?!\s*args\.push\b)/.test(sp), 'set_plan writes a push nobody asked for');
+  assert.match(sp, /patch\.plan_push\s*=\s*args\.push\b/, 'set_plan no longer writes the push they asked for');
+  assert.ok(!/train_days\s*=\s*[^;]*per_week/.test(sp), 'set_plan writes the tradition\'s frequency as their week');
+  // The scheduled morning hands the brief its readiness and its coach, and
+  // keeps the coach out of the evening, the midday and the spoken readback.
+  assert.match(cron, /athlete, readiness: ready, coach,/);
+  assert.match(cron, /coach: coach \? \{ coach: coach\.coach, state: coach\.state, say: coach\.say \} : null/);
+  const bfn = n => cron.slice(cron.indexOf(`async function ${n}(`), cron.indexOf('\nexport async function', cron.indexOf(`async function ${n}(`) + 10));
+  for (const n of ['buildBriefFor', 'buildMiddayFor']) assert.ok(!/coachDay\(/.test(bfn(n)), `${n} speaks for the coach`);
+  assert.ok(!/coachDay\(/.test(readFileSync(new URL('../netlify/functions/lib/voice.js', import.meta.url), 'utf8')));
+  // The page reads only what the server sends, under a key of its own.
+  assert.match(api, /coach_day: coachDayRead,/);
+  const app = decomment(page('app.html'));
+  const fn = app.slice(app.indexOf('function coachDayLine('), app.indexOf('function recordIntro('));
+  const sample = coachDay({ profile: cdProfile('golden_era'), today: '2026-09-23', days: cdDays() });
+  for (const field of new Set((fn.match(/\bc\.(\w+)/g) || []).map(x => x.slice(2)))) {
+    assert.ok(field in sample, `the page reads coach_day.${field}, which the server never sends`);
+  }
+});
+
+await test('the assistant is told where the coach comes from, on every surface it reads', async () => {
+  const cut = t => String(t).replace(/\s+/g, ' ').slice(0, 300);
+  for (const name of ['brief', 'my_plan']) {
+    assert.match(cut(TOOLS.find(t => t.name === name).description), /coach/i, `${name}'s description loses the coach inside ChatGPT's 300 characters`);
+  }
+  assert.match(SERVER_INSTRUCTIONS, /THE STANDING COACH SHAPES THE DAY — FROM coach_day, NEVER FROM MEMORY/);
+  assert.match(SERVER_INSTRUCTIONS, /"what does my coach want today"/);
+  const { GPT_INSTRUCTIONS } = await import('../netlify/functions/lib/gpt_instructions.js');
+  assert.match(GPT_INSTRUCTIONS, /coach_day/);
+  assert.ok(GPT_INSTRUCTIONS.length <= 8000);
+  assert.match(coachPlan.COACH_DAY_NOTE, /never a session beyond what they committed/);
+  assert.match(coachPlan.COACH_DAY_NOTE, /anything about food or their body/);
+});
+
 // ── Report ──────────────────────────────────────────────────────────────────
 
 console.log(results.join('\n'));

@@ -4,8 +4,8 @@
 --
 -- The founder, on the twenty-one styles: "where can I find them on the app or
 -- website and change it?" They could be picked per session and never kept.
--- One column. The value is a STYLES key from lib/design.js ("fight_camp",
--- "conjugate_method") — validated in code rather than by a constraint, because
+-- One column. The value is a STYLES key from lib/design.js ("boxing_camp",
+-- "conjugate") — validated in code rather than by a constraint, because
 -- the list of styles lives in the code and a constraint would have to be
 -- migrated every time one is added. Null means no standing coach: the plain
 -- trainer, exactly as before.
