@@ -2515,6 +2515,36 @@ day, and the design is three independent designs judged into one spec.
   first time: the "passes the care flags" check matched the word `flags` and
   passed with `flags: []`. It pins the real variable now.
 
+**The adversarial review ran the code and found eight things wrong**, and
+every one of them is the shape of a rule this file already states:
+
+- **`brief` takes any date, and the coach read that date's window.** *"How
+  was last Tuesday"* computed today's coach from a month that ended weeks ago
+  — its care flags clean while one stands today, and the sessions since
+  missing, so a met week read as a training day. The coach reads its own
+  thirty days and its own flags, ending today. *A window is not a memory*,
+  a fifth time.
+- **`set_plan` promised a voice a flag had silenced** — *"your morning brief
+  now speaks in its register"* to somebody who would then hear nothing. It
+  says *set, and paused* now, and the plan panel and the shelf stop drawing
+  the tradition's rhythm and habit while the pause stands: how often a
+  tradition trains is exactly what a flag says to stop raising.
+- **The lock screen offered NEXT on a strained morning** when no coach was
+  set; the long form had always withheld "Up next". Both read the same
+  readiness now. And under a flag the readiness LINE goes (a read of the body
+  is coaching) while the withholding stays.
+- **The lock screen dropped goals to make room for NEXT and then dropped NEXT
+  too.** A fill now, not a sequence of cuts: the briefing first, then the
+  other goals, then NEXT, each only if it fits.
+- **Hard/easy chained easy days.** Somebody training daily was told *easy*
+  every day, because yesterday always had a session in it. The run of
+  consecutive training days is counted: hard, easy, hard.
+- **A spaced tradition's never-clause forbade back-to-back days** — the exact
+  day its own commitment rule hands them when resting would break their week.
+  Each now rules out two-a-days, which no rule ever overrides. And four met
+  lines claimed session TYPES (*"heavy and speed days are in for the week"*)
+  when a met week only means the count was reached.
+
 ### The credit as a headline — the name promoted, never without its lead-in
 
 `creditLine()` in `app.html` + `styleCredit()` in `lib/design.js` + `credit` on
@@ -5153,7 +5183,7 @@ self-reporting scale removes the most-abandoned manual entry), then Strava.
 
 ## Conventions
 
-- `npm test` runs `test/harness.mjs` — 755 offline tests, no network, no database.
+- `npm test` runs `test/harness.mjs` — 761 offline tests, no network, no database.
   Run it before every push. It covers the JSON-RPC envelope (which fails as an
   uninformative "could not connect" inside ChatGPT) and all the arithmetic
   (which fails as a confidently wrong number in somebody's verdict).

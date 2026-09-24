@@ -14500,6 +14500,30 @@ await test('hard/easy and aerobic-base rhythms make the easy day real, and tomor
   assert.equal(coachDay({ profile: cdProfile('golden_era', { train_days: 1 }), today: '2026-09-23', days: cdDays({ '2026-09-23': 1 }) }).state, 'done');
 });
 
+await test('hard/easy alternates — a run of training days is hard, easy, hard, never easy for ever', () => {
+  const he = (today, trained) => coachDay({ profile: cdProfile('hard_easy', { train_days: 7 }), today, days: cdDays(trained) }).state;
+  // Hard Monday, nothing Tuesday: Tuesday is easy, and Wednesday is hard again.
+  assert.equal(he('2026-09-22', { '2026-09-21': 1 }), 'easy');
+  assert.equal(he('2026-09-23', { '2026-09-21': 1 }), 'train', 'an easy day that was taken off made the next day easy too');
+  // Somebody who trains every day: hard, easy, hard, easy — never a chain of
+  // easy days because yesterday always had a session in it.
+  assert.equal(he('2026-09-23', { '2026-09-21': 1, '2026-09-22': 1 }), 'train', 'the day after an easy session was easy again');
+  assert.equal(he('2026-09-24', { '2026-09-21': 1, '2026-09-22': 1, '2026-09-23': 1 }), 'easy');
+  assert.equal(he('2026-09-25', { '2026-09-21': 1, '2026-09-22': 1, '2026-09-23': 1, '2026-09-24': 1 }), 'train');
+});
+
+await test('a spaced tradition\'s never-clause never forbids the days its own commitment rule can hand them', () => {
+  // commitment_first puts a spaced tradition on consecutive days when resting
+  // would break their own week — so its never-clause may not forbid exactly
+  // that, or the coach contradicts itself on the day it matters.
+  const SPACING = /\b(back[- ]to[- ]back|consecutive|two days? (in a row|running)|between (sessions|days)|days? off|rest days?|every day|daily)\b/i;
+  const spaced = Object.entries(STYLE_DAYS).filter(([, d]) => d.rhythm === 'spaced');
+  assert.ok(spaced.length >= 3, 'the spaced traditions moved and this test can no longer see them');
+  for (const [k, d] of spaced) assert.ok(!SPACING.test(d.never), `${k}'s never-clause forbids spacing its own rule overrides: "${d.never}"`);
+  // And the one it does forbid is real: a second session on the same day.
+  for (const [k, d] of spaced) assert.match(d.never, /two-a-days/i, `${k} does not rule out two-a-days`);
+});
+
 await test('coachDay is pure — no database, no clock, no model, and nothing else reads the day\'s words', () => {
   const src = readFileSync(new URL('../netlify/functions/lib/plan.js', import.meta.url), 'utf8');
   const fn = src.slice(src.indexOf('export function coachDay('), src.indexOf('export const coachRegister'));
@@ -14577,6 +14601,75 @@ await test('the lock screen names the coach, keeps the facts, and fits in whole 
   for (const keep of ['YDAY BURN', 'WEEK 1/4', 'WHAT ARE WE TRAINING']) assert.ok(n2.body.includes(keep), `the lock screen dropped ${keep}`);
 });
 
+await test('the body\'s veto withholds NEXT on the lock screen too, coach or no coach', () => {
+  const base = {
+    yesterdayBalance: { known: true, calories_out: 3421 },
+    goals: [{ metric: 'calories', target_value: 2600 }],
+    week: { done: 1, target: 4, met: false }, planned: { name: 'Leg day', est_minutes: 45 }, flags: [],
+  };
+  assert.match(morningNotification(base).body, /NEXT Leg day/, 'the fixture no longer offers NEXT');
+  assert.match(morningNotification({ ...base, readiness: { known: true, state: 'ready' } }).body, /NEXT Leg day/, 'a ready morning lost NEXT');
+  for (const state of ['strained', 'watch']) {
+    const out = morningNotification({ ...base, readiness: { known: true, state } });
+    assert.ok(!/NEXT/.test(out.body), `a ${state} morning still handed the lock screen a session`);
+    assert.match(out.body, /WEEK 1\/4/, `a ${state} morning lost the week`);
+  }
+  // The long form already withheld "Up next"; the scheduled morning hands the
+  // notification the same readiness it hands the brief.
+  const cron = decomment(readFileSync(new URL('../netlify/functions/brief-nightly.js', import.meta.url), 'utf8'));
+  assert.match(cron.match(/morningNotification\(\{[^}]*\}\)/)?.[0] || '', /\breadiness: ready\b/, 'the lock screen is not told what the body said');
+});
+
+await test('the lock screen never drops a goal to make room for a clause that then goes anyway', () => {
+  const goals = [{ metric: 'calories', target_value: 2600 }, { metric: 'protein_g', target_value: 180 }, { metric: 'steps', target_value: 10000 }];
+  const base = { yesterdayBalance: { known: true, calories_out: 3421 }, goals, week: { done: 1, target: 4, met: false }, flags: [] };
+  // A routine name too long to fit beside all three goals: the goals stay,
+  // and it is NEXT that goes.
+  const long = morningNotification({ ...base, planned: { name: 'Golden-era chest and back (Arnold Schwarzenegger tradition)', est_minutes: 70 } });
+  for (const g of ['FUEL 2,600', 'PROTEIN 180g', 'STEPS 10k']) assert.ok(long.body.includes(g), `the lock screen dropped ${g} for a NEXT that did not fit: ${long.body}`);
+  assert.ok(long.body.length <= 160);
+  // A short one fits beside them, and stays.
+  assert.match(morningNotification({ ...base, planned: { name: 'Leg day', est_minutes: 45 } }).body, /STEPS 10k · WEEK 1\/4 · NEXT Leg day 45m/);
+});
+
+await test('a care flag silences the readiness line in the morning, and still withholds the session it vetoed', () => {
+  const flags = [{ flag: 'very_low_intake', evidence_dates: ['2026-09-20'] }];
+  const args = { facts: {}, week: { say: 'One of four sessions this week.', target: 4, met: false },
+    planned: { name: 'Leg day', est_minutes: 45 }, readiness: { known: true, state: 'strained', say: 'Resting heart rate is up on your fortnight.' } };
+  assert.match(morningBrief({ ...args, flags: [] }).text, /Resting heart rate is up/, 'the fixture no longer carries the readiness line');
+  const out = morningBrief({ ...args, flags });
+  assert.ok(!/Resting heart rate is up/.test(out.text), 'the morning coached a strained reading under a care flag');
+  assert.ok(!/Up next/.test(out.text), 'a flag let a vetoed session back onto the morning');
+  assert.match(out.text, /One of four/, 'the flag took the week with it');
+});
+
+await test('a paused coach draws no rhythm and no habit, and set_plan promises nothing it will not keep', () => {
+  const app = decomment(page('app.html'));
+  const src = app.slice(app.indexOf('function planPanel('), app.indexOf('\nfunction ', app.indexOf('function planPanel(') + 10));
+  const planPanel = new Function('esc', 'n', 'rhythmWords', 'calibrationBlock', `${src}; return planPanel;`)(
+    x => String(x ?? ''), x => String(x), r => `rhythm ${r?.rhythm}`, () => '');
+  const plan = { set: true, goal: 'lose weight', coach_say: 'Golden-era volume bodybuilding',
+    coach_rhythm: { rhythm: 'steady', per_week: [4, 6] }, coach_habit: 'Same hour, most days.' };
+  const live = planPanel({ plan });
+  assert.ok(live.includes('rhythm steady') && live.includes('Same hour, most days.'), 'the fixture no longer draws the rhythm');
+  const paused = planPanel({ plan, coach_paused: { say: 'Your coach is paused while the record review stands.' } });
+  assert.ok(!paused.includes('rhythm steady'), 'a paused coach still drew its rhythm');
+  assert.ok(!paused.includes('Same hour, most days.'), 'a paused coach still drew its habit');
+  assert.ok(paused.includes('paused while the record review stands'), 'the pause is not said');
+  // The styles panel says the same thing, off the same read.
+  assert.match(app, /stylesPanel\(\{[^}]*paused: lastPayload\?\.coach_paused/, 'the shelf is not told the coach is paused');
+  const mcp = decomment(readFileSync(new URL('../netlify/functions/mcp.js', import.meta.url), 'utf8'));
+  const fnOf = name => mcp.slice(mcp.indexOf(`async function ${name}(`), mcp.indexOf('\nasync function ', mcp.indexOf(`async function ${name}(`) + 10));
+  // my_plan clears them AFTER the shared read, or the spread puts them back.
+  const mp = fnOf('myPlan');
+  const spread = mp.indexOf('...p,'), clear = mp.search(/paused \? \{ coach_habit: null, coach_rhythm: null \}/);
+  assert.ok(spread > -1 && clear > spread, 'my_plan hands over the tradition\'s rhythm under a care flag');
+  // set_plan's "now speaks in its register" sits behind the pause check.
+  const sp = fnOf('setPlan');
+  assert.match(sp, /coachPausedNow\s*\?\s*`coach is(?:(?!now speak)[^])*?paused while(?:(?!now speak)[^])*?:\s*`coach is[^;]*?now speak/, 'set_plan promises a voice a care flag has silenced');
+  assert.ok(sp.indexOf('coachPausedNow = coachPaused(') < sp.indexOf("if ('coach_style' in patch)"), 'set_plan words the change before it knows whether the coach is paused');
+});
+
 await test('the openers stay nameless and carry the coach only from the tool result', async () => {
   const { morningLink: ml } = await import('../netlify/functions/lib/morning.js');
   const opener = which => decodeURIComponent(new URLSearchParams(ml('chatgpt', which).split('?')[1]).get('q'));
@@ -14626,8 +14719,21 @@ await test('every surface computes the coach from the same function, with the fl
   assert.match(fnOf('endSession'), /careFlags\(/, 'end_session speaks for the coach without reading the flags');
   assert.match(fnOf('endSession'), /rangeFacts\(user\.id, profile, addDays\(today, -29\)/, 'end_session reads too little to know the flags');
   assert.match(fnOf('endSession'), /today: addDays\(today, 1\)/, 'end_session does not read tomorrow');
-  // brief speaks at TODAY — a morning read's date is yesterday.
-  assert.match(fnOf('brief'), /coachDay\(\{\s*profile, flags, days: coachDaysAll, today,/, 'brief computes the coach at the wrong date');
+  // brief speaks at TODAY — a morning read's date is yesterday, and `brief`
+  // takes any date. The coach's call names today, never the requested date;
+  // its days and its flags come from a window that ENDS today, whatever the
+  // brief is about; and its flags are computed from that window, never the
+  // requested date's (clean weeks ago, standing now).
+  const briefFn = fnOf('brief');
+  const briefCall = briefFn.match(/coachDay\(\{[^]*?\}\)/)?.[0] || '';
+  assert.match(briefCall, /\btoday\s*[,}]/, 'brief computes the coach at the wrong date');
+  assert.ok(!/\bdate\b/.test(briefCall), 'brief computes the coach at the requested date');
+  assert.match(briefFn, /rangeFacts\(user\.id, profile, addDays\(today, -29\), today\)/, 'brief reads the coach out of the requested date\'s window');
+  const coachFlagsVar = briefCall.match(/\bflags\s*:\s*(\w+)/)?.[1];
+  assert.ok(coachFlagsVar && coachFlagsVar !== 'flags', 'brief hands the coach the requested date\'s care flags');
+  assert.match(briefFn, new RegExp(`const ${coachFlagsVar} = [^;]*careFlags\\([^;]*openDate: today`), 'brief\'s coach flags are not read at today');
+  const pausedCall = briefFn.match(/coachPaused\(\{[^}]*\}\)/)?.[0] || '';
+  assert.ok(pausedCall.includes(coachFlagsVar), 'brief says the coach is paused off a different set of flags from the one that silenced it');
   // start_session's voice is silenced by a flag like every other voice.
   assert.match(fnOf('startSession'), /!startFlags\.length && sessionVoice\(/, 'start_session voices past a care flag');
   // log carries the register — never on a quiet capture, never the day line.

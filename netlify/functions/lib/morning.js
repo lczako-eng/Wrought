@@ -93,7 +93,7 @@ function compactGoal(goal) {
  * training choice. A care flag changes the title to REVIEW; it never replaces
  * those answers again.
  */
-export function morningNotification({ yesterdayBalance = null, goals = [], week = null, planned = null, flags = [], coach = null } = {}) {
+export function morningNotification({ yesterdayBalance = null, goals = [], week = null, planned = null, flags = [], coach = null, readiness = null } = {}) {
   // Under a care flag the coach is ignored entirely — coaching stops, and the
   // flagged title stays byte-for-byte what it was.
   const c = flags.length ? null : coach;
@@ -105,7 +105,11 @@ export function morningNotification({ yesterdayBalance = null, goals = [], week 
   // lighter day. On such a day NEXT is withheld: a coach can only remove an
   // offer, never add one.
   let tag = c?.tag || null;
-  const offersNext = planned?.name && !week?.met && !(c && !c.offers_session);
+  // The body's veto withholds NEXT on the lock screen exactly as it withholds
+  // "Up next" in the long form — a strained morning is never handed a session
+  // to go and do, coach or no coach.
+  const heldBack = !!(readiness?.state && readiness.state !== 'ready');
+  const offersNext = planned?.name && !week?.met && !heldBack && !(c && !c.offers_session);
   let next = offersNext ? `NEXT ${planned.name}` : null;
   let nextMin = offersNext && planned.est_minutes ? ` ${planned.est_minutes}m` : '';
   const action = 'TAP: WHAT ARE WE TRAINING?';
@@ -114,15 +118,24 @@ export function morningNotification({ yesterdayBalance = null, goals = [], week 
     const detail = parts.join(' · ');
     return detail ? `${detail} · ${action}` : action;
   };
-  // WHOLE CLAUSES, NEVER A CUT MID-WORD. Over 160 the least load-bearing
-  // clause goes first: the coach's tag, then goals after the first, then
-  // NEXT's minutes, then NEXT. Yesterday's burn, the week and the tap are
-  // never dropped — they are the briefing.
+  // WHOLE CLAUSES, NEVER A CUT MID-WORD. Yesterday's burn, the first goal,
+  // the week and the tap are never dropped — they are the briefing. Every
+  // other clause is added back in order of what it is worth — the other
+  // goals, then NEXT, then NEXT's minutes, then the coach's tag — each one
+  // only if it still fits. A fill rather than a sequence of cuts, so a goal
+  // is never lost to make room for a clause that then went anyway.
+  const fullDeal = deal;
+  const want = { next, nextMin, tag };
+  deal = fullDeal.slice(0, 1); next = null; nextMin = ''; tag = null;
+  const fits = () => build().length <= 160;
+  for (let i = 2; i <= fullDeal.length; i++) {
+    const before = deal; deal = fullDeal.slice(0, i);
+    if (!fits()) { deal = before; break; }
+  }
+  if (want.next) { next = want.next; if (!fits()) next = null; }
+  if (next && want.nextMin) { nextMin = want.nextMin; if (!fits()) nextMin = ''; }
+  if (want.tag) { tag = want.tag; if (!fits()) tag = null; }
   let body = build();
-  if (body.length > 160) { tag = null; body = build(); }
-  while (body.length > 160 && deal.length > 1) { deal = deal.slice(0, -1); body = build(); }
-  if (body.length > 160) { nextMin = ''; body = build(); }
-  if (body.length > 160) { next = null; body = build(); }
   if (body.length > 160) body = `${body.slice(0, 160 - action.length - 4)}… · ${action}`;
   return {
     title: flags.length ? 'WROUGHT · MORNING BRIEF · REVIEW'
@@ -189,8 +202,11 @@ export function morningBrief({
 
   // 4. THE BODY'S VETO, when there is one. It only ever softens; it never turns
   //    a good reading into permission to go harder.
+  //    A care flag silences the LINE — a readiness read is coaching, and when
+  //    a flag stands coaching stops — but never the withholding: a strained
+  //    morning still gets no "Up next" handed to it below.
   const heldBack = readiness && readiness.state && readiness.state !== 'ready';
-  if (heldBack && readiness.say) {
+  if (heldBack && readiness.say && !flags.length) {
     lines.push(readiness.say);
   }
 

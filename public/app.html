@@ -4617,7 +4617,7 @@ function renderTrainer(d) {
       ${coachDayLine(lastPayload)}
       ${notConnectedCallout()}
       ${routinesPanel({ routines: trainerRoutinesFull.length ? trainerRoutinesFull : (d.routines?.length ? d.routines : trainerRoutines) }, { editable: true })}
-      ${stylesPanel({ styles: lastPayload?.styles, coach: lastPayload?.plan?.coach || null, fit_say: lastPayload?.style_fit?.say || null })}
+      ${stylesPanel({ styles: lastPayload?.styles, coach: lastPayload?.plan?.coach || null, fit_say: lastPayload?.style_fit?.say || null, paused: lastPayload?.coach_paused || null })}
       ${athletePanel(lastPayload || {})}
       ${traditionsPanel({ traditions: lastPayload?.traditions, routines: trainerRoutinesFull })}
       ${placesPanel({ places: lastPayload?.places })}`;
@@ -6837,7 +6837,9 @@ function planPanel(d) {
     p.coach_say ? ['Coach', esc(p.coach_say)] : null,
     // How that tradition runs its WEEK — words, never a target. Their own
     // sessions-a-week above is the count; this is only the shape.
-    p.coach_rhythm ? ['Rhythm', esc(rhythmWords(p.coach_rhythm))] : null,
+    // Paused under a record review, the rhythm is not drawn: a coach that is
+    // not coaching has no week to describe, and the pause line says why.
+    p.coach_rhythm && !d.coach_paused ? ['Rhythm', esc(rhythmWords(p.coach_rhythm))] : null,
   ].filter(Boolean);
 
   // Nothing set at all: say what is missing and where it gets set, rather than
@@ -6871,7 +6873,7 @@ function planPanel(d) {
     </div>
     ${p.pace_say ? `<p class="sub dim">${esc(p.pace_say)}</p>` : ''}
     ${p.push_say ? `<p class="sub dim">${esc(p.push_say)}</p>` : ''}
-    ${p.coach_habit ? `<p class="sub dim">${esc(p.coach_habit)}</p>` : ''}
+    ${p.coach_habit && !d.coach_paused ? `<p class="sub dim">${esc(p.coach_habit)}</p>` : ''}
     ${d.coach_paused?.say ? `<p class="sub">${esc(d.coach_paused.say)}</p>` : ''}
     ${calibrationBlock(d.calibration)}
     ${p.missing?.length ? `<p class="sub">Still to settle: ${esc(p.missing.join('; '))}.</p>` : ''}
@@ -7180,7 +7182,9 @@ function stylesPanel(d) {
     </details>`;
   return `<section class="panel" id="styles">
     <h2>Trainer styles · ${list.length}</h2>
-    <p class="sub">${coach
+    <p class="sub">${coach && d.paused
+      ? `Standing coach: <strong>${esc((list.find(s => s.key === coach) || {}).say || coach)}</strong>. ${esc(d.paused.say || '')} Change it here, or say <em>"back to the plain trainer"</em>.`
+      : coach
       ? `Your coach is <strong>${esc((list.find(s => s.key === coach) || {}).say || coach)}</strong> — every session built from now on comes in that style and that voice, and your morning brief and daily reads speak in it and follow its rhythm, inside the sessions you committed to. Change it here, or say <em>"back to the plain trainer"</em>.`
       : `Tap any one to read it. <strong>Build me one</strong> takes it for a single session; <strong>Make my coach</strong> makes every session come in that style and that voice until you change it.`}</p>
     <p class="sub dim">Real published methods, each named for the method and credited to the tradition it comes from —

@@ -2260,6 +2260,9 @@ async function myPlan(_args, user) {
 
   return {
     ...p,
+    // Under a care flag the coach's rhythm and habit are coaching too — how
+    // often the tradition trains is exactly what a flag says to stop raising.
+    ...(paused ? { coach_habit: null, coach_rhythm: null } : {}),
     calibration: cal,
     ...(coach ? { coach_day: coach } : {}),
     ...(paused ? { coach_paused: paused } : {}),
@@ -2272,7 +2275,7 @@ async function myPlan(_args, user) {
     changeable: 'Any of it changes in one sentence — "make it aggressive", "ease off", "stop nagging me", "make it four days", "recalibrate" to move the target to what the scale says.',
     note: p.missing
       ? `Not set up yet. Ask for ALL of this in ONE message, never as a form and never one question at a time: ${p.missing.join('; ')}. Offer the pace and push options in a line each, in plain words. Then call set_plan (and set_goal with an intent) and get straight on with what they were doing.`
-      : 'Say it back short — what they are aiming at, how fast, how hard it pushes, days a week, and the coach if there is one: its name as `coach_day.name`, how its week runs (coach_rhythm), and today\'s line from coach_day in its register. ALWAYS quote the target BESIDE the maintenance figure and the weekly rate: "2,833 against a maintenance of 3,833, about 0.9kg a week" is a decision somebody can judge, where "2,833" on its own is a rule handed down and reads as arbitrary. Then remind them in half a clause that any of it changes by just saying so. Never defend the plan and never ask them to justify a change. If calibration.known, say its line too — what the scale actually did against the projection, and the corrected target if there is one — and OFFER the move; apply it only on a yes (set_plan with recalibrate: true). Never move a target yourself and never estimate an expenditure.',
+      : 'Say it back short — what they are aiming at, how fast, how hard it pushes, days a week, and the coach if there is one: its name as `coach_day.name`, how its week runs (coach_rhythm), and today\'s line from coach_day in its register — or, if coach_paused is present, only coach_paused.say and nothing about its rhythm or its day. ALWAYS quote the target BESIDE the maintenance figure and the weekly rate: "2,833 against a maintenance of 3,833, about 0.9kg a week" is a decision somebody can judge, where "2,833" on its own is a rule handed down and reads as arbitrary. Then remind them in half a clause that any of it changes by just saying so. Never defend the plan and never ask them to justify a change. If calibration.known, say its line too — what the scale actually did against the projection, and the corrected target if there is one — and OFFER the move; apply it only on a yes (set_plan with recalibrate: true). Never move a target yourself and never estimate an expenditure.',
     next_actions: ['set_plan to change any part of it', 'suggest_workout to train under it'],
   };
 }
@@ -2363,23 +2366,19 @@ async function setPlan(args, user) {
   if (patch.cardio_per_week != null) changed.push(`${patch.cardio_per_week} stamina session${patch.cardio_per_week === 1 ? '' : 's'} a week`);
   if (patch.minutes_per_week != null) changed.push(`${patch.minutes_per_week} minutes a week`);
   if (patch.train_days) changed.push(`${patch.train_days} sessions a week`);
-  if ('coach_style' in patch) {
-    changed.push(patch.coach_style
-      ? `coach is ${STYLES[patch.coach_style].say}${STYLES[patch.coach_style].tradition ? `, ${STYLES[patch.coach_style].tradition}` : ''} — sessions built from now on come in that style and voice, and your morning brief and daily reads now speak in its register and follow its rhythm, inside the sessions you committed`
-      : 'back to the plain trainer — no standing style');
-  }
   // THE COACH'S DAY, previewed — and two things OFFERED, never applied. Its
   // tradition's push level is authored (Mike Mentzer's tradition talks
   // relentlessly and wants to be left alone for days), and its usual week may
   // not match the one they committed to. Both are one clause each, written
   // only by a later set_plan on their word. The commitment always wins.
-  let coachPreview = null, pushOffered = null, rhythmOffer = null;
+  let coachPreview = null, pushOffered = null, rhythmOffer = null, coachPausedNow = null;
   if (patch.coach_style && STYLES[patch.coach_style]?.day) {
     const cur = await getProfile(user.id);
     const tday = localDateFor(cur.timezone);
     const range = await rangeFacts(user.id, cur, addDays(tday, -29), tday);
     const flags = careFlags(range, cur, { openDate: tday });
     coachPreview = coachDay({ profile: cur, flags, days: range.days, today: tday });
+    coachPausedNow = coachPaused({ profile: cur, flags });
     const day = STYLES[patch.coach_style].day;
     if (!flags.length && day.push_offer && day.push_offer !== (patch.plan_push || cur.plan_push)) {
       pushOffered = { level: day.push_offer, say: `This tradition usually pushes ${day.push_offer} — ${PUSH[day.push_offer].say} Want your push set to ${day.push_offer} too?` };
@@ -2391,6 +2390,18 @@ async function setPlan(args, user) {
         say: `This tradition usually trains ${lo === hi ? lo : `${lo} to ${hi}`} times a week; you committed to ${cur.train_days}. Your number stands unless you change it.`,
       };
     }
+  }
+  // A PROMISE ONLY WHERE IT WILL BE KEPT. Under a care flag the coach is set
+  // and paused — nothing will speak in its voice until the flag clears — and
+  // saying "your morning brief now speaks in its register" to somebody who
+  // then hears nothing is the gate nobody can see.
+  if ('coach_style' in patch) {
+    const st = patch.coach_style ? STYLES[patch.coach_style] : null;
+    changed.push(!st
+      ? 'back to the plain trainer — no standing style'
+      : coachPausedNow
+        ? `coach is ${st.say}${st.tradition ? `, ${st.tradition}` : ''} — set, and paused while the record review stands: coaching stops under a care flag, so nothing speaks in its voice until it clears`
+        : `coach is ${st.say}${st.tradition ? `, ${st.tradition}` : ''} — sessions built from now on come in that style and voice, and your morning brief and daily reads now speak in its register and follow its rhythm, inside the sessions you committed`);
   }
 
   // A new pace with the old calorie target standing beside it is the same bug
@@ -2432,6 +2443,7 @@ async function setPlan(args, user) {
     ...(held ? { held } : {}),
     ...(offer ? { commitment_recommended: offer, offer_note: 'Offer it in one line. Set it with set_plan (strength_per_week, cardio_per_week, minutes_per_week) only on a yes or their own numbers. Then offer the Wednesday check (set_alert week_check) once.' } : {}),
     ...(coachPreview ? { coach_day: coachPreview } : {}),
+    ...(coachPausedNow ? { coach_paused: coachPausedNow } : {}),
     ...(pushOffered ? { push_offered: pushOffered } : {}),
     ...(rhythmOffer ? { rhythm_offer: rhythmOffer } : {}),
     say: `Changed — ${changed.join('; ')}.` + (offer ? ` ${offer.say}` : '') +
@@ -3085,15 +3097,23 @@ async function brief(args, user) {
   // user only: without it the conversation the 7:30 push opens would miss the
   // readiness veto the push itself read, and say "camp day" under a lock
   // screen that said "light day". Null for the plain trainer and under a flag.
-  const coachDaysAll = profile.coach_style && !flags.length && date !== today
-    ? [...range.days, ...((await rangeFacts(user.id, profile, today, today)).days || [])]
-    : range.days;
-  const coach = coachDay({
-    profile, flags, days: coachDaysAll, today,
+  // AND NEVER FROM THE REQUESTED DATE'S WINDOW. `brief` takes any date ("how
+  // was last Tuesday"), and reusing that window for today's coach read a
+  // month that ended weeks ago — its care flags could be clean while one
+  // stands today, and the sessions between then and now were missing, so a
+  // met week read as a training day. The coach reads its own thirty days and
+  // its own flags, ending TODAY, whatever date the brief is about.
+  const coachRange = !profile.coach_style ? null
+    : date === today ? range
+    : await rangeFacts(user.id, profile, addDays(today, -29), today);
+  const coachFlags = coachRange ? careFlags(coachRange, profile, { openDate: today }) : flags;
+  const coachDaysAll = coachRange?.days || [];
+  const coach = coachRange ? coachDay({
+    profile, flags: coachFlags, days: coachDaysAll, today,
     week: weekSoFar(coachDaysAll, { today, ...weekTargets(profile) }),
     readiness: readiness({ days: coachDaysAll, today }),
-  });
-  const paused = coachPaused({ profile, flags });
+  }) : null;
+  const paused = coachPaused({ profile, flags: coachFlags });
 
   // The one thing worth raising unprompted, computed from what is already in
   // scope rather than re-fetching. Filtered by their push setting, silenced
@@ -3136,7 +3156,8 @@ async function brief(args, user) {
     note: flags.length
       ? 'Care flags are up. They override the honesty doctrine — follow their guidance exactly and do not coach intake down. The flag leads. If they asked where the day stands, the receipt may still be read after it — it is factual record, not coaching — but nothing in it may become advice about eating less. No coach_day while a care flag stands — plain delivery; if they ask where their coach went, say coach_paused.say.'
       : 'Deliver the verdict as written. It is already pitched to the bluntness they chose; do not soften it or add praise. Then read the receipt LINE BY LINE, both sides: each thing eaten with its own calories, then resting, training and work each with their figure, the two totals, the net. Every number comes off a receipt line — one figure each, never a range, never added up by you.' +
-        (coach ? ' If coach_day is present, follow coach_day.note: its one line, once, in its register, after the facts.' : ''),
+        (coach ? ' If coach_day is present, follow coach_day.note: its one line, once, in its register, after the facts.' : '') +
+        (paused ? ' A care flag stands today, so the coach is paused: no coach line; if they ask where it went, say coach_paused.say.' : ''),
     playbook: 'STANDING ORDER: if they now say they are going to, at, or heading to the gym — or name a workout — call suggest_workout or start_session IN THAT TURN. Encouragement without the tool call loses the session.',
     next_actions: ['progress for the trend and the training matrix', 'whats_next for the immediate move', 'suggest_workout if they are training today'],
   };

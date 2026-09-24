@@ -191,6 +191,17 @@ export function coachDay({ profile = {}, flags = [], days = [], today = null, we
   const trainedToday = (list.find(x => x.date === today)?.sessions || 0) > 0;
   const last = list.filter(x => x.date < today && (x.sessions || 0) > 0).map(x => x.date).sort().pop() || null;
   const daysSince = last ? dayDiff(last, today) : null;
+  // The run of consecutive trained days ending yesterday. Hard/easy
+  // alternates within a run — the first day after a rest is the hard one — so
+  // yesterday was HARD when the run is odd. Without this, following the easy
+  // line made every later day easy too and the hard day never came back.
+  const trainedBefore = [...new Set(list.filter(x => x.date < today && (x.sessions || 0) > 0).map(x => x.date))]
+    .sort().reverse();
+  let run = 0;
+  for (const d of trainedBefore) {
+    if (dayDiff(d, today) !== run + 1) break;
+    run++;
+  }
 
   // R3 — what the commitment still needs, and the days after today to do it.
   const need = wk?.target ? Math.max(0, wk.target - (wk.done || 0)) : 0;
@@ -216,7 +227,7 @@ export function coachDay({ profile = {}, flags = [], days = [], today = null, we
       // through the rest, and nothing is counted down.
       state = 'rest'; why = 'rhythm_gap'; nextIn = day.gap_days + 1 - daysSince;
     }
-  } else if (day.rhythm === 'hard_easy' && daysSince === 1) {
+  } else if (day.rhythm === 'hard_easy' && daysSince === 1 && run % 2 === 1) {
     state = 'easy'; why = 'after_hard_day';
   } else if (day.rhythm === 'base') {
     state = 'easy'; why = 'base';

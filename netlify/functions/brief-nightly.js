@@ -433,7 +433,7 @@ export async function buildMorningFor(userId, profile, now = new Date()) {
   // muted permanently, and muted never comes back on.
   if (!out) return null;
 
-  const notice = morningNotification({ yesterdayBalance, goals, week, planned: dueRoutine, flags, coach });
+  const notice = morningNotification({ yesterdayBalance, goals, week, planned: dueRoutine, flags, coach, readiness: ready });
   const message = {
     title: notice.title,
     body: notice.body,
