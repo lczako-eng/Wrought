@@ -172,7 +172,11 @@ export function morningBrief({
   //    figure stays labelled as an estimate because every calories-out figure
   //    is one, watch included.
   if (yesterday?.logged && yesterdayBalance?.known && yesterdayBalance.calories_out) {
-    lines.push(`Yesterday: about ${Math.round(yesterdayBalance.calories_out).toLocaleString()} kcal burned.`);
+    // A day the phone stopped reporting part-way through is short by whatever
+    // happened after its last send — said, never passed off as the whole day.
+    const cut = yesterday?.device?.fresh?.short && yesterday.device.fresh.at
+      ? ` — short: the phone's last send was ${yesterday.device.fresh.at}` : '';
+    lines.push(`Yesterday: about ${Math.round(yesterdayBalance.calories_out).toLocaleString()} kcal burned${cut}.`);
   }
 
   // 2. TODAY'S EXPECTATIONS, read from goals the person actually set. These

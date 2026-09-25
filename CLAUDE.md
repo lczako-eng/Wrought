@@ -2452,6 +2452,251 @@ a narrower form than *a test that names a value cannot outlive the value*:
 guard on WHERE the style list comes from must not name that call's arguments,
 and a guard on the card template must not slice on its parameter list.
 
+### Three Wroughts in ChatGPT, a 6pm step count at 7pm, and the day that never logged
+
+The founder, 24 September, 7:02pm: *"it's not logging into route automatically
+… it should tell you a total, how much your work did … how much should I eat
+today, how much did I burn including my workouts and all the matrixes from
+the Apple Watch … my steps are always behind by my night workout … fix all of
+it. Sometimes it tells me there's more than one connector as well."* ChatGPT's
+reply in the screenshot listed his food and his three hours at the petting zoo
+in prose, then: *"there are three Wrought connections showing on your account
+and they all have the same name — tell me which is yours so I don't write your
+food into the wrong account."* **Nothing was written.** The logs show zero
+connector calls that whole day.
+
+**Checked on the server before anything was touched**, and every one of these
+facts shaped the fix: ONE OAuth client (ChatGPT), NINE unrevoked sign-ins — one
+per time the connector was added or reconnected — every one mapped to the same
+Wrought user; four different access tokens used on the 23rd. So ChatGPT holds
+several same-named copies of one service, and each writes to the same record.
+The model's caution was the fork doctrine working in the wrong place:
+**refusing to log to avoid a wrong account is the one outcome worse than
+either guess** — a wrong account is joined afterwards by link_account; a day
+never written is gone.
+
+- **Copies are one service, said where the model reads.** `SAME_SERVICE` on
+  `log` (after the "Logged in Wrought" rule, so the custom GPT's 300-character
+  Action still carries the receipt rule), `log_activity`, `get_day`,
+  `get_profile` (`same_service` on the result), SERVER_INSTRUCTIONS — placed
+  BEFORE the two-accounts doctrine, which primed the hesitation — the GPT
+  sheet, and the routing habit people save into ChatGPT's memory (both copies,
+  byte-identical). **Every reply names its account**, stamped once in
+  handleRpc's `tools/call`, which both doors dispatch through; a tool with its
+  own `account` keeps it. **And the first write of a conversation SAYS it** —
+  never only "if they asked". The server can see its own sign-ins and nothing
+  else: a copy signed in under another address writes to a second account,
+  and naming the account on the first write is how that fork is caught the
+  same day. The Account panel says only what it knows (*"those copies all
+  log to this record; any other Wrought there is a separate sign-in this page
+  cannot see"*), never that every copy ChatGPT shows is this account.
+- **The Account panel counts the sign-ins** (live refresh chains, never the
+  hashes) and says what ChatGPT's copies are and that Disconnect signs every
+  copy out at once. *"Signed in N times"*, never *"N copies"*: a connector
+  deleted inside ChatGPT leaves its grant here until it expires. The advice
+  that bred copies — "disconnect and reconnect WROUGHT" — now says reconnect
+  the one already there; connect.html says the same.
+- **"More than one connection" had a second source**: every iPhone user held
+  two push rows — an `apple_health` row minted with the device key that never
+  syncs, and the app's `wrought_ios`. `liveConnections()` names one phone as
+  one connection on get_profile, connect_device and the dashboard. Nothing is
+  deleted.
+
+**The step lag was the phone, and it was structural.** The courier only ever
+sent TODAY's running total, and only when iOS woke it (hourly at best, and iOS
+decides). Whatever happened after a day's last wake — a night walk, an evening
+session — never reached that day: after midnight it asked only about the new
+one. So every day was short by its evening, forever. Now:
+
+- **Every send closes the last two finished days** with their full-day totals,
+  stamped at **noon** (the one time that stays on its calendar day in every
+  zone within twelve hours — a 23:59 stamp from a travelling phone files
+  yesterday under today and overwrites it) and marked `source_ref: 'day_final'`.
+  The server's one-total-per-day replace makes the closed day whole.
+- **The app sends the moment it opens** (scenePhase `.active`), on pull-to-
+  refresh, and when the page's **Send the latest** button asks (a
+  `wroughtSync` bridge, same origin check as the Watch bridge); it tells the
+  page when the send landed (`wrought-synced`) and the page redraws. ONE path —
+  `sync()` — so the observer, the app opening and the page never run two sends
+  at once, and a send under a minute old is not repeated.
+- **This needs a new TestFlight build (13+).** Build 12 sends only on a cold
+  launch and has no send button, and the page knows it: inside build 12 it
+  says *close the Wrought app fully and open it again*, never "open the
+  Wrought app" to somebody already in it. **Build 12 registers no bridges at
+  all** (the Watch bridge came a week after it), so the tell is its web view —
+  an iOS page with no `Safari/` token that is not a Home Screen install —
+  never a bridge it does not have. The first version inferred build 12 from
+  `wroughtWatch`, and its test faked that bridge, so it passed on the wrong
+  premise.
+- **The replace itself was fragile.** Ingest deleted each (metric, day) in a
+  serial awaited loop and never read the result, so a failed delete was
+  followed by an insert that DOUBLED the day's steps — and closing two days
+  tripled the pairs. One delete per day, all at once, a failure stops the
+  write; per day rather than a metrics × days cross product, which would wipe
+  a day's row for a metric the phone did not send for it.
+
+**A watch figure is true as of when it was sent, and now says so.**
+`deviceFreshness()` — pure — stamps the running totals from the newest row's
+`created_at` (when the server RECEIVED it: Health Auto Export sets measured_at
+to the day's midnight, which would read "as of 12:00am"), names the action
+that makes it current by source, and marks a finished day `short` when the
+phone stopped reporting before midnight. It rides `dayFacts.device.fresh` to
+the MOVED line, the receipt (*"your watch's active energy as of 6:00pm"*, never
+"for the whole day" on a day still running), `energy_balance` (`watch`), the
+dashboard (one line under the burn, age worked out on the page so a warm
+render never repeats an old "2 min ago"), Siri's readback, the 8pm close (long
+and lock screen: `STEPS 8,020@6:01P`), the 4pm goal check and the morning's
+*"Yesterday … — short: the phone's last send was 6:01pm"*.
+
+**Apple's basal was a so-far figure used as the whole day.** At 7pm with a 6pm
+sync it is three-quarters of a day, and using it as the resting burn
+understated his burn by roughly six hundred — the direction that tells
+somebody to eat less than they need. `restingToMidnight()` carries it to
+midnight at the steady rate it accrues, from four hours in (before that the
+formula stands in), never for a closed day or a source that stamps the day
+bucket; the basis says *"had counted 1,860 by 6:00pm; at the same steady rate
+that is about 2,480 for the whole day"*. The 8pm close also learned what every
+other reader knew: a phone that normally reports and has not sent today is
+awaiting the device, never a whole-day multiplier.
+
+**And the whole day, asked for in his words.** *"What did I eat today",
+"what's my calories", "how much should I eat today", "what did I burn", "what
+did my work burn"* go to `get_day` now (moved off `brief`, whose no-key reply
+was "food · training" with no work, no burn and no steps — and `brief` now
+answers with the same whole-day read when there is no written verdict, and a
+cached verdict is reused only while what it was written from still stands). The calorie line on a day still running says *"1,420 of 1,723 so
+far — 303 short of it"* rather than "hit", then that the target is priced off
+basal so what was trained and worked comes off on top. **Under a care flag no
+figure of what is left is quoted anywhere** — get_day now reads the flags off
+the month it already fetched, and `whats_next` stopped saying "303 kcal left"
+to somebody the low-intake flag had caught. Nothing eaten yet is not a deficit
+in the read either, and the dashboard says which of the shift and the watch
+counted and what the work was worth.
+
+**How much is left, off basal — the founder, the next message:** *"it should
+have my daily burn, how much I have left for the day, and should base my
+basal."* `leftToday()` in `lib/plan.js` is the one sentence, and `leftFor()`
+the one door every reply goes through — `get_day`'s LEFT line, the log
+confirmation, `brief`, `my_plan`, `whats_next`, and the hero on the dashboard
+(`left_today`), so the screen and the conversation quote one figure: *"About
+303 left of today's 1,723 target (basal 2,479 − 756)"*, with the burn said
+BESIDE it — *"today's burn is about 4,038 … comes off on top of the target,
+not inside it"* — because folding the burn in would undo his basal-only
+instruction. **Today only**: a past day is never scored against the target
+set this morning. **Under a care flag there is no figure**, and an unprompted
+reply (the log confirmation, *"I'm hungry"*) carries not even the held
+target — only an explicit read says it is withheld and how it clears. No
+target, no line: never an invented one.
+
+**Log first, never ask — *"needs to be more aggressive as to log everything
+into Wrought."*** A model that asks *"want me to log that?"* has already
+decided the default is not to, and on a phone mid-sentence the answer never
+comes. `LOG_FIRST` rides the `log` description (after the receipt rule), a
+SERVER_INSTRUCTIONS paragraph placed ABOVE capture-in-passing, the GPT sheet
+and the saved habit; and every READ reply (`get_day`, `brief`,
+`energy_balance`, `whats_next`, `my_plan`, `get_profile`, `progress`,
+`nutrition`) carries `log_first`, stamped in handleRpc — a read is exactly
+when a model answers *"what did I eat"* while the sandwich just mentioned sits
+unlogged in the conversation.
+
+**The adversarial review ran the code and found twenty things wrong**, and
+every one is a rule this file already states:
+
+- **The basal carry divided by the wrong midnight.** The phone totals from
+  ITS midnight; the carry divided by minutes since the PROFILE's. A London
+  phone on a Toronto profile carried 930 at 9am to **5,580**, and a Vancouver
+  one carried too little. A carry more than 30% over or 25% under the formula
+  is a clock, not a body, and the formula stands in, saying why. The carried
+  figure is named as WROUGHT's carry of Apple's figure, never "Apple's own
+  estimate".
+- **The 8pm close on a silent watch said the resting half as the day's
+  burn** — *"BURN ~2,479"*, a deficit under it, no caveat — on the one surface
+  that speaks first. It says *"burned at rest — the watch hasn't sent today"*
+  and *"REST ONLY"* now, Siri never speaks a net off it, and the verdict
+  writer is told.
+- **A complete day re-sent the next morning read as "short … at 7:12am"** —
+  Health Auto Export's ordinary behaviour, on the recommended route, printed
+  with a time not on the day. A send that landed after the day ended carried
+  the whole day.
+- **The brief's cache replayed yesterday's morning push as this morning's
+  read.** The nightly pass files a morning push under the date it was SENT,
+  which is exactly the date `brief({kind:'morning'})` reads one day later —
+  and the new "a closed day is frozen" exemption waved it through. A row the
+  scheduled pass stored is a record of what was sent: never replayed as a
+  verdict, never overwritten. Every date is judged by `briefStamp()`, which
+  both writers store and which covers what the numbers depend on — food,
+  training, **work**, the watch's totals and basal, a weigh-in, the burn. A
+  shift logged at 9pm no longer leaves the 8pm "no work logged" standing.
+- **`\bburn\b` fired on statements** — *"burned about 300"*, *"burnt toast"*
+  — so a quiet capture in the middle of somebody's tax question came back as a
+  whole-day recital. Questions only, and a quiet log never reads the day.
+- **A past date's own month decided the care flags**, so *"what did I eat on
+  Aug 20"* led with a warning that had cleared weeks ago. The flags stand
+  today, whatever date is read — *a window is not a memory*, again.
+- **The structured `gap` said what the sentence withheld.** Under a flag the
+  intake ceiling's remaining room is taken off `goals` on every read
+  (`roomless()`), and a log reply carrying the day carries its flags.
+- A running day holding only closing-pass rows printed **the Unix epoch** as
+  its stamp; it prints nothing now.
+- **"20 min ago" in the payload repainted the whole Record view every poll.**
+  The page repaints only when the payload changes, and `minutes_old` and the
+  "(25 min ago)" sentence change every minute — so every ninety seconds the
+  view was replaced and a half-typed meal in the quick-add box was wiped: the
+  Trainer-tab failure the guard exists to prevent, one tab along. The
+  dashboard gets the send TIME only (`steadyDevice()`), and the page moves the
+  age in place, one line at a time (`tickAges`), never repainting. **A payload
+  field that changes with the clock is a repaint on a timer.**
+- **The send button only where it can send.** Figures Health Auto Export sent
+  name Health Auto Export, never a button the app cannot answer; the watch
+  panel gives the same instruction as the burn's line; a page-asked send with
+  nothing to send with says so at both ends rather than leaving "Sending…"
+  forever; and the demo is stamped five minutes ago, under the line, instead
+  of accusing a watch it invented.
+- **A shift not yet priced read as "0 kcal · not added — your watch counted
+  more".** It was never priced (no weigh-in yet); `activityTotal` coerced the
+  missing figure to zero. It is null now, and every surface says *not priced
+  yet — it needs a recent weigh-in*. A missing figure is never a zero.
+- **The courier dropped sends it should have deferred** — the steps-behind
+  complaint, from inside the fix for it. A wake that joined a running send
+  was lost (that send had read HealthKit before the new samples existed), a
+  wake inside the minute after a send was thrown away with nothing re-armed,
+  and a FAILED send (a locked phone reads nothing) was stamped as sent and
+  throttled the retry. Now a request during a send is owed one more after it,
+  a wake inside the minute is deferred to its end, and only a send that
+  landed is stamped.
+- **Background delivery only worked while the app's view existed.** The
+  observer queries were created from `ContentView.onAppear`; HealthKit
+  relaunches a swept-away app with no window, so the evening's steps woke an
+  app with no query, went unanswered, and after three of those HealthKit
+  stops waking it. They are armed at launch now (`AppDelegate` through
+  `@UIApplicationDelegateAdaptor`, one shared courier), acknowledged only
+  after the send finishes, inside a background task.
+- **Where DST begins at midnight, a closed day was an hour off** —
+  `startOfDay` plus a day, when that midnight does not exist — and it
+  overwrote the right total for good. The calendar's own day bounds now.
+  Pre-existing or not, every one of these was in the path of *"my steps are
+  always behind"*.
+
+**And a fourth reviewer read the tests rather than the code** — and found the
+fix most likely to be undone was guarded by nothing. Reverting the basal
+carry (`resting_calories: restingSoFar`, 620 kcal understated at teatime)
+passed all 780: the test fed hand-built arguments to the carry and never ran
+the code that picks which figure is the day's. The phone could build the
+closed day's totals and drop them before the send; ingest could go back to a
+metrics × days cross product with its pinned text matching word for word;
+the sign-in count could include revoked grants. Each is now a pure function
+run by the test (`deviceClock()`, `dayReplacements()`) or a pin on the
+relationship, and each was reverted on purpose to watch it fail. **And the
+GPT sheet had been edited mid-word** — the new questions were spliced into
+the token `day_read.say`, so the custom GPT was told to read *"day_read."* —
+with no test reading that sentence. **A test that feeds a function its
+answer proves the function, not the wiring.**
+
+**What could not be fixed from here**: the duplicates live in ChatGPT's own
+settings; removing the extras (keep one) is the founder's. The day of the
+24th was never written; the conversation that holds it can flush it once the
+connector answers.
+
 ### The standing coach shapes the day — rhythm and register, never food, never more
 
 `STYLE_DAYS` in `lib/voices.js` + `coachDay()` / `coachRegister()` /
@@ -5183,7 +5428,7 @@ self-reporting scale removes the most-abandoned manual entry), then Strava.
 
 ## Conventions
 
-- `npm test` runs `test/harness.mjs` — 761 offline tests, no network, no database.
+- `npm test` runs `test/harness.mjs` — 781 offline tests, no network, no database.
   Run it before every push. It covers the JSON-RPC envelope (which fails as an
   uninformative "could not connect" inside ChatGPT) and all the arithmetic
   (which fails as a confidently wrong number in somebody's verdict).

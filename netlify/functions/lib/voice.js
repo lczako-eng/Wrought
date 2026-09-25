@@ -88,8 +88,12 @@ export function spokenBrief({ day = null, balance = null, week = null, flags = [
 
   if (balance && balance.known) {
     const net = Number(balance.net) || 0;
-    parts.push(
-      `Roughly ${Math.round(balance.calories_in)} in, about ${Math.round(balance.calories_out)} out` +
+    // A watch that has not sent today leaves only the resting half: said as
+    // that, never as the day's burn with a net under it — an understated
+    // burn is the number that tells somebody to eat less than they need.
+    parts.push(balance.active_source === 'awaiting_device'
+      ? `Roughly ${Math.round(balance.calories_in)} in. Your watch hasn't sent today, so only the resting ${Math.round(balance.calories_out)} is counted out.`
+      : `Roughly ${Math.round(balance.calories_in)} in, about ${Math.round(balance.calories_out)} out` +
       (net < -150 ? `, ${Math.abs(Math.round(net))} down on the day.`
        : net > 150 ? `, ${Math.round(net)} over.`
        : `, about level.`)
@@ -103,7 +107,10 @@ export function spokenBrief({ day = null, balance = null, week = null, flags = [
   }
 
   const steps = day?.device?.steps;
-  if (steps) parts.push(`${Math.round(steps).toLocaleString('en-US')} steps.`);
+  // With the time when it is not current: read aloud at 7pm, a 6pm count is
+  // otherwise heard as the day's.
+  const stepsAt = day?.device?.fresh?.stale && day.device.fresh.at ? ` as of ${day.device.fresh.at}` : '';
+  if (steps) parts.push(`${Math.round(steps).toLocaleString('en-US')} steps${stepsAt}.`);
 
   // The expectation, kept on the table. This is the only place the phone can
   // put it in front of somebody without them opening anything.
@@ -222,14 +229,19 @@ export function eveningReceipt({ facts = {}, balance = null } = {}) {
     actions.push(`${activity.count} work/activity entr${activity.count === 1 ? 'y' : 'ies'}` +
       (activity.minutes ? ` (${Math.round(activity.minutes)} min on task)` : ''));
   }
-  if (device.steps != null) actions.push(`${Math.round(device.steps).toLocaleString('en-US')} steps`);
+  if (device.steps != null) {
+    const at = device.fresh?.stale && device.fresh.at ? ` (as of ${device.fresh.at})` : '';
+    actions.push(`${Math.round(device.steps).toLocaleString('en-US')} steps${at}`);
+  }
   if (food.meals) {
     actions.push(food.meals_uncounted === food.meals
       ? `${food.meals} food entr${food.meals === 1 ? 'y' : 'ies'} with macros still unknown`
       : `roughly ${Math.round(food.calories).toLocaleString('en-US')} kcal in and ${Math.round(food.protein_g).toLocaleString('en-US')}g protein`);
   }
   if (balance?.known && (facts.logged || actions.length)) {
-    actions.push(`about ${Math.round(balance.calories_out).toLocaleString('en-US')} kcal burned`);
+    actions.push(balance.active_source === 'awaiting_device'
+      ? `about ${Math.round(balance.calories_out).toLocaleString('en-US')} kcal burned at rest — the watch hasn't sent today, so movement isn't in it`
+      : `about ${Math.round(balance.calories_out).toLocaleString('en-US')} kcal burned`);
   }
 
   // workout_days is read from weekSoFar below. Weekly scores in scoreGoals use
@@ -276,6 +288,8 @@ export function eveningNotification({ facts = {}, balance = null } = {}) {
     clauses.push(`WORK ${activity.count}\u00d7${activity.minutes ? `${Math.round(activity.minutes)}m` : ''}`);
   }
 
+  // A stale count carries its send time, clipped for the lock screen: "@6:01P".
+  const stepsAt = device.fresh?.stale && device.fresh.at ? `@${String(device.fresh.at).replace(/m$/, '').toUpperCase()}` : '';
   const steps = goal('steps');
   if (steps) {
     const actual = compactNumber(steps.actual);
@@ -283,9 +297,9 @@ export function eveningNotification({ facts = {}, balance = null } = {}) {
     const target = Number.isFinite(targetNumber) && targetNumber >= 10000 && targetNumber % 1000 === 0
       ? `${targetNumber / 1000}k`
       : compactNumber(steps.target);
-    if (actual != null && target != null) clauses.push(`STEPS ${actual}/${target}`);
+    if (actual != null && target != null) clauses.push(`STEPS ${actual}/${target}${stepsAt}`);
   } else if (device.steps != null) {
-    clauses.push(`STEPS ${Math.round(device.steps).toLocaleString('en-US')}`);
+    clauses.push(`STEPS ${Math.round(device.steps).toLocaleString('en-US')}${stepsAt}`);
   }
 
   const partial = (food.meals_uncounted || 0) > 0;
@@ -308,7 +322,7 @@ export function eveningNotification({ facts = {}, balance = null } = {}) {
   }
 
   if (balance?.known && (facts.logged || clauses.length)) {
-    clauses.push(`BURN ~${Math.round(balance.calories_out).toLocaleString('en-US')}`);
+    clauses.push(`BURN ~${Math.round(balance.calories_out).toLocaleString('en-US')}${balance.active_source === 'awaiting_device' ? ' REST ONLY' : ''}`);
   }
   if (facts.training_week?.target != null) {
     clauses.push(`WEEK ${facts.training_week.done || 0}/${facts.training_week.target}`);

@@ -2226,6 +2226,14 @@ body::after {
    the hero figure refused to shrink and pushed UNDER / ROUGHLY past the panel,
    which clips at overflow:hidden — at 390px the caption read "UNDE ROUGHL".
    Measured: the caption reached 379.8px inside a panel ending at 374. */
+.leftline { margin: 12px 0 0; font-size: 14px; line-height: 1.45; color: var(--bright); font-weight: 600; }
+.leftline.over { color: var(--heat-4); }
+.leftline.held { color: var(--ash); font-weight: 500; }
+.fresh { margin: 12px 0 0; font-size: 12.5px; line-height: 1.5; color: var(--ash); }
+.fresh b { color: var(--bright); font-weight: 600; }
+.fresh.stale { color: var(--heat-4); }
+.fresh-err { font-size: 12px; color: var(--heat-4); }
+.fresh .fresh-sync { font-size: 12px; padding: 6px 12px; min-height: 32px; margin-left: 6px; vertical-align: middle; }
 .balance-reading { display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 12px; align-items: end; margin-block: 22px 17px; }
 .balance-number { font: 900 clamp(82px, 10vw, 136px)/.7 var(--grotesk); letter-spacing: -.075em; color: var(--bright); font-variant-numeric: tabular-nums; }
 .balance-state { padding-bottom: 5px; color: var(--heat-3); font: 800 10px/1.35 var(--mono); letter-spacing: .14em; text-align: right; text-transform: uppercase; }
@@ -3493,6 +3501,7 @@ async function loadConnections() {
           <span class="sub">connected ${esc(String(c.connected_at).slice(0, 10))}</span></div>
         <button class="ghost small" data-cut="${esc(c.client_id || '')}">Disconnect</button>
       </div>`).join('')}</div>` : ''}
+    ${d.copies_note ? `<p class="sub">${esc(d.copies_note)}</p>` : ''}
     <p class="sub dim">${esc(d.note)}</p>
     ${live.length ? '<div class="btnrow"><button class="ghost" id="cut-all">Disconnect everything</button></div>' : ''}`;
 
@@ -3503,7 +3512,7 @@ async function loadConnections() {
 
 async function cutConnection(clientId) {
   if (!confirm(clientId
-    ? 'Disconnect this assistant? It will ask you to sign in again next time. Nothing you logged is touched.'
+    ? 'Disconnect this assistant? Every copy of Wrought in it will ask you to sign in again next time. Nothing you logged is touched.'
     : 'Disconnect every assistant? Nothing you logged is touched.')) return;
   const { data: s } = await sb.auth.getSession();
   const res = await fetch('/.netlify/functions/api-connections', {
@@ -5071,8 +5080,9 @@ function notConnectedCallout() {
       <p class="sub">The token is good and pointed at this account — nothing has ever come through it. So the
       connector is attached and is not being <em>used</em>: your AI is answering from the conversation instead
       of calling it.</p>
-      <p class="sub dim">Two things fix it. Disconnect and reconnect WROUGHT in your AI's settings, so it picks
-      up the current instructions. Then name it in the sentence — <em>"use Wrought and tell me what account I
+      <p class="sub dim">Two things fix it. Disconnect and reconnect the WROUGHT that is already in your AI's
+      settings, so it picks up the current instructions — adding it a second time makes another copy of the
+      same account, not a fix. Then name it in the sentence — <em>"use Wrought and tell me what account I
       am on"</em> — because an assistant that answers without calling anything is the one failure this end
       cannot see or correct.</p>
     </section>`;
@@ -5570,9 +5580,18 @@ function demoData() {
       body: { weight_kg: series[Math.max(0, N - 1)].weight },
       device: { steps: 9840, active_calories: 740, sleep_minutes: 402,
         // Carried because the server sends it — a demo missing a field is how
-        // the last two panel bugs stayed hidden. Twenty minutes ago, so the
-        // demo shows the fresh line rather than accusing a watch it invented.
-        as_of: new Date(Date.now() - 20 * 60000).toISOString(),
+        // the last two panel bugs stayed hidden. Five minutes ago, under the
+        // twenty-minute line, so the demo shows the fresh line rather than
+        // accusing a watch it invented.
+        as_of: new Date(Date.now() - 5 * 60000).toISOString(),
+        // The same shape the server sends for the running totals' send time,
+        // so the demo draws the stamp the real screen draws.
+        fresh: (() => {
+          const t = new Date(Date.now() - 5 * 60000);
+          return { final: false, short: false, as_of: t.toISOString(), source: 'wrought_ios',
+            at: t.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }).replace(' ', '').toLowerCase(),
+            refresh: 'open the Wrought app on your phone to send the latest' };
+        })(),
         // The wide door, shown full. Somebody deciding whether this is worth a
         // fortnight should see what a watch actually fills in.
         readings: [
@@ -5889,6 +5908,11 @@ function demoData() {
       resting_burn: 1770, missing: null,
     },
     no_target_set: null,
+    // The server's left-for-today, in its own shape (lib/plan.js leftToday).
+    // Coherent with the demo's own burn: a 1,770 basal under a 2,300 target is
+    // a target set above basal, which the server words without a subtraction.
+    left_today: { target: 2300, eaten: 2140, left: 160, over: false, withheld: false, basal: 1770, deficit: -530, pace: null,
+      short: 'About 160 left of today\'s 2,300 target.' },
     setup: { answered: 14, of: 14, complete: true, remaining: [], questions: [] },
     nudge: { kind: 'week_behind', priority: 7, push: 'normal',
       say: '3 of 4 this week with 2 days left. Still comfortably doable — want a session?' },
@@ -6076,6 +6100,33 @@ function startLive() {
     if (!document.hidden) refreshRecord();
   });
 }
+
+// INSIDE THE APP, the phone can be asked to send now, and it says when it has.
+// The founder: "my steps never match up, should be instant." The phone sends
+// on iOS's schedule; the one thing the screen can do is ask, and redraw the
+// moment the send lands rather than ninety seconds later.
+document.addEventListener('click', ev => {
+  const btn = ev.target.closest?.('.fresh-sync');
+  if (!btn || !window.webkit?.messageHandlers?.wroughtSync) return;
+  btn.disabled = true;
+  btn.textContent = 'Sending…';
+  // A send that never answers must not leave the button stuck.
+  setTimeout(() => { if (btn.isConnected && btn.disabled) { btn.disabled = false; btn.textContent = 'Send the latest'; } }, 30000);
+  try { window.webkit.messageHandlers.wroughtSync.postMessage({ action: 'sync' }); }
+  catch { btn.disabled = false; btn.textContent = 'Send the latest'; }
+});
+window.addEventListener('wrought-synced', ev => {
+  // A send that could not happen says why, beside the button that asked.
+  if (ev.detail?.error) {
+    for (const b of document.querySelectorAll('.fresh-sync:disabled')) {
+      b.disabled = false; b.textContent = 'Try again';
+      b.insertAdjacentHTML('afterend', ` <span class="fresh-err">${esc(ev.detail.error)}</span>`);
+    }
+    return;
+  }
+  liveLastJson = '';                           // the send changed the record — redraw even if the poll just ran
+  refreshRecord();
+});
 
 // The day as one graphic. A ring reads as a proportion before it reads as a
 // number, which is the point — you should know how the day went in the moment
@@ -6281,6 +6332,85 @@ function wireFacts(known = {}) {
   $('ff-go')?.addEventListener('click', () => saveFacts(known));
 }
 
+// WHEN THE WATCH'S PART OF THE BURN WAS SENT, beside the burn itself. The
+// founder at 7pm read 8,020 steps the phone had sent at 6:01 and called the
+// count wrong; the time lived only on the watch panel, five panels down. The
+// clock time is the server's; the "how long ago" is worked out here, because a
+// warm render from the last visit must not say "2 min ago" about an hour-old
+// figure. Inside the app there is a button that makes the phone send now;
+// anywhere else the one action that does it is named.
+// WHERE THE SEND CAN BE FORCED FROM, worked out once for the burn's line and
+// the watch panel alike. The button only where this app sent the figures and
+// can send again. Inside the app's own web view with no send bridge — build 12
+// registers no bridges at all, so the bridges cannot say it is the app; the
+// tell is an iOS page with no "Safari/" token that is not a Home Screen
+// install — "open the Wrought app" would be said to somebody already in it,
+// and that build only sends as it launches.
+function watchSendHow(f) {
+  const bridges = window.webkit?.messageHandlers || {};
+  const ua = navigator?.userAgent || '';
+  const ours = !f?.source || f.source === 'wrought_ios';
+  const canSend = !DEMO && !!bridges.wroughtSync && ours;
+  const inShell = !DEMO && (!!bridges.wroughtSync || !!bridges.wroughtWatch
+    || (/iPhone|iPad|iPod/.test(ua) && !/Safari\//.test(ua) && !navigator?.standalone));
+  const how = canSend ? null
+    : inShell && !bridges.wroughtSync && ours ? 'close the Wrought app fully and open it again to send the latest'
+    : (f?.refresh || 'open the Wrought app on your phone to send the latest');
+  return { canSend, how };
+}
+
+function freshLine(f) {
+  if (!f || f.final || !f.at) return '';
+  const at = f.as_of ? new Date(f.as_of) : null;
+  const age = at && !Number.isNaN(at.getTime()) ? Math.max(0, Math.round((Date.now() - at.getTime()) / 60000)) : null;
+  const stale = age != null ? age >= 20 : !!f.stale;
+  const ago = age == null ? '' : age < 2 ? 'just now' : age < 60 ? `${age} min ago` : age < 120 ? 'about an hour ago' : `about ${Math.round(age / 60)} hours ago`;
+  const { canSend, how } = watchSendHow(f);
+  return `<p class="fresh${stale ? ' stale' : ''}" data-tick="fresh" data-arg="${esc(JSON.stringify(f))}">Watch figures as of <b>${esc(f.at)}</b>${ago ? ` · ${esc(ago)}` : ''}${
+    stale && !canSend ? ` — ${esc(how)}.` : ''}${
+    canSend ? ' <button class="ghost fresh-sync" type="button">Send the latest</button>' : ''}</p>`;
+}
+
+// The watch panel's own line: the same clock, the same twenty minutes, the
+// same way to make it current as the line under the burn.
+function readingsAgeLine(a) {
+  const asOf = a?.as_of ? new Date(a.as_of) : null;
+  if (!asOf || Number.isNaN(asOf.getTime())) return '';
+  const ageMin = Math.max(0, Math.round((Date.now() - asOf.getTime()) / 60000));
+  const asOfSay = a.at || asOf.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  const tag = `data-tick="readings" data-arg="${esc(JSON.stringify(a))}"`;
+  if (ageMin < 20) return `<p class="sub dim" ${tag}>As of ${esc(asOfSay)}, straight from the watch — nothing here is estimated.</p>`;
+  const { canSend, how } = watchSendHow(a);
+  return `<p class="sub" style="color:var(--heat-4)" ${tag}>Your watch last reported at ${esc(asOfSay)} —
+    ${ageMin >= 120 ? `${Math.round(ageMin / 60)} hours` : `${ageMin} minutes`} ago, so these numbers are behind your wrist.${
+    canSend ? ' <button class="ghost fresh-sync" type="button">Send the latest</button>'
+      : ` ${esc(how.charAt(0).toUpperCase() + how.slice(1))}.`}</p>`;
+}
+
+// THE AGE MOVES WITHOUT A REPAINT. The payload carries when the phone sent,
+// never how long ago, so an unchanged record never repaints (a repaint wipes a
+// half-typed meal) — and the "N min ago" beside it is brought up to date here,
+// one line at a time, never while a send is in flight.
+function tickAges() {
+  for (const el of document.querySelectorAll('[data-tick]')) {
+    if (el.querySelector('button:disabled')) continue;
+    let arg;
+    try { arg = JSON.parse(el.dataset.arg || 'null'); } catch { continue; }
+    const html = el.dataset.tick === 'fresh' ? freshLine(arg) : el.dataset.tick === 'readings' ? readingsAgeLine(arg) : null;
+    if (html != null) el.outerHTML = html;
+  }
+}
+setInterval(tickAges, 60000);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) tickAges(); });
+
+// WHAT IS LEFT FOR TODAY, under the burn — the server's own words, so the
+// screen and the conversation quote one figure. The founder: "it should have
+// my daily burn, how much I have left for the day, and should base my basal."
+function leftLine(l) {
+  if (!l?.short) return '';
+  return `<p class="leftline${l.withheld ? ' held' : l.over ? ' over' : ''}">${esc(l.short)}</p>`;
+}
+
 function hero(d) {
   const b = d.today?.balance;
   if (!b?.known) {
@@ -6304,10 +6434,12 @@ function hero(d) {
     return `<section class="panel hero balance-plate">
       <div class="balance-head"><h2>Energy position · today</h2><span class="balance-live">Live record</span></div>
       <p class="balance-empty">${n(b.calories_out)}<span>to burn today · whole-day estimate</span></p>
+      ${leftLine(d.left_today)}
       ${burnSplit(b)}
       <p class="caveat">${b.active_source === 'awaiting_device'
         ? 'Your watch hasn\'t sent today, so only the resting figure is counted — nothing is projected. Open the Wrought app and today\'s movement fills in.'
         : `Nothing logged yet, so there is no in-versus-out to draw. That figure is the whole day's estimate, not what you have burned so far.`}</p>
+      ${freshLine(d.today?.device?.fresh)}
       ${restingBasis(b)}
     </section>`;
   }
@@ -6331,12 +6463,15 @@ function hero(d) {
       <div class="balance-total"><span>Eaten</span><b>${n(b.calories_in)}</b></div>
       <div class="balance-total"><span>Burned</span><b>${n(b.calories_out)}</b></div>
     </div>
+    ${leftLine(d.left_today)}
     ${burnSplit(b)}
+    ${freshLine(d.today?.device?.fresh)}
     ${restingBasis(b)}
     <p class="caveat">${b.approximate ? 'Every part of this is an estimate — roughly, not exactly.' : ''}${
       b.active_source === 'device' ? '' :
       b.active_source === 'awaiting_device' ? ' Your watch hasn\'t sent today — only the resting figure is counted, nothing is projected. Open the Wrought app.' :
       b.active_source === 'logged' ? ' The work is read off a standard effort table rather than measured — the weekly trend on the scale is what corrects it.' :
+      b.active_source === 'logged_over_device' ? ' The work you logged came to more than your watch measured, so it is the figure counted — read off a standard effort table, not measured, and never added to the watch\'s on top.' :
       b.active_source === 'activity_level' ? ' The moving part is a standard multiplier, not a measurement — connect a watch, or tell WROUGHT what work you did.' :
       b.active_source === 'training_only' ? ' Your session is counted but nothing is counting the rest of the day, so the real figure is higher.'
                                            : ' Nothing is counting your movement yet, so this is your resting burn alone — the real figure is higher.'}</p>
@@ -6423,7 +6558,16 @@ function burnSplit(b) {
     ${b.active_source === 'device' && b.training_source !== 'device' && train ? `<div class="bswork">Your watch
       measured ${n(train + other)} moving in total today — the split between training and the rest of the day
       is the estimated part.</div>` : ''}
-    ${b.logged_activity?.count ? `<div class="bswork">${esc(b.logged_activity.entries.map(e => e.summary).join(' · '))}</div>` : ''}
+    ${b.logged_activity?.count ? `<div class="bswork">${esc(b.logged_activity.entries.map(e =>
+      `${e.label ? `${e.label}${e.hours ? `, ${e.hours}h on task` : ''}` : e.summary}${e.kcal > 0 ? ` — ${n(e.kcal)} kcal` : ' — not priced yet, it needs a recent weigh-in'}`).join(' · '))}${
+      // The counted word only when a shift carries a figure to compare.
+      !b.logged_activity.entries.some(e => e.kcal > 0) ? '' :
+      // Which figure counted, said beside the work — the larger of the two,
+      // never the sum. Without it a shift worth 1,559 beside a smaller total
+      // reads as the shift having been ignored.
+      b.active_source === 'logged_over_device' ? ' · counted — more than your watch measured'
+      : b.active_source === 'device' ? ' · not added — your watch counted more for the day, and the two are the same hours'
+      : ''}</div>` : ''}
   </div>`;
 }
 
@@ -6953,9 +7097,12 @@ async function recalibrateTap(btn) {
 const ROUTING_HABIT =
   'Please remember this permanently, for all our future chats: anything I say about food, drink, ' +
   'training, weight, sleep, my gym, or my goals goes through the Wrought connector\u2019s tools \u2014 ' +
-  'log it or look it up there, never answer it from memory or the conversation. If I say I\u2019m going ' +
+  'log it or look it up there, never answer it from memory or the conversation. Log it before you answer, ' +
+  'and never ask me whether to. If I say I\u2019m going ' +
   'to the gym or name a workout, call Wrought\u2019s suggest_workout or start_session immediately. ' +
-  'Numbers about my calories, targets, or weights only ever come from Wrought\u2019s tools.';
+  'Numbers about my calories, targets, or weights only ever come from Wrought\u2019s tools. ' +
+  'If more than one Wrought connector shows up, they are copies of the same service \u2014 use any one, ' +
+  'and never hold back logging to ask me which, but tell me which account it logged to the first time.';
 
 function gptLink(prompt, label) {
   return `<a class="linky" target="_blank" rel="noopener" href="https://chatgpt.com/?q=${encodeURIComponent(prompt)}">${esc(label)} \u2197</a>`;
@@ -7890,9 +8037,14 @@ function trainingTodayPanel(d) {
     // A SHIFT IS NOT A SESSION. It is listed here because it burned calories
     // and for no other reason — never counted toward the weekly target, never
     // in the matrix, and never praised.
+    // Whether it COUNTED, beside the figure: the burn takes the larger of the
+    // shift and the watch's day, never both, and a shift row with no word on
+    // it reads as a shift that was ignored when the watch won.
+    const src = d.today?.balance?.active_source;
     return line(s.summary || 'Work', [
       x.hours ? `${x.hours}h on task` : null,
-      x.kcal ? `${Number(x.kcal).toLocaleString()} kcal, estimated` : null,
+      x.kcal ? `${Number(x.kcal).toLocaleString()} kcal, estimated` : 'not priced yet — it needs a recent weigh-in',
+      !x.kcal ? null : src === 'logged_over_device' ? 'counted' : src === 'device' ? 'not added — your watch counted more' : null,
     ], '<span class="chip">work</span>');
   })).join('');
 
@@ -8335,16 +8487,12 @@ function readingsPanel(d) {
   // phone pushes on its own schedule and iOS throttles background sends, so the
   // honest fix is not pretending to be live — it is stamping the moment and
   // naming the one action that forces a sync.
-  const asOf = d.today?.device?.as_of ? new Date(d.today.device.as_of) : null;
-  const ageMin = asOf ? Math.round((Date.now() - asOf.getTime()) / 60000) : null;
-  const asOfSay = asOf ? asOf.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : null;
-  const stale = ageMin != null && ageMin > 45;
-  const asOfLine = !asOf ? ''
-    : stale
-      ? `<p class="sub" style="color:var(--heat-4)">Your watch last reported at ${esc(asOfSay)} —
-         ${ageMin >= 120 ? `${Math.round(ageMin / 60)} hours` : `${ageMin} minutes`} ago, so these
-         numbers are behind your wrist. Open the Wrought app on your phone and it sends fresh ones.</p>`
-      : `<p class="sub dim">As of ${esc(asOfSay)}, straight from the watch — nothing here is estimated.</p>`;
+  const fr = d.today?.device?.fresh;
+  // The clock in THEIR zone (the server's), the same twenty-minute line and
+  // the same way to make it current as the burn's stamp — one screen, one
+  // verdict on whether it is current, one instruction for what to do.
+  const asOfLine = readingsAgeLine({ as_of: fr?.as_of || d.today?.device?.as_of || null, at: fr?.at || null,
+    source: fr?.source || null, refresh: fr?.refresh || null });
 
   return `<section class="panel">
     <h2>What your watch saw · today</h2>
@@ -8441,7 +8589,10 @@ function dailyClosePanel(d) {
     g.scored && g.target != null && g.metric !== 'workout_days' && g.cadence !== 'weekly' && evidence(g));
   const chips = [];
   if (training.sessions) chips.push(['Training', `${training.sessions} × ${n(training.minutes)} min`]);
-  if (activity.count) chips.push(['Work', `${activity.count} × ${n(activity.minutes)} min on task`]);
+  // Logging work always comes back with what it was worth — the number is the
+  // whole reason to log it.
+  if (activity.count) chips.push(['Work', `${activity.count} × ${n(activity.minutes)} min on task${
+    balance.logged_activity?.kcal ? ` · ~${n(balance.logged_activity.kcal)} kcal` : ''}`]);
   if (balance.known) chips.push(['Burn', `~${n(balance.calories_out)} kcal`]);
   if (d.training_week?.target != null) chips.push(['Week', `${d.training_week.done || 0} / ${d.training_week.target} sessions`]);
 

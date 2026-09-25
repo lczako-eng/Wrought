@@ -558,6 +558,7 @@ export function sessionWorth(own = {}, balance = null) {
 export function energyBalance({
   profile, weightKg, caloriesIn, activeCalories, foodEstimated,
   workouts = [], activities = [], deviceResting = null, deviceExpected = false,
+  deviceRestingSoFar = null, deviceRestingAt = null,
 }) {
   const rest = restingBurn(profile, weightKg);
 
@@ -575,7 +576,18 @@ export function energyBalance({
   // Mifflin stays as the fallback for everybody without a device, and stays
   // visible in the basis so the two can be compared rather than one silently
   // replacing the other.
-  const deviceRest = Math.round(Number(deviceResting) || 0);
+  //
+  // A CARRY IS BOUNDED BY THE FORMULA. The carry to midnight divides Apple's
+  // so-far by the minutes since midnight in the PROFILE's zone, while the phone
+  // totals from ITS own midnight — so a phone in London on a Toronto profile
+  // carried 930 at 9am to 5,580, and one in Vancouver carried too little. A
+  // carry more than 30% above or 25% below the formula is a clock mismatch,
+  // not a body, and the formula stands in for the day rather than a burn off
+  // by thousands in either direction.
+  const deviceRaw = Math.round(Number(deviceResting) || 0);
+  const carried = Number(deviceRestingSoFar) > 0 && Math.round(Number(deviceRestingSoFar)) !== deviceRaw;
+  const carryRefused = carried && rest.kcal > 0 && (deviceRaw > rest.kcal * 1.3 || deviceRaw < rest.kcal * 0.75);
+  const deviceRest = carryRefused ? 0 : deviceRaw;
   const restKcal = deviceRest > 0 ? deviceRest : rest.kcal;
   const restingSource = deviceRest > 0 ? 'device' : 'formula';
 
@@ -589,11 +601,15 @@ export function energyBalance({
   const basis = deviceRest > 0
     ? {
         formula: 'Your watch',
-        say: `Your watch reports about ${deviceRest} kcal basal for today — Apple's own estimate, computed on the device from your details.` +
+        say: (Number(deviceRestingSoFar) > 0 && Number(deviceRestingSoFar) !== deviceRest
+          ? `Your watch had counted ${Math.round(deviceRestingSoFar)} kcal basal${deviceRestingAt ? ` by ${deviceRestingAt}` : ' so far'}; at the same steady rate that is about ${deviceRest} for the whole day — carried forward by WROUGHT from Apple's own figure, which the device computes from your details.`
+          : `Your watch reports about ${deviceRest} kcal basal for today — Apple's own estimate, computed on the device from your details.`) +
              (rest.kcal != null ? ` Mifflin-St Jeor from your stats here gives ${rest.kcal}.` : ''),
         caveat: 'Still an estimate — Apple derives it from height, weight and age just as any formula does. The weekly weigh-in trend is what corrects the whole figure; a single day never does.',
       }
-    : rest.basis || null;
+    : carryRefused && rest.basis
+      ? { ...rest.basis, say: `${rest.basis.say} Your watch had counted ${Math.round(deviceRestingSoFar)} kcal basal${deviceRestingAt ? ` by ${deviceRestingAt}` : ' so far'}, which carried to midnight gives ${deviceRaw} — too far from this to be a body rather than a clock (the phone may be on a different timezone from your profile), so the formula stands in today.` }
+      : rest.basis || null;
 
   const measured = Number(activeCalories) || 0;
   const level = ACTIVITY[profile.activity_level];
@@ -696,6 +712,7 @@ export function energyBalance({
     calories_in: inn,
     resting_burn: restKcal,
     resting_source: restingSource,
+    ...(carryRefused ? { resting_carry_refused: true } : {}),
     // Kept for everything already reading it — the two halves the split bar
     // draws — with the third now named beside them.
     active_burn: active,
@@ -740,7 +757,7 @@ export function energyBalance({
          // A logged shift on a day the watch also reported is NOT added, and
          // staying quiet about that reads as the log having been ignored.
          (activeSource === 'logged_over_device'
-           ? ` Your watch reported ${measured} for the whole day, but the work you logged comes to about ${logged} on its own — a wrist does not see carrying, so the higher figure is the one being used. They are not added together; that would count the same hours twice.`
+           ? ` Your watch reported ${measured} ${deviceRestingAt ? `as of ${deviceRestingAt}` : 'for the whole day'}, but the work you logged comes to about ${logged} on its own — a wrist does not see carrying, so the higher figure is the one being used. They are not added together; that would count the same hours twice.`
            : measured > 0 && logged > 0
            ? ' Your watch counted more than the work alone would come to, so its figure is the one being used — the two are not added together.'
            : '') +

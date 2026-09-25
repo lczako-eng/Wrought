@@ -15,7 +15,8 @@ import {
 import { orderInsight, earnedRoom, energyBalance, exerciseKey, deviceMatrix, weekdayPattern, focusCall, lastSession,
          weekSoFar, weekTargets, readiness, targetOptions, estimatedMax, liftTrend, readMovement, backfillDerivedSets, goalsToSet, rekeySets, resyncMuscles } from './lib/training.js';
 import { weeklyVolume } from './lib/volume.js';
-import { planRead, coachDay, coachPaused } from './lib/plan.js';
+import { planRead, coachDay, coachPaused, leftToday } from './lib/plan.js';
+import { liveConnections } from './lib/providers.js';
 import { calibration } from './lib/adapt.js';
 import { recordCheck } from './lib/integrity.js';
 import { intakeState } from './lib/intake.js';
@@ -77,6 +78,13 @@ function windowLabel(span) {
   if (span === 30) return 'the last 30 days';
   if (span >= 365) return 'the last year';
   return `the last ${span} days`;
+}
+
+// The device block with the clock-dependent parts of its freshness taken off.
+export function steadyDevice(device) {
+  if (!device?.fresh) return device;
+  const { minutes_old, say, stale, ...fresh } = device.fresh;
+  return { ...device, fresh };
 }
 
 export const handler = async (event) => {
@@ -422,6 +430,7 @@ export const handler = async (event) => {
     workouts: today.training.entries,
     activities: today.activity.entries,
     deviceResting: today.device.resting_calories,
+    deviceRestingSoFar: today.device.resting_so_far, deviceRestingAt: today.device.fresh?.at || null,
     deviceExpected,
   });
 
@@ -615,6 +624,13 @@ export const handler = async (event) => {
     ? coachDay({ profile, flags, days: recent.days, today: to, week: trainingWeek, readiness: ready })
     : null;
   const coachPausedRead = coachPaused({ profile, flags });
+  // What is left for today, off the plan's basal-priced target — the same
+  // helper and words the connector uses, so the screen and the conversation
+  // quote one figure. Withheld, and said, under a care flag.
+  const leftRead = isToday ? leftToday({
+    plan, eaten: today.food.calories, burn: balance.known ? balance.calories_out : null,
+    flags, open: true, uncounted: today.food.meals_uncounted || 0,
+  }) : null;
 
   const nudge = nextNudge({
     push: profile.plan_push || null,
@@ -669,7 +685,11 @@ export const handler = async (event) => {
         // payload disagreed about a field name, in silence.
         activity: today.activity,
         body: today.body,
-        device: today.device,
+        // The send TIME, never its age. `minutes_old` and the "(25 min ago)"
+        // sentence change every minute, and the page repaints only when the
+        // payload changes — so every ninety-second poll replaced the Record
+        // view and wiped a half-typed meal. The page works the age out itself.
+        device: steadyDevice(today.device),
         entries: today.log,
         // THE SAME MEAL, COUNTED TWICE. Computed here like every other claim
         // about the day, so the screen and the connector can never disagree
@@ -796,7 +816,7 @@ export const handler = async (event) => {
       // day means nothing at all and a verdict built on it is a false alarm
       // that costs somebody a trip to a laptop.
       devices: {
-        connections: connections.map(c => ({
+        connections: liveConnections(connections).map(c => ({
           provider: c.provider, mode: c.mode, status: c.status,
           last_sync_at: c.last_sync_at,
           hours_ago: c.last_sync_at
@@ -879,6 +899,7 @@ export const handler = async (event) => {
       // Never `coach` — that key is the check-in schedule below.
       coach_day: coachDayRead,
       coach_paused: coachPausedRead,
+      left_today: leftRead,
       coach: {
         push_devices: pushSubs,
         morning: checkins?.morning_hour != null ? `${checkins.morning_hour}:${String(checkins.morning_minute || 0).padStart(2, '0')}` : null,

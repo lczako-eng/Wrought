@@ -25,7 +25,7 @@
 import {
   supabase, openai, localDateFor, localMinutesFor, addDays,
   getProfile, getGoals, getMemory, humanDuration,
-  dayFacts, rangeFacts, summariseRange, scoreGoals, careFlags, writeVerdict,
+  dayFacts, rangeFacts, summariseRange, scoreGoals, careFlags, writeVerdict, briefStamp,
 } from './lib/wrought.js';
 import { sendPush, vapidConfigured } from './lib/push.js';
 import { eveningNotification, eveningReceipt, plainBrief } from './lib/voice.js';
@@ -130,6 +130,14 @@ export async function buildBriefFor(userId, now = new Date()) {
   const weightKg = day.body.weight_kg
     ?? [...range.days].reverse().find(d => d.date <= date && d.weight_kg != null)?.weight_kg
     ?? null;
+  // A phone that normally reports and has not sent today is "not sent yet",
+  // never a whole-day multiplier — the rule the dashboard, the connector and
+  // Siri already follow, which the 8pm close did not know, so on a silent day
+  // the push quoted a projection the dashboard refused to draw.
+  const { data: pushConn } = await supabase.from('wrought_connections')
+    .select('last_sync_at').eq('user_id', userId).eq('mode', 'push')
+    .order('last_sync_at', { ascending: false, nullsFirst: false }).limit(1);
+  const lastPush = pushConn?.[0]?.last_sync_at ? new Date(pushConn[0].last_sync_at).getTime() : 0;
   const balance = energyBalance({
     profile, weightKg,
     caloriesIn: day.food.calories,
@@ -138,6 +146,8 @@ export async function buildBriefFor(userId, now = new Date()) {
     workouts: day.training.entries,
     activities: day.activity.entries,
     deviceResting: day.device.resting_calories,
+    deviceRestingSoFar: day.device.resting_so_far, deviceRestingAt: day.device.fresh?.at || null,
+    deviceExpected: Date.now() - lastPush < 3 * 86400000,
   });
   facts.logged = day.logged;
   facts.balance = balance.known ? {
@@ -145,6 +155,11 @@ export async function buildBriefFor(userId, now = new Date()) {
     calories_out: balance.calories_out,
     net: balance.net,
     direction: balance.direction,
+    // A watch that has not sent today leaves the resting half only; a written
+    // verdict must not read that as the day's burn and a net off it.
+    active_source: balance.active_source || null,
+    ...(balance.active_source === 'awaiting_device'
+      ? { note: 'resting only — the watch has not sent today, so this is not the day\'s burn and the net is not a deficit' } : {}),
   } : { known: false, missing: balance.missing || [] };
   facts.goal_receipt = eveningReceipt({ facts, balance });
   facts.notification_body = eveningNotification({ facts, balance });
@@ -173,7 +188,9 @@ export async function buildBriefFor(userId, now = new Date()) {
   // The computed no-key read is still the real receipt. Previously only the
   // optional model-written version was stored, contradicting the contract
   // above and leaving the scheduled close with no durable evidence at all.
-  if (verdict) await storeBrief({ userId, date, kind: 'evening', facts, verdict });
+  // Stamped as the brief stamps, so the conversation reuses this close only
+  // while what it was written from still stands.
+  if (verdict) await storeBrief({ userId, date, kind: 'evening', facts: { ...facts, _stamp: briefStamp({ day, balance }) }, verdict });
 
   return { date, facts, verdict, flags, profile, logged: day.logged };
 }
@@ -408,6 +425,7 @@ export async function buildMorningFor(userId, profile, now = new Date()) {
     workouts: yesterday.training.entries,
     activities: yesterday.activity.entries,
     deviceResting: yesterday.device.resting_calories,
+    deviceRestingSoFar: yesterday.device.resting_so_far, deviceRestingAt: yesterday.device.fresh?.at || null,
   });
 
   // targets stays null on purpose: the morning states the GAP and never a

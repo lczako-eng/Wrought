@@ -152,7 +152,7 @@ export function dayReceipt({ day = null, balance = null, date = null, today = nu
   if (balance.active_source === 'logged_over_device' || balance.active_source === 'device') {
     if (a.raw_kcal) {
       setAside.push(balance.active_source === 'device'
-        ? `The work you logged comes to about ${money(a.raw_kcal)} on its own, but your watch counted more for the whole day, so its figure is the one used. They are not added together — that would count the same hours twice.`
+        ? `The work you logged comes to about ${money(a.raw_kcal)} on its own, but your watch counted more ${day?.device?.fresh && !day.device.fresh.final && day.device.fresh.at ? `by ${day.device.fresh.at}` : 'for the whole day'}, so its figure is the one used. They are not added together — that would count the same hours twice.`
         : `Your watch's figure for the day is lower than the work you logged, so the logged figure is the one used. They are not added — that would count the same hours twice.`);
     }
   }
@@ -247,11 +247,19 @@ function shortName(what) {
 function otherInputs(balance, a, day) {
   const money = v => n(v).toLocaleString();
   const steps = day?.device?.steps;
-  const watchLabel = `your watch's active energy for the whole day${steps ? ` (${money(steps)} steps)` : ''}`;
+  // "For the whole day" was only true once the day was over AND the phone had
+  // sent its last total. A figure the phone sent at 6:01pm is the day AS OF
+  // 6:01pm, and the receipt says which.
+  const fresh = day?.device?.fresh;
+  const span = fresh && !fresh.final && fresh.at ? `as of ${fresh.at}` : 'for the whole day';
+  const watchLabel = `your watch's active energy ${span}${steps ? ` (${money(steps)} steps)` : ''}`;
   const train = n(balance.training_burn);
   const inputs = [];
 
-  const shifts = (a.entries || []).map(e => ({ what: e.summary, hours: e.hours, calories: n(e.kcal), estimated: true }));
+  const all = (a.entries || []).map(e => ({ what: e.summary, hours: e.hours, calories: e.kcal == null ? null : n(e.kcal), estimated: true }));
+  // A shift with no figure yet competes with nothing: it is named, and why.
+  const shifts = all.filter(s => s.calories != null);
+  for (const s of all.filter(x => x.calories == null)) inputs.push({ ...s, counted: false, why: 'not priced yet — it needs a recent weigh-in' });
 
   switch (balance.active_source) {
     case 'logged_over_device':
@@ -266,7 +274,7 @@ function otherInputs(balance, a, day) {
         what: watchLabel, calories: n(balance.device_active), measured: true, counted: true,
         ...(train ? { why: `${money(train)} of it is the training counted above, leaving ${money(balance.device_less_training)} here` } : {}),
       });
-      for (const s of shifts) inputs.push({ ...s, counted: false, why: 'your watch counted more for the whole day, so its figure is the one used; the two are not added — same hours' });
+      for (const s of shifts) inputs.push({ ...s, counted: false, why: `your watch counted more ${span === 'for the whole day' ? span : `by ${fresh.at}`}, so its figure is the one used; the two are not added — same hours` });
       break;
     case 'logged':
       for (const s of shifts) inputs.push({ ...s, counted: true, why: 'priced from hours on task against a standard effort table' });
@@ -309,7 +317,10 @@ export function outSay(out) {
     for (const o of l.of || []) {
       const how = o.hours ? `${o.hours}h on task` : o.minutes ? `${o.minutes} min` : o.km ? `${o.km} km` : null;
       const tag = o.counted === false ? 'set aside' : o.measured ? 'measured' : o.estimated || o.from === 'estimate' || o.from === 'distance' ? 'estimated' : o.from === 'device' ? 'watch' : null;
-      lines.push(`    ${o.what}${how ? ` (${how})` : ''} — ${money(o.calories)}${tag ? `, ${tag}` : ''}${o.why ? ` — ${o.why}` : ''}`);
+      // An input with no figure says so and is never printed as a zero.
+      lines.push(o.calories == null
+        ? `    ${o.what}${how ? ` (${how})` : ''} — ${o.why || 'no figure yet'}`
+        : `    ${o.what}${how ? ` (${how})` : ''} — ${money(o.calories)}${tag ? `, ${tag}` : ''}${o.why ? ` — ${o.why}` : ''}`);
     }
     // The line's note only when the inputs have not already said it — a
     // reason stated twice reads as a system unsure of itself.
@@ -322,7 +333,7 @@ function otherNote(balance, a) {
   switch (balance.active_source) {
     case 'logged':             return 'from the work you logged, plus the rest of the day at the sedentary floor';
     case 'logged_over_device': return 'from the work you logged — higher than your watch\'s figure, so this is the one counted';
-    case 'device':             return 'from your watch, which already includes the hours you were at work';
+    case 'device':             return (a?.entries?.length || a?.count) ? 'from your watch, which already includes the hours you were at work' : 'from your watch';
     case 'activity_level':     return 'projected from your activity level — nothing measured this, so it is the same number all day';
     case 'awaiting_device':    return 'nothing counted yet — your watch has not sent today and nothing is projected';
     case 'training_only':      return 'nothing is counting the rest of your day, so the real figure is higher';

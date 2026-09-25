@@ -8,6 +8,7 @@ import SwiftUI
 struct ContentView: View {
     @EnvironmentObject var courier: HealthCourier
     @StateObject private var webView = WebViewStore.shared
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
         ZStack(alignment: .bottom) {
@@ -37,6 +38,13 @@ struct ContentView: View {
         }
         .animation(.easeOut(duration: 0.25), value: courier.state)
         .onAppear { courier.attach(webView: webView) }
+        // Opening the app is the one moment somebody is certainly looking, so
+        // it is the moment the numbers have to be current — background delivery
+        // is iOS's schedule, not theirs. The courier skips a send that finished
+        // under a minute ago, so flicking in and out costs nothing.
+        .onChange(of: scenePhase) { phase in
+            if phase == .active { Task { await courier.sync() } }
+        }
     }
 
     private var connectCard: some View {
