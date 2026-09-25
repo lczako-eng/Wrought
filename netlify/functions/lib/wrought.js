@@ -430,18 +430,44 @@ function refreshFor(source) {
   return 'the latest arrives when the device next syncs';
 }
 
-export function deviceFreshness({ asOf = null, final = false, timezone = 'UTC', now = new Date(), open = true, source = null } = {}) {
+/**
+ * What a cached brief verdict was written from — pure. A verdict is reused
+ * only while every figure its numbers depend on still stands: the food, the
+ * training, the work, the watch's running totals and basal, a weigh-in, and
+ * the burn they add up to. Shared by the brief and the nightly pass, so a row
+ * either writes is judged by the same rule.
+ */
+export function briefStamp({ day = null, balance = null } = {}) {
+  return JSON.stringify([
+    day?.food?.calories ?? null, day?.food?.meals ?? null, day?.training?.sessions ?? null,
+    day?.activity?.count ?? null, day?.activity?.minutes ?? null,
+    day?.device?.steps ?? null, day?.device?.active_calories ?? null, day?.device?.resting_calories ?? null,
+    day?.body?.weight_kg ?? null, balance?.known ? balance.calories_out : null,
+  ]);
+}
+
+export function deviceFreshness({ asOf = null, final = false, timezone = 'UTC', now = new Date(), open = true, source = null, date = null } = {}) {
   if (!asOf && !final) return null;
   if (!open) {
     if (final) return { final: true, short: false, stale: false, say: 'the full day, as the phone closed it' };
     const at = new Date(asOf);
     if (Number.isNaN(at.getTime())) return null;
+    // A send that landed AFTER the day ended carried the whole day — Health
+    // Auto Export re-sends yesterday's totals with this morning's export — so
+    // it is never "short", and 7:12am is not a time on the day being read.
+    if (date && localDateFor(timezone, at) > date) {
+      return { final: true, short: false, stale: false, source, say: 'the full day, sent after it closed' };
+    }
     const when = clock12(localMinutesFor(timezone, at));
     return {
       final: false, short: true, stale: true, at: when, as_of: at.toISOString(), source,
       say: `short — the phone last sent this day at ${when}, so anything after that never reached it`,
     };
   }
+  // Only closing-pass rows on today (a phone east of the profile's zone
+  // files its closed day onto the profile's today): no stamp at all — never
+  // the epoch, and never "the full day" on a day still running.
+  if (!asOf) return null;
   const at = new Date(asOf);
   if (Number.isNaN(at.getTime())) return null;
   const minutes = Math.max(0, Math.round((now.getTime() - at.getTime()) / 60000));
@@ -653,6 +679,7 @@ export async function dayFacts(userId, profile, date) {
         final: mets.some(m => DEVICE_RUNNING_TOTALS.has(m.metric) && m.source_ref === 'day_final'),
         timezone: profile.timezone,
         open: date === localDateFor(profile.timezone),
+        date,
       }),
       steps: metricSum('steps'),
       active_calories: metricSum('active_calories'),
@@ -1743,11 +1770,12 @@ export const SET_TARGETS_URL = 'https://wrought.fit/app.html#targets';
 export const ROUTING_HABIT =
   'Please remember this permanently, for all our future chats: anything I say about food, drink, ' +
   'training, weight, sleep, my gym, or my goals goes through the Wrought connector\u2019s tools \u2014 ' +
-  'log it or look it up there, never answer it from memory or the conversation. If I say I\u2019m going ' +
+  'log it or look it up there, never answer it from memory or the conversation. Log it before you answer, ' +
+  'and never ask me whether to. If I say I\u2019m going ' +
   'to the gym or name a workout, call Wrought\u2019s suggest_workout or start_session immediately. ' +
   'Numbers about my calories, targets, or weights only ever come from Wrought\u2019s tools. ' +
   'If more than one Wrought connector shows up, they are copies of the same service \u2014 use any one, ' +
-  'and never hold back logging to ask me which.';
+  'and never hold back logging to ask me which, but tell me which account it logged to the first time.';
 
 export const VALID_TYPES = new Set(['food','drink','workout','weight','measurement','sleep','symptom','mood','supplement','note','fast','activity']);
 

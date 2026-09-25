@@ -284,3 +284,59 @@ export function coachPaused({ profile = {}, flags = [] } = {}) {
     say: 'Your coach is paused while the record review stands — coaching stops under a care flag. Your briefs still arrive with their facts.',
   };
 }
+
+/**
+ * WHAT IS LEFT FOR TODAY — pure, and the one place it is worded.
+ *
+ * The founder: "it should have my daily burn, how much I have left for the
+ * day, and should base my basal, right?" Right: the target is priced off
+ * BASAL (his instruction) — basal less the pace's deficit — so what is left is
+ * the target less what is eaten, and the day's burn (basal + training + work
+ * + the watch) is a separate, larger number that comes off ON TOP. Both are
+ * said, never merged: adding the burn back into the target would quietly undo
+ * the basal-only instruction.
+ *
+ * UNDER A CARE FLAG NO FIGURE OF WHAT IS LEFT — earnedRoom's rule: a number
+ * of what somebody may still eat, handed to a pattern the low-intake flag has
+ * caught, frames food as a budget at the moment that is most harmful. The
+ * figure is withheld AND the withholding is said, with the way it clears —
+ * a silent gap is indistinguishable from the feature being broken.
+ *
+ * @param plan  planRead() — calorie_target, maintenance (basal), deficit, pace
+ * @param eaten calories logged for the day
+ * @param burn  the day's calories out, when known (whole-day estimate)
+ * @param open  the day is still running
+ * @returns null with no daily calorie target
+ */
+export function leftToday({ plan = null, eaten = 0, burn = null, flags = [], open = true, uncounted = 0 } = {}) {
+  const target = plan?.calorie_target;
+  if (target == null) return null;
+  const fmt = v => Math.round(Number(v) || 0).toLocaleString('en-US');
+  const e = Math.round(Number(eaten) || 0);
+  const basis = plan.maintenance != null && plan.deficit != null && plan.deficit >= 0
+    ? `your basal of about ${fmt(plan.maintenance)} less the ${fmt(plan.deficit)} deficit${plan.pace ? ` your ${plan.pace} pace sets` : ''}`
+    : plan.maintenance != null ? `set above your basal of about ${fmt(plan.maintenance)}, so the deficit comes from what you move` : null;
+  const burnSay = burn != null && Number(burn) > 0
+    ? ` Today's burn is about ${fmt(burn)}${open ? ' for the whole day' : ''} — what you trained and worked comes off on top of the target, not inside it.`
+    : ' What you train and work today comes off on top of the target, not inside it.';
+  const base = { target, eaten: e, basal: plan.maintenance ?? null, deficit: plan.deficit ?? null, pace: plan.pace ?? null, burn: burn != null ? Math.round(Number(burn)) : null, basis };
+  if (flags?.length) {
+    return {
+      ...base, left: null, over: null, withheld: true,
+      short: `Target about ${fmt(target)} — no figure of what is left while the record review stands.`,
+      say: `Today's target is about ${fmt(target)}${basis ? ` — ${basis}` : ''}. No figure of what is left while the record review stands: a care flag stops that. Telling WROUGHT which of the flagged days were only partly logged, or a clean week of logging, clears it.`,
+    };
+  }
+  const left = target - e;
+  const over = left < 0;
+  const head = open
+    ? (over ? `About ${fmt(-left)} over today's ${fmt(target)} target` : `About ${fmt(left)} left of today's ${fmt(target)} target`)
+    : (over ? `${fmt(-left)} over the ${fmt(target)} target` : `${fmt(left)} under the ${fmt(target)} target`);
+  const basal = plan.maintenance != null && plan.deficit != null && plan.deficit >= 0
+    ? ` (basal ${fmt(plan.maintenance)} − ${fmt(plan.deficit)})` : '';
+  return {
+    ...base, left, over, withheld: false,
+    short: `${head}${basal}.`,
+    say: `${head} — ${fmt(e)} eaten${open ? ' so far' : ''}${uncounted ? ', plus items with no calories on them yet, so the real figure left is lower' : ''}.${basis ? ` The target is ${basis}.` : ''}${burnSay} An estimate, like every figure here.`,
+  };
+}

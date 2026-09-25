@@ -25,7 +25,7 @@
 import {
   supabase, openai, localDateFor, localMinutesFor, addDays,
   getProfile, getGoals, getMemory, humanDuration,
-  dayFacts, rangeFacts, summariseRange, scoreGoals, careFlags, writeVerdict,
+  dayFacts, rangeFacts, summariseRange, scoreGoals, careFlags, writeVerdict, briefStamp,
 } from './lib/wrought.js';
 import { sendPush, vapidConfigured } from './lib/push.js';
 import { eveningNotification, eveningReceipt, plainBrief } from './lib/voice.js';
@@ -155,6 +155,11 @@ export async function buildBriefFor(userId, now = new Date()) {
     calories_out: balance.calories_out,
     net: balance.net,
     direction: balance.direction,
+    // A watch that has not sent today leaves the resting half only; a written
+    // verdict must not read that as the day's burn and a net off it.
+    active_source: balance.active_source || null,
+    ...(balance.active_source === 'awaiting_device'
+      ? { note: 'resting only — the watch has not sent today, so this is not the day\'s burn and the net is not a deficit' } : {}),
   } : { known: false, missing: balance.missing || [] };
   facts.goal_receipt = eveningReceipt({ facts, balance });
   facts.notification_body = eveningNotification({ facts, balance });
@@ -183,7 +188,9 @@ export async function buildBriefFor(userId, now = new Date()) {
   // The computed no-key read is still the real receipt. Previously only the
   // optional model-written version was stored, contradicting the contract
   // above and leaving the scheduled close with no durable evidence at all.
-  if (verdict) await storeBrief({ userId, date, kind: 'evening', facts, verdict });
+  // Stamped as the brief stamps, so the conversation reuses this close only
+  // while what it was written from still stands.
+  if (verdict) await storeBrief({ userId, date, kind: 'evening', facts: { ...facts, _stamp: briefStamp({ day, balance }) }, verdict });
 
   return { date, facts, verdict, flags, profile, logged: day.logged };
 }

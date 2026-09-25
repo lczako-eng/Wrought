@@ -15,7 +15,7 @@ import {
 import { orderInsight, earnedRoom, energyBalance, exerciseKey, deviceMatrix, weekdayPattern, focusCall, lastSession,
          weekSoFar, weekTargets, readiness, targetOptions, estimatedMax, liftTrend, readMovement, backfillDerivedSets, goalsToSet, rekeySets, resyncMuscles } from './lib/training.js';
 import { weeklyVolume } from './lib/volume.js';
-import { planRead, coachDay, coachPaused } from './lib/plan.js';
+import { planRead, coachDay, coachPaused, leftToday } from './lib/plan.js';
 import { liveConnections } from './lib/providers.js';
 import { calibration } from './lib/adapt.js';
 import { recordCheck } from './lib/integrity.js';
@@ -617,6 +617,13 @@ export const handler = async (event) => {
     ? coachDay({ profile, flags, days: recent.days, today: to, week: trainingWeek, readiness: ready })
     : null;
   const coachPausedRead = coachPaused({ profile, flags });
+  // What is left for today, off the plan's basal-priced target — the same
+  // helper and words the connector uses, so the screen and the conversation
+  // quote one figure. Withheld, and said, under a care flag.
+  const leftRead = isToday ? leftToday({
+    plan, eaten: today.food.calories, burn: balance.known ? balance.calories_out : null,
+    flags, open: true, uncounted: today.food.meals_uncounted || 0,
+  }) : null;
 
   const nudge = nextNudge({
     push: profile.plan_push || null,
@@ -881,6 +888,7 @@ export const handler = async (event) => {
       // Never `coach` — that key is the check-in schedule below.
       coach_day: coachDayRead,
       coach_paused: coachPausedRead,
+      left_today: leftRead,
       coach: {
         push_devices: pushSubs,
         morning: checkins?.morning_hour != null ? `${checkins.morning_hour}:${String(checkins.morning_minute || 0).padStart(2, '0')}` : null,

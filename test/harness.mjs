@@ -5691,7 +5691,10 @@ await test('a running total is the whole day, never the item just logged', () =>
   ]) {
     const at = mcp.indexOf(fn);
     const end = mcp.indexOf(next, at);
-    const body = mcp.slice(at, end > at ? end : at + 9000);
+    // To the end of the function, never a fixed character count: a count is
+    // a number the next honest addition to the function outgrows.
+    const fnEnd = mcp.indexOf('\nasync function ', at + 10);
+    const body = mcp.slice(at, end > at ? end : (fnEnd > at ? fnEnd : at + 9000));
     assert.match(body, /day_total: dayTotal\(/, `${fn} does not return the day's total`);
   }
 
@@ -15094,28 +15097,57 @@ await test('"how much should I eat today" is answered from the target, priced of
   assert.ok(!/hours you were at work/.test(r.say), 'the receipt invented a shift');
 });
 
-await test('get_day, whats_next and brief answer the whole day, and a flag silences the figure of what is left', () => {
+await test('get_day, whats_next and brief answer the whole day, and a flag silences the figure of what is left', async () => {
   const mcp = decomment(readFileSync(new URL('../netlify/functions/mcp.js', import.meta.url), 'utf8'));
   const fnOf = name => mcp.slice(mcp.indexOf(`async function ${name}(`), mcp.indexOf('\nasync function ', mcp.indexOf(`async function ${name}(`) + 10));
   const fdr = fnOf('fullDayRead');
-  assert.match(fdr, /const flags = careFlags\(range, profile, \{ openDate: today \}\);/);
-  assert.match(fdr, /dayReadout\(\{ day, balance, receipt, scored, week, date, today, flags \}\)/);
+  // The flags stand today, whatever date is read — a past date's own month
+  // would lead with a warning that cleared, or miss one standing now.
+  assert.match(fdr, /const flags = careFlags\(careRange \|\| range, profile, \{ openDate: today \}\);/);
+  assert.match(fdr, /date === today \? Promise\.resolve\(null\) : rangeFacts\(userId, profile, addDays\(today, -\(CARE_WINDOW_DAYS - 1\)\), today\)/);
+  assert.match(fdr, /dayReadout\(\{ day, balance, receipt, scored, week, date, today, flags(, left)? \}\)/);
   assert.match(fnOf('getDay'), /\.\.\.\(full\.flags\.length \? \{ care_flags: full\.flags \} : \{\}\)/);
   const wn = fnOf('whatsNext');
   assert.match(wn, /if \(flags\.length\) \{\s*situation\.calories_remaining = null;/);
   assert.match(wn, /caloriesLeft != null && !flags\.length \?/);
   const br = fnOf('brief');
   // A day still running re-reads when its figures moved since the cached verdict.
-  assert.match(br, /const stillTrue = date !== today \|\| \(cached\?\.facts && stamp\(cached\.facts\) === stamp\(facts\)\);/);
+  // Every date is judged by the stamp both writers store; a row the
+  // scheduled pass filed (the morning push's own text) is never replayed as a
+  // verdict and never overwritten by one.
+  assert.match(br, /const stampNow = briefStamp\(\{ day, balance \}\);/);
+  assert.match(br, /const stillTrue = !scheduled && cached\?\.facts\?\._stamp === stampNow;/);
+  assert.match(br, /const scheduled = !!cached\?\.facts\?\.notification;/);
+  assert.match(br, /if \(!scheduled\) \{\s*await supabase\.from\('wrought_briefs'\)/);
+  assert.match(br, /_stamp: stampNow/);
+  const nightly = readFileSync(new URL('../netlify/functions/brief-nightly.js', import.meta.url), 'utf8');
+  assert.match(nightly, /kind: 'evening', facts: \{ \.\.\.facts, _stamp: briefStamp\(\{ day, balance \}\) \}/);
+  const { briefStamp } = await import('../netlify/functions/lib/wrought.js');
+  const base = { food: { calories: 1420, meals: 3 }, training: { sessions: 1 }, activity: { count: 0, minutes: 0 },
+    device: { steps: 8020, active_calories: 700, resting_calories: 2479 }, body: { weight_kg: 150 } };
+  const bal = { known: true, calories_out: 3420 };
+  const s0 = briefStamp({ day: base, balance: bal });
+  assert.equal(briefStamp({ day: structuredClone(base), balance: { ...bal } }), s0, 'the same day stamps the same');
+  // A shift logged after 8pm, a weigh-in, a basal update, the burn — each is new.
+  assert.notEqual(briefStamp({ day: { ...base, activity: { count: 1, minutes: 180 } }, balance: bal }), s0);
+  assert.notEqual(briefStamp({ day: { ...base, body: { weight_kg: 149 } }, balance: bal }), s0);
+  assert.notEqual(briefStamp({ day: { ...base, device: { ...base.device, resting_calories: 2500 } }, balance: bal }), s0);
+  assert.notEqual(briefStamp({ day: base, balance: { known: true, calories_out: 4038 } }), s0);
   assert.match(br, /if \(!args\.refresh && stillTrue\) verdict = cached\?\.verdict \|\| null;/);
   // With no written verdict the reply is the whole day, not "food · training".
-  assert.match(br, /const wholeDay = verdict \? null : dayReadout\(\{ day, balance, receipt, scored, week: facts\.training_week, date, today, flags \}\);/);
+  assert.match(br, /const wholeDay = verdict \? null : dayReadout\(\{ day, balance, receipt, scored, week: facts\.training_week, date, today, flags(, left)? \}\);/);
   assert.match(br, /say: verdict \|\| wholeDay\?\.say \|\|/);
   // log hands the whole day back when the same sentence asks about calories or burn.
   const lg = fnOf('log');
   const re = new RegExp(lg.match(/const askedForDay = \/(.*?)\/i\.test/)[1], 'i');
   for (const t of ['what did I eat today? whats my calories', 'what did my work burn', 'how much should I eat today']) assert.ok(re.test(t), t);
   assert.ok(!re.test('chicken and rice 650 calories'), 'a meal with a calorie figure triggers a whole-day read');
+  // Statements are a log, not a question about the day.
+  for (const t of ['did 30 min on the bike, burned about 300 calories', 'burnt toast and two eggs', 'treadmill 25 min, burned 250'])
+    assert.ok(!re.test(t), `"${t}" triggers a whole-day read`);
+  for (const t of ['how many calories did I burn', 'what did I burn today', "what's my burn"]) assert.ok(re.test(t), t);
+  // A quiet capture never becomes a recital.
+  assert.match(lg, /const fullRead = askedForDay && !args\.quiet \?/);
   // The phrasebook sends the founder's questions to the whole day, not the verdict.
   const book = SERVER_INSTRUCTIONS.split('\n');
   const briefLine = book.find(l => l.startsWith('  brief —')), dayLine = book.find(l => l.startsWith('  get_day —'));
@@ -15138,6 +15170,186 @@ await test('the dashboard says which figure counted, and what the work was worth
   const tt = app.slice(app.indexOf('function trainingTodayPanel('), app.indexOf('function trainingTodayPanel(') + 5000);
   assert.match(tt, /src === 'logged_over_device' \? 'counted' : src === 'device' \? 'not added — your watch counted more' : null/);
   assert.match(app, /balance\.logged_activity\?\.kcal \? ` · ~\$\{n\(balance\.logged_activity\.kcal\)\} kcal` : ''/);
+});
+
+await test('what is left for today is the basal-priced target less what is eaten, said with its basis, withheld under a flag', async () => {
+  const { leftToday } = await import('../netlify/functions/lib/plan.js');
+  const plan = { calorie_target: 1723, maintenance: 2479, deficit: 756, pace: 'aggressive' };
+  const l = leftToday({ plan, eaten: 1420, burn: 4038 });
+  assert.equal(l.left, 303);
+  assert.match(l.say, /^About 303 left of today's 1,723 target — 1,420 eaten so far\./);
+  assert.match(l.say, /The target is your basal of about 2,479 less the 756 deficit your aggressive pace sets\./);
+  // The burn is said BESIDE the target, never folded into it — folding it in
+  // would undo the founder's basal-only instruction.
+  assert.match(l.say, /Today's burn is about 4,038 for the whole day — what you trained and worked comes off on top of the target, not inside it\./);
+  assert.equal(l.short, "About 303 left of today's 1,723 target (basal 2,479 − 756).");
+  assert.match(leftToday({ plan, eaten: 1900 }).short, /^About 177 over today's 1,723 target/);
+  assert.match(leftToday({ plan, eaten: 1420, uncounted: 1 }).say, /so the real figure left is lower/);
+  // Under a care flag: no figure, and the reason said with the way out.
+  const held = leftToday({ plan, eaten: 1420, flags: [{ flag: 'very_low_intake' }] });
+  assert.equal(held.left, null);
+  assert.equal(held.withheld, true);
+  assert.ok(!/303/.test(held.say + held.short), 'a figure of what is left leaked under a care flag');
+  assert.match(held.say, /which of the flagged days were only partly logged, or a clean week of logging, clears it/);
+  assert.equal(leftToday({ plan: { calorie_target: null } }), null, 'no target is no line, never an invented one');
+  // One helper, every door.
+  const mcp = decomment(readFileSync(new URL('../netlify/functions/mcp.js', import.meta.url), 'utf8'));
+  const fnOf = name => mcp.slice(mcp.indexOf(`async function ${name}(`), mcp.indexOf('\nasync function ', mcp.indexOf(`async function ${name}(`) + 10));
+  assert.match(fnOf('leftFor'), /return leftToday\(\{ plan, eaten: day\?\.food\?\.calories, burn, flags: fl,/);
+  // Today only — a past day is never scored against the target set this morning.
+  assert.match(fnOf('leftFor'), /if \(date !== today\) return null;/);
+  assert.ok(fnOf('leftFor').indexOf('if (date !== today) return null;') < fnOf('leftFor').indexOf('planFacts('), 'leftFor reads the plan before refusing a past day');
+  // Unprompted replies (the log confirmation, "I'm hungry") never carry the
+  // held target line under a flag; only an explicit read says it.
+  assert.match(fnOf('log'), /left\?\.short && !left\.withheld && !fullRead/);
+  assert.match(fnOf('whatsNext'), /\(!left\?\.withheld && left\?\.short\) \|\|/);
+  assert.match(fnOf('fullDayRead'), /const left = await leftFor\(/);
+  assert.match(fnOf('getDay'), /left_today: full\.left/);
+  assert.match(fnOf('log'), /\.\.\.\(left \? \{ left_today: left \} : \{\}\)/);
+  assert.match(fnOf('brief'), /const left = await leftFor\(user\.id, profile, date, \{ day, flags,/);
+  assert.match(fnOf('myPlan'), /const left = leftToday\(\{ plan: p,/);
+  const api = readFileSync(new URL('../netlify/functions/api-progress.js', import.meta.url), 'utf8');
+  assert.match(api, /const leftRead = isToday \? leftToday\(\{/);
+  assert.match(api, /left_today: leftRead,/);
+  const app = decomment(page('app.html'));
+  const heroFn = app.slice(app.indexOf('function hero('), app.indexOf('function restingBasis('));
+  assert.equal((heroFn.match(/leftLine\(d\.left_today\)/g) || []).length, 2, 'a hero branch lost the left-for-today line');
+  // The whole-day read carries it as its own line.
+  const { dayReadout } = await import('../netlify/functions/lib/dayread.js');
+  const r = dayReadout({ day: { date: '2026-09-25', log: [], food: { calories: 1420 }, device: {} }, scored: [], date: '2026-09-25', today: '2026-09-25', left: l });
+  assert.match(r.say, /^LEFT — About 303 left of today's 1,723 target/m);
+  assert.match(r.note, /"how much have I got left" is the LEFT line/);
+});
+
+await test('log first, answer second — on the tool, both sheets, the saved habit and every read', async () => {
+  const cut = t => String(t).replace(/\s+/g, ' ');
+  const logDesc = cut(TOOLS.find(t => t.name === 'log').description);
+  assert.match(logDesc, /LOG FIRST, ANSWER SECOND: the moment a message mentions anything eaten or drunk, a workout, a shift of work or a weight/);
+  assert.match(logDesc, /Never ask whether to log it/);
+  // Still after the receipt rule, so the custom GPT's Action keeps it.
+  assert.ok(logDesc.indexOf('LOG FIRST') > logDesc.indexOf('Logged in Wrought'));
+  assert.match(SERVER_INSTRUCTIONS, /LOG FIRST, ANSWER SECOND — AND NEVER ASK\./);
+  assert.ok(SERVER_INSTRUCTIONS.indexOf('LOG FIRST, ANSWER SECOND — AND NEVER ASK') < SERVER_INSTRUCTIONS.indexOf('CAPTURE IN PASSING'));
+  const { GPT_INSTRUCTIONS } = await import('../netlify/functions/lib/gpt_instructions.js');
+  assert.match(GPT_INSTRUCTIONS, /Log first, answer second/);
+  assert.ok(GPT_INSTRUCTIONS.length <= 8000, `the GPT sheet is ${GPT_INSTRUCTIONS.length} characters`);
+  const { ROUTING_HABIT } = await import('../netlify/functions/lib/wrought.js');
+  assert.match(ROUTING_HABIT, /Log it before you answer, and never ask me whether to\./);
+  // Every read reply carries the capture rule, stamped where both doors dispatch.
+  const mcp = readFileSync(new URL('../netlify/functions/mcp.js', import.meta.url), 'utf8');
+  assert.match(mcp, /READ_TOOLS\.has\(params\.name\) && out\.log_first === undefined/);
+  for (const t of ['get_day', 'brief', 'energy_balance', 'whats_next', 'my_plan', 'get_profile']) {
+    assert.match(mcp, new RegExp(`const READ_TOOLS = new Set\\(\\[[^\\]]*'${t}'`), `${t} does not carry the capture rule`);
+    assert.ok(TOOLS.some(x => x.name === t), `${t} is not a tool`);
+  }
+});
+
+await test('a basal carry off by a clock, not a body, is refused — the formula stands in and says why', async () => {
+  const { energyBalance, restingBurn } = await import('../netlify/functions/lib/training.js');
+  const profile = { height_cm: 191, birth_year: 1982, sex: 'male' };
+  const formula = restingBurn(profile, 150).kcal;
+  // A London phone on a Toronto profile: 930 by 9am London is 4am Toronto,
+  // carried to 5,580 — more than twice any body's basal.
+  const far = energyBalance({ profile, weightKg: 150, caloriesIn: 400, activeCalories: 200,
+    deviceResting: 5580, deviceRestingSoFar: 930, deviceRestingAt: '4:00am', workouts: [], activities: [] });
+  assert.equal(far.resting_burn, formula);
+  assert.equal(far.resting_source, 'formula');
+  assert.equal(far.resting_carry_refused, true);
+  assert.match(far.resting_basis.say, /too far from this to be a body rather than a clock/);
+  // …and west of the profile, too little.
+  const low = energyBalance({ profile, weightKg: 150, caloriesIn: 400, activeCalories: 200,
+    deviceResting: 1416, deviceRestingSoFar: 413, workouts: [], activities: [] });
+  assert.equal(low.resting_source, 'formula');
+  // An honest carry stands, and is named as WROUGHT's carry of Apple's figure,
+  // never as Apple's own estimate.
+  const ok = energyBalance({ profile, weightKg: 150, caloriesIn: 400, activeCalories: 200,
+    deviceResting: 2480, deviceRestingSoFar: 1860, deviceRestingAt: '6:00pm', workouts: [], activities: [] });
+  assert.equal(ok.resting_source, 'device');
+  assert.equal(ok.resting_burn, 2480);
+  assert.ok(!ok.resting_carry_refused);
+  assert.match(ok.resting_basis.say, /carried forward by WROUGHT from Apple's own figure/);
+  // A whole-day figure the phone sent as it is is never bounded — only a carry.
+  const whole = energyBalance({ profile, weightKg: 150, caloriesIn: 400, activeCalories: 200,
+    deviceResting: 3300, deviceRestingSoFar: 3300, workouts: [], activities: [] });
+  assert.equal(whole.resting_source, 'device');
+});
+
+await test('a silent watch at the 8pm close is a resting-only burn, said as one on every surface', async () => {
+  const { eveningReceipt, eveningNotification, spokenBrief } = await import('../netlify/functions/lib/voice.js');
+  const facts = { logged: true, food: { meals: 2, calories: 1900, protein_g: 120, meals_uncounted: 0, estimated: true },
+    training: { sessions: 0 }, activity: { count: 0 }, device: {}, goals: [], training_week: { done: 2, target: 4 } };
+  const balance = { known: true, calories_in: 1900, calories_out: 2479, net: -579, active_source: 'awaiting_device' };
+  assert.match(eveningReceipt({ facts, balance }), /about 2,479 kcal burned at rest — the watch hasn't sent today, so movement isn't in it/);
+  assert.match(eveningNotification({ facts, balance }), /BURN ~2,479 REST ONLY/);
+  const spoken = spokenBrief({ day: { food: facts.food }, balance });
+  assert.match(spoken, /only the resting 2479 is counted out/);
+  assert.ok(!/down on the day/.test(spoken), 'a resting-only burn was spoken with a deficit under it');
+  // A measured day is unchanged.
+  const measured = { ...balance, active_source: 'device' };
+  assert.ok(!/REST ONLY/.test(eveningNotification({ facts, balance: measured })));
+  // The verdict writer is told, not left to read it as the day.
+  const src = readFileSync(new URL('../netlify/functions/brief-nightly.js', import.meta.url), 'utf8');
+  assert.match(src, /active_source: balance\.active_source \|\| null,/);
+  assert.match(src, /balance\.active_source === 'awaiting_device'\s*\? \{ note: 'resting only/);
+});
+
+await test('several connectors never hold a log back, and the account is named on the first write — never assumed to be one', async () => {
+  const cut = t => String(t).replace(/\s+/g, ' ');
+  const logDesc = cut(TOOLS.find(t => t.name === 'log').description);
+  assert.match(logDesc, /never ask which is theirs first — and on the first write of the conversation name the reply's `account`/);
+  const para = SERVER_INSTRUCTIONS.slice(SERVER_INSTRUCTIONS.indexOf('SEVERAL CONNECTORS NAMED WROUGHT'), SERVER_INSTRUCTIONS.indexOf('\n\n', SERVER_INSTRUCTIONS.indexOf('SEVERAL CONNECTORS NAMED WROUGHT')));
+  assert.match(para, /on the first write of the conversation name the account the reply gives/);
+  assert.ok(!/if they asked/.test(para), 'naming the account is conditional on being asked again');
+  // The dashboard says what the server knows: its own sign-ins, never that
+  // every copy ChatGPT shows is this account.
+  const conn = readFileSync(new URL('../netlify/functions/api-connections.js', import.meta.url), 'utf8');
+  assert.ok(!/every one of them is this same account/.test(conn));
+  assert.match(conn, /Any other Wrought showing there is a separate sign-in this page cannot see/);
+  const { ROUTING_HABIT } = await import('../netlify/functions/lib/wrought.js');
+  assert.match(ROUTING_HABIT, /tell me which account it logged to the first time/);
+  assert.match(page('app.html'), /tell me which account it logged to the first time/);
+  const { GPT_INSTRUCTIONS } = await import('../netlify/functions/lib/gpt_instructions.js');
+  assert.match(GPT_INSTRUCTIONS, /name the reply's account on the first write/);
+  assert.ok(GPT_INSTRUCTIONS.length <= 8000);
+});
+
+await test('a finished day sent after it closed is whole, never "short" at a time that was not on it', async () => {
+  const { deviceFreshness } = await import('../netlify/functions/lib/wrought.js');
+  const tz = 'America/Toronto';
+  // Health Auto Export's 7:12am export re-sends yesterday's full totals.
+  const next = deviceFreshness({ asOf: '2026-09-25T11:12:00Z', open: false, timezone: tz, date: '2026-09-24', source: 'apple_health' });
+  assert.equal(next.final, true);
+  assert.equal(next.short, false);
+  assert.ok(!/7:12/.test(next.say), 'a time from the next morning was printed on the day before');
+  // The last send before midnight is still short, and says so.
+  // Only closing-pass rows on a running day: no stamp — never the epoch.
+  assert.equal(deviceFreshness({ asOf: null, final: true, open: true, timezone: tz }), null);
+  const before = deviceFreshness({ asOf: '2026-09-24T22:00:00Z', open: false, timezone: tz, date: '2026-09-24' });
+  assert.equal(before.short, true);
+  assert.match(before.say, /last sent this day at 6:00pm/);
+  // dayFacts hands the day over.
+  const src = readFileSync(new URL('../netlify/functions/lib/wrought.js', import.meta.url), 'utf8');
+  assert.match(src, /open: date === localDateFor\(profile\.timezone\),\s*date,\s*\}\)/);
+});
+
+await test('under a care flag no structured gap of what is left to eat rides on any read', async () => {
+  const { roomless, dayReadout } = await import('../netlify/functions/lib/dayread.js');
+  const scored = [
+    { goal: 'Calories', metric: 'calories', direction: 'at_most', cadence: 'daily', scored: true, target: 1723, actual: 1515, gap: -208, percent: 88, unit: ' kcal' },
+    { goal: 'Steps', metric: 'steps', direction: 'at_least', cadence: 'daily', scored: true, target: 10000, actual: 6000, gap: -4000, percent: 60, unit: '' },
+  ];
+  const flags = [{ flag: 'very_low_intake' }];
+  const held = roomless(scored, flags);
+  assert.equal(held[0].gap, null);
+  assert.equal(held[1].gap, -4000, 'a steps gap is not an intake figure');
+  assert.equal(roomless(scored, [])[0].gap, -208);
+  const r = dayReadout({ day: { date: '2026-09-25', log: [], food: { calories: 1515 }, device: {} }, scored, date: '2026-09-25', today: '2026-09-25', flags });
+  assert.equal(r.goals.find(g => g.metric === 'calories').gap, null);
+  assert.ok(!/208/.test(r.say), 'the room left leaked into the read under a flag');
+  const mcp = readFileSync(new URL('../netlify/functions/mcp.js', import.meta.url), 'utf8');
+  assert.match(mcp, /goals: roomless\(full\.scored, full\.flags\),/);
+  assert.match(mcp, /goals: roomless\(scored, flags\),/);
+  assert.match(mcp, /\.\.\.\(fullRead\?\.flags\?\.length \? \{ care_flags: fullRead\.flags \} : \{\}\),/);
 });
 
 // ── Report ──────────────────────────────────────────────────────────────────

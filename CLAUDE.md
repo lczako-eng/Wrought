@@ -2483,7 +2483,13 @@ never written is gone.
   sheet, and the routing habit people save into ChatGPT's memory (both copies,
   byte-identical). **Every reply names its account**, stamped once in
   handleRpc's `tools/call`, which both doors dispatch through; a tool with its
-  own `account` keeps it.
+  own `account` keeps it. **And the first write of a conversation SAYS it** —
+  never only "if they asked". The server can see its own sign-ins and nothing
+  else: a copy signed in under another address writes to a second account,
+  and naming the account on the first write is how that fork is caught the
+  same day. The Account panel says only what it knows (*"those copies all
+  log to this record; any other Wrought there is a separate sign-in this page
+  cannot see"*), never that every copy ChatGPT shows is this account.
 - **The Account panel counts the sign-ins** (live refresh chains, never the
   hashes) and says what ChatGPT's copies are and that Disconnect signs every
   copy out at once. *"Signed in N times"*, never *"N copies"*: a connector
@@ -2553,8 +2559,7 @@ awaiting the device, never a whole-day multiplier.
 did my work burn"* go to `get_day` now (moved off `brief`, whose no-key reply
 was "food · training" with no work, no burn and no steps — and `brief` now
 answers with the same whole-day read when there is no written verdict, and a
-cached 8pm verdict is reused for a day still running only while its figures
-still stand). The calorie line on a day still running says *"1,420 of 1,723 so
+cached verdict is reused only while what it was written from still stands). The calorie line on a day still running says *"1,420 of 1,723 so
 far — 303 short of it"* rather than "hit", then that the target is priced off
 basal so what was trained and worked comes off on top. **Under a care flag no
 figure of what is left is quoted anywhere** — get_day now reads the flags off
@@ -2562,6 +2567,72 @@ the month it already fetched, and `whats_next` stopped saying "303 kcal left"
 to somebody the low-intake flag had caught. Nothing eaten yet is not a deficit
 in the read either, and the dashboard says which of the shift and the watch
 counted and what the work was worth.
+
+**How much is left, off basal — the founder, the next message:** *"it should
+have my daily burn, how much I have left for the day, and should base my
+basal."* `leftToday()` in `lib/plan.js` is the one sentence, and `leftFor()`
+the one door every reply goes through — `get_day`'s LEFT line, the log
+confirmation, `brief`, `my_plan`, `whats_next`, and the hero on the dashboard
+(`left_today`), so the screen and the conversation quote one figure: *"About
+303 left of today's 1,723 target (basal 2,479 − 756)"*, with the burn said
+BESIDE it — *"today's burn is about 4,038 … comes off on top of the target,
+not inside it"* — because folding the burn in would undo his basal-only
+instruction. **Today only**: a past day is never scored against the target
+set this morning. **Under a care flag there is no figure**, and an unprompted
+reply (the log confirmation, *"I'm hungry"*) carries not even the held
+target — only an explicit read says it is withheld and how it clears. No
+target, no line: never an invented one.
+
+**Log first, never ask — *"needs to be more aggressive as to log everything
+into Wrought."*** A model that asks *"want me to log that?"* has already
+decided the default is not to, and on a phone mid-sentence the answer never
+comes. `LOG_FIRST` rides the `log` description (after the receipt rule), a
+SERVER_INSTRUCTIONS paragraph placed ABOVE capture-in-passing, the GPT sheet
+and the saved habit; and every READ reply (`get_day`, `brief`,
+`energy_balance`, `whats_next`, `my_plan`, `get_profile`, `progress`,
+`nutrition`) carries `log_first`, stamped in handleRpc — a read is exactly
+when a model answers *"what did I eat"* while the sandwich just mentioned sits
+unlogged in the conversation.
+
+**The adversarial review ran the code and found eleven things wrong**, and
+every one is a rule this file already states:
+
+- **The basal carry divided by the wrong midnight.** The phone totals from
+  ITS midnight; the carry divided by minutes since the PROFILE's. A London
+  phone on a Toronto profile carried 930 at 9am to **5,580**, and a Vancouver
+  one carried too little. A carry more than 30% over or 25% under the formula
+  is a clock, not a body, and the formula stands in, saying why. The carried
+  figure is named as WROUGHT's carry of Apple's figure, never "Apple's own
+  estimate".
+- **The 8pm close on a silent watch said the resting half as the day's
+  burn** — *"BURN ~2,479"*, a deficit under it, no caveat — on the one surface
+  that speaks first. It says *"burned at rest — the watch hasn't sent today"*
+  and *"REST ONLY"* now, Siri never speaks a net off it, and the verdict
+  writer is told.
+- **A complete day re-sent the next morning read as "short … at 7:12am"** —
+  Health Auto Export's ordinary behaviour, on the recommended route, printed
+  with a time not on the day. A send that landed after the day ended carried
+  the whole day.
+- **The brief's cache replayed yesterday's morning push as this morning's
+  read.** The nightly pass files a morning push under the date it was SENT,
+  which is exactly the date `brief({kind:'morning'})` reads one day later —
+  and the new "a closed day is frozen" exemption waved it through. A row the
+  scheduled pass stored is a record of what was sent: never replayed as a
+  verdict, never overwritten. Every date is judged by `briefStamp()`, which
+  both writers store and which covers what the numbers depend on — food,
+  training, **work**, the watch's totals and basal, a weigh-in, the burn. A
+  shift logged at 9pm no longer leaves the 8pm "no work logged" standing.
+- **`\bburn\b` fired on statements** — *"burned about 300"*, *"burnt toast"*
+  — so a quiet capture in the middle of somebody's tax question came back as a
+  whole-day recital. Questions only, and a quiet log never reads the day.
+- **A past date's own month decided the care flags**, so *"what did I eat on
+  Aug 20"* led with a warning that had cleared weeks ago. The flags stand
+  today, whatever date is read — *a window is not a memory*, again.
+- **The structured `gap` said what the sentence withheld.** Under a flag the
+  intake ceiling's remaining room is taken off `goals` on every read
+  (`roomless()`), and a log reply carrying the day carries its flags.
+- A running day holding only closing-pass rows printed **the Unix epoch** as
+  its stamp; it prints nothing now.
 
 **What could not be fixed from here**: the duplicates live in ChatGPT's own
 settings; removing the extras (keep one) is the founder's. The day of the

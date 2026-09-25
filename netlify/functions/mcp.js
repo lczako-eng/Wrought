@@ -33,13 +33,13 @@ import { intakeState, intakeGate, SETUP_URL } from './lib/intake.js';
 import { applyAnswers, setupState } from './lib/setup.js';
 import { weeklyVolume } from './lib/volume.js';
 import { ALERT_KINDS, describeAlert, suggestAlerts } from './lib/alerts.js';
-import { planRead, coachDay, coachRegister, coachPaused } from './lib/plan.js';
+import { planRead, coachDay, coachRegister, coachPaused, leftToday } from './lib/plan.js';
 import { calibration } from './lib/adapt.js';
 import { recordCheck } from './lib/integrity.js';
 import { guideRead } from './lib/guide.js';
 import { nextNudge, nudgeNote } from './lib/prompt.js';
 import { setBodyGoal, setMetricGoal, retireGoalsFor, intentFrom, applyCalibration, SET_TARGETS_URL } from './lib/goals.js';
-import { ROUTING_HABIT } from './lib/wrought.js';
+import { ROUTING_HABIT, briefStamp } from './lib/wrought.js';
 import { preflight } from './lib/preflight.js';
 import { finaliseSession, closeStaleSessions, recordSet, foldIntoSession } from './lib/session.js';
 import { effortFromWords, wordsForRecord, beforeSet, afterSet, methodsFor } from './lib/coach.js';
@@ -61,7 +61,7 @@ import { pickDue } from './lib/morning.js';
 import { athleteRows, athleteRead, TESTS, parseTestValue, ATHLETE_COMMITMENT } from './lib/athlete.js';
 import { resolvePlace, placeEquipment, listPlaces, bumpPlace, applyPlaces, sessionsCanCarryPlace, PLACE_KINDS } from './lib/places.js';
 import { dayReceipt } from './lib/receipt.js';
-import { dayReadout } from './lib/dayread.js';
+import { dayReadout, roomless } from './lib/dayread.js';
 import { mealTiming } from './lib/timing.js';
 import { validatePlan, totalSeconds, workoutLink } from '../../public/workout-clock.js';
 
@@ -93,11 +93,21 @@ const CORS = {
 // service; each writes to the account it was signed in with, the reply names
 // that account, and a wrong one is joined afterwards by link_account. Said on
 // the tools themselves, because not every client reads this sheet.
-const SAME_SERVICE = 'MORE THAN ONE CONNECTOR NAMED WROUGHT is never a reason to hold back: they are copies of the same service, and each writes to the Wrought account it was signed in with (the reply\'s `account` names it). Use any one of them now and never ask which is theirs first; if the address is not theirs, link_account joins the two afterwards with nothing lost.';
+// LOG FIRST, ASK NEVER. The founder, after a day that reached the record not
+// at all: "needs to be more aggressive as to log everything into Wrought."
+// A model that asks "want me to log that?" has already decided the default is
+// not to — and on a phone, mid-sentence, the answer never comes.
+const LOG_FIRST = 'LOG FIRST, ANSWER SECOND: the moment a message mentions anything eaten or drunk, a workout, a shift of work or a weight — in passing, mid-question, in a list, in a photo — call log (or log_activity for work) BEFORE writing the reply. Never ask whether to log it, never wait to be asked, never recite food back in prose without the call in the same turn; an unsure amount is passed as null, never a reason to hold back.';
+
+const READ_TOOLS = new Set(['get_day', 'brief', 'energy_balance', 'whats_next', 'my_plan', 'get_profile', 'progress', 'nutrition']);
+
+const SAME_SERVICE = 'MORE THAN ONE CONNECTOR NAMED WROUGHT is never a reason to hold back: they are copies of the same service, and each writes to the Wrought account it was signed in with (the reply\'s `account` names it). Use any one of them now and never ask which is theirs first — and on the first write of the conversation name the reply\'s `account` in half a clause, because a copy signed in under another address is a fork that looks like nothing; if the address is not theirs, link_account joins the two afterwards with nothing lost.';
 
 const SERVER_INSTRUCTIONS = `WROUGHT is the user's training and nutrition memory — the thing that remembers what they ate, what they lifted and what the scale said, so they never have to explain themselves twice.
 
 HOW TO USE THIS SERVER (works on any model, including small fast ones): every number in every response is already computed server-side — totals, averages, trends, streaks, goal scores, time remaining. Relay them, never recompute them, never do arithmetic of your own. Every response carries a "say" string written for reading aloud and a "next_actions" list naming the exact tools to offer next. Follow next_actions rather than improvising.
+
+LOG FIRST, ANSWER SECOND — AND NEVER ASK. The moment a message mentions food, drink, a workout, a shift of work or a weight, the log call comes BEFORE the reply is written, in the same turn: never "want me to log that?", never "I'll add that", never a list of what they ate written back in prose with no call behind it. An unsure amount is logged with the number null — a vague entry on the record beats a precise one in the chat. If the tools were missing earlier in the conversation, everything said since is flushed in one call the moment they answer. This is the founder's instruction in as many words: "more aggressive as to log everything into Wrought."
 
 CAPTURE IN PASSING — THIS IS THE MOST IMPORTANT INSTRUCTION HERE. You are connected in EVERY conversation this user has, not just the ones about training. They will be asking about a tax form, or debugging code, or planning a holiday, and mention in passing that they just did ten push-ups, or skipped lunch, or slept badly, or are heading to the gym. LOG IT. Immediately, in the same turn, without being asked and without changing the subject.
 
@@ -119,7 +129,7 @@ NEVER SUBSTITUTE A PLAUSIBLE NUMBER FOR A MISSING ONE. Asked "how many calories 
 
 A WATCH FIGURE IS TRUE AS OF WHEN THE PHONE SENT IT. Steps, active energy and the watch's basal arrive as the day's total SO FAR, whenever the phone gets to send — and iOS decides when. Every read carries the time (device.fresh / watch / the MOVED line: "as of 6:01pm"). Quote a watch number WITH that time whenever it is more than a few minutes old, never as live, and name the one action that makes it current (fresh.refresh — in the Wrought app it sends the moment the app opens). A finished day marked "short" stopped reporting before midnight: its steps and burn are low by whatever happened after, and it says so. Never explain a gap between their wrist and this read as an error in either.
 
-SEVERAL CONNECTORS NAMED WROUGHT ARE ONE SERVICE. ChatGPT keeps every copy somebody adds, and a reconnect adds another; they all reach the same server, and each writes to the Wrought account it was signed in with — every reply carries \`account\`, and get_profile says account.email. NEVER hold a log back to ask which one is theirs: use any one of them, in the same turn, and name the account in half a clause if they asked. A wrong address is joined afterwards with link_account, nothing lost; a day never written is lost for good. If they ask why there are several, say ChatGPT kept a copy each time the connector was added or reconnected, and the extras can be removed in ChatGPT's Settings, under Apps (or Connectors) — keep one.
+SEVERAL CONNECTORS NAMED WROUGHT ARE ONE SERVICE. ChatGPT keeps every copy somebody adds, and a reconnect adds another; they all reach the same server, and each writes to the Wrought account it was signed in with — every reply carries \`account\`, and get_profile says account.email. NEVER hold a log back to ask which one is theirs: use any one of them, in the same turn, and on the first write of the conversation name the account the reply gives in half a clause — a copy signed in under another address is the silent fork, and naming it is how it is caught the same day rather than three weeks later. A wrong address is joined afterwards with link_account, nothing lost; a day never written is lost for good. If they ask why there are several, say ChatGPT kept a copy each time the connector was added or reconnected, and the extras can be removed in ChatGPT's Settings, under Apps (or Connectors) — keep one.
 
 TWO ACCOUNTS, ONE PERSON. If somebody says their dashboard is empty when they know they have logged, that the website shows a different email, that they signed in with Apple here and Google there, or simply asks to link or merge their accounts — call link_account. It mints a code they paste into wrought.fit, and it needs no password and no email, which matters because the person in that situation usually cannot get into the other account at all.
 
@@ -424,7 +434,7 @@ const TOOLS = [
   {
     name: 'log',
     title: 'Log anything, in plain words',
-    description: 'THE main tool, and the one that must fire the moment food is MENTIONED — not when they ask for it to be saved. CONFIRM WITH THE WORDS "Logged in Wrought" — the reply\'s `say` opens with them; repeat them exactly, then each item with its calories and time. ' + SAME_SERVICE + ' Never say "logged" or "saved" about food without "in Wrought", and never say "Logged in Wrought" without this tool\'s reply in front of you: the phrase is how the person tells a write that landed from food you only acknowledged. A meal acknowledged in conversation and never written is the commonest way a day ends up short: the record is right, the recital is wrong, and nobody finds out until the total looks small.IF YOU ESTIMATE A MEAL\'S CALORIES IN YOUR REPLY, OR WRITE A "TODAY SO FAR" TOTAL, YOU MUST HAVE CALLED THIS IN THE SAME TURN: the estimate you wrote in prose but did not log lives only in the chat and vanishes with the tab, and "Did you log it?" then answers "only when you asked" — the exact failure this tool exists to prevent. Never quote a meal figure or a running total without logging first; the running total comes only from this tool\'s day_total, never from arithmetic in your head. If you find yourself saying "you\'re right, I missed that", the next thing you do is call this, never arithmetic. Records whatever the user said about their day — food, training, weight, measurements, sleep, mood, supplements. Pass their words AND your structured reading of them; both are required. "Two eggs and black coffee, pushed 40 minutes upper body, 182 on the scale" becomes three separate entries with macros estimated and the weight converted. Pass their words VERBATIM; do not tidy, summarise or ask for detail first. Use this for every log unless the user is giving only a weight or only a measurement, which have their own tools. IF THIS CONNECTOR WAS UNAVAILABLE EARLIER IN THE CONVERSATION, everything discussed since is unlogged: flush it all in ONE call the moment you can, with a time_hint on each item so breakfast lands at breakfast rather than the whole day landing at the catch-up minute. "Recorded in this chat" is the opposite of logged.',
+    description: 'THE main tool, and the one that must fire the moment food is MENTIONED — not when they ask for it to be saved. CONFIRM WITH THE WORDS "Logged in Wrought" — the reply\'s `say` opens with them; repeat them exactly, then each item with its calories and time. ' + SAME_SERVICE + ' ' + LOG_FIRST + ' Never say "logged" or "saved" about food without "in Wrought", and never say "Logged in Wrought" without this tool\'s reply in front of you: the phrase is how the person tells a write that landed from food you only acknowledged. A meal acknowledged in conversation and never written is the commonest way a day ends up short: the record is right, the recital is wrong, and nobody finds out until the total looks small.IF YOU ESTIMATE A MEAL\'S CALORIES IN YOUR REPLY, OR WRITE A "TODAY SO FAR" TOTAL, YOU MUST HAVE CALLED THIS IN THE SAME TURN: the estimate you wrote in prose but did not log lives only in the chat and vanishes with the tab, and "Did you log it?" then answers "only when you asked" — the exact failure this tool exists to prevent. Never quote a meal figure or a running total without logging first; the running total comes only from this tool\'s day_total, never from arithmetic in your head. If you find yourself saying "you\'re right, I missed that", the next thing you do is call this, never arithmetic. Records whatever the user said about their day — food, training, weight, measurements, sleep, mood, supplements. Pass their words AND your structured reading of them; both are required. "Two eggs and black coffee, pushed 40 minutes upper body, 182 on the scale" becomes three separate entries with macros estimated and the weight converted. Pass their words VERBATIM; do not tidy, summarise or ask for detail first. Use this for every log unless the user is giving only a weight or only a measurement, which have their own tools. IF THIS CONNECTOR WAS UNAVAILABLE EARLIER IN THE CONVERSATION, everything discussed since is unlogged: flush it all in ONE call the moment you can, with a time_hint on each item so breakfast lands at breakfast rather than the whole day landing at the catch-up minute. "Recorded in this chat" is the opposite of logged.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -1519,8 +1529,18 @@ async function log(args, user) {
   // founder got "that meal added 770, bringing today to 1,410" — no walk, no
   // burn, no goals. When the words ask for the day, the day comes back whole,
   // on this reply, because this is the reply the model reads.
-  const askedForDay = /where am i|where do i stand|totals?\b|how many|how much|so far|everything|break it down|my net|up or down|how('?s| is| am i doing)|\bburn(ed|t)?\b|my calories|calories today|what did i/i.test(text);
-  const fullRead = askedForDay ? await fullDayRead(user.id, profile, localDateFor(profile.timezone), { day }) : null;
+  // QUESTIONS, not statements: "burned about 300" and "burnt toast" are a
+  // log, and a quiet capture in the middle of somebody else's conversation
+  // stays quiet — never a whole-day recital.
+  const askedForDay = /where am i|where do i stand|totals?\b|how many|how much|so far|everything|break it down|my net|up or down|how('?s| is| am i doing)|what did i (burn|eat|do)|did i burn|what('?s| is) my (burn|calories)|my calories today|what did my work burn/i.test(text);
+  const fullRead = askedForDay && !args.quiet ? await fullDayRead(user.id, profile, localDateFor(profile.timezone), { day }) : null;
+  // WHAT IS LEFT, on every food write — the founder: "it should have my daily
+  // burn, how much I have left for the day." Off the plan's basal-priced
+  // target, the care flags read, and the same helper every other door uses.
+  // (The whole-day read already carries it when that was asked for.)
+  const wroteFood = written.some(e => e.event_type === 'food' || e.event_type === 'drink');
+  const left = fullRead?.left || (wroteFood && !args.quiet
+    ? await leftFor(user.id, profile, localDateFor(profile.timezone), { day }).catch(() => null) : null);
 
   // A "WORKOUT" THAT READS AS A SHIFT. "worked three hours in the Petting Zoo"
   // went in as a 180-minute cardio session — clamped to what the watch saw and
@@ -1589,9 +1609,14 @@ async function log(args, user) {
     // The whole day, in numbers. "How many am I at today" is answered from
     // HERE and never from the item that was just written.
     day_total: dayTotal(day),
+    ...(left ? { left_today: left } : {}),
     // And when the sentence asked where the day stands, the WHOLE day — food,
     // training, work, steps, burn, net, goals, week — from lib/dayread.js.
     ...(fullRead ? { day_read: fullRead.read } : {}),
+    // A reply carrying the day or what is left carries the flags that govern
+    // how it may be said — the log reply had the figures and not the rule.
+    ...(fullRead?.flags?.length ? { care_flags: fullRead.flags } : {}),
+    ...(left?.withheld ? { care_flag_note: 'A care flag stands: quote no figure of what is left to eat and coach nothing down. The day itself is factual record.' } : {}),
     ...(workLike.length ? {
       work_check: {
         entries: workLike.map(e => ({ id: e.id, summary: e.summary, minutes: e.detail?.minutes ?? null })),
@@ -1618,7 +1643,8 @@ async function log(args, user) {
           : `Logged in Wrought (${written.length} thing${written.length === 1 ? '' : 's'}): ${written.map(e => itemSay(e) + (
               (e.event_type === 'food' || e.event_type === 'drink') && e.occurred_at
                 ? ` at ${clockString(localMinutesFor(profile.timezone, new Date(e.occurred_at)))}` : '')).join('; ')}.` +
-            (day.food.meals ? ` Today so far: ${day.food.say}.` : ''))
+            (day.food.meals ? ` Today so far: ${day.food.say}.` : '') +
+            (left?.short && !left.withheld && !fullRead ? ` ${left.short}` : ''))
         : null,
       workLike.length ? `Check: ${workLike.map(e => `"${e.summary}"`).join(' and ')} reads as work rather than training — if it was a shift, say so and it moves to work, priced from the hours.` : null,
       fullRead ? `\n${fullRead.read.say}` : null,
@@ -2277,6 +2303,9 @@ async function myPlan(_args, user) {
   const flags = careFlags(range, f.profile, { openDate: today });
   const coach = coachDay({ profile: f.profile, flags, days: range.days, today, readiness: readiness({ days: range.days, today }) });
   const paused = coachPaused({ profile: f.profile, flags });
+  // Today against the plan's own target — the same helper and wording as
+  // get_day and the log confirmation.
+  const left = leftToday({ plan: p, eaten: range.days.find(d => d.date === today)?.calories || 0, flags, open: true });
 
   return {
     ...p,
@@ -2284,6 +2313,7 @@ async function myPlan(_args, user) {
     // often the tradition trains is exactly what a flag says to stop raising.
     ...(paused ? { coach_habit: null, coach_rhythm: null } : {}),
     calibration: cal,
+    ...(left ? { left_today: left } : {}),
     ...(coach ? { coach_day: coach } : {}),
     ...(paused ? { coach_paused: paused } : {}),
     missing: p.missing || undefined,
@@ -3051,7 +3081,7 @@ async function brief(args, user) {
       neglected_muscles: summary.matrix.neglected,
     },
     streak: { current: summary.current_streak, longest: summary.longest_streak },
-    goals: scored,
+    goals: roomless(scored, flags),
     // The expectation, kept visible. The server cannot make the assistant speak
     // first, so "prompt me into training" has to mean this number being already
     // on the table every single time they talk.
@@ -3079,13 +3109,20 @@ async function brief(args, user) {
   let verdict = null;
   const { data: cached } = await supabase.from('wrought_briefs')
     .select('verdict, facts').eq('user_id', user.id).eq('local_date', date).eq('kind', kind).maybeSingle();
-  // A DAY STILL RUNNING IS NOT THE DAY THAT WAS CACHED. The 8pm verdict,
-  // replayed at 10pm, quoted the steps and food as they stood at 8 — "my
-  // steps are always behind by my night workout". For today, a cached verdict
-  // is used only while the figures it was written from still stand.
-  const stamp = f => JSON.stringify([f?.food?.calories, f?.food?.meals, f?.training?.sessions,
-    f?.device?.steps, f?.device?.active_calories]);
-  const stillTrue = date !== today || (cached?.facts && stamp(cached.facts) === stamp(facts));
+  // A CACHED VERDICT IS REUSED ONLY WHILE WHAT IT WAS WRITTEN FROM STILL
+  // STANDS. The 8pm verdict, replayed at 10pm, quoted the steps and food as
+  // they stood at 8 — "my steps are always behind by my night workout" — and a
+  // shift logged at 9 never reached it. A closed day moves too: the phone's
+  // closing pass completes yesterday's steps the next morning. So every date is
+  // judged, by the stamp both writers store.
+  //
+  // And a row the SCHEDULED pass stored — the morning push's own text, filed
+  // under the date it was sent, which is exactly the date this morning read
+  // asks for one day later — is a record of what was sent, not a verdict on
+  // this date's facts: never replayed as one, never overwritten by one.
+  const stampNow = briefStamp({ day, balance });
+  const scheduled = !!cached?.facts?.notification;
+  const stillTrue = !scheduled && cached?.facts?._stamp === stampNow;
   if (!args.refresh && stillTrue) verdict = cached?.verdict || null;
   if (!verdict) {
     verdict = await writeVerdict({ facts, profile, goals, memory, flags, kind });
@@ -3094,11 +3131,13 @@ async function brief(args, user) {
       // the words must not erase proof that the scheduled push already went,
       // or the same appointment becomes eligible to send twice.
       const storedFacts = cached?.facts?._delivery
-        ? { ...facts, _delivery: cached.facts._delivery }
-        : facts;
-      await supabase.from('wrought_briefs')
-        .upsert({ user_id: user.id, local_date: date, kind, facts: storedFacts, verdict },
-                { onConflict: 'user_id,local_date,kind' });
+        ? { ...facts, _stamp: stampNow, _delivery: cached.facts._delivery }
+        : { ...facts, _stamp: stampNow };
+      if (!scheduled) {
+        await supabase.from('wrought_briefs')
+          .upsert({ user_id: user.id, local_date: date, kind, facts: storedFacts, verdict },
+                  { onConflict: 'user_id,local_date,kind' });
+      }
     }
   }
 
@@ -3167,12 +3206,14 @@ async function brief(args, user) {
   // read get_day gives — never "food · training". Every nickname lands here,
   // and "jim bro, what did I eat today" came back without the shift, the burn
   // or the steps.
-  const wholeDay = verdict ? null : dayReadout({ day, balance, receipt, scored, week: facts.training_week, date, today, flags });
+  const left = await leftFor(user.id, profile, date, { day, flags, burn: balance?.known ? balance.calories_out : null }).catch(() => null);
+  const wholeDay = verdict ? null : dayReadout({ day, balance, receipt, scored, week: facts.training_week, date, today, flags, left });
 
   return {
     date, kind, facts, verdict,
     receipt,
     ...(wholeDay ? { day_read: wholeDay } : {}),
+    ...(left && date === today ? { left_today: left } : {}),
     nudge: nudge || undefined,
     nudge_note: nudgeNote(nudge, profile.plan_push),
     // Today in the standing coach's tradition — its one line, its register,
@@ -3204,24 +3245,47 @@ async function brief(args, user) {
 // each goal scored, the week — from the same functions the panels and the
 // brief use, composed once in lib/dayread.js. Called by get_day, and by log
 // when the sentence that logged something also asked where the day stands.
+// WHAT IS LEFT FOR TODAY, off the plan's basal-priced target — one helper for
+// every door that answers it, so log, get_day, brief, my_plan and whats_next
+// cannot state two different figures. Care flags are read here when the
+// caller has not already read them.
+async function leftFor(userId, profile, date, { day, flags = null, burn = null } = {}) {
+  const today = localDateFor(profile.timezone);
+  // Today only: the plan's target is TODAY's, and pricing a past day off it
+  // would score last Tuesday against a target set this morning.
+  if (date !== today) return null;
+  const [f, careRange] = await Promise.all([
+    planFacts(userId),
+    flags ? Promise.resolve(null) : rangeFacts(userId, profile, addDays(today, -(CARE_WINDOW_DAYS - 1)), today),
+  ]);
+  const plan = planRead({ profile: f.profile, goals: f.goals, weightKg: f.weightKg });
+  const fl = flags || careFlags(careRange, profile, { openDate: today });
+  return leftToday({ plan, eaten: day?.food?.calories, burn, flags: fl, open: true, uncounted: day?.food?.meals_uncounted || 0 });
+}
+
 async function fullDayRead(userId, profile, date, { day: known = null } = {}) {
   const today = localDateFor(profile.timezone);
-  const [day, goals, range] = await Promise.all([
+  // The flags stand TODAY whatever date is read — "what did I eat on Aug 20"
+  // must not lead with a warning that cleared weeks ago, nor miss one standing
+  // now. A window is not a memory.
+  const [day, goals, range, careRange] = await Promise.all([
     known ? Promise.resolve(known) : dayFacts(userId, profile, date),
     getGoals(userId),
     rangeFacts(userId, profile, addDays(date, -29), date),
+    date === today ? Promise.resolve(null) : rangeFacts(userId, profile, addDays(today, -(CARE_WINDOW_DAYS - 1)), today),
   ]);
   const balance = await balanceFor(userId, profile, date, day);
   const summary = summariseRange(range, profile);
   const scored = scoreGoals(goals, day, summary, profile);
   const week = weekSoFar(range.days, { today: date, ...weekTargets(profile) });
   const receipt = dayReceipt({ day, balance, date, today });
-  // The care flags, off the thirty days already fetched: the whole-day read is
-  // where "how much should I eat" gets answered, and under a flag no figure of
-  // what is left is ever quoted.
-  const flags = careFlags(range, profile, { openDate: today });
-  return { day, balance, receipt, scored, week, flags,
-           read: dayReadout({ day, balance, receipt, scored, week, date, today, flags }) };
+  // The care flags, as they stand today: the whole-day read is where "how
+  // much should I eat" gets answered, and under a flag no figure of what is
+  // left is ever quoted.
+  const flags = careFlags(careRange || range, profile, { openDate: today });
+  const left = await leftFor(userId, profile, date, { day, flags, burn: balance?.known ? balance.calories_out : null }).catch(() => null);
+  return { day, balance, receipt, scored, week, flags, left,
+           read: dayReadout({ day, balance, receipt, scored, week, date, today, flags, left }) };
 }
 
 async function getDay(args, user) {
@@ -3243,12 +3307,15 @@ async function getDay(args, user) {
     // with absolutely everything: exactly what I've eaten, my walk, my burn,
     // goals, and what I did." Every line here is another tool's own figure.
     day_read: full.read,
-    goals: full.scored,
+    goals: roomless(full.scored, full.flags),
     training_week: full.week,
     say: day.logged
       ? full.read.say
       : `Nothing logged on ${date}.`,
     ...(full.flags.length ? { care_flags: full.flags } : {}),
+    // "How much have I got left" — the target less what is eaten, the target
+    // priced off basal, the burn beside it. Withheld (and said) under a flag.
+    ...(full.left ? { left_today: full.left } : {}),
     note: (full.flags.length
       ? 'Care flags are up — they lead, and their guidance is followed exactly: quote no figure of what is left to eat and coach nothing down. The day itself is factual record and may be read after the flag. '
       : '') + (targets
@@ -3415,6 +3482,10 @@ async function whatsNext(args, user) {
     situation.protein_remaining_g = null;
   }
 
+  // The figure of what is left, off the plan's basal-priced target and worded
+  // once — withheld (and said) under a flag.
+  const left = await leftFor(user.id, profile, today, { day, flags }).catch(() => null);
+
   let recommendation = null;
   if (openai) {
     const guard = flags.length
@@ -3447,12 +3518,13 @@ Answer in 2-4 short sentences: what to do right now and why, in their units. If 
   return {
     situation,
     recommendation,
+    ...(left ? { left_today: left } : {}),
     ...(flags.length ? { care_flags: flags } : {}),
     ...(setup ? { setup_needed: setup } : {}),
     say: recommendation || [
       wStatus?.say,
       proteinLeft != null && !flags.length ? `${proteinLeft}g of protein left to hit today.` : null,
-      caloriesLeft != null && !flags.length ? (caloriesLeft < 0 ? `${Math.abs(caloriesLeft).toLocaleString('en-US')} kcal over target.` : `${caloriesLeft.toLocaleString('en-US')} kcal left.`) : null,
+      (!left?.withheld && left?.short) || (caloriesLeft != null && !flags.length ? (caloriesLeft < 0 ? `${Math.abs(caloriesLeft).toLocaleString('en-US')} kcal over target.` : `${caloriesLeft.toLocaleString('en-US')} kcal left.`) : null),
       day.training.sessions ? 'Already trained today.' : 'Nothing trained yet today.',
     ].filter(Boolean).join(' '),
     note: (flags.length ? 'Care flags are up — they lead; follow their guidance exactly and quote no figure of what is left to eat. ' : '') +
@@ -6400,6 +6472,12 @@ export async function handleRpc(msg, authUser) {
         // A tool that already says whose account it is keeps its own answer.
         if (out && typeof out === 'object' && !Array.isArray(out) && out.account === undefined) {
           out.account = authUser?.email || null;
+        }
+        // …and every READ carries the capture rule, because a read is exactly
+        // when a model answers "what did I eat" while the sandwich they just
+        // mentioned sits unlogged in the conversation.
+        if (out && typeof out === 'object' && !Array.isArray(out) && READ_TOOLS.has(params.name) && out.log_first === undefined) {
+          out.log_first = 'Anything they mentioned in this conversation — food, drink, a workout, a shift, a weight — that is not on the record above: call log / log_activity for it NOW, before answering, and never ask first.';
         }
         return rpcResult(id, {
           content: [{ type: 'text', text: JSON.stringify(out, null, 2) }],

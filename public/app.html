@@ -2226,6 +2226,9 @@ body::after {
    the hero figure refused to shrink and pushed UNDER / ROUGHLY past the panel,
    which clips at overflow:hidden — at 390px the caption read "UNDE ROUGHL".
    Measured: the caption reached 379.8px inside a panel ending at 374. */
+.leftline { margin: 12px 0 0; font-size: 14px; line-height: 1.45; color: var(--bright); font-weight: 600; }
+.leftline.over { color: var(--heat-4); }
+.leftline.held { color: var(--ash); font-weight: 500; }
 .fresh { margin: 12px 0 0; font-size: 12.5px; line-height: 1.5; color: var(--ash); }
 .fresh b { color: var(--bright); font-weight: 600; }
 .fresh.stale { color: var(--heat-4); }
@@ -5903,6 +5906,9 @@ function demoData() {
       resting_burn: 1770, missing: null,
     },
     no_target_set: null,
+    // The server's left-for-today, in its own shape (lib/plan.js leftToday).
+    left_today: { target: 2300, eaten: 2140, left: 160, over: false, withheld: false, basal: 3260, deficit: 960, pace: 'steady',
+      short: 'About 160 left of today\'s 2,300 target (basal 3,260 − 960).' },
     setup: { answered: 14, of: 14, complete: true, remaining: [], questions: [] },
     nudge: { kind: 'week_behind', priority: 7, push: 'normal',
       say: '3 of 4 this week with 2 days left. Still comfortably doable — want a session?' },
@@ -6337,6 +6343,14 @@ function freshLine(f) {
     inApp ? ' <button class="ghost fresh-sync" type="button">Send the latest</button>' : ''}</p>`;
 }
 
+// WHAT IS LEFT FOR TODAY, under the burn — the server's own words, so the
+// screen and the conversation quote one figure. The founder: "it should have
+// my daily burn, how much I have left for the day, and should base my basal."
+function leftLine(l) {
+  if (!l?.short) return '';
+  return `<p class="leftline${l.withheld ? ' held' : l.over ? ' over' : ''}">${esc(l.short)}</p>`;
+}
+
 function hero(d) {
   const b = d.today?.balance;
   if (!b?.known) {
@@ -6360,6 +6374,7 @@ function hero(d) {
     return `<section class="panel hero balance-plate">
       <div class="balance-head"><h2>Energy position · today</h2><span class="balance-live">Live record</span></div>
       <p class="balance-empty">${n(b.calories_out)}<span>to burn today · whole-day estimate</span></p>
+      ${leftLine(d.left_today)}
       ${burnSplit(b)}
       <p class="caveat">${b.active_source === 'awaiting_device'
         ? 'Your watch hasn\'t sent today, so only the resting figure is counted — nothing is projected. Open the Wrought app and today\'s movement fills in.'
@@ -6388,6 +6403,7 @@ function hero(d) {
       <div class="balance-total"><span>Eaten</span><b>${n(b.calories_in)}</b></div>
       <div class="balance-total"><span>Burned</span><b>${n(b.calories_out)}</b></div>
     </div>
+    ${leftLine(d.left_today)}
     ${burnSplit(b)}
     ${freshLine(d.today?.device?.fresh)}
     ${restingBasis(b)}
@@ -7019,11 +7035,12 @@ async function recalibrateTap(btn) {
 const ROUTING_HABIT =
   'Please remember this permanently, for all our future chats: anything I say about food, drink, ' +
   'training, weight, sleep, my gym, or my goals goes through the Wrought connector\u2019s tools \u2014 ' +
-  'log it or look it up there, never answer it from memory or the conversation. If I say I\u2019m going ' +
+  'log it or look it up there, never answer it from memory or the conversation. Log it before you answer, ' +
+  'and never ask me whether to. If I say I\u2019m going ' +
   'to the gym or name a workout, call Wrought\u2019s suggest_workout or start_session immediately. ' +
   'Numbers about my calories, targets, or weights only ever come from Wrought\u2019s tools. ' +
   'If more than one Wrought connector shows up, they are copies of the same service \u2014 use any one, ' +
-  'and never hold back logging to ask me which.';
+  'and never hold back logging to ask me which, but tell me which account it logged to the first time.';
 
 function gptLink(prompt, label) {
   return `<a class="linky" target="_blank" rel="noopener" href="https://chatgpt.com/?q=${encodeURIComponent(prompt)}">${esc(label)} \u2197</a>`;

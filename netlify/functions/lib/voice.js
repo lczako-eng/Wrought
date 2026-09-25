@@ -88,8 +88,12 @@ export function spokenBrief({ day = null, balance = null, week = null, flags = [
 
   if (balance && balance.known) {
     const net = Number(balance.net) || 0;
-    parts.push(
-      `Roughly ${Math.round(balance.calories_in)} in, about ${Math.round(balance.calories_out)} out` +
+    // A watch that has not sent today leaves only the resting half: said as
+    // that, never as the day's burn with a net under it — an understated
+    // burn is the number that tells somebody to eat less than they need.
+    parts.push(balance.active_source === 'awaiting_device'
+      ? `Roughly ${Math.round(balance.calories_in)} in. Your watch hasn't sent today, so only the resting ${Math.round(balance.calories_out)} is counted out.`
+      : `Roughly ${Math.round(balance.calories_in)} in, about ${Math.round(balance.calories_out)} out` +
       (net < -150 ? `, ${Math.abs(Math.round(net))} down on the day.`
        : net > 150 ? `, ${Math.round(net)} over.`
        : `, about level.`)
@@ -235,7 +239,9 @@ export function eveningReceipt({ facts = {}, balance = null } = {}) {
       : `roughly ${Math.round(food.calories).toLocaleString('en-US')} kcal in and ${Math.round(food.protein_g).toLocaleString('en-US')}g protein`);
   }
   if (balance?.known && (facts.logged || actions.length)) {
-    actions.push(`about ${Math.round(balance.calories_out).toLocaleString('en-US')} kcal burned`);
+    actions.push(balance.active_source === 'awaiting_device'
+      ? `about ${Math.round(balance.calories_out).toLocaleString('en-US')} kcal burned at rest — the watch hasn't sent today, so movement isn't in it`
+      : `about ${Math.round(balance.calories_out).toLocaleString('en-US')} kcal burned`);
   }
 
   // workout_days is read from weekSoFar below. Weekly scores in scoreGoals use
@@ -316,7 +322,7 @@ export function eveningNotification({ facts = {}, balance = null } = {}) {
   }
 
   if (balance?.known && (facts.logged || clauses.length)) {
-    clauses.push(`BURN ~${Math.round(balance.calories_out).toLocaleString('en-US')}`);
+    clauses.push(`BURN ~${Math.round(balance.calories_out).toLocaleString('en-US')}${balance.active_source === 'awaiting_device' ? ' REST ONLY' : ''}`);
   }
   if (facts.training_week?.target != null) {
     clauses.push(`WEEK ${facts.training_week.done || 0}/${facts.training_week.target}`);
