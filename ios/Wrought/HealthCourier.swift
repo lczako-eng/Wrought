@@ -616,7 +616,7 @@ final class HealthCourier: ObservableObject {
             let query = HKObserverQuery(sampleType: type, predicate: nil) { [weak self] _, done, error in
                 if error != nil { done(); return }
                 Task { @MainActor in
-                    let bg = BackgroundTask("wrought-sync")
+                    let bg = BackgroundTime("wrought-sync")
                     await self?.sync()
                     bg.end()
                     done()
@@ -633,7 +633,7 @@ final class HealthCourier: ObservableObject {
 
 /// A stretch of background time that ends itself when iOS calls time.
 @MainActor
-private final class BackgroundTask {
+private final class BackgroundTime {
     private var id: UIBackgroundTaskIdentifier = .invalid
     init(_ name: String) {
         id = UIApplication.shared.beginBackgroundTask(withName: name) { [weak self] in

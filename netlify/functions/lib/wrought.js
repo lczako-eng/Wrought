@@ -507,6 +507,27 @@ export function restingToMidnight(rows = [], timezone = 'UTC') {
   return Math.round(total * 1440 / mins);
 }
 
+/**
+ * The device's clock for one day — pure. The newest running-total row (by when
+ * the SERVER received it: Health Auto Export stamps measured_at at midnight)
+ * gives the freshness stamp and names who sent it; the day's resting rows give
+ * Apple's basal carried to midnight.
+ */
+export function deviceClock(mets = [], { timezone = 'UTC', date = null, open = true, now = new Date() } = {}) {
+  const newestTotal = mets.filter(m => DEVICE_RUNNING_TOTALS.has(m.metric) && m.source_ref !== 'day_final')
+    .sort((a, b) => String(a.created_at || a.measured_at).localeCompare(String(b.created_at || b.measured_at))).slice(-1)[0] || null;
+  return {
+    newest: newestTotal,
+    resting_whole_day: restingToMidnight(mets.filter(m => m.metric === 'resting_calories'), timezone),
+    fresh: deviceFreshness({
+      asOf: newestTotal?.created_at || newestTotal?.measured_at || null,
+      source: newestTotal?.source || null,
+      final: mets.some(m => DEVICE_RUNNING_TOTALS.has(m.metric) && m.source_ref === 'day_final'),
+      timezone, open, date, now,
+    }),
+  };
+}
+
 export async function dayFacts(userId, profile, date) {
   const [{ data: events }, { data: metrics }] = await Promise.all([
     supabase.from('wrought_events')
@@ -591,12 +612,12 @@ export async function dayFacts(userId, profile, date) {
     const rows = mets.filter(m => m.metric === name);
     return rows.length ? Math.round((rows.reduce((a, m) => a + num(m.value), 0) / rows.length) * 10) / 10 : null;
   };
-  // The newest running-total row: what the freshness stamp and the resting
-  // projection are read from.
-  const newestTotal = mets.filter(m => DEVICE_RUNNING_TOTALS.has(m.metric) && m.source_ref !== 'day_final')
-    .sort((a, b) => String(a.created_at || a.measured_at).localeCompare(String(b.created_at || b.measured_at))).slice(-1)[0] || null;
+  // When the phone last sent, and the basal carried to midnight — pure, and
+  // tested by what it returns, because a revert here reads as a perfectly
+  // plausible smaller burn.
+  const clock = deviceClock(mets, { timezone: profile.timezone, date, open: date === localDateFor(profile.timezone) });
   const restingSoFar = metricSum('resting_calories');
-  const restingWholeDay = restingToMidnight(mets.filter(m => m.metric === 'resting_calories'), profile.timezone);
+  const restingWholeDay = clock.resting_whole_day;
 
   const sleepMin = metricSum('sleep_minutes')
     ?? (evs.find(e => e.event_type === 'sleep') ? num(evs.find(e => e.event_type === 'sleep').detail?.minutes) : null);
@@ -673,14 +694,7 @@ export async function dayFacts(userId, profile, date) {
       // creation is the last send), not measured_at: Health Auto Export stamps
       // its daily totals at the day's midnight, which would read "as of
       // 12:00am" all day.
-      fresh: deviceFreshness({
-        asOf: newestTotal?.created_at || newestTotal?.measured_at || null,
-        source: newestTotal?.source || null,
-        final: mets.some(m => DEVICE_RUNNING_TOTALS.has(m.metric) && m.source_ref === 'day_final'),
-        timezone: profile.timezone,
-        open: date === localDateFor(profile.timezone),
-        date,
-      }),
+      fresh: clock.fresh,
       steps: metricSum('steps'),
       active_calories: metricSum('active_calories'),
       // Apple's own basal figure, when the watch sent one. Used as the resting

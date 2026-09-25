@@ -3333,7 +3333,7 @@ await test('miles convert, and seconds are not filed as minutes', () => {
 
 group('A daily total replaces its day, it does not add to it');
 
-await test('the cumulative metrics are named, and the point-in-time ones are not', () => {
+await test('the cumulative metrics are named, and the point-in-time ones are not', async () => {
   // Steps and active calories arrive as the running total SO FAR TODAY, and
   // the row carries the moment it was SENT — so running the Shortcut at
   // teatime and again at eleven counted the day twice, and idempotency on
@@ -3358,7 +3358,14 @@ await test('the cumulative metrics are named, and the point-in-time ones are not
   // One delete per DAY, for exactly the metrics that day's payload carries —
   // never a metrics × days cross product, which would wipe a day's row for a
   // metric the phone happened not to send for it.
-  assert.match(block, /\.eq\('local_date', day\)\.in\('metric', \[\.\.\.metrics\]\)/);
+  assert.match(block, /dayReplacements\(cumulative\)\.map\(\(\[day, metrics\]\) =>[\s\S]*?\.eq\('local_date', day\)\.in\('metric', metrics\)/);
+  const { dayReplacements } = await import('../netlify/functions/ingest.js');
+  const plan = Object.fromEntries(dayReplacements([
+    { local_date: '2026-09-25', metric: 'steps' }, { local_date: '2026-09-25', metric: 'distance_cycling_km' },
+    { local_date: '2026-09-24', metric: 'steps' }, { local_date: '2026-09-25', metric: 'steps' },
+  ]));
+  assert.deepEqual(plan['2026-09-25'].sort(), ['distance_cycling_km', 'steps']);
+  assert.deepEqual(plan['2026-09-24'], ['steps'], 'a metric sent for today wipes yesterday\'s row');
   // A failed delete stops the write: the insert after it would double the day.
   assert.match(block, /const failed = deletes\.find\(d => d\?\.error\);\s*if \(failed\) \{\s*return \{ statusCode: 500/);
   assert.ok(!/delete\(\)[\s\S]{0,120}\.eq\('source'/.test(block),
@@ -4716,7 +4723,10 @@ await test('"where am I at" is the whole day — every item, the session, the wo
   assert.match(tool, /THE WHOLE DAY in one read/);
   assert.match(tool, /"daily totals", "give me everything"/);
   const { GPT_INSTRUCTIONS } = await import('../netlify/functions/lib/gpt_instructions.js');
-  assert.match(GPT_INSTRUCTIONS, /"daily totals", "give me everything", "how am I doing today", "what did I do today" mean get_day/);
+  assert.match(GPT_INSTRUCTIONS, /"daily totals", "give me everything", "how am I doing today", "what did I do today"[^.]*? mean get_day — read day_read\.say out LINE BY LINE/);
+  // The founder's own questions land on the whole day on the GPT sheet too.
+  const gptDay = GPT_INSTRUCTIONS.slice(GPT_INSTRUCTIONS.indexOf('"Where am I at"'), GPT_INSTRUCTIONS.indexOf('mean get_day'));
+  for (const q of ['what did I eat today', 'how much should I eat today', 'what did I burn', 'what did my work burn']) assert.ok(gptDay.includes(`"${q}"`), `"${q}" is not sent to get_day on the GPT sheet`);
   assert.ok(GPT_INSTRUCTIONS.length <= 8000);
 
   // A "WORKOUT" THAT READS AS A SHIFT is said on the log reply, never re-typed.
@@ -7272,7 +7282,7 @@ await test('"how am I doing" gets the receipt, never a summary with ranges', () 
   const briefFn = mcp.slice(start, mcp.indexOf('async function getDay(', start));
   // Pinned on the relationship: the brief builds the receipt and returns it.
   assert.match(briefFn, /const receipt = dayReceipt\(/, 'the brief does not carry the receipt');
-  assert.match(briefFn, /return \{\s*date, kind, facts, verdict,\s*receipt,/, 'the brief builds a receipt and never returns it');
+  assert.match(briefFn, /return \{\s*date, kind, facts, verdict,[\s\S]*?\breceipt,/, 'the brief builds a receipt and never returns it');
   assert.match(briefFn, /LINE BY LINE/, "the brief's own note does not order the line-by-line read");
   assert.match(briefFn, /never a range/, 'ranges are not forbidden on the tool itself');
   // A care flag still leads, and the factual read never becomes intake advice.
@@ -14817,13 +14827,35 @@ await test('a watch figure always says when the phone sent it, and a finished da
   // day_final total marks a closed day whole.
   const src = decomment(readFileSync(new URL('../netlify/functions/lib/wrought.js', import.meta.url), 'utf8'));
   const df = src.slice(src.indexOf('export async function dayFacts('), src.indexOf('export async function rangeFacts('));
-  assert.match(df, /\.select\('metric, value, unit, measured_at, source_ref, source, created_at'\)/, 'dayFacts cannot see which total closed the day, or when it arrived');
-  // The stamp is when the server RECEIVED the newest running total — never
-  // measured_at, which Health Auto Export sets to the day's midnight.
-  assert.match(df, /const newestTotal = mets\.filter\(m => DEVICE_RUNNING_TOTALS\.has\(m\.metric\) && m\.source_ref !== 'day_final'\)/);
-  assert.match(df, /asOf: newestTotal\?\.created_at \|\| newestTotal\?\.measured_at \|\| null,/);
-  assert.match(df, /final: mets\.some\(m => DEVICE_RUNNING_TOTALS\.has\(m\.metric\) && m\.source_ref === 'day_final'\)/);
-  assert.match(df, /open: date === localDateFor\(profile\.timezone\)/);
+  const sel = (df.match(/from\('wrought_metrics'\)\s*\.select\('([^']*)'\)/) || [])[1] || '';
+  for (const col of ['source_ref', 'source', 'created_at', 'measured_at'])
+    assert.ok(sel.split(',').map(c => c.trim()).includes(col), `dayFacts no longer reads ${col} — it cannot tell which total closed the day, who sent it, or when it arrived`);
+  // RUN the day's clock. The stamp is the NEWEST running total by when the
+  // server received it (never measured_at, which Health Auto Export sets to the
+  // day's midnight), names who sent it, and ignores a 7am resting heart rate.
+  const { deviceClock } = await import('../netlify/functions/lib/wrought.js');
+  const now = new Date('2026-09-24T23:02:00Z');
+  const rows = [
+    { metric: 'flights', value: 4, source: 'apple_health', measured_at: '2026-09-24T04:00:00Z', created_at: '2026-09-24T13:12:00Z' },
+    { metric: 'steps', value: 8020, source: 'wrought_ios', measured_at: '2026-09-24T22:58:00Z', created_at: '2026-09-24T22:58:10Z' },
+    { metric: 'resting_hr', value: 58, source: 'wrought_ios', measured_at: '2026-09-24T11:00:00Z', created_at: '2026-09-24T23:00:00Z' },
+    { metric: 'resting_calories', value: 1860, source: 'wrought_ios', measured_at: '2026-09-24T22:00:56Z', created_at: '2026-09-24T22:58:10Z' },
+  ];
+  const c = deviceClock(rows, { timezone: tz, date: '2026-09-24', open: true, now });
+  assert.equal(c.fresh.at, '6:58pm', 'the stamp came from an older send, or from a point-in-time reading');
+  assert.match(c.fresh.say, /^as of 6:58pm$/);
+  assert.equal(c.fresh.source, 'wrought_ios');
+  // Apple's basal so far, carried to midnight in THEIR zone.
+  assert.equal(c.resting_whole_day, 2480);
+  assert.notEqual(deviceClock(rows, { timezone: 'UTC', date: '2026-09-24', open: true, now }).resting_whole_day, 2480, 'the zone is not what the carry divides by');
+  // A day_final total marks a closed day whole.
+  assert.equal(deviceClock([...rows, { metric: 'steps', value: 9100, source: 'wrought_ios', source_ref: 'day_final', measured_at: '2026-09-24T16:00:00Z', created_at: '2026-09-25T12:00:00Z' }],
+    { timezone: tz, date: '2026-09-24', open: false, now }).fresh.final, true);
+  // dayFacts uses it, whole.
+  assert.match(df, /const clock = deviceClock\(mets, \{ timezone: profile\.timezone, date, open: date === localDateFor\(profile\.timezone\) \}\);/);
+  assert.match(df, /fresh: clock\.fresh,/);
+  assert.match(df, /const restingWholeDay = clock\.resting_whole_day;/);
+  assert.match(df, /resting_calories: restingWholeDay,/);
 });
 
 await test('Apple\'s basal so far is carried to midnight, never used as the whole day', async () => {
@@ -14954,6 +14986,9 @@ await test('the phone closes the days it has finished, syncs when opened, and se
   assert.ok(closing.length > 200, 'the closing pass moved and this test can no longer see it');
   assert.match(closing, /bySettingHour: 12, minute: 0, second: 0, of: start/);
   assert.match(closing, /row\["source_ref"\] = "day_final"/);
+  // …and actually SENT: built, stamped and then dropped is the same as never.
+  assert.match(closing, /for var row in closed \{[\s\S]*?row\["source_ref"\] = "day_final"[\s\S]*?metrics\.append\(row\)/);
+  assert.match(courier, /IngestClient\.post\(metrics: metrics, workouts: workouts\)/);
   assert.match(closing, /total\(\.stepCount, unit: \.count\(\), from: start, to: end\)/);
   assert.match(closing, /for m in Self\.DAILY_TOTALS/);
   assert.ok(!/bySettingHour: 23/.test(closing), 'a 23:59 stamp files a travelling phone\'s yesterday under today');
@@ -14978,7 +15013,8 @@ await test('the phone closes the days it has finished, syncs when opened, and se
   assert.match(sync, /trailing = Task \{[\s\S]*?Task\.sleep[\s\S]*?await self\?\.sync\(\)/);
   assert.ok(!/lastSent = Date\(\)\s*\n\s*(self\.)?web/.test(sync), 'a failed send is stamped as sent');
   assert.ok(!/await self\?\.sendToday\(\)/.test(courier), 'the observer bypasses the single send');
-  assert.equal((courier.match(/sendToday\(\)/g) || []).length, 2, 'sendToday is called from somewhere other than sync()');
+  const code = courier.split('\n').filter(l => !/^\s*\/\//.test(l)).join('\n').replace(/func sendToday\(\)/, '');
+  assert.equal((code.match(/sendToday\(\)/g) || []).length, 1, 'sendToday is called from somewhere other than sync()');
   assert.match(sync, /self\.web\?\.announceSync\(line: self\.lastSync, error: self\.lastError\)/);
   // A page-asked send with nothing to send with says so, both ends.
   assert.match(sync, /if force \{ web\?\.announceSync\(line: nil, error: "Connect Apple Health in this app first/);
@@ -14986,7 +15022,7 @@ await test('the phone closes the days it has finished, syncs when opened, and se
   // inside a background task; and it is armed at LAUNCH, once.
   const observer = courier.slice(courier.indexOf('private func registerBackgroundDelivery()'), courier.indexOf('store.execute(query)'));
   assert.match(observer, /guard !armed else \{ return \}/);
-  assert.match(observer, /let bg = BackgroundTask\("wrought-sync"\)\s*await self\?\.sync\(\)\s*bg\.end\(\)\s*done\(\)/);
+  assert.match(observer, /let bg = BackgroundTime\("wrought-sync"\)\s*await self\?\.sync\(\)\s*bg\.end\(\)\s*done\(\)/);
   assert.ok(!/Task \{ await self\?\.sync\(\) \}\s*done\(\)/.test(observer), 'the update is acknowledged before the send');
   const app = read('WroughtApp.swift');
   assert.match(app, /@UIApplicationDelegateAdaptor\(AppDelegate\.self\)/);
@@ -15240,7 +15276,7 @@ await test('the dashboard says which figure counted, and what the work was worth
   const unpriced = split({ ...base, logged_activity: { count: 1, entries: [{ label: 'animal care', hours: 3, kcal: null }] } });
   assert.match(unpriced, /animal care, 3h on task — not priced yet, it needs a recent weigh-in/);
   assert.ok(!/0 kcal|not added/.test(unpriced), 'an unpriced shift reads as priced at zero and beaten by the watch');
-  const tt = app.slice(app.indexOf('function trainingTodayPanel('), app.indexOf('function trainingTodayPanel(') + 5000);
+  const tt = app.slice(app.indexOf('function trainingTodayPanel('), app.indexOf('\nfunction ', app.indexOf('function trainingTodayPanel(') + 10));
   assert.match(tt, /!x\.kcal \? null : src === 'logged_over_device' \? 'counted' : src === 'device' \? 'not added — your watch counted more' : null/);
   // The server carries "not priced" as null, never a zero.
   const { activityTotal } = await import('../netlify/functions/lib/activity.js');
@@ -15408,9 +15444,12 @@ await test('a finished day sent after it closed is whole, never "short" at a tim
   const before = deviceFreshness({ asOf: '2026-09-24T22:00:00Z', open: false, timezone: tz, date: '2026-09-24' });
   assert.equal(before.short, true);
   assert.match(before.say, /last sent this day at 6:00pm/);
-  // dayFacts hands the day over.
-  const src = readFileSync(new URL('../netlify/functions/lib/wrought.js', import.meta.url), 'utf8');
-  assert.match(src, /open: date === localDateFor\(profile\.timezone\),\s*date,\s*\}\)/);
+  // Through the day's clock, as dayFacts reads it: yesterday re-sent at 7:12am.
+  const { deviceClock } = await import('../netlify/functions/lib/wrought.js');
+  const resent = deviceClock([{ metric: 'steps', value: 14210, source: 'apple_health', measured_at: '2026-09-24T04:00:00Z', created_at: '2026-09-25T11:12:00Z' }],
+    { timezone: tz, date: '2026-09-24', open: false });
+  assert.equal(resent.fresh.final, true);
+  assert.equal(resent.fresh.short, false);
 });
 
 await test('under a care flag no structured gap of what is left to eat rides on any read', async () => {
@@ -15431,6 +15470,31 @@ await test('under a care flag no structured gap of what is left to eat rides on 
   assert.match(mcp, /goals: roomless\(full\.scored, full\.flags\),/);
   assert.match(mcp, /goals: roomless\(scored, flags\),/);
   assert.match(mcp, /\.\.\.\(fullRead\?\.flags\?\.length \? \{ care_flags: fullRead\.flags \} : \{\}\),/);
+});
+
+await test('the watch clock reaches every reader: sign-ins, the receipt in both counting cases, the nightly device check', async () => {
+  // Sign-ins counted from LIVE grants only: a rotated refresh row lives about
+  // a year, and counting it inflated "signed in N times" once per rotation.
+  const conn = readFileSync(new URL('../netlify/functions/api-connections.js', import.meta.url), 'utf8');
+  assert.match(conn, /from\('wrought_oauth_refresh'\)\s*\.select\('client_id, created_at'\)\s*\.eq\('user_id', user\.id\)\.eq\('revoked', false\)\.gt\('expires_at',/);
+  // The receipt says the watch's figure is AS OF its send, whichever side won.
+  const { dayReceipt } = await import('../netlify/functions/lib/receipt.js');
+  const { energyBalance } = await import('../netlify/functions/lib/training.js');
+  const profile = { height_cm: 191, birth_year: 1982, sex: 'male' };
+  const fresh = { final: false, short: false, stale: true, at: '6:00pm', as_of: '2026-09-25T22:00:00Z', source: 'wrought_ios' };
+  const work = [{ event_type: 'activity', summary: 'animal care, 3h', detail: { hours: 3, kcal: 1559, label: 'animal care' } }];
+  for (const [active, acts, expect] of [[941, work, /as of 6:00pm/], [2400, work, /by 6:00pm/]]) {
+    const balance = energyBalance({ profile, weightKg: 150, caloriesIn: 1420, activeCalories: active, workouts: [], activities: acts, deviceRestingAt: '6:00pm' });
+    const day = { date: '2026-09-25', food: { calories: 1420 }, device: { steps: 8020, active_calories: active, fresh }, activity: { count: 1, entries: acts } };
+    const r = dayReceipt({ day, balance, date: '2026-09-25', today: '2026-09-25' });
+    assert.match(r.say, expect, `${balance.active_source}: the receipt dropped when the watch figure is from`);
+    assert.ok(!/for the whole day \(8,020 steps\)/.test(r.say), `${balance.active_source}: a 6pm figure is called the whole day`);
+  }
+  // The 8pm close asks whether the phone normally reports from PUSH
+  // connections only — a pull provider is not a phone that went quiet.
+  const nightly = readFileSync(new URL('../netlify/functions/brief-nightly.js', import.meta.url), 'utf8');
+  assert.match(nightly, /from\('wrought_connections'\)\s*\.select\('last_sync_at'\)\.eq\('user_id', userId\)\.eq\('mode', 'push'\)/);
+  assert.match(nightly, /deviceExpected: Date\.now\(\) - lastPush < 3 \* 86400000,/);
 });
 
 // ── Report ──────────────────────────────────────────────────────────────────

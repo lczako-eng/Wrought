@@ -2521,8 +2521,13 @@ one. So every day was short by its evening, forever. Now:
   at once, and a send under a minute old is not repeated.
 - **This needs a new TestFlight build (13+).** Build 12 sends only on a cold
   launch and has no send button, and the page knows it: inside build 12 it
-  says *close the app fully and open it again*, never "open the Wrought app"
-  to somebody already in it.
+  says *close the Wrought app fully and open it again*, never "open the
+  Wrought app" to somebody already in it. **Build 12 registers no bridges at
+  all** (the Watch bridge came a week after it), so the tell is its web view —
+  an iOS page with no `Safari/` token that is not a Home Screen install —
+  never a bridge it does not have. The first version inferred build 12 from
+  `wroughtWatch`, and its test faked that bridge, so it passed on the wrong
+  premise.
 - **The replace itself was fragile.** Ingest deleted each (metric, day) in a
   serial awaited loop and never read the result, so a failed delete was
   followed by an insert that DOUBLED the day's steps — and closing two days
@@ -2594,7 +2599,7 @@ and the saved habit; and every READ reply (`get_day`, `brief`,
 when a model answers *"what did I eat"* while the sandwich just mentioned sits
 unlogged in the conversation.
 
-**The adversarial review ran the code and found eleven things wrong**, and
+**The adversarial review ran the code and found twenty things wrong**, and
 every one is a rule this file already states:
 
 - **The basal carry divided by the wrong midnight.** The phone totals from
@@ -2633,6 +2638,59 @@ every one is a rule this file already states:
   (`roomless()`), and a log reply carrying the day carries its flags.
 - A running day holding only closing-pass rows printed **the Unix epoch** as
   its stamp; it prints nothing now.
+- **"20 min ago" in the payload repainted the whole Record view every poll.**
+  The page repaints only when the payload changes, and `minutes_old` and the
+  "(25 min ago)" sentence change every minute — so every ninety seconds the
+  view was replaced and a half-typed meal in the quick-add box was wiped: the
+  Trainer-tab failure the guard exists to prevent, one tab along. The
+  dashboard gets the send TIME only (`steadyDevice()`), and the page moves the
+  age in place, one line at a time (`tickAges`), never repainting. **A payload
+  field that changes with the clock is a repaint on a timer.**
+- **The send button only where it can send.** Figures Health Auto Export sent
+  name Health Auto Export, never a button the app cannot answer; the watch
+  panel gives the same instruction as the burn's line; a page-asked send with
+  nothing to send with says so at both ends rather than leaving "Sending…"
+  forever; and the demo is stamped five minutes ago, under the line, instead
+  of accusing a watch it invented.
+- **A shift not yet priced read as "0 kcal · not added — your watch counted
+  more".** It was never priced (no weigh-in yet); `activityTotal` coerced the
+  missing figure to zero. It is null now, and every surface says *not priced
+  yet — it needs a recent weigh-in*. A missing figure is never a zero.
+- **The courier dropped sends it should have deferred** — the steps-behind
+  complaint, from inside the fix for it. A wake that joined a running send
+  was lost (that send had read HealthKit before the new samples existed), a
+  wake inside the minute after a send was thrown away with nothing re-armed,
+  and a FAILED send (a locked phone reads nothing) was stamped as sent and
+  throttled the retry. Now a request during a send is owed one more after it,
+  a wake inside the minute is deferred to its end, and only a send that
+  landed is stamped.
+- **Background delivery only worked while the app's view existed.** The
+  observer queries were created from `ContentView.onAppear`; HealthKit
+  relaunches a swept-away app with no window, so the evening's steps woke an
+  app with no query, went unanswered, and after three of those HealthKit
+  stops waking it. They are armed at launch now (`AppDelegate` through
+  `@UIApplicationDelegateAdaptor`, one shared courier), acknowledged only
+  after the send finishes, inside a background task.
+- **Where DST begins at midnight, a closed day was an hour off** —
+  `startOfDay` plus a day, when that midnight does not exist — and it
+  overwrote the right total for good. The calendar's own day bounds now.
+  Pre-existing or not, every one of these was in the path of *"my steps are
+  always behind"*.
+
+**And a fourth reviewer read the tests rather than the code** — and found the
+fix most likely to be undone was guarded by nothing. Reverting the basal
+carry (`resting_calories: restingSoFar`, 620 kcal understated at teatime)
+passed all 780: the test fed hand-built arguments to the carry and never ran
+the code that picks which figure is the day's. The phone could build the
+closed day's totals and drop them before the send; ingest could go back to a
+metrics × days cross product with its pinned text matching word for word;
+the sign-in count could include revoked grants. Each is now a pure function
+run by the test (`deviceClock()`, `dayReplacements()`) or a pin on the
+relationship, and each was reverted on purpose to watch it fail. **And the
+GPT sheet had been edited mid-word** — the new questions were spliced into
+the token `day_read.say`, so the custom GPT was told to read *"day_read."* —
+with no test reading that sentence. **A test that feeds a function its
+answer proves the function, not the wiring.**
 
 **What could not be fixed from here**: the duplicates live in ChatGPT's own
 settings; removing the extras (keep one) is the founder's. The day of the
@@ -5370,7 +5428,7 @@ self-reporting scale removes the most-abandoned manual entry), then Strava.
 
 ## Conventions
 
-- `npm test` runs `test/harness.mjs` — 773 offline tests, no network, no database.
+- `npm test` runs `test/harness.mjs` — 781 offline tests, no network, no database.
   Run it before every push. It covers the JSON-RPC envelope (which fails as an
   uninformative "could not connect" inside ChatGPT) and all the arithmetic
   (which fails as a confidently wrong number in somebody's verdict).

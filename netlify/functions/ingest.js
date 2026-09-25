@@ -544,6 +544,20 @@ function flattenHealthAutoExportWorkouts(body) {
   });
 }
 
+/**
+ * Which (day, metrics) pairs a payload's running totals replace — pure. Per
+ * day, for exactly the metrics that day carries: a metric sent for today and
+ * not for yesterday must never wipe yesterday's row.
+ */
+export function dayReplacements(cumulative = []) {
+  const byDate = new Map();
+  for (const r of cumulative) {
+    if (!byDate.has(r.local_date)) byDate.set(r.local_date, new Set());
+    byDate.get(r.local_date).add(r.metric);
+  }
+  return [...byDate].map(([day, metrics]) => [day, [...metrics]]);
+}
+
 export const handler = async (event) => {
   if (event.httpMethod === 'OPTIONS') return { statusCode: 204, headers: CORS, body: '' };
   if (event.httpMethod !== 'POST') {
@@ -663,14 +677,9 @@ export const handler = async (event) => {
     // failed was followed by an insert that DOUBLED the day's steps. Grouped
     // by day rather than a metrics × days cross product: a metric sent for
     // today but not for yesterday must not wipe yesterday's row.
-    const byDate = new Map();
-    for (const r of cumulative) {
-      if (!byDate.has(r.local_date)) byDate.set(r.local_date, new Set());
-      byDate.get(r.local_date).add(r.metric);
-    }
-    const pending = [...byDate].map(([day, metrics]) =>
+    const pending = dayReplacements(cumulative).map(([day, metrics]) =>
       supabase.from('wrought_metrics').delete()
-        .eq('user_id', userId).eq('local_date', day).in('metric', [...metrics]));
+        .eq('user_id', userId).eq('local_date', day).in('metric', metrics));
     const deletes = await Promise.all(pending);
     const failed = deletes.find(d => d?.error);
     if (failed) {
