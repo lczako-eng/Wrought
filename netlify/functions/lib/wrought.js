@@ -16,6 +16,7 @@
 
 import { createClient } from '@supabase/supabase-js';
 import { createHash, randomBytes } from 'node:crypto';
+import { clock as clock12 } from './timing.js';
 
 export const SITE_URL = process.env.WROUGHT_SITE_URL || 'https://wrought.fit';
 export const MODEL    = process.env.WROUGHT_MODEL || 'gpt-5.4-mini';
@@ -390,13 +391,103 @@ export function fastingSummary(rows = []) {
 
 const num = v => (Number.isFinite(+v) ? +v : 0);
 
+// The running totals a phone or watch sends — the numbers that are only true
+// AS OF the moment they were sent. A heart rate is a reading with its own
+// time; a step count is a claim about the day so far.
+export const DEVICE_RUNNING_TOTALS = new Set([
+  'steps', 'active_calories', 'distance_km', 'active_minutes', 'resting_calories',
+  'stand_minutes', 'stand_hours', 'flights', 'distance_cycling_km', 'distance_swimming_km',
+]);
+
+/**
+ * HOW FRESH THE WATCH'S NUMBERS ARE, in words — pure.
+ *
+ * The founder at 7pm, reading 8,020 steps that the phone had sent at 6:01:
+ * "my steps are always behind … they never match up, should be instant". The
+ * number was true AS OF 6:01 and nothing said so, which makes an ordinary
+ * sync gap read as a wrong number — the as_of comment on dayFacts made the
+ * same point in August and the time still never reached a sentence.
+ *
+ * Today: the clock time and how long ago, and past twenty minutes the one
+ * thing that makes it current (open the app — the phone sends the moment it
+ * opens). A finished day: whether the phone ever sent its final total. A day
+ * the phone stopped reporting part-way through is SHORT, and says so rather
+ * than passing a 6pm figure off as the whole day.
+ *
+ * @param asOf     ISO time of the newest running-total row for the day
+ * @param final    a `day_final` total arrived — the phone closed the day
+ * @param open     the day is today in their zone
+ * @returns null when the watch sent nothing that day
+ */
+export const FRESH_STALE_MINUTES = 20;
+
+// The one action that makes a figure current, by what sent it. The Wrought
+// app sends the moment it opens; Health Auto Export sends when it is opened
+// or on its own schedule; anything else, when it next syncs.
+function refreshFor(source) {
+  if (source === 'wrought_ios') return 'open the Wrought app on your phone to send the latest';
+  if (source === 'apple_health') return 'open Health Auto Export on your phone to send the latest';
+  return 'the latest arrives when the device next syncs';
+}
+
+export function deviceFreshness({ asOf = null, final = false, timezone = 'UTC', now = new Date(), open = true, source = null } = {}) {
+  if (!asOf && !final) return null;
+  if (!open) {
+    if (final) return { final: true, short: false, stale: false, say: 'the full day, as the phone closed it' };
+    const at = new Date(asOf);
+    if (Number.isNaN(at.getTime())) return null;
+    const when = clock12(localMinutesFor(timezone, at));
+    return {
+      final: false, short: true, stale: true, at: when, as_of: at.toISOString(), source,
+      say: `short — the phone last sent this day at ${when}, so anything after that never reached it`,
+    };
+  }
+  const at = new Date(asOf);
+  if (Number.isNaN(at.getTime())) return null;
+  const minutes = Math.max(0, Math.round((now.getTime() - at.getTime()) / 60000));
+  const when = clock12(localMinutesFor(timezone, at));
+  const ago = minutes < 2 ? 'just now'
+    : minutes < 60 ? `${minutes} min ago`
+    : minutes < 120 ? 'about an hour ago'
+    : `about ${Math.round(minutes / 60)} hours ago`;
+  const stale = minutes >= FRESH_STALE_MINUTES;
+  return {
+    final: false, short: false, stale, at: when, minutes_old: minutes, as_of: at.toISOString(), source,
+    refresh: refreshFor(source),
+    say: stale
+      ? `as of ${when} (${ago}) — anything since is not in yet; ${refreshFor(source)}`
+      : `as of ${when}`,
+  };
+}
+
+/**
+ * Apple's basal-so-far carried to the whole day — pure.
+ *
+ * @param rows  the day's resting_calories rows (after ingest's collapse, one)
+ * @returns the whole-day figure, the value as sent when it cannot be carried,
+ *          or null when it is too early in the day to carry honestly
+ */
+export function restingToMidnight(rows = [], timezone = 'UTC') {
+  if (!rows.length) return null;
+  const total = rows.reduce((a, m) => a + num(m.value), 0);
+  if (!(total > 0)) return null;
+  const row = rows[rows.length - 1];
+  // A closed day, or a source that stamps the day bucket rather than the
+  // moment it sent: used as sent.
+  if (row.source_ref === 'day_final' || row.source !== 'wrought_ios' || !row.measured_at) return Math.round(total);
+  const mins = localMinutesFor(timezone, new Date(row.measured_at));
+  if (!(mins >= 240)) return null;          // too early to carry — the formula stands in
+  if (mins >= 1439) return Math.round(total);
+  return Math.round(total * 1440 / mins);
+}
+
 export async function dayFacts(userId, profile, date) {
   const [{ data: events }, { data: metrics }] = await Promise.all([
     supabase.from('wrought_events')
       .select('id, event_type, occurred_at, summary, detail, estimated, source')
       .eq('user_id', userId).eq('local_date', date).order('occurred_at', { ascending: true }),
     supabase.from('wrought_metrics')
-      .select('metric, value, unit, measured_at')
+      .select('metric, value, unit, measured_at, source_ref, source, created_at')
       .eq('user_id', userId).eq('local_date', date),
   ]);
 
@@ -474,6 +565,12 @@ export async function dayFacts(userId, profile, date) {
     const rows = mets.filter(m => m.metric === name);
     return rows.length ? Math.round((rows.reduce((a, m) => a + num(m.value), 0) / rows.length) * 10) / 10 : null;
   };
+  // The newest running-total row: what the freshness stamp and the resting
+  // projection are read from.
+  const newestTotal = mets.filter(m => DEVICE_RUNNING_TOTALS.has(m.metric) && m.source_ref !== 'day_final')
+    .sort((a, b) => String(a.created_at || a.measured_at).localeCompare(String(b.created_at || b.measured_at))).slice(-1)[0] || null;
+  const restingSoFar = metricSum('resting_calories');
+  const restingWholeDay = restingToMidnight(mets.filter(m => m.metric === 'resting_calories'), profile.timezone);
 
   const sleepMin = metricSum('sleep_minutes')
     ?? (evs.find(e => e.event_type === 'sleep') ? num(evs.find(e => e.event_type === 'sleep').detail?.minutes) : null);
@@ -541,11 +638,41 @@ export async function dayFacts(userId, profile, date) {
       as_of: mets.length
         ? mets.map(m => m.measured_at).filter(Boolean).sort().slice(-1)[0] || null
         : null,
+      // …and that time IN WORDS, for the running totals only. `as_of` above
+      // is the newest row of any kind, and a resting heart rate stamped at
+      // 7am says nothing about whether the steps are current.
+      //
+      // The stamp is when the SERVER RECEIVED the total (created_at — ingest
+      // replaces a day's running totals on every send, so the newest row's
+      // creation is the last send), not measured_at: Health Auto Export stamps
+      // its daily totals at the day's midnight, which would read "as of
+      // 12:00am" all day.
+      fresh: deviceFreshness({
+        asOf: newestTotal?.created_at || newestTotal?.measured_at || null,
+        source: newestTotal?.source || null,
+        final: mets.some(m => DEVICE_RUNNING_TOTALS.has(m.metric) && m.source_ref === 'day_final'),
+        timezone: profile.timezone,
+        open: date === localDateFor(profile.timezone),
+      }),
       steps: metricSum('steps'),
       active_calories: metricSum('active_calories'),
       // Apple's own basal figure, when the watch sent one. Used as the resting
       // half of the burn so the pair stays in Apple's frame — see energyBalance.
-      resting_calories: metricSum('resting_calories'),
+      //
+      // …CARRIED TO MIDNIGHT. Apple's basal is accumulated from midnight to
+      // the moment it was sent, so the 6pm figure is three-quarters of a day,
+      // and using it as the day's resting burn understated the founder's burn
+      // by roughly six hundred at teatime — in the direction that tells
+      // somebody to eat less than they need. A body spends its basal at a
+      // steady rate, so the so-far figure is carried to midnight at that rate
+      // (the phone stamps the moment it sent). Only from four hours in: before
+      // that the multiplier is large enough to magnify noise, and the formula
+      // stands in. A day the phone closed with its final total is whole as it
+      // is; a source that stamps the day bucket rather than the send cannot be
+      // carried and is used as sent, as before.
+      resting_calories: restingWholeDay,
+      resting_so_far: restingSoFar,
+      resting_projected: restingWholeDay != null && restingSoFar != null && restingWholeDay !== restingSoFar,
       distance_km: metricSum('distance_km'),
       active_minutes: metricSum('active_minutes'),
       resting_hr: metricAvg('resting_hr'),
@@ -1618,7 +1745,9 @@ export const ROUTING_HABIT =
   'training, weight, sleep, my gym, or my goals goes through the Wrought connector\u2019s tools \u2014 ' +
   'log it or look it up there, never answer it from memory or the conversation. If I say I\u2019m going ' +
   'to the gym or name a workout, call Wrought\u2019s suggest_workout or start_session immediately. ' +
-  'Numbers about my calories, targets, or weights only ever come from Wrought\u2019s tools.';
+  'Numbers about my calories, targets, or weights only ever come from Wrought\u2019s tools. ' +
+  'If more than one Wrought connector shows up, they are copies of the same service \u2014 use any one, ' +
+  'and never hold back logging to ask me which.';
 
 export const VALID_TYPES = new Set(['food','drink','workout','weight','measurement','sleep','symptom','mood','supplement','note','fast','activity']);
 

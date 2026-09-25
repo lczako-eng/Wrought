@@ -269,9 +269,14 @@ function build(r, { day, balance, calorieTarget, week, lastWeighDays, flagged, h
       // measured; the dashboard already names the same gap as awaiting_device.
       if (!(Number(g.actual) > 0)) return null;
 
+      // A device figure the phone sent hours ago is that hour's figure: a 4pm
+      // report on a 9am step count says so, rather than reading as 4pm's.
+      const fresh = day?.device?.fresh;
+      const deviceMetric = ['steps', 'distance_km', 'active_minutes', 'active_calories'].includes(g.metric);
+      const asOf = deviceMetric && fresh?.stale && fresh.at ? ` (as of ${fresh.at})` : '';
       return {
         title: g.hit ? 'Goal met' : 'Where you are',
-        body: `${Math.round(g.actual).toLocaleString()}${g.unit} of ${Math.round(g.target).toLocaleString()}${g.unit} — ${g.percent}% of ${g.goal}.`,
+        body: `${Math.round(g.actual).toLocaleString()}${g.unit} of ${Math.round(g.target).toLocaleString()}${g.unit}${asOf} — ${g.percent}% of ${g.goal}.`,
         why: 'a scheduled read of a target they set',
       };
     }

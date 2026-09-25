@@ -256,3 +256,28 @@ export function recommendRoute(mentioned = []) {
     say: `Connect ${PROVIDERS[door].name} and you get the lot in one go — it already collects ${PROVIDERS[door].aggregates.slice(0, 4).join(', ')} and the rest. One setup, not eight.`,
   };
 }
+
+/**
+ * The connections worth naming — one row per phone that is actually sending.
+ *
+ * Every iPhone user held two push rows: minting the app's device key creates
+ * an 'apple_health' row, and the app itself posts as 'wrought_ios', so ingest
+ * upserts a second. The first never syncs. Listing both told the assistant —
+ * and the person — that two things were connected when one phone was, which
+ * is one of the ways "there is more than one connection" kept being said.
+ *
+ * A push row that has never sent is dropped once another push row has sent;
+ * among those that have, the ones heard from in the last fortnight stay (two
+ * phones are two phones), else the most recent one. Pull connections are
+ * accounts at a provider and are all kept. Nothing is deleted — this only
+ * decides what is SAID.
+ */
+export function liveConnections(conns = [], now = Date.now()) {
+  const push = conns.filter(c => c.mode === 'push');
+  const synced = push.filter(c => c.last_sync_at)
+    .sort((a, b) => String(b.last_sync_at).localeCompare(String(a.last_sync_at)));
+  if (!synced.length) return conns;
+  const recent = synced.filter(c => now - Date.parse(c.last_sync_at) < 14 * 86400000);
+  const keep = new Set(recent.length ? recent : synced.slice(0, 1));
+  return conns.filter(c => c.mode !== 'push' || keep.has(c));
+}

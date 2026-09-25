@@ -16,6 +16,11 @@ final class WebViewStore: NSObject, ObservableObject {
     static let shared = WebViewStore()
     let webView: WKWebView
     private let watchBridge = WatchBridge()
+    private let syncBridge = SyncBridge()
+    /// Set by the Health courier. The page asks for the latest numbers and
+    /// this sends them — nothing else crosses: no token, no record, just
+    /// "send what the phone has now".
+    var onSyncRequest: (@MainActor () async -> Void)?
 
     func openWorkout(_ url: URL) {
         guard url.scheme == "wrought", url.host == "workout" else { return }
@@ -36,6 +41,8 @@ final class WebViewStore: NSObject, ObservableObject {
         super.init()
         watchBridge.webView = webView
         config.userContentController.add(watchBridge, name: "wroughtWatch")
+        syncBridge.store = self
+        config.userContentController.add(syncBridge, name: "wroughtSync")
         webView.navigationDelegate = self
         // The native shell persists cookies and localStorage, but the HTML is
         // deliberately fetched fresh. Otherwise relaunching the app can revive
@@ -68,6 +75,34 @@ final class WebViewStore: NSObject, ObservableObject {
                 cont.resume(returning: result as? String)
             }
         }
+    }
+}
+
+extension WebViewStore {
+    /// Tell the page a send just landed, so it can redraw today's numbers from
+    /// the server rather than keep showing the ones it drew before the send.
+    /// Words only — the line the courier already shows on its own card.
+    func announceSync(line: String?, error: String?) {
+        guard webView.url?.host == "wrought.fit", webView.url?.scheme == "https" else { return }
+        var detail: [String: Any] = [:]
+        if let line { detail["line"] = line }
+        if let error { detail["error"] = error }
+        guard let data = try? JSONSerialization.data(withJSONObject: detail),
+              let json = String(data: data, encoding: .utf8) else { return }
+        webView.evaluateJavaScript("window.dispatchEvent(new CustomEvent('wrought-synced', {detail: \(json)}));", completionHandler: nil)
+    }
+}
+
+/// The page's "send the latest now". Only the site's own main frame may ask,
+/// the same origin check as the Watch bridge.
+@MainActor
+final class SyncBridge: NSObject, WKScriptMessageHandler {
+    weak var store: WebViewStore?
+    func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
+        guard message.frameInfo.isMainFrame, message.frameInfo.securityOrigin.host == "wrought.fit",
+              message.frameInfo.securityOrigin.protocol == "https" else { return }
+        guard let ask = store?.onSyncRequest else { return }
+        Task { await ask() }
     }
 }
 
@@ -109,6 +144,12 @@ struct WebView: UIViewRepresentable {
         let store: WebViewStore
         init(store: WebViewStore) { self.store = store }
         @objc func reload() {
+            // Pulling down is the gesture people use to make the numbers
+            // current, so it asks the phone to send as well as re-reading the
+            // page. The send lands after the reload and the page redraws on
+            // the 'wrought-synced' it announces.
+            let store = self.store
+            Task { @MainActor in await store.onSyncRequest?() }
             if let url = store.webView.url {
                 store.webView.load(URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData))
             } else {

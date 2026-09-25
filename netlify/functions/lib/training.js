@@ -558,6 +558,7 @@ export function sessionWorth(own = {}, balance = null) {
 export function energyBalance({
   profile, weightKg, caloriesIn, activeCalories, foodEstimated,
   workouts = [], activities = [], deviceResting = null, deviceExpected = false,
+  deviceRestingSoFar = null, deviceRestingAt = null,
 }) {
   const rest = restingBurn(profile, weightKg);
 
@@ -589,7 +590,9 @@ export function energyBalance({
   const basis = deviceRest > 0
     ? {
         formula: 'Your watch',
-        say: `Your watch reports about ${deviceRest} kcal basal for today — Apple's own estimate, computed on the device from your details.` +
+        say: (Number(deviceRestingSoFar) > 0 && Number(deviceRestingSoFar) !== deviceRest
+          ? `Your watch had counted ${Math.round(deviceRestingSoFar)} kcal basal${deviceRestingAt ? ` by ${deviceRestingAt}` : ' so far'}; at the same steady rate that is about ${deviceRest} for the whole day — Apple's own estimate, computed on the device from your details.`
+          : `Your watch reports about ${deviceRest} kcal basal for today — Apple's own estimate, computed on the device from your details.`) +
              (rest.kcal != null ? ` Mifflin-St Jeor from your stats here gives ${rest.kcal}.` : ''),
         caveat: 'Still an estimate — Apple derives it from height, weight and age just as any formula does. The weekly weigh-in trend is what corrects the whole figure; a single day never does.',
       }
@@ -740,7 +743,7 @@ export function energyBalance({
          // A logged shift on a day the watch also reported is NOT added, and
          // staying quiet about that reads as the log having been ignored.
          (activeSource === 'logged_over_device'
-           ? ` Your watch reported ${measured} for the whole day, but the work you logged comes to about ${logged} on its own — a wrist does not see carrying, so the higher figure is the one being used. They are not added together; that would count the same hours twice.`
+           ? ` Your watch reported ${measured} ${deviceRestingAt ? `as of ${deviceRestingAt}` : 'for the whole day'}, but the work you logged comes to about ${logged} on its own — a wrist does not see carrying, so the higher figure is the one being used. They are not added together; that would count the same hours twice.`
            : measured > 0 && logged > 0
            ? ' Your watch counted more than the work alone would come to, so its figure is the one being used — the two are not added together.'
            : '') +

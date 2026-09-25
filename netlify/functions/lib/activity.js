@@ -136,7 +136,7 @@ export function activityBurn({ text = '', hours = null, effort = null, weightKg 
     estimated: true,
     say: kcal == null
       ? `${hit ? hit.say : chosen.say}, ${Math.round(h * 10) / 10}h — recorded, but the calories need a recent weight before they can be worked out.`
-      : `${hit ? hit.say : chosen.say}, ${Math.round(h * 10) / 10}h — roughly ${kcal} kcal on top of resting. An estimate from a standard effort table, not a measurement.`,
+      : `${hit ? hit.say : chosen.say}, ${Math.round(h * 10) / 10}h — roughly ${kcal.toLocaleString('en-US')} kcal on top of resting. An estimate from a standard effort table, not a measurement.`,
   };
 }
 

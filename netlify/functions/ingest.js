@@ -656,14 +656,25 @@ export const handler = async (event) => {
   // to the running totals.)
   const cumulative = rows.filter(r => DAILY_TOTALS.has(r.metric));
   if (cumulative.length) {
-    const seen = new Set();
+    // ONE delete per day, all at once, and a failed one STOPS the write. The
+    // phone now closes the last two finished days on every send, which tripled
+    // the (metric, day) pairs — and the old loop deleted them one awaited
+    // round trip at a time and never looked at the result, so a delete that
+    // failed was followed by an insert that DOUBLED the day's steps. Grouped
+    // by day rather than a metrics × days cross product: a metric sent for
+    // today but not for yesterday must not wipe yesterday's row.
+    const byDate = new Map();
     for (const r of cumulative) {
-      const key = `${r.metric}|${r.local_date}`;
-      if (seen.has(key)) continue;
-      seen.add(key);
-      await supabase.from('wrought_metrics').delete()
-        .eq('user_id', userId)
-        .eq('metric', r.metric).eq('local_date', r.local_date);
+      if (!byDate.has(r.local_date)) byDate.set(r.local_date, new Set());
+      byDate.get(r.local_date).add(r.metric);
+    }
+    const pending = [...byDate].map(([day, metrics]) =>
+      supabase.from('wrought_metrics').delete()
+        .eq('user_id', userId).eq('local_date', day).in('metric', [...metrics]));
+    const deletes = await Promise.all(pending);
+    const failed = deletes.find(d => d?.error);
+    if (failed) {
+      return { statusCode: 500, headers: CORS, body: JSON.stringify({ error: `could not replace the day's totals: ${failed.error.message}` }) };
     }
     // Within ONE payload, the last reading for a day is the one it meant.
     const keep = new Map();

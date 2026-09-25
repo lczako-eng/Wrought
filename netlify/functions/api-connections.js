@@ -44,9 +44,19 @@ export const handler = async (event) => {
 
   if (event.httpMethod === 'GET') {
     const now = Date.now();
-    const { data: tokens } = await supabase.from('wrought_oauth_tokens')
-      .select('client_id, scope, expires_at, created_at')
-      .eq('user_id', user.id).order('created_at', { ascending: false });
+    // The sign-ins that are still live, one per time an assistant was
+    // connected (a refresh rotates within its own chain, so a chain is one
+    // sign-in). Counted, never shown: the hashes stay in the table.
+    const [{ data: tokens }, { data: grants }] = await Promise.all([
+      supabase.from('wrought_oauth_tokens')
+        .select('client_id, scope, expires_at, created_at')
+        .eq('user_id', user.id).order('created_at', { ascending: false }),
+      supabase.from('wrought_oauth_refresh')
+        .select('client_id, created_at')
+        .eq('user_id', user.id).eq('revoked', false).gt('expires_at', new Date(now).toISOString()),
+    ]);
+    const signIns = new Map();
+    for (const g of (grants || [])) signIns.set(g.client_id, (signIns.get(g.client_id) || 0) + 1);
 
     const ids = [...new Set((tokens || []).map(t => t.client_id).filter(Boolean))];
     const { data: clients } = ids.length
@@ -82,8 +92,23 @@ export const handler = async (event) => {
     }
 
     const list = [...seen.values()];
-    for (const c of list) if (!c.connected_at) c.connected_at = c.last_token_at;
+    for (const c of list) {
+      if (!c.connected_at) c.connected_at = c.last_token_at;
+      c.sign_ins = signIns.get(c.client_id) || 0;
+    }
     const active = list.filter(c => c.active);
+
+    // SEVERAL WROUGHTS IN CHATGPT. Every "add connector" or reconnect is a new
+    // sign-in, and ChatGPT keeps each as its own identically-named connector —
+    // the founder's account held nine, and ChatGPT refused to log a day
+    // because it could not tell "which one is yours". They are copies of THIS
+    // account, and the screen says so. "Signed in N times", never "N copies":
+    // a connector deleted inside ChatGPT leaves its sign-in here until it
+    // expires, so the count can only be an upper bound on what ChatGPT shows.
+    const many = active.filter(c => c.sign_ins > 1);
+    const copiesNote = many.length
+      ? `${many.map(c => `${c.name} has signed in to this account ${c.sign_ins} separate times`).join('; ')} — once each time Wrought was added or reconnected. If it shows more than one Wrought, every one of them is this same account: any of them logs to the same record. To tidy up, remove the extras in ${many.length === 1 ? many[0].name : 'the assistant'}'s own settings and keep one. Disconnect below signs every copy out at once.`
+      : null;
 
     // HAS AN ASSISTANT EVER ACTUALLY WRITTEN TO THIS ACCOUNT.
     //
@@ -104,6 +129,7 @@ export const handler = async (event) => {
     return json(200, {
       connections: list,
       active: active.length,
+      copies_note: copiesNote,
       last_write: lastWrite?.[0]?.created_at || null,
       last_write_was: lastWrite?.[0]?.summary || null,
       // The three states, named, because they need completely different fixes

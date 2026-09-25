@@ -124,6 +124,7 @@ export const handler = async (event) => {
       workouts: day.training.entries,
       activities: day.activity.entries,
       deviceResting: day.device.resting_calories,
+    deviceRestingSoFar: day.device.resting_so_far, deviceRestingAt: day.device.fresh?.at || null,
       deviceExpected: Date.now() - lastSync < 3 * 86400000,
     });
     const flags = careFlags(range, profile, { openDate: today });

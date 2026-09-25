@@ -35,7 +35,7 @@ const money = v => (n(v) == null ? '—' : n(v).toLocaleString());
  * @param date     the day read
  * @param today    the person's local date — a day still running is said so
  */
-export function dayReadout({ day = null, balance = null, receipt = null, scored = [], week = null, date = null, today = null } = {}) {
+export function dayReadout({ day = null, balance = null, receipt = null, scored = [], week = null, date = null, today = null, flags = [] } = {}) {
   if (!day) return null;
   const partial = !!(today && (date || day.date) === today);
   const lines = [];
@@ -71,7 +71,9 @@ export function dayReadout({ day = null, balance = null, receipt = null, scored 
     ? `TRAINED — ${training.map(e => `${e.what}${e.minutes ? ` (${e.minutes} min)` : ''} — ${money(e.calories)} kcal${e.source === 'device' ? ', watch' : e.source === 'uncounted' ? ', counts for nothing' : ', estimated'}`).join('; ')}`
     : `TRAINED — nothing logged${day.training?.sessions ? ` (${day.training.sessions} session on record but not priced yet)` : ''}`);
   const a = balance?.logged_activity?.entries || [];
-  const work = a.map(e => ({ what: e.summary, hours: e.hours ?? null, calories: n(e.kcal) || 0 }));
+  // Named by what the work WAS, then the hours once — "animal care, 3h (3h
+  // on task)" said the hours twice and lost what the job was.
+  const work = a.map(e => ({ what: e.label || e.summary, hours: e.hours ?? null, calories: n(e.kcal) || 0 }));
   if (work.length || day.activity?.count) {
     lines.push(`WORKED — ${work.length
       ? work.map(e => `${e.what}${e.hours ? ` (${e.hours}h on task)` : ''} — ${money(e.calories)} kcal, estimated`).join('; ')
@@ -80,9 +82,12 @@ export function dayReadout({ day = null, balance = null, receipt = null, scored 
 
   // ── MOVED — the watch, read and never asked for ───────────────────────────
   const dev = day.device || {};
-  const moved = { steps: dev.steps ?? null, active_calories: dev.active_calories ?? null, distance_km: dev.distance_km ?? null, as_of: dev.as_of || null };
+  // With WHEN the phone sent it. The founder at 7pm read 8,020 steps the phone
+  // had sent at 6:01 and concluded the count was wrong; a figure without its
+  // time is indistinguishable from a wrong one.
+  const moved = { steps: dev.steps ?? null, active_calories: dev.active_calories ?? null, distance_km: dev.distance_km ?? null, as_of: dev.as_of || null, fresh: dev.fresh || null };
   lines.push(moved.steps != null || moved.active_calories != null
-    ? `MOVED — ${[moved.steps != null ? `${money(moved.steps)} steps` : null, moved.distance_km != null ? `${Math.round(moved.distance_km * 10) / 10} km` : null, moved.active_calories != null ? `${money(moved.active_calories)} active kcal (watch)` : null].filter(Boolean).join(' · ')}`
+    ? `MOVED — ${[moved.steps != null ? `${money(moved.steps)} steps` : null, moved.distance_km != null ? `${Math.round(moved.distance_km * 10) / 10} km` : null, moved.active_calories != null ? `${money(moved.active_calories)} active kcal (watch)` : null].filter(Boolean).join(' · ')}${moved.fresh?.say ? ` — ${moved.fresh.say}` : ''}`
     : 'MOVED — the watch has not sent today (nothing is projected)');
 
   // ── OUT / NET — the receipt's own accounting, every input on its line ─────
@@ -93,7 +98,12 @@ export function dayReadout({ day = null, balance = null, receipt = null, scored 
   // the one function the receipt itself uses, so the two cannot differ.
   if (receipt?.out) {
     lines.push(...outSay(receipt.out));
-    lines.push(`NET — ${receipt.math.net}${partial ? ' so far — the burn is the whole day, the food is only what is logged yet' : ''}`);
+    // NOTHING EATEN YET IS NOT A DEFICIT — the dashboard hero's rule. At
+    // breakfast the subtraction reads "3,420 down", an artifact of a day four
+    // hours old, and an overstated deficit is the dangerous direction.
+    lines.push(partial && !inn.total
+      ? 'NET — nothing eaten is logged yet, so there is no in-versus-out; the burn above is the whole day\'s estimate'
+      : `NET — ${receipt.math.net}${partial ? ' so far — the burn is the whole day, the food is only what is logged yet' : ''}`);
     for (const s of receipt.set_aside || []) lines.push(`  set aside: ${s}`);
   } else {
     lines.push(`OUT — not known yet${balance?.missing?.length ? ` (needs ${balance.missing.join(' and ')})` : ''}`);
@@ -102,9 +112,28 @@ export function dayReadout({ day = null, balance = null, receipt = null, scored 
   // ── GOALS ─────────────────────────────────────────────────────────────────
   const goals = (scored || []).filter(g => g.scored).map(g => ({
     goal: g.goal, metric: g.metric, cadence: g.cadence, target: g.target, actual: g.actual, percent: g.percent, hit: g.hit, over: g.over, unit: g.unit,
+    gap: g.gap ?? null, direction: g.direction ?? null,
   }));
+  // "HOW MUCH SHOULD I EAT TODAY" — answered here, off scoreGoals' own gap.
+  // A calorie ceiling on a day still running is not "hit": it is where the
+  // day stands against the target, and the target is priced off BASAL — the
+  // founder's instruction — so what he trained and worked comes off on top
+  // of it and is said so, every time. Under a care flag no remaining figure
+  // is quoted at all: an intake number is exactly what a flag stops.
+  const ceiling = g => partial && g.metric === 'calories' && g.direction === 'at_most' && g.cadence !== 'weekly';
+  const goalSay = g => {
+    if (ceiling(g)) {
+      const left = n(g.gap) != null && n(g.gap) < 0 ? money(-n(g.gap)) : null;
+      return `${g.goal}: ${money(g.actual)}${g.unit} of ${money(g.target)}${g.unit} so far${
+        g.over ? ', over it' : !flags.length && left ? ` — ${left}${g.unit} short of it` : ''}`;
+    }
+    return `${g.goal}: ${money(g.actual)}${g.unit} of ${money(g.target)}${g.unit} (${g.percent}%${g.hit ? ', hit' : g.over ? ', over' : ''})${g.cadence === 'weekly' ? ' this week' : ''}`;
+  };
   if (goals.length) {
-    lines.push(`GOALS — ${goals.map(g => `${g.goal}: ${money(g.actual)}${g.unit} of ${money(g.target)}${g.unit} (${g.percent}%${g.hit ? ', hit' : g.over ? ', over' : ''})${g.cadence === 'weekly' ? ' this week' : ''}`).join(' · ')}`);
+    lines.push(`GOALS — ${goals.map(goalSay).join(' · ')}`);
+    if (goals.some(g => g.metric === 'calories' && g.direction === 'at_most')) {
+      lines.push('  the calorie target is priced off basal: what you trained and worked today (the OUT lines above) comes off on top of it');
+    }
   } else if ((scored || []).length) {
     lines.push('GOALS — set, but nothing logged today to score them against');
   } else {
@@ -128,6 +157,8 @@ export function dayReadout({ day = null, balance = null, receipt = null, scored 
     say: lines.join('\n'),
     note: 'THIS IS THE WHOLE DAY. Read it out LINE BY LINE as it stands — every item eaten with its own calories, the session, the work, the steps, the burn added up WITH EVERY INPUT UNDER IT (the resting figure and what it is computed from, each session, each shift with its hours, the watch\'s figure for the day, and which of them counted and which was set aside and why), the net with its sign, each goal with its percentage, the week. Never collapse the burn into "resting + active" — every calorie is accounted for on its own line and that is the point. Never quote only a total, never add anything up yourself, never answer "where am I at" from the food alone. ' +
       (partial ? 'Say the day is not over: the burn is a whole-day figure and the food is only what has been logged so far. ' : '') +
+      (goals.some(g => g.metric === 'calories' && g.direction === 'at_most') ? '"How much should I eat today" is answered from the calorie GOALS line as it stands — the target, where the day is against it, and that the target is priced off basal so today\'s training and work come off on top of it. Never a figure of your own. ' : '') +
+      (moved.fresh?.stale ? `Say WHEN the watch figures are from (${moved.fresh.at}) — never present them as current; if they want them current, the Wrought app on their phone sends the latest the moment it opens. ` : '') +
       'Every figure is an estimate and is said to be one.',
   };
 }

@@ -16,6 +16,7 @@ import { orderInsight, earnedRoom, energyBalance, exerciseKey, deviceMatrix, wee
          weekSoFar, weekTargets, readiness, targetOptions, estimatedMax, liftTrend, readMovement, backfillDerivedSets, goalsToSet, rekeySets, resyncMuscles } from './lib/training.js';
 import { weeklyVolume } from './lib/volume.js';
 import { planRead, coachDay, coachPaused } from './lib/plan.js';
+import { liveConnections } from './lib/providers.js';
 import { calibration } from './lib/adapt.js';
 import { recordCheck } from './lib/integrity.js';
 import { intakeState } from './lib/intake.js';
@@ -422,6 +423,7 @@ export const handler = async (event) => {
     workouts: today.training.entries,
     activities: today.activity.entries,
     deviceResting: today.device.resting_calories,
+    deviceRestingSoFar: today.device.resting_so_far, deviceRestingAt: today.device.fresh?.at || null,
     deviceExpected,
   });
 
@@ -796,7 +798,7 @@ export const handler = async (event) => {
       // day means nothing at all and a verdict built on it is a false alarm
       // that costs somebody a trip to a laptop.
       devices: {
-        connections: connections.map(c => ({
+        connections: liveConnections(connections).map(c => ({
           provider: c.provider, mode: c.mode, status: c.status,
           last_sync_at: c.last_sync_at,
           hours_ago: c.last_sync_at

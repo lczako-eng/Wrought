@@ -43,7 +43,7 @@ import { ROUTING_HABIT } from './lib/wrought.js';
 import { preflight } from './lib/preflight.js';
 import { finaliseSession, closeStaleSessions, recordSet, foldIntoSession } from './lib/session.js';
 import { effortFromWords, wordsForRecord, beforeSet, afterSet, methodsFor } from './lib/coach.js';
-import { PROVIDERS, providerSummary, recommendRoute } from './lib/providers.js';
+import { PROVIDERS, providerSummary, recommendRoute, liveConnections } from './lib/providers.js';
 import { nutritionTotals, composition, macroMatrix, yearOverYear } from './lib/nutrition.js';
 import {
   exerciseKey, lastPerformance, progressionCall, TIERS,
@@ -84,6 +84,17 @@ const CORS = {
 // These ship to every client on connect and are what make a weak model behave
 // like a good coach instead of a chatbot with a database.
 
+// SEVERAL CONNECTORS NAMED WROUGHT. ChatGPT keeps every connector somebody
+// adds, and reconnecting after a hiccup adds another — the founder's account
+// held NINE separate sign-ins, every one to the same Wrought record. Shown
+// three identically-named connectors, ChatGPT asked "which is yours, so I
+// don't write your food into the wrong account" and logged nothing at all,
+// which is the one outcome worse than either guess. The copies are one
+// service; each writes to the account it was signed in with, the reply names
+// that account, and a wrong one is joined afterwards by link_account. Said on
+// the tools themselves, because not every client reads this sheet.
+const SAME_SERVICE = 'MORE THAN ONE CONNECTOR NAMED WROUGHT is never a reason to hold back: they are copies of the same service, and each writes to the Wrought account it was signed in with (the reply\'s `account` names it). Use any one of them now and never ask which is theirs first; if the address is not theirs, link_account joins the two afterwards with nothing lost.';
+
 const SERVER_INSTRUCTIONS = `WROUGHT is the user's training and nutrition memory — the thing that remembers what they ate, what they lifted and what the scale said, so they never have to explain themselves twice.
 
 HOW TO USE THIS SERVER (works on any model, including small fast ones): every number in every response is already computed server-side — totals, averages, trends, streaks, goal scores, time remaining. Relay them, never recompute them, never do arithmetic of your own. Every response carries a "say" string written for reading aloud and a "next_actions" list naming the exact tools to offer next. Follow next_actions rather than improvising.
@@ -105,6 +116,10 @@ VAGUE IS STILL WORTH RECORDING. "Doing my workout", "went for a run", "had lunch
 ONE SENTENCE IS A COMPLETE LOG. The user will say "eggs and coffee, 40 minutes upper body, 182 on the scale" and that is the whole interaction — pass it to log verbatim and it becomes three structured entries. NEVER present a form. Never ask for macros, portion sizes in grams, set-by-set breakdowns or a meal name before logging. Log first, and if something genuinely could not be parsed, mention it after the fact in one line. A health log that costs more than one sentence is a health log nobody keeps.
 
 NEVER SUBSTITUTE A PLAUSIBLE NUMBER FOR A MISSING ONE. Asked "how many calories do I have left" with no target on file, the tempting answer is "if we use 2,500 a day…". Nothing set 2,500. It is a made-up number wearing the clothes of a real one, it becomes the basis of every day after it, and it means the setup question never gets asked because the gap never shows. Responses carry setup_needed when something is missing — when you see it, ASK, do not fill in. This applies to calorie targets, resting burn, activity and body weight alike. "I don't know yet, tell me X" is a better answer than a confident invention, and it is the only one this product is allowed to give.
+
+A WATCH FIGURE IS TRUE AS OF WHEN THE PHONE SENT IT. Steps, active energy and the watch's basal arrive as the day's total SO FAR, whenever the phone gets to send — and iOS decides when. Every read carries the time (device.fresh / watch / the MOVED line: "as of 6:01pm"). Quote a watch number WITH that time whenever it is more than a few minutes old, never as live, and name the one action that makes it current (fresh.refresh — in the Wrought app it sends the moment the app opens). A finished day marked "short" stopped reporting before midnight: its steps and burn are low by whatever happened after, and it says so. Never explain a gap between their wrist and this read as an error in either.
+
+SEVERAL CONNECTORS NAMED WROUGHT ARE ONE SERVICE. ChatGPT keeps every copy somebody adds, and a reconnect adds another; they all reach the same server, and each writes to the Wrought account it was signed in with — every reply carries \`account\`, and get_profile says account.email. NEVER hold a log back to ask which one is theirs: use any one of them, in the same turn, and name the account in half a clause if they asked. A wrong address is joined afterwards with link_account, nothing lost; a day never written is lost for good. If they ask why there are several, say ChatGPT kept a copy each time the connector was added or reconnected, and the extras can be removed in ChatGPT's Settings, under Apps (or Connectors) — keep one.
 
 TWO ACCOUNTS, ONE PERSON. If somebody says their dashboard is empty when they know they have logged, that the website shows a different email, that they signed in with Apple here and Google there, or simply asks to link or merge their accounts — call link_account. It mints a code they paste into wrought.fit, and it needs no password and no email, which matters because the person in that situation usually cannot get into the other account at all.
 
@@ -177,7 +192,7 @@ The tell is the subject, not the spelling. "What's my route to the gym" is direc
 HOW PEOPLE ACTUALLY ASK. Nobody says "call the brief tool". They say one of a hundred things, half of them sideways, most of them while doing something else. Treat all of these as the named tool, without asking which they meant:
 "what should I be running", "give me a plan", "what am I doing for the next two months", "I need a programme to follow" mean start_block; "what am I doing today", "what week am I on", "how far through am I" mean block_status.
 
-  brief — "how am I doing", "how'd I do", "how was today", "what's the damage", "read me back", "give me the verdict", "the honest version", "morning", "night", "bedtime", "hit me", "am I on track", "how's the week", "recap", "the score", "how bad was it", "gym bro", "hey gym bro", "jim bro", "hey jim bro", "broski", "broheim", "coach", "hey coach", "trainer", "give it to me straight", "don't sugarcoat it", "roast me", "be honest with me", "what did I do today", "did I train today", "what did I log today", "what did I eat today". THE CONVERSATION IS NOT THE RECORD: even when the whole workout was discussed in this very chat, answer these from the tool — what the server holds is what actually counts, and reciting the chat back hides exactly the entries that failed to land.
+  brief — "how am I doing", "how'd I do", "how was today", "what's the damage", "read me back", "give me the verdict", "the honest version", "morning", "night", "bedtime", "hit me", "am I on track", "how's the week", "recap", "the score", "how bad was it", "gym bro", "hey gym bro", "jim bro", "hey jim bro", "broski", "broheim", "coach", "hey coach", "trainer", "give it to me straight", "don't sugarcoat it", "roast me", "be honest with me", "did I train today". THE CONVERSATION IS NOT THE RECORD: even when the whole workout was discussed in this very chat, answer these from the tool — what the server holds is what actually counts, and reciting the chat back hides exactly the entries that failed to land.
   whats_next — "what should I eat", "what now", "can I have a snack", "I'm hungry", "is there room", "should I train", "what do I need", "how much protein left", "am I allowed", "talk me out of it", "it's late and I'm at the fridge"
   progress — "am I actually progressing", "show me the trend", "how's the month", "is it working", "what's moving", "charts", "the numbers", "am I wasting my time"
   suggest_workout / programmes — "what should I train", "give me a workout", "I want to do a workout", "I wanna do a workout", "let's do a workout", "I want to train", "can we work out", "what's today", "programme me", "build me something", "I've got 40 minutes", "what am I neglecting", "proper programme", "what should I be running"
@@ -208,8 +223,9 @@ HOW PEOPLE ACTUALLY ASK. Nobody says "call the brief tool". They say one of a hu
   set_goal (with intent) — "I wanna lose weight", "I need to drop 20 pounds", "lean out", "cut", "slim down", "I wanna get bigger", "build muscle", "bulk up", "get more muscular", "tone up", "lose fat and gain muscle"
   link_account — "I have two accounts", "link my accounts", "link my emails", "hook up my two emails", "connect my accounts", "merge them", "merge my accounts", "join them up", "join these up", "my dashboard is empty", "the website shows a different email", "the site says a different account", "it is not the same account", "two emails", "same person, two logins", "give me a link code", "link"
   guide — "help", "how do I use this", "how does wrought work", "what can you do", "what is wrought", "what does wrought mean", "tutorial", "teach me", "walk me through it"
+  get_day — "what did I do today", "what did I log today", "what did I eat today", "what's my calories", "what are my calories today", "how much should I eat today", "how much can I eat", "how many can I have today", "what did I burn", "how much did I burn", "how many calories did I burn", "what did my work burn", "what was the shift worth" — THE WHOLE DAY, read out line by line: every item eaten with its calories, the session, the work with what it was worth, the steps with the time the watch sent them, the burn with every input under it, the net, and the calorie target with where the day stands against it (priced off basal, so today's training and work come off on top). The same rule as above: the conversation is not the record.
   get_day / day_total — "are they logged", "is that logged", "did that get logged", "did that go in", "is it in there", "did you save that", "is that on the record", "did it land". These ask about the RECORD, never about the conversation. Answer by reading the day back and naming what is on it — and if something they mentioned is not there, LOG IT NOW rather than explaining why it is missing.
-  get_profile — "what account am I on", "which account is this", "who am I", "what email is this", "what do you know about me", "what's my height", "what have you got on me", "am I set up", "is this connected", "plugged in", "are you working", "what account are you writing to"
+  get_profile — "what account am I on", "which account is this", "who am I", "what email is this", "what do you know about me", "what's my height", "what have you got on me", "am I set up", "is this connected", "plugged in", "are you working", "what account are you writing to", "which Wrought is mine", "why are there three Wroughts", "which connector is it", "there's more than one Wrought"
 
 "RECORDED IN THIS CHAT" IS NOT LOGGED, AND THE GAP HAS TO BE CLOSED THE MOMENT THE TOOLS ARE BACK. It happens: a conversation runs for hours with these tools unavailable, food and work get discussed, and the honest answer at the time is that none of it reached the record. Saying so is right. STOPPING THERE IS NOT. The instant a tool call works again, flush the whole conversation into the log — ONE log call carrying every food and drink as its own event, plus log_activity for any shift — and then read day_total back and quote the figure. Do not wait to be asked twice, do not summarise the chat as though the summary were a record, and never leave a day sitting in a conversation that is one closed tab away from being gone forever. THE TIMES MATTER: pass time_hint on each item ("08:30", "13:10") so breakfast lands at breakfast rather than all of it landing at the moment you caught up — a day filed at one timestamp reads as one meal to everything downstream, and it puts the eating window wrong. If the catch-up spans a previous day, say so plainly and ask before filing it, because a client may not date its own events and yesterday's dinner filed under today corrupts both days at once.
 
@@ -408,7 +424,7 @@ const TOOLS = [
   {
     name: 'log',
     title: 'Log anything, in plain words',
-    description: 'THE main tool, and the one that must fire the moment food is MENTIONED — not when they ask for it to be saved. CONFIRM WITH THE WORDS "Logged in Wrought" — the reply\'s `say` opens with them; repeat them exactly, then each item with its calories and time. Never say "logged" or "saved" about food without "in Wrought", and never say "Logged in Wrought" without this tool\'s reply in front of you: the phrase is how the person tells a write that landed from food you only acknowledged. A meal acknowledged in conversation and never written is the commonest way a day ends up short: the record is right, the recital is wrong, and nobody finds out until the total looks small.IF YOU ESTIMATE A MEAL\'S CALORIES IN YOUR REPLY, OR WRITE A "TODAY SO FAR" TOTAL, YOU MUST HAVE CALLED THIS IN THE SAME TURN: the estimate you wrote in prose but did not log lives only in the chat and vanishes with the tab, and "Did you log it?" then answers "only when you asked" — the exact failure this tool exists to prevent. Never quote a meal figure or a running total without logging first; the running total comes only from this tool\'s day_total, never from arithmetic in your head. If you find yourself saying "you\'re right, I missed that", the next thing you do is call this, never arithmetic. Records whatever the user said about their day — food, training, weight, measurements, sleep, mood, supplements. Pass their words AND your structured reading of them; both are required. "Two eggs and black coffee, pushed 40 minutes upper body, 182 on the scale" becomes three separate entries with macros estimated and the weight converted. Pass their words VERBATIM; do not tidy, summarise or ask for detail first. Use this for every log unless the user is giving only a weight or only a measurement, which have their own tools. IF THIS CONNECTOR WAS UNAVAILABLE EARLIER IN THE CONVERSATION, everything discussed since is unlogged: flush it all in ONE call the moment you can, with a time_hint on each item so breakfast lands at breakfast rather than the whole day landing at the catch-up minute. "Recorded in this chat" is the opposite of logged.',
+    description: 'THE main tool, and the one that must fire the moment food is MENTIONED — not when they ask for it to be saved. CONFIRM WITH THE WORDS "Logged in Wrought" — the reply\'s `say` opens with them; repeat them exactly, then each item with its calories and time. ' + SAME_SERVICE + ' Never say "logged" or "saved" about food without "in Wrought", and never say "Logged in Wrought" without this tool\'s reply in front of you: the phrase is how the person tells a write that landed from food you only acknowledged. A meal acknowledged in conversation and never written is the commonest way a day ends up short: the record is right, the recital is wrong, and nobody finds out until the total looks small.IF YOU ESTIMATE A MEAL\'S CALORIES IN YOUR REPLY, OR WRITE A "TODAY SO FAR" TOTAL, YOU MUST HAVE CALLED THIS IN THE SAME TURN: the estimate you wrote in prose but did not log lives only in the chat and vanishes with the tab, and "Did you log it?" then answers "only when you asked" — the exact failure this tool exists to prevent. Never quote a meal figure or a running total without logging first; the running total comes only from this tool\'s day_total, never from arithmetic in your head. If you find yourself saying "you\'re right, I missed that", the next thing you do is call this, never arithmetic. Records whatever the user said about their day — food, training, weight, measurements, sleep, mood, supplements. Pass their words AND your structured reading of them; both are required. "Two eggs and black coffee, pushed 40 minutes upper body, 182 on the scale" becomes three separate entries with macros estimated and the weight converted. Pass their words VERBATIM; do not tidy, summarise or ask for detail first. Use this for every log unless the user is giving only a weight or only a measurement, which have their own tools. IF THIS CONNECTOR WAS UNAVAILABLE EARLIER IN THE CONVERSATION, everything discussed since is unlogged: flush it all in ONE call the moment you can, with a time_hint on each item so breakfast lands at breakfast rather than the whole day landing at the catch-up minute. "Recorded in this chat" is the opposite of logged.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -671,7 +687,7 @@ const TOOLS = [
   {
     name: 'energy_balance',
     title: 'Calories in versus calories out',
-    description: 'The real energy picture for a day: what they ate, resting burn from their own height, weight and age, active calories AND STEPS from the watch, the day\'s workouts priced in, and the net. Also projects what that net means per week on the scale. Use for "am I in a deficit", "calories in calories out", "why is the weight not moving", "where am I at today", "where do I stand", "including activity", "what\'s my net", "am I up or down on the day". THIS IS THE TOOL FOR ANY "where am I / how am I doing INCLUDING ACTIVITY" QUESTION and for "plus my steps" / "include my steps" — it already carries the workout burn and the steps from the watch, so never answer that from food alone, never say a burn is unavailable without calling this first, and NEVER ask the user for their step count: it is on this response as logged.steps. Both halves are estimates and the response says so — relay that.',
+    description: 'The real energy picture for a day: what they ate, resting burn from their own height, weight and age, active calories AND STEPS from the watch, the day\'s workouts priced in, and the net. Also projects what that net means per week on the scale. Use for "am I in a deficit", "calories in calories out", "why is the weight not moving", "where am I at today", "where do I stand", "including activity", "what\'s my net", "am I up or down on the day". THIS IS THE TOOL FOR ANY "where am I / how am I doing INCLUDING ACTIVITY" QUESTION and for "plus my steps" / "include my steps" — it already carries the workout burn and the steps from the watch, so never answer that from food alone, never say a burn is unavailable without calling this first, and NEVER ask the user for their step count: it is on this response as logged.steps. Both halves are estimates and the response says so — relay that. For the WHOLE day read out line by line — each item eaten, the work, the steps with the time the watch sent them, the calorie target — get_day is the fuller answer; this is the burn and the net. The steps carry the time they were sent (watch.at): say it.',
     inputSchema: {
       type: 'object',
       properties: { date: { type: 'string', description: 'YYYY-MM-DD. Defaults to today.' } },
@@ -705,7 +721,7 @@ const TOOLS = [
   {
     name: 'get_day',
     title: 'The whole day, read out',
-    description: 'THE WHOLE DAY in one read: every item eaten with its own calories and time, the session and what it was worth, the work and what it was worth, the steps and the watch\'s active energy, the burn added up, the net with its sign, each goal with its percentage, and where the training week stands. "Where am I at", "daily totals", "give me everything", "how am I doing today", "what did I do today", "where do I stand", "break it down", "are they logged" all land here — read day_read.say out LINE BY LINE, never just a food total. Every line is ONE computed figure, never a range. If the user names something that is not among the items, it was never logged: call log for it and read this again rather than adding it up in prose.',
+    description: 'THE WHOLE DAY in one read: every item eaten with its own calories and time, the session and what it was worth, the work and what it was worth, the steps and the watch\'s active energy, the burn added up, the net with its sign, each goal with its percentage, and where the training week stands. "Where am I at", "daily totals", "give me everything", "how am I doing today", "what did I do today", "where do I stand", "break it down", "are they logged", "what did I eat today", "what\'s my calories", "how much have I burned", "what did my work burn", "how much should I eat today" all land here — read day_read.say out LINE BY LINE, never just a food total. Watch figures carry the time the phone sent them; say it. Every line is ONE computed figure, never a range. If the user names something that is not among the items, it was never logged: call log for it and read this again rather than adding it up in prose. ' + SAME_SERVICE,
     inputSchema: {
       type: 'object',
       properties: { date: { type: 'string', description: 'YYYY-MM-DD. Defaults to today.' } },
@@ -900,7 +916,7 @@ const TOOLS = [
   {
     name: 'log_activity',
     title: 'Record work, or a day of graft that was not training',
-    description: 'A shift, a garden, a house move, eight hours on a building site — real physical work that is NOT a training session. Use this whenever somebody mentions having worked, especially a physical job: "I was at the petting zoo all day", "did a double shift", "spent the afternoon digging". It is usually the biggest number in their day and nothing else counts it. The server works out the calories from a standard effort table — never estimate them yourself. Do NOT use this for the gym: a workout is log or log_set, and filing work as training would count it toward their weekly sessions.',
+    description: 'A shift, a garden, a house move, eight hours on a building site — real physical work that is NOT a training session. Use this whenever somebody mentions having worked, especially a physical job: "I was at the petting zoo all day", "did a double shift", "spent the afternoon digging". It is usually the biggest number in their day and nothing else counts it. The server works out the calories from a standard effort table — never estimate them yourself. Do NOT use this for the gym: a workout is log or log_set, and filing work as training would count it toward their weekly sessions. ' + SAME_SERVICE,
     inputSchema: {
       type: 'object',
       properties: {
@@ -958,7 +974,7 @@ const TOOLS = [
   {
     name: 'get_profile',
     title: 'Read everything WROUGHT knows about this user',
-    description: 'One read: profile (timezone, units, height, equipment, training days, dietary constraints, bluntness), active goals, eating window, connected devices, and how long they have been logging. Call this at the start of a conversation so you never ask for something already known. ALSO the only honest answer to "what account am I on", "which account is this", "who am I", "is this connected", "are you working": it returns account.email — the address this connector actually writes to. Answering those from your own context (e.g. naming their ChatGPT plan) has happened and is confidently, uselessly wrong: the question is about WROUGHT\'s record, and only this tool can see it.',
+    description: 'One read: profile (timezone, units, height, equipment, training days, dietary constraints, bluntness), active goals, eating window, connected devices, and how long they have been logging. Call this at the start of a conversation so you never ask for something already known. ALSO the only honest answer to "what account am I on", "which account is this", "who am I", "is this connected", "are you working": it returns account.email — the address this connector actually writes to. Answering those from your own context (e.g. naming their ChatGPT plan) has happened and is confidently, uselessly wrong: the question is about WROUGHT\'s record, and only this tool can see it. If more than one connector named Wrought is showing, this is also how to tell which record each writes to: the same account.email is the same record, so any of them is right to use — never stop logging to ask.',
     inputSchema: { type: 'object', properties: {} },
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   },
@@ -1503,7 +1519,7 @@ async function log(args, user) {
   // founder got "that meal added 770, bringing today to 1,410" — no walk, no
   // burn, no goals. When the words ask for the day, the day comes back whole,
   // on this reply, because this is the reply the model reads.
-  const askedForDay = /where am i|where do i stand|totals?\b|how many|how much|so far|everything|break it down|my net|up or down|how('?s| is| am i doing)/i.test(text);
+  const askedForDay = /where am i|where do i stand|totals?\b|how many|how much|so far|everything|break it down|my net|up or down|how('?s| is| am i doing)|\bburn(ed|t)?\b|my calories|calories today|what did i/i.test(text);
   const fullRead = askedForDay ? await fullDayRead(user.id, profile, localDateFor(profile.timezone), { day }) : null;
 
   // A "WORKOUT" THAT READS AS A SHIFT. "worked three hours in the Petting Zoo"
@@ -1559,6 +1575,10 @@ async function log(args, user) {
       ? 'SAY THE TIME BACK for each meal — "logged at 7:32pm". Every entry is filed under a clock: the time they said, or this minute. If they ate earlier ("that was an hour ago", "I had that at noon", "this morning") and did not say so, this minute is WRONG on the record, and the eating window and the when-you-eat chart are built on it — so ask nothing, but when they correct it call amend_last with time_hint. When they say a time up front, pass it as time_hint on the item.'
       : undefined,
     count: written.length,
+    // WHICH RECORD THIS LANDED IN, on every write. With three connectors named
+    // Wrought on one ChatGPT account the model's question was "which is
+    // theirs" — the answer rides on the reply rather than a second call.
+    account: user.email || null,
     parsed,
     structured_by: structuredBy,
     running_total_today: {
@@ -2802,6 +2822,7 @@ async function logActivity(args, user) {
 
   return {
     logged: `${burn.label}, ${burn.hours}h`,
+    account: user.email || null,
     kcal: burn.kcal,
     met: burn.met,
     matched: burn.matched,
@@ -3058,7 +3079,14 @@ async function brief(args, user) {
   let verdict = null;
   const { data: cached } = await supabase.from('wrought_briefs')
     .select('verdict, facts').eq('user_id', user.id).eq('local_date', date).eq('kind', kind).maybeSingle();
-  if (!args.refresh) verdict = cached?.verdict || null;
+  // A DAY STILL RUNNING IS NOT THE DAY THAT WAS CACHED. The 8pm verdict,
+  // replayed at 10pm, quoted the steps and food as they stood at 8 — "my
+  // steps are always behind by my night workout". For today, a cached verdict
+  // is used only while the figures it was written from still stand.
+  const stamp = f => JSON.stringify([f?.food?.calories, f?.food?.meals, f?.training?.sessions,
+    f?.device?.steps, f?.device?.active_calories]);
+  const stillTrue = date !== today || (cached?.facts && stamp(cached.facts) === stamp(facts));
+  if (!args.refresh && stillTrue) verdict = cached?.verdict || null;
   if (!verdict) {
     verdict = await writeVerdict({ facts, profile, goals, memory, flags, kind });
     if (verdict) {
@@ -3130,13 +3158,21 @@ async function brief(args, user) {
     coachState: coach?.state || null,
   });
 
+  // The day itemised on BOTH sides — every food item with its own calories,
+  // then resting, training and work each with their figure, the totals, the
+  // net. This is what "broken down completely" means, and it is computed
+  // here so the model relays lines instead of composing a paragraph.
+  const receipt = dayReceipt({ day, balance, date, today });
+  // With no written verdict (no key), the reply is THE WHOLE DAY — the same
+  // read get_day gives — never "food · training". Every nickname lands here,
+  // and "jim bro, what did I eat today" came back without the shift, the burn
+  // or the steps.
+  const wholeDay = verdict ? null : dayReadout({ day, balance, receipt, scored, week: facts.training_week, date, today, flags });
+
   return {
     date, kind, facts, verdict,
-    // The day itemised on BOTH sides — every food item with its own calories,
-    // then resting, training and work each with their figure, the totals, the
-    // net. This is what "broken down completely" means, and it is computed
-    // here so the model relays lines instead of composing a paragraph.
-    receipt: dayReceipt({ day, balance, date, today }),
+    receipt,
+    ...(wholeDay ? { day_read: wholeDay } : {}),
     nudge: nudge || undefined,
     nudge_note: nudgeNote(nudge, profile.plan_push),
     // Today in the standing coach's tradition — its one line, its register,
@@ -3152,7 +3188,7 @@ async function brief(args, user) {
       voice_pending: waiting,
       voice_pending_note: `${waiting.length} thing${waiting.length === 1 ? '' : 's'} ${waiting.length === 1 ? 'was' : 'were'} dictated to the phone and stored word for word, with nothing to read ${waiting.length === 1 ? 'it' : 'them'}. ${waiting.length === 1 ? 'It counts' : 'They count'} for nothing in the figures above until you do. Read ${waiting.length === 1 ? 'it' : 'them'} now and call structure_entries in this same turn, before delivering the verdict — then say so in one short clause, not a list.`,
     } : {}),
-    say: verdict || `${date}: ${day.food.say} · ${day.training.say}`,
+    say: verdict || wholeDay?.say || `${date}: ${day.food.say} · ${day.training.say}`,
     note: flags.length
       ? 'Care flags are up. They override the honesty doctrine — follow their guidance exactly and do not coach intake down. The flag leads. If they asked where the day stands, the receipt may still be read after it — it is factual record, not coaching — but nothing in it may become advice about eating less. No coach_day while a care flag stands — plain delivery; if they ask where their coach went, say coach_paused.say.'
       : 'Deliver the verdict as written. It is already pitched to the bluntness they chose; do not soften it or add praise. Then read the receipt LINE BY LINE, both sides: each thing eaten with its own calories, then resting, training and work each with their figure, the two totals, the net. Every number comes off a receipt line — one figure each, never a range, never added up by you.' +
@@ -3180,8 +3216,12 @@ async function fullDayRead(userId, profile, date, { day: known = null } = {}) {
   const scored = scoreGoals(goals, day, summary, profile);
   const week = weekSoFar(range.days, { today: date, ...weekTargets(profile) });
   const receipt = dayReceipt({ day, balance, date, today });
-  return { day, balance, receipt, scored, week,
-           read: dayReadout({ day, balance, receipt, scored, week, date, today }) };
+  // The care flags, off the thirty days already fetched: the whole-day read is
+  // where "how much should I eat" gets answered, and under a flag no figure of
+  // what is left is ever quoted.
+  const flags = careFlags(range, profile, { openDate: today });
+  return { day, balance, receipt, scored, week, flags,
+           read: dayReadout({ day, balance, receipt, scored, week, date, today, flags }) };
 }
 
 async function getDay(args, user) {
@@ -3208,7 +3248,10 @@ async function getDay(args, user) {
     say: day.logged
       ? full.read.say
       : `Nothing logged on ${date}.`,
-    note: (targets
+    ...(full.flags.length ? { care_flags: full.flags } : {}),
+    note: (full.flags.length
+      ? 'Care flags are up — they lead, and their guidance is followed exactly: quote no figure of what is left to eat and coach nothing down. The day itself is factual record and may be read after the flag. '
+      : '') + (targets
       ? 'No daily calorie target is set. If they ask what they are allowed, quote the COMPUTED figures in no_target_set exactly — never a number of your own and never a range you rounded to. '
       : '') + full.read.note,
     next_actions: day.logged ? ['brief for the verdict', 'undo_last if something is wrong'] : ['log to fill it in'],
@@ -3362,6 +3405,15 @@ async function whatsNext(args, user) {
   // function reads the range, so it is simply widened.
   const range = await rangeFacts(user.id, profile, addDays(today, -(CARE_WINDOW_DAYS - 1)), today);
   const flags = careFlags(range, profile, { openDate: today });
+  // UNDER A FLAG, NO FIGURE OF WHAT IS LEFT. "303 kcal left" said to somebody
+  // whose intake tripped the low-intake flag is a number about how much more
+  // they are allowed — exactly what earnedRoom refuses under a flag, and what
+  // coaching stopping means. Neither is handed to anything that could say it.
+  if (flags.length) {
+    situation.calories_remaining = null;
+    situation.over_calorie_target = null;
+    situation.protein_remaining_g = null;
+  }
 
   let recommendation = null;
   if (openai) {
@@ -3399,11 +3451,12 @@ Answer in 2-4 short sentences: what to do right now and why, in their units. If 
     ...(setup ? { setup_needed: setup } : {}),
     say: recommendation || [
       wStatus?.say,
-      proteinLeft != null ? `${proteinLeft}g of protein left to hit today.` : null,
-      caloriesLeft != null ? (caloriesLeft < 0 ? `${Math.abs(caloriesLeft)} kcal over target.` : `${caloriesLeft} kcal left.`) : null,
+      proteinLeft != null && !flags.length ? `${proteinLeft}g of protein left to hit today.` : null,
+      caloriesLeft != null && !flags.length ? (caloriesLeft < 0 ? `${Math.abs(caloriesLeft).toLocaleString('en-US')} kcal over target.` : `${caloriesLeft.toLocaleString('en-US')} kcal left.`) : null,
       day.training.sessions ? 'Already trained today.' : 'Nothing trained yet today.',
     ].filter(Boolean).join(' '),
-    note: 'Numbers here are computed — relay them. Food totals are estimates, so say "roughly".',
+    note: (flags.length ? 'Care flags are up — they lead; follow their guidance exactly and quote no figure of what is left to eat. ' : '') +
+      'Numbers here are computed — relay them. Food totals are estimates, so say "roughly".',
     next_actions: ['log once they eat', 'suggest_workout if they have not trained', 'set_eating_window if late eating keeps happening and they have no window'],
   };
 }
@@ -5122,6 +5175,7 @@ async function balanceFor(userId, profile, date, day) {
     workouts: day.training.entries,
     activities: day.activity.entries,
     deviceResting: day.device.resting_calories,
+    deviceRestingSoFar: day.device.resting_so_far, deviceRestingAt: day.device.fresh?.at || null,
     deviceExpected: Date.now() - lastSync < 3 * 86400000,
   });
 }
@@ -5137,18 +5191,20 @@ async function energyBalanceTool(args, user) {
     date, ...balance,
     ...(targets ? { no_target_set: targets } : {}),
     logged: { food: day.food.say, training: day.training.say, steps: day.device.steps },
+    // WHEN the watch's part was sent — "8,020 steps" at 7pm was a 6pm figure.
+    ...(day.device.fresh ? { watch: day.device.fresh } : {}),
     // EVERY LINE WITH ITS OWN NUMBER, both sides, and the subtraction under
     // them. A total with nothing beside it cannot be checked, and until now
     // only the eating half had ever been itemised.
     receipt: dayReceipt({ day, balance, date, today: localDateFor(profile.timezone) }),
-    say: balance.say,
-    note: targets
+    say: balance.say + (day.device.fresh?.stale ? ` Watch figures ${day.device.fresh.say}.` : ''),
+    note: (day.device.fresh?.stale ? `Quote the watch figures WITH their time (${day.device.fresh.at}) — never as current. ` : '') + (targets
       ? 'No daily calorie target is set. If they ask what they are allowed, quote no_target_set exactly and let them pick a pace — never invent a figure or a range. ' + (balance.known
         ? 'Say "roughly" and "about" for the burn; both halves are estimates.'
         : 'Ask once for whatever is missing and save it with set_profile.')
       : balance.known
       ? 'Say "roughly" and "about" — both halves are estimates. Never present the net as a measurement, and steer them to the weekly scale trend to correct it rather than to a single day.'
-      : 'Ask once for whatever is missing, save it with set_profile, and do not ask again.',
+      : 'Ask once for whatever is missing, save it with set_profile, and do not ask again.'),
     next_actions: balance.known
       ? ['progress to check it against the actual weight trend']
       : ['set_profile with what is missing'],
@@ -5281,6 +5337,9 @@ async function getProfileTool(_args, user) {
       email: user.email || null,
       ways_in: (user.identities || []).map(i => i.provider),
     },
+    // Several connectors named Wrought are copies of one service, not two
+    // accounts — said here, where "which is mine" gets answered.
+    same_service: SAME_SERVICE,
     profile: {
       timezone: profile.timezone, units: profile.units,
       height_cm: profile.height_cm, birth_year: profile.birth_year, sex: profile.sex,
@@ -5291,7 +5350,7 @@ async function getProfileTool(_args, user) {
     },
     goals: goals.map(g => ({ goal: g.goal, metric: g.metric, target: g.target_value, unit: g.target_unit, direction: g.direction, cadence: g.cadence, target_date: g.target_date })),
     eating_window: windowStatus(win, profile.timezone),
-    devices: (conns || []).map(c => ({ provider: c.provider, mode: c.mode, status: c.status, last_sync: c.last_sync_at })),
+    devices: liveConnections(conns || []).map(c => ({ provider: c.provider, mode: c.mode, status: c.status, last_sync: c.last_sync_at })),
     memory: memory.map(m => ({ fact: m.fact, category: m.category })),
     history: {
       total_entries: count || 0,
@@ -6084,7 +6143,7 @@ async function connectDevice(args, user) {
   const { data: conns } = await supabase.from('wrought_connections')
     .select('provider, mode, status, last_sync_at').eq('user_id', user.id);
 
-  const connected = (conns || []).map(c => ({
+  const connected = liveConnections(conns || []).map(c => ({
     provider: c.provider, mode: c.mode, status: c.status, last_sync: c.last_sync_at,
   }));
 
@@ -6334,6 +6393,14 @@ export async function handleRpc(msg, authUser) {
 
       try {
         const out = await impl(params.arguments || {}, authUser);
+        // WHICH RECORD, ON EVERY REPLY. With several connectors named Wrought
+        // on one ChatGPT account the model's question is "which is theirs";
+        // the address rides on each reply — both doors, the connector and the
+        // custom GPT's Actions, come through here — so it never needs asking.
+        // A tool that already says whose account it is keeps its own answer.
+        if (out && typeof out === 'object' && !Array.isArray(out) && out.account === undefined) {
+          out.account = authUser?.email || null;
+        }
         return rpcResult(id, {
           content: [{ type: 'text', text: JSON.stringify(out, null, 2) }],
           isError: Boolean(out && out.error),

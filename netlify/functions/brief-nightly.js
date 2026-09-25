@@ -130,6 +130,14 @@ export async function buildBriefFor(userId, now = new Date()) {
   const weightKg = day.body.weight_kg
     ?? [...range.days].reverse().find(d => d.date <= date && d.weight_kg != null)?.weight_kg
     ?? null;
+  // A phone that normally reports and has not sent today is "not sent yet",
+  // never a whole-day multiplier — the rule the dashboard, the connector and
+  // Siri already follow, which the 8pm close did not know, so on a silent day
+  // the push quoted a projection the dashboard refused to draw.
+  const { data: pushConn } = await supabase.from('wrought_connections')
+    .select('last_sync_at').eq('user_id', userId).eq('mode', 'push')
+    .order('last_sync_at', { ascending: false, nullsFirst: false }).limit(1);
+  const lastPush = pushConn?.[0]?.last_sync_at ? new Date(pushConn[0].last_sync_at).getTime() : 0;
   const balance = energyBalance({
     profile, weightKg,
     caloriesIn: day.food.calories,
@@ -138,6 +146,8 @@ export async function buildBriefFor(userId, now = new Date()) {
     workouts: day.training.entries,
     activities: day.activity.entries,
     deviceResting: day.device.resting_calories,
+    deviceRestingSoFar: day.device.resting_so_far, deviceRestingAt: day.device.fresh?.at || null,
+    deviceExpected: Date.now() - lastPush < 3 * 86400000,
   });
   facts.logged = day.logged;
   facts.balance = balance.known ? {
@@ -408,6 +418,7 @@ export async function buildMorningFor(userId, profile, now = new Date()) {
     workouts: yesterday.training.entries,
     activities: yesterday.activity.entries,
     deviceResting: yesterday.device.resting_calories,
+    deviceRestingSoFar: yesterday.device.resting_so_far, deviceRestingAt: yesterday.device.fresh?.at || null,
   });
 
   // targets stays null on purpose: the morning states the GAP and never a

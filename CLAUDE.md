@@ -2452,6 +2452,122 @@ a narrower form than *a test that names a value cannot outlive the value*:
 guard on WHERE the style list comes from must not name that call's arguments,
 and a guard on the card template must not slice on its parameter list.
 
+### Three Wroughts in ChatGPT, a 6pm step count at 7pm, and the day that never logged
+
+The founder, 24 September, 7:02pm: *"it's not logging into route automatically
+… it should tell you a total, how much your work did … how much should I eat
+today, how much did I burn including my workouts and all the matrixes from
+the Apple Watch … my steps are always behind by my night workout … fix all of
+it. Sometimes it tells me there's more than one connector as well."* ChatGPT's
+reply in the screenshot listed his food and his three hours at the petting zoo
+in prose, then: *"there are three Wrought connections showing on your account
+and they all have the same name — tell me which is yours so I don't write your
+food into the wrong account."* **Nothing was written.** The logs show zero
+connector calls that whole day.
+
+**Checked on the server before anything was touched**, and every one of these
+facts shaped the fix: ONE OAuth client (ChatGPT), NINE unrevoked sign-ins — one
+per time the connector was added or reconnected — every one mapped to the same
+Wrought user; four different access tokens used on the 23rd. So ChatGPT holds
+several same-named copies of one service, and each writes to the same record.
+The model's caution was the fork doctrine working in the wrong place:
+**refusing to log to avoid a wrong account is the one outcome worse than
+either guess** — a wrong account is joined afterwards by link_account; a day
+never written is gone.
+
+- **Copies are one service, said where the model reads.** `SAME_SERVICE` on
+  `log` (after the "Logged in Wrought" rule, so the custom GPT's 300-character
+  Action still carries the receipt rule), `log_activity`, `get_day`,
+  `get_profile` (`same_service` on the result), SERVER_INSTRUCTIONS — placed
+  BEFORE the two-accounts doctrine, which primed the hesitation — the GPT
+  sheet, and the routing habit people save into ChatGPT's memory (both copies,
+  byte-identical). **Every reply names its account**, stamped once in
+  handleRpc's `tools/call`, which both doors dispatch through; a tool with its
+  own `account` keeps it.
+- **The Account panel counts the sign-ins** (live refresh chains, never the
+  hashes) and says what ChatGPT's copies are and that Disconnect signs every
+  copy out at once. *"Signed in N times"*, never *"N copies"*: a connector
+  deleted inside ChatGPT leaves its grant here until it expires. The advice
+  that bred copies — "disconnect and reconnect WROUGHT" — now says reconnect
+  the one already there; connect.html says the same.
+- **"More than one connection" had a second source**: every iPhone user held
+  two push rows — an `apple_health` row minted with the device key that never
+  syncs, and the app's `wrought_ios`. `liveConnections()` names one phone as
+  one connection on get_profile, connect_device and the dashboard. Nothing is
+  deleted.
+
+**The step lag was the phone, and it was structural.** The courier only ever
+sent TODAY's running total, and only when iOS woke it (hourly at best, and iOS
+decides). Whatever happened after a day's last wake — a night walk, an evening
+session — never reached that day: after midnight it asked only about the new
+one. So every day was short by its evening, forever. Now:
+
+- **Every send closes the last two finished days** with their full-day totals,
+  stamped at **noon** (the one time that stays on its calendar day in every
+  zone within twelve hours — a 23:59 stamp from a travelling phone files
+  yesterday under today and overwrites it) and marked `source_ref: 'day_final'`.
+  The server's one-total-per-day replace makes the closed day whole.
+- **The app sends the moment it opens** (scenePhase `.active`), on pull-to-
+  refresh, and when the page's **Send the latest** button asks (a
+  `wroughtSync` bridge, same origin check as the Watch bridge); it tells the
+  page when the send landed (`wrought-synced`) and the page redraws. ONE path —
+  `sync()` — so the observer, the app opening and the page never run two sends
+  at once, and a send under a minute old is not repeated.
+- **This needs a new TestFlight build (13+).** Build 12 sends only on a cold
+  launch and has no send button, and the page knows it: inside build 12 it
+  says *close the app fully and open it again*, never "open the Wrought app"
+  to somebody already in it.
+- **The replace itself was fragile.** Ingest deleted each (metric, day) in a
+  serial awaited loop and never read the result, so a failed delete was
+  followed by an insert that DOUBLED the day's steps — and closing two days
+  tripled the pairs. One delete per day, all at once, a failure stops the
+  write; per day rather than a metrics × days cross product, which would wipe
+  a day's row for a metric the phone did not send for it.
+
+**A watch figure is true as of when it was sent, and now says so.**
+`deviceFreshness()` — pure — stamps the running totals from the newest row's
+`created_at` (when the server RECEIVED it: Health Auto Export sets measured_at
+to the day's midnight, which would read "as of 12:00am"), names the action
+that makes it current by source, and marks a finished day `short` when the
+phone stopped reporting before midnight. It rides `dayFacts.device.fresh` to
+the MOVED line, the receipt (*"your watch's active energy as of 6:00pm"*, never
+"for the whole day" on a day still running), `energy_balance` (`watch`), the
+dashboard (one line under the burn, age worked out on the page so a warm
+render never repeats an old "2 min ago"), Siri's readback, the 8pm close (long
+and lock screen: `STEPS 8,020@6:01P`), the 4pm goal check and the morning's
+*"Yesterday … — short: the phone's last send was 6:01pm"*.
+
+**Apple's basal was a so-far figure used as the whole day.** At 7pm with a 6pm
+sync it is three-quarters of a day, and using it as the resting burn
+understated his burn by roughly six hundred — the direction that tells
+somebody to eat less than they need. `restingToMidnight()` carries it to
+midnight at the steady rate it accrues, from four hours in (before that the
+formula stands in), never for a closed day or a source that stamps the day
+bucket; the basis says *"had counted 1,860 by 6:00pm; at the same steady rate
+that is about 2,480 for the whole day"*. The 8pm close also learned what every
+other reader knew: a phone that normally reports and has not sent today is
+awaiting the device, never a whole-day multiplier.
+
+**And the whole day, asked for in his words.** *"What did I eat today",
+"what's my calories", "how much should I eat today", "what did I burn", "what
+did my work burn"* go to `get_day` now (moved off `brief`, whose no-key reply
+was "food · training" with no work, no burn and no steps — and `brief` now
+answers with the same whole-day read when there is no written verdict, and a
+cached 8pm verdict is reused for a day still running only while its figures
+still stand). The calorie line on a day still running says *"1,420 of 1,723 so
+far — 303 short of it"* rather than "hit", then that the target is priced off
+basal so what was trained and worked comes off on top. **Under a care flag no
+figure of what is left is quoted anywhere** — get_day now reads the flags off
+the month it already fetched, and `whats_next` stopped saying "303 kcal left"
+to somebody the low-intake flag had caught. Nothing eaten yet is not a deficit
+in the read either, and the dashboard says which of the shift and the watch
+counted and what the work was worth.
+
+**What could not be fixed from here**: the duplicates live in ChatGPT's own
+settings; removing the extras (keep one) is the founder's. The day of the
+24th was never written; the conversation that holds it can flush it once the
+connector answers.
+
 ### The standing coach shapes the day — rhythm and register, never food, never more
 
 `STYLE_DAYS` in `lib/voices.js` + `coachDay()` / `coachRegister()` /
@@ -5183,7 +5299,7 @@ self-reporting scale removes the most-abandoned manual entry), then Strava.
 
 ## Conventions
 
-- `npm test` runs `test/harness.mjs` — 761 offline tests, no network, no database.
+- `npm test` runs `test/harness.mjs` — 773 offline tests, no network, no database.
   Run it before every push. It covers the JSON-RPC envelope (which fails as an
   uninformative "could not connect" inside ChatGPT) and all the arithmetic
   (which fails as a confidently wrong number in somebody's verdict).
