@@ -14879,31 +14879,69 @@ await test('the whole-day read and the receipt put the time on the watch line', 
   assert.ok(!/Say WHEN the watch/.test(r2.note));
 });
 
-await test('the page shows the watch time beside the burn, asks the phone to send, and redraws when it has', () => {
+await test('the page shows the watch time beside the burn, asks the phone to send, and redraws when it has', async () => {
   const app = decomment(page('app.html'));
   const heroFn = app.slice(app.indexOf('function hero('), app.indexOf('function restingBasis('));
   assert.equal((heroFn.match(/freshLine\(d\.today\?\.device\?\.fresh\)/g) || []).length, 2, 'one of the hero branches lost the watch time');
   const fl = app.slice(app.indexOf('function freshLine('), app.indexOf('function hero('));
   // The age is worked out on the page: a warm render must not repeat an old "2 min ago".
   assert.match(fl, /Date\.now\(\) - at\.getTime\(\)/);
-  assert.match(fl, /window\.webkit\?\.messageHandlers\?\.wroughtSync && !DEMO/);
+  assert.match(app.slice(app.indexOf('function watchSendHow('), app.indexOf('function freshLine(')), /const canSend = !DEMO && !!bridges\.wroughtSync && ours;/);
   assert.match(app, /window\.webkit\.messageHandlers\.wroughtSync\.postMessage/);
-  assert.match(app, /window\.addEventListener\('wrought-synced', \(\) => \{\s*liveLastJson = '';[^\n]*\n\s*refreshRecord\(\);/);
+  assert.match(app, /window\.addEventListener\('wrought-synced', ev => \{[\s\S]*?liveLastJson = '';[^\n]*\n\s*refreshRecord\(\);/);
   // The readings panel prefers the server's running-total clock.
   assert.match(app, /const fr = d\.today\?\.device\?\.fresh;/);
   // RUN it, as each place it is shown: a browser, today's installed build
   // (the Watch bridge, no send button) and the build with the button.
-  const make = win => new Function('window', 'DEMO', 'esc', `${fl}; return freshLine;`)(win, false, x => String(x));
-  const f = { at: '6:01pm', as_of: new Date(Date.now() - 61 * 60000).toISOString(), stale: true, final: false,
+  const helpers = app.slice(app.indexOf('function watchSendHow('), app.indexOf('function tickAges('));
+  const SAFARI = 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1';
+  const SHELL = 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148';
+  const make = (win, nav = { userAgent: SAFARI }, demo = false, fn = 'freshLine') =>
+    new Function('window', 'navigator', 'DEMO', 'esc', `${helpers}; return ${fn};`)(win, nav, demo, x => String(x));
+  const f = { at: '6:01pm', as_of: new Date(Date.now() - 61 * 60000).toISOString(), final: false, source: 'wrought_ios',
     refresh: 'open the Wrought app on your phone to send the latest' };
   const browser = make({})(f);
   assert.match(browser, /Watch figures as of <b>6:01pm<\/b> · about an hour ago — open the Wrought app on your phone to send the latest\./);
-  const oldBuild = make({ webkit: { messageHandlers: { wroughtWatch: {} } } })(f);
-  assert.match(oldBuild, /close the app fully and open it again to send the latest/, 'build 12 is told to open the app it is already in');
-  assert.ok(!/Send the latest/.test(oldBuild), 'build 12 shows a button it has no bridge for');
-  const newBuild = make({ webkit: { messageHandlers: { wroughtSync: {}, wroughtWatch: {} } } })(f);
+  // Build 12 registers NO bridges: the web view's user agent is the tell.
+  const build12 = make({}, { userAgent: SHELL })(f);
+  assert.match(build12, /close the Wrought app fully and open it again to send the latest/, 'build 12 is told to open the app it is already in');
+  assert.ok(!/Send the latest/.test(build12), 'build 12 shows a button it has no bridge for');
+  // A Home Screen install has the same user agent and is not the app.
+  assert.match(make({}, { userAgent: SHELL, standalone: true })(f), /open the Wrought app on your phone/);
+  const oldBuild = make({ webkit: { messageHandlers: { wroughtWatch: {} } } }, { userAgent: SHELL })(f);
+  assert.match(oldBuild, /close the Wrought app fully and open it again/);
+  const newBuild = make({ webkit: { messageHandlers: { wroughtSync: {}, wroughtWatch: {} } } }, { userAgent: SHELL })(f);
   assert.match(newBuild, /<button class="ghost fresh-sync" type="button">Send the latest<\/button>/);
+  // Figures some other app sent: that app is named, never a button that
+  // cannot send them.
+  const hae = make({ webkit: { messageHandlers: { wroughtSync: {} } } }, { userAgent: SHELL })({ ...f, source: 'apple_health', refresh: 'open Health Auto Export on your phone to send the latest' });
+  assert.ok(!/fresh-sync/.test(hae));
+  assert.match(hae, /open Health Auto Export on your phone to send the latest/);
+  // The demo never instructs.
+  const demo = make({ webkit: { messageHandlers: { wroughtSync: {} } } }, { userAgent: SHELL }, true)(f);
+  assert.ok(!/close the Wrought app|fresh-sync/.test(demo), 'the demo gives the old-build advice or a button inside the app');
+  // …and its own figures are stamped under the twenty-minute line, so it never
+  // accuses a watch it invented.
+  assert.match(app, /as_of: new Date\(Date\.now\(\) - 5 \* 60000\)\.toISOString\(\),/);
   assert.equal(make({})({ final: true }), '', 'a closed day is not stamped as stale');
+  // The watch panel's line gives the same instruction as the burn's.
+  const panel = make({}, { userAgent: SAFARI }, false, 'readingsAgeLine')({ as_of: f.as_of, at: '6:01pm', source: 'apple_health', refresh: 'open Health Auto Export on your phone to send the latest' });
+  assert.match(panel, /Open Health Auto Export on your phone to send the latest\./);
+  assert.ok(!/Open the Wrought app/.test(panel));
+  // The payload carries the send TIME and never its age: two reads a minute
+  // apart on unchanged rows are identical, so a poll never repaints (and never
+  // wipes a half-typed meal). The age moves in place on the page.
+  const { steadyDevice } = await import('../netlify/functions/api-progress.js');
+  const { deviceFreshness } = await import('../netlify/functions/lib/wrought.js');
+  const at = new Date('2026-09-25T22:00:00Z');
+  const read = min => JSON.stringify(steadyDevice({ steps: 8020, fresh: deviceFreshness({ asOf: at, timezone: 'America/Toronto', now: new Date(at.getTime() + min * 60000), source: 'wrought_ios' }) }));
+  assert.equal(read(25), read(26));
+  assert.match(app, /setInterval\(tickAges, 60000\);/);
+  const api = readFileSync(new URL('../netlify/functions/api-progress.js', import.meta.url), 'utf8');
+  assert.match(api, /device: steadyDevice\(today\.device\),/);
+  // A send that never answers, or answers with a reason, never leaves the button stuck.
+  assert.match(app, /setTimeout\(\(\) => \{ if \(btn\.isConnected && btn\.disabled\)/);
+  assert.match(app, /if \(ev\.detail\?\.error\) \{/);
 });
 
 await test('the phone closes the days it has finished, syncs when opened, and sends on the page\'s word', () => {
@@ -14930,10 +14968,36 @@ await test('the phone closes the days it has finished, syncs when opened, and se
   // ONE path into a send: the observer, the app opening and the page all go
   // through sync(), which never runs two sends at once.
   assert.match(courier, /func sync\(force: Bool = false\) async/);
-  assert.match(courier, /if let running = inFlight \{ await running\.value; return \}/);
+  const sync = courier.slice(courier.indexOf('func sync(force: Bool = false) async'), courier.indexOf('func armAtLaunch()'));
+  // …and never DROPS one. A request during a send is owed one more after it
+  // (that send read HealthKit before these samples existed); a wake inside the
+  // minute is deferred to the end of it; only a send that landed is stamped.
+  assert.match(sync, /if let running = inFlight \{ rerun = true; await running\.value; return \}/);
+  assert.match(sync, /repeat \{[\s\S]*?self\.rerun = false[\s\S]*?\} while self\.rerun\s*\n[\s\S]*?self\.inFlight = nil/);
+  assert.match(sync, /if await self\.sendToday\(\) \{ self\.lastSent = Date\(\) \}/);
+  assert.match(sync, /trailing = Task \{[\s\S]*?Task\.sleep[\s\S]*?await self\?\.sync\(\)/);
+  assert.ok(!/lastSent = Date\(\)\s*\n\s*(self\.)?web/.test(sync), 'a failed send is stamped as sent');
   assert.ok(!/await self\?\.sendToday\(\)/.test(courier), 'the observer bypasses the single send');
   assert.equal((courier.match(/sendToday\(\)/g) || []).length, 2, 'sendToday is called from somewhere other than sync()');
-  assert.match(courier, /web\?\.announceSync\(line: lastSync, error: lastError\)/);
+  assert.match(sync, /self\.web\?\.announceSync\(line: self\.lastSync, error: self\.lastError\)/);
+  // A page-asked send with nothing to send with says so, both ends.
+  assert.match(sync, /if force \{ web\?\.announceSync\(line: nil, error: "Connect Apple Health in this app first/);
+  // The observer acknowledges HealthKit only once the send has finished,
+  // inside a background task; and it is armed at LAUNCH, once.
+  const observer = courier.slice(courier.indexOf('private func registerBackgroundDelivery()'), courier.indexOf('store.execute(query)'));
+  assert.match(observer, /guard !armed else \{ return \}/);
+  assert.match(observer, /let bg = BackgroundTask\("wrought-sync"\)\s*await self\?\.sync\(\)\s*bg\.end\(\)\s*done\(\)/);
+  assert.ok(!/Task \{ await self\?\.sync\(\) \}\s*done\(\)/.test(observer), 'the update is acknowledged before the send');
+  const app = read('WroughtApp.swift');
+  assert.match(app, /@UIApplicationDelegateAdaptor\(AppDelegate\.self\)/);
+  assert.match(app, /didFinishLaunchingWithOptions[\s\S]*?HealthCourier\.shared\.armAtLaunch\(\)/);
+  assert.match(app, /@StateObject private var courier = HealthCourier\.shared/);
+  assert.ok(!/HealthCourier\(\)/.test(app), 'the view and the launch arm two different couriers');
+  // A finished day is the calendar's own day, never startOfDay plus days —
+  // where DST begins at midnight that shifted the day by an hour, for good.
+  const closedFn = courier.slice(courier.indexOf('private func closedDayInterval('), courier.indexOf('/// Deduplicated cumulative total for today'));
+  assert.match(closedFn, /cal\.dateInterval\(of: \.day, for: anchor\)/);
+  assert.ok(!/byAdding: \.day, value: 1, to: start/.test(closedFn));
   // Opening the app sends.
   const view = read('ContentView.swift');
   assert.match(view, /@Environment\(\\\.scenePhase\) private var scenePhase/);
@@ -14944,6 +15008,7 @@ await test('the phone closes the days it has finished, syncs when opened, and se
   const bridge = web.slice(web.indexOf('final class SyncBridge'), web.indexOf('extension WebViewStore: WKNavigationDelegate'));
   assert.match(bridge, /message\.frameInfo\.isMainFrame, message\.frameInfo\.securityOrigin\.host == "wrought\.fit"/);
   assert.match(bridge, /securityOrigin\.protocol == "https"/);
+  assert.match(bridge, /guard let ask = store\?\.onSyncRequest else \{\s*store\?\.announceSync\(line: nil, error:/);
   assert.match(web, /CustomEvent\('wrought-synced'/);
   // Pulling down asks the phone to send, not only the page to reload.
   const pull = web.slice(web.indexOf('@objc func reload()'), web.indexOf('store.webView.load(URLRequest(url: url'));
@@ -15159,16 +15224,32 @@ await test('get_day, whats_next and brief answer the whole day, and a flag silen
   assert.match(SERVER_INSTRUCTIONS, /hides exactly the entries that failed to land/);
 });
 
-await test('the dashboard says which figure counted, and what the work was worth', () => {
+await test('the dashboard says which figure counted, and what the work was worth', async () => {
   const app = decomment(page('app.html'));
   const heroFn = app.slice(app.indexOf('function hero('), app.indexOf('function restingBasis('));
   assert.match(heroFn, /b\.active_source === 'logged_over_device' \? ' The work you logged came to more than your watch measured, so it is the figure counted/);
-  const bs = app.slice(app.indexOf('function burnSplit('), app.indexOf('// ── How to use it'));
-  assert.match(bs, /\$\{e\.kcal != null \? ` — \$\{n\(e\.kcal\)\} kcal` : ''\}/);
-  assert.match(bs, /' · counted — more than your watch measured'/);
-  assert.match(bs, /' · not added — your watch counted more for the day, and the two are the same hours'/);
+  const bs = app.slice(app.indexOf('function burnSplit('), app.indexOf('function guideView('));
+  // RUN it: a priced shift says what it was worth and whether it counted; a
+  // shift never priced (no weigh-in yet) is never "0 kcal · not added".
+  const split = new Function('esc', 'n', `${bs}; return burnSplit;`)(x => String(x), v => (v == null ? '—' : Number(v).toLocaleString('en-US')));
+  const base = { resting_burn: 2400, training_burn: 0, other_burn: 900, resting_source: 'device', active_source: 'device' };
+  const priced = split({ ...base, logged_activity: { count: 1, entries: [{ label: 'animal care', hours: 3, kcal: 700 }] } });
+  assert.match(priced, /animal care, 3h on task — 700 kcal · not added — your watch counted more for the day, and the two are the same hours/);
+  assert.match(split({ ...base, active_source: 'logged_over_device', logged_activity: { count: 1, entries: [{ label: 'animal care', hours: 3, kcal: 1559 }] } }),
+    /1,559 kcal · counted — more than your watch measured/);
+  const unpriced = split({ ...base, logged_activity: { count: 1, entries: [{ label: 'animal care', hours: 3, kcal: null }] } });
+  assert.match(unpriced, /animal care, 3h on task — not priced yet, it needs a recent weigh-in/);
+  assert.ok(!/0 kcal|not added/.test(unpriced), 'an unpriced shift reads as priced at zero and beaten by the watch');
   const tt = app.slice(app.indexOf('function trainingTodayPanel('), app.indexOf('function trainingTodayPanel(') + 5000);
-  assert.match(tt, /src === 'logged_over_device' \? 'counted' : src === 'device' \? 'not added — your watch counted more' : null/);
+  assert.match(tt, /!x\.kcal \? null : src === 'logged_over_device' \? 'counted' : src === 'device' \? 'not added — your watch counted more' : null/);
+  // The server carries "not priced" as null, never a zero.
+  const { activityTotal } = await import('../netlify/functions/lib/activity.js');
+  const at = activityTotal([{ event_type: 'activity', summary: 'animal care, 3h', detail: { hours: 3, kcal: null, label: 'animal care' } }]);
+  assert.equal(at.entries[0].kcal, null);
+  assert.equal(at.kcal, 0);
+  const { dayReadout } = await import('../netlify/functions/lib/dayread.js');
+  const wr = dayReadout({ day: { date: '2026-09-25', log: [], food: {}, device: {}, activity: { count: 1 } }, balance: { logged_activity: at }, date: '2026-09-25', today: '2026-09-25' });
+  assert.match(wr.say, /WORKED — animal care \(3h on task\) — not priced yet — it needs a recent weigh-in/);
   assert.match(app, /balance\.logged_activity\?\.kcal \? ` · ~\$\{n\(balance\.logged_activity\.kcal\)\} kcal` : ''/);
 });
 

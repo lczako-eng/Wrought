@@ -183,12 +183,14 @@ export function activityTotal(events = [], restingKcal = null) {
     .filter(e => e.event_type === 'activity')
     .map(e => ({
       summary: e.summary,
-      kcal: Number(e.detail?.kcal) || 0,
+      // A shift logged before any weigh-in has no figure yet: null, never a
+      // zero — "0 kcal · not added" reads as priced and beaten by the watch.
+      kcal: e.detail?.kcal != null && Number.isFinite(Number(e.detail.kcal)) ? Number(e.detail.kcal) : null,
       hours: Number(e.detail?.hours) || null,
       label: e.detail?.label || null,
     }));
 
-  const raw = rows.reduce((a, r) => a + r.kcal, 0);
+  const raw = rows.reduce((a, r) => a + (r.kcal || 0), 0);
   const ceiling = restingKcal ? Math.round(restingKcal * 1.5) : null;
   const capped = ceiling != null && raw > ceiling;
 

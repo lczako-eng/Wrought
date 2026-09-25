@@ -80,6 +80,13 @@ function windowLabel(span) {
   return `the last ${span} days`;
 }
 
+// The device block with the clock-dependent parts of its freshness taken off.
+export function steadyDevice(device) {
+  if (!device?.fresh) return device;
+  const { minutes_old, say, stale, ...fresh } = device.fresh;
+  return { ...device, fresh };
+}
+
 export const handler = async (event) => {
   if (event.httpMethod === 'OPTIONS') return { statusCode: 204, headers: CORS, body: '' };
   if (!supabase) return { statusCode: 500, headers: CORS, body: JSON.stringify({ error: 'server_not_configured' }) };
@@ -678,7 +685,11 @@ export const handler = async (event) => {
         // payload disagreed about a field name, in silence.
         activity: today.activity,
         body: today.body,
-        device: today.device,
+        // The send TIME, never its age. `minutes_old` and the "(25 min ago)"
+        // sentence change every minute, and the page repaints only when the
+        // payload changes — so every ninety-second poll replaced the Record
+        // view and wiped a half-typed meal. The page works the age out itself.
+        device: steadyDevice(today.device),
         entries: today.log,
         // THE SAME MEAL, COUNTED TWICE. Computed here like every other claim
         // about the day, so the screen and the connector can never disagree

@@ -13,9 +13,16 @@
 
 import Foundation
 import HealthKit
+import UIKit
 
 @MainActor
 final class HealthCourier: ObservableObject {
+    /// One courier for the process. HealthKit relaunches a terminated app in
+    /// the background with no window, so the observer queries have to be
+    /// armed from launch (AppDelegate) rather than from a view that may never
+    /// be built — and the view and the launch must arm the same courier.
+    static let shared = HealthCourier()
+
     enum State { case idle, working, connected, failed }
 
     @Published var state: State = .idle
@@ -32,6 +39,14 @@ final class HealthCourier: ObservableObject {
     /// send already running rather than racing it to the same door.
     private var inFlight: Task<Void, Never>?
     private var lastSent: Date?
+    /// A request that arrived while a send was running: that send read
+    /// HealthKit before these samples were saved, so one more goes after it.
+    private var rerun = false
+    /// A wake inside the minute after a send is deferred to the end of that
+    /// minute, never dropped.
+    private var trailing: Task<Void, Never>?
+    /// Observer queries executed once per process, whoever arms them first.
+    private var armed = false
 
     var statusLine: String {
         switch state {
@@ -154,15 +169,50 @@ final class HealthCourier: ObservableObject {
     /// wake-up happened to catch. Opening the app is the one moment somebody
     /// is guaranteed to be looking, so that is the moment it has to be current.
     func sync(force: Bool = false) async {
-        guard IngestClient.storedKey() != nil else { return }
-        if let running = inFlight { await running.value; return }
-        if !force, let last = lastSent, Date().timeIntervalSince(last) < 60 { return }
-        let task = Task { await self.sendToday() }
+        guard IngestClient.storedKey() != nil else {
+            // The page asked and there is nothing to send with: say so, or the
+            // button it disabled waits forever.
+            if force { web?.announceSync(line: nil, error: "Connect Apple Health in this app first — then this sends the latest.") }
+            return
+        }
+        // Coalesced on the trailing edge: a request during a send is owed one
+        // more send after it, because the running one read HealthKit before
+        // these samples existed. Dropping it left the evening behind.
+        if let running = inFlight { rerun = true; await running.value; return }
+        if !force, let last = lastSent, Date().timeIntervalSince(last) < 60 {
+            if trailing == nil {
+                let wait = max(1, 60 - Date().timeIntervalSince(last))
+                trailing = Task { [weak self] in
+                    try? await Task.sleep(nanoseconds: UInt64(wait * 1_000_000_000))
+                    self?.trailing = nil
+                    await self?.sync()
+                }
+            }
+            return
+        }
+        let task = Task { [weak self] in
+            guard let self else { return }
+            repeat {
+                self.rerun = false
+                // Stamped only on a send that landed: a locked phone reads
+                // nothing, and throttling the retry after it kept the day short.
+                if await self.sendToday() { self.lastSent = Date() }
+            } while self.rerun
+            // Cleared in the same turn as the last check of `rerun`, so a
+            // request can never join a send that has already finished.
+            self.inFlight = nil
+            self.web?.announceSync(line: self.lastSync, error: self.lastError)
+        }
         inFlight = task
         await task.value
-        inFlight = nil
-        lastSent = Date()
-        web?.announceSync(line: lastSync, error: lastError)
+    }
+
+    /// From launch: HealthKit wakes a terminated app with no window, and an
+    /// observer query that only a view creates never exists for that wake.
+    func armAtLaunch() {
+        guard IngestClient.storedKey() != nil else { return }
+        state = .connected
+        registerBackgroundDelivery()
     }
 
     /// The whole handshake, in order, each step explaining itself on failure:
@@ -217,11 +267,15 @@ final class HealthCourier: ObservableObject {
     /// A whole day that has already ended, `back` days ago: its midnight to
     /// the next midnight, on the phone's own calendar.
     private func closedDayInterval(back: Int) -> (Date, Date)? {
+        // Anchored at noon and bounded by the calendar's own day: where DST
+        // begins at midnight (Santiago, Havana, the Azores) midnight does not
+        // exist, and adding days to a startOfDay shifted the day by an hour —
+        // overwriting a finished day with the wrong total, for good.
         let cal = Calendar.current
-        let today = cal.startOfDay(for: Date())
-        guard let start = cal.date(byAdding: .day, value: -back, to: today),
-              let end = cal.date(byAdding: .day, value: 1, to: start) else { return nil }
-        return (start, end)
+        guard let noon = cal.date(bySettingHour: 12, minute: 0, second: 0, of: Date()),
+              let anchor = cal.date(byAdding: .day, value: -back, to: noon),
+              let day = cal.dateInterval(of: .day, for: anchor) else { return nil }
+        return (day.start, day.end)
     }
 
     /// Deduplicated cumulative total for today — the watch-face number.
@@ -329,7 +383,8 @@ final class HealthCourier: ObservableObject {
 
     // MARK: - Sending
 
-    func sendToday() async {
+    @discardableResult
+    func sendToday() async -> Bool {
         let iso = ISO8601DateFormatter()
         var metrics: [[String: Any]] = []
         let now = iso.string(from: Date())
@@ -437,15 +492,17 @@ final class HealthCourier: ObservableObject {
 
         let workouts = await recentWorkouts()
 
-        guard !metrics.isEmpty || !workouts.isEmpty else { return }
+        guard !metrics.isEmpty || !workouts.isEmpty else { return false }
         do {
             let receipt = try await IngestClient.post(metrics: metrics, workouts: workouts)
             lastSync = receipt.line
             // A rejected write is an error even though the request succeeded.
             lastError = receipt.error == nil ? nil
                       : "Workouts were rejected by the server. Run schema/015 in Supabase."
+            return true
         } catch {
             lastError = "Send failed: \(error.localizedDescription)"
+            return false
         }
     }
 
@@ -546,14 +603,24 @@ final class HealthCourier: ObservableObject {
     /// Shortcut or nightly alarm can be. Hourly is plenty: the server keeps
     /// one total per day however often it hears.
     private func registerBackgroundDelivery() {
+        guard !armed else { return }
+        armed = true
         var watched: [HKSampleType] = [HKObjectType.workoutType()]
         for id: HKQuantityTypeIdentifier in [.stepCount, .activeEnergyBurned, .distanceWalkingRunning] {
             if let t = HKObjectType.quantityType(forIdentifier: id) { watched.append(t) }
         }
         for type in watched {
-            let query = HKObserverQuery(sampleType: type, predicate: nil) { [weak self] _, done, _ in
-                Task { await self?.sync() }
-                done()
+            // The update is acknowledged when the send has FINISHED, inside a
+            // background task — acknowledging first told HealthKit the data was
+            // handled while iOS was free to suspend the app mid-send.
+            let query = HKObserverQuery(sampleType: type, predicate: nil) { [weak self] _, done, error in
+                if error != nil { done(); return }
+                Task { @MainActor in
+                    let bg = BackgroundTask("wrought-sync")
+                    await self?.sync()
+                    bg.end()
+                    done()
+                }
             }
             store.execute(query)
             // A finished workout should land while the sweat is still on, not
@@ -561,5 +628,21 @@ final class HealthCourier: ObservableObject {
             let cadence: HKUpdateFrequency = (type == HKObjectType.workoutType()) ? .immediate : .hourly
             store.enableBackgroundDelivery(for: type, frequency: cadence) { _, _ in }
         }
+    }
+}
+
+/// A stretch of background time that ends itself when iOS calls time.
+@MainActor
+private final class BackgroundTask {
+    private var id: UIBackgroundTaskIdentifier = .invalid
+    init(_ name: String) {
+        id = UIApplication.shared.beginBackgroundTask(withName: name) { [weak self] in
+            Task { @MainActor in self?.end() }
+        }
+    }
+    func end() {
+        guard id != .invalid else { return }
+        UIApplication.shared.endBackgroundTask(id)
+        id = .invalid
     }
 }

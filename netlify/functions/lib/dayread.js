@@ -83,10 +83,10 @@ export function dayReadout({ day = null, balance = null, receipt = null, scored 
   const a = balance?.logged_activity?.entries || [];
   // Named by what the work WAS, then the hours once — "animal care, 3h (3h
   // on task)" said the hours twice and lost what the job was.
-  const work = a.map(e => ({ what: e.label || e.summary, hours: e.hours ?? null, calories: n(e.kcal) || 0 }));
+  const work = a.map(e => ({ what: e.label || e.summary, hours: e.hours ?? null, calories: e.kcal == null ? null : n(e.kcal) }));
   if (work.length || day.activity?.count) {
     lines.push(`WORKED — ${work.length
-      ? work.map(e => `${e.what}${e.hours ? ` (${e.hours}h on task)` : ''} — ${money(e.calories)} kcal, estimated`).join('; ')
+      ? work.map(e => `${e.what}${e.hours ? ` (${e.hours}h on task)` : ''} — ${e.calories != null ? `${money(e.calories)} kcal, estimated` : 'not priced yet — it needs a recent weigh-in'}`).join('; ')
       : day.activity.say}`);
   }
 

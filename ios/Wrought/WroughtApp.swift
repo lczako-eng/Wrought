@@ -21,10 +21,27 @@
 // reports in.
 
 import SwiftUI
+import UIKit
+
+/// Arms the HealthKit observers at LAUNCH. When the watch saves an evening's
+/// steps and the app has been swept away, HealthKit relaunches it in the
+/// background with no window — so a query only ContentView creates never
+/// exists for that wake, the update goes unanswered, and after three of those
+/// HealthKit stops waking the app until it is opened again. The day stayed
+/// short until morning.
+@MainActor
+final class AppDelegate: NSObject, UIApplicationDelegate {
+    func application(_ application: UIApplication,
+                     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
+        HealthCourier.shared.armAtLaunch()
+        return true
+    }
+}
 
 @main
 struct WroughtApp: App {
-    @StateObject private var courier = HealthCourier()
+    @UIApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
+    @StateObject private var courier = HealthCourier.shared
 
     var body: some Scene {
         WindowGroup {

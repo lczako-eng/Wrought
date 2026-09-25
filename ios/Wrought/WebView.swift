@@ -101,7 +101,11 @@ final class SyncBridge: NSObject, WKScriptMessageHandler {
     func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
         guard message.frameInfo.isMainFrame, message.frameInfo.securityOrigin.host == "wrought.fit",
               message.frameInfo.securityOrigin.protocol == "https" else { return }
-        guard let ask = store?.onSyncRequest else { return }
+        // Nothing wired to send with yet: said, or the page's button waits.
+        guard let ask = store?.onSyncRequest else {
+            store?.announceSync(line: nil, error: "Connect Apple Health in this app first — then this sends the latest.")
+            return
+        }
         Task { await ask() }
     }
 }
