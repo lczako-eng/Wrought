@@ -5907,8 +5907,10 @@ function demoData() {
     },
     no_target_set: null,
     // The server's left-for-today, in its own shape (lib/plan.js leftToday).
-    left_today: { target: 2300, eaten: 2140, left: 160, over: false, withheld: false, basal: 3260, deficit: 960, pace: 'steady',
-      short: 'About 160 left of today\'s 2,300 target (basal 3,260 − 960).' },
+    // Coherent with the demo's own burn: a 1,770 basal under a 2,300 target is
+    // a target set above basal, which the server words without a subtraction.
+    left_today: { target: 2300, eaten: 2140, left: 160, over: false, withheld: false, basal: 1770, deficit: -530, pace: null,
+      short: 'About 160 left of today\'s 2,300 target.' },
     setup: { answered: 14, of: 14, complete: true, remaining: [], questions: [] },
     nudge: { kind: 'week_behind', priority: 7, push: 'normal',
       say: '3 of 4 this week with 2 days left. Still comfortably doable — want a session?' },
