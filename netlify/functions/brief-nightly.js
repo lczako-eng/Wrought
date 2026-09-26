@@ -42,13 +42,13 @@ const SEND_HOUR = 20;
 // fourteen quiet days — exactly when a standing coach is supposed to help a
 // person resume. Evening still stays quiet without a log; this only keeps the
 // three appointments and user-authored alerts eligible to run.
-async function activeUsers() {
+export async function activeUsers(db = supabase) {
   const since = addDays(new Date().toISOString().slice(0, 10), -14);
-  // Each read retried once: the gateway's occasional refusal of a good key
-  // dropped every phone-only person from the :30 runs on 26 Sep.
+  // Each read retried once: the gateway now and then refuses a good key on
+  // the first requests of a run, on either read, at :00 and :30 alike.
   const [events, push] = await Promise.all([
-    retryOnce(() => supabase.from('wrought_events').select('user_id').gte('local_date', since).limit(5000), 'audience: recent loggers'),
-    retryOnce(() => supabase.from('wrought_push_subs').select('user_id').limit(5000), 'audience: subscribed phones'),
+    retryOnce(() => db.from('wrought_events').select('user_id').gte('local_date', since).limit(5000), 'audience: recent loggers'),
+    retryOnce(() => db.from('wrought_push_subs').select('user_id').limit(5000), 'audience: subscribed phones'),
   ]);
   return [...new Set([...events, ...push].map(r => r.user_id))];
 }

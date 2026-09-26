@@ -1394,6 +1394,29 @@ export function needsMacros(written = [], events = []) {
   return out;
 }
 
+// A named food with a calorie figure and NOTHING ELSE. `needsMacros` stops at
+// the calories, so a row reading "jumbo hot dog — 500 kcal, protein, carbs,
+// fat not on it" passed as structured. The founder, on exactly that: "it
+// doesn't show the grams of fat and all the other nutrients — that should
+// always do that." On 26 September both meals the connector logged came in
+// this way. The model named the food and so can estimate the rest; the reply
+// asks for them BY ID, because amend_last only reaches the newest entry and a
+// sentence with two meals in it has two to fill. A zero-calorie drink has
+// nothing to fill.
+export function macrosMissing(written = []) {
+  const out = [];
+  for (const row of written) {
+    if (row?.event_type !== 'food' && row?.event_type !== 'drink') continue;
+    const d = row.detail || {};
+    const kcal = Number(d.calories);
+    if (d.calories == null || !Number.isFinite(kcal) || kcal <= 0) continue;
+    const missing = [['protein_g', 'protein'], ['carbs_g', 'carbs'], ['fat_g', 'fat']]
+      .filter(([k]) => d[k] == null || d[k] === '').map(([, name]) => name);
+    if (missing.length) out.push({ id: row.id, summary: row.summary, calories: Math.round(kcal), missing });
+  }
+  return out;
+}
+
 // A workout with no duration on it counts NOTHING toward calories out, and it
 // does so silently — which is the same failure as a named food with no macros,
 // in the one place people are least likely to notice. Somebody logs "chest and
@@ -1788,18 +1811,22 @@ export const ROUTING_HABIT =
   'and never ask me whether to. If I say I\u2019m going ' +
   'to the gym or name a workout, call Wrought\u2019s suggest_workout or start_session immediately. ' +
   'Numbers about my calories, targets, or weights only ever come from Wrought\u2019s tools. ' +
-  'If more than one Wrought connector shows up, they are copies writing to my one Wrought account \u2014 use any one, ' +
-  'and never hold back logging to ask me which (even if an earlier chat said there were several accounts), ' +
-  'but tell me which account it logged to the first time. If Wrought\u2019s tools are not switched on in a chat, ' +
-  'say so in one line so I can turn it on \u2014 never add up my food in the chat or ask me which account instead.';
+  'If Wrought shows more than one connected account or copy, they are the same service, each writing to the ' +
+  'Wrought account it signed in with \u2014 log through any one and never hold back to ask me which (an earlier ' +
+  'chat saying there were several accounts changes nothing), but in each new chat tell me which account the ' +
+  'first log went to, so I can catch a wrong one. If Wrought\u2019s tools aren\u2019t available in a chat, say so ' +
+  'in one line \u2014 never add up my food in the chat instead.';
 
 /**
  * One retry for a query the gateway refused — pure over the query it is given.
  * Supabase now and then rejects a perfectly good secret key at the gateway
- * (PGRST303, a claims check on the token it mints for the key): on 26 Sep it
- * failed the scheduler's phone-audience read on every :30 run and passed on
- * every :00. Once more, then the failure is SAID in the log and the caller gets
- * no rows rather than a thrown run — never silently read as "nobody".
+ * (401 PGRST303, a claims check on the token it mints for the key). Between
+ * 25 and 26 Sep it happened a dozen times, on either of the scheduler's two
+ * audience reads, at :00 and :30 runs alike, and always among the first
+ * requests of a run — every later request in the same run answered 200. So
+ * once more, straight away. If that fails too the failure is SAID in the log
+ * and the caller gets no rows rather than a thrown run; the people that read
+ * would have found miss this run, and the log is where that shows.
  */
 export async function retryOnce(query, label = 'query') {
   let r = await query();

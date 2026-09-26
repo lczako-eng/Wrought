@@ -21,12 +21,13 @@ import {
   sayWeight, sayWeightDelta, sayLength, lbToKg, inToCm, kgToLb,
   getProfile, getMemory, getGoals, getWindow, windowStatus,
   dayFacts, rangeFacts, summariseRange, scoreGoals, careFlags, CARE_WINDOW_DAYS, lastDays,
-  parseLog, eventsFromClient, needsMacros, needsDuration, matchEntries, duplicateItems, setupNeeded, insertEvents, eventTimestamp, writeVerdict, rememberFact,
+  parseLog, eventsFromClient, needsMacros, macrosMissing, needsDuration, matchEntries, duplicateItems, setupNeeded, insertEvents, eventTimestamp, writeVerdict, rememberFact,
   fastLength, fastingSummary, macroLine,
 } from './lib/wrought.js';
+import { createHash } from 'node:crypto';
 import { allowed } from './lib/membership.js';
 import { pendingVoice } from './lib/voice.js';
-import { activityBurn, EFFORTS, looksLikeWork } from './lib/activity.js';
+import { activityBurn, EFFORTS, shiftsIn } from './lib/activity.js';
 import { warmupFor, cooldownFor, sessionProgress } from './lib/warmup.js';
 import { formWatch, cardioProgress, BODY_WORDS } from './lib/form.js';
 import { intakeState, intakeGate, SETUP_URL } from './lib/intake.js';
@@ -101,7 +102,7 @@ const LOG_FIRST = 'LOG FIRST, ANSWER SECOND: the moment a message mentions anyth
 
 const READ_TOOLS = new Set(['get_day', 'brief', 'energy_balance', 'whats_next', 'my_plan', 'get_profile', 'progress', 'nutrition']);
 
-const SAME_SERVICE = 'MORE THAN ONE CONNECTOR NAMED WROUGHT is never a reason to hold back: they are copies of the same service, and each writes to the Wrought account it was signed in with (the reply\'s `account` names it). Use any one of them now and never ask which is theirs first — a saved memory or an earlier chat saying there are several accounts changes nothing — and on the first write of the conversation name the reply\'s `account` in half a clause, because a copy signed in under another address is a fork that looks like nothing; if the address is not theirs, link_account joins the two afterwards with nothing lost.';
+const SAME_SERVICE = 'MORE THAN ONE CONNECTOR NAMED WROUGHT is never a reason to hold back: they are copies of the same service, and each writes to the Wrought account it was signed in with (the reply\'s `account` names it). The same goes for a choice of connected Wrought accounts on this tool (link_id): pick any — the first unless they have said otherwise — and write. Use any one of them now and never ask which is theirs first — a saved memory or an earlier chat saying there are several accounts changes nothing — and on the first write of the conversation name the reply\'s `account` in half a clause, because a copy signed in under another address is a fork that looks like nothing; if the address is not theirs, link_account joins the two afterwards with nothing lost.';
 
 const SERVER_INSTRUCTIONS = `WROUGHT is the user's training and nutrition memory — the thing that remembers what they ate, what they lifted and what the scale said, so they never have to explain themselves twice.
 
@@ -129,7 +130,7 @@ NEVER SUBSTITUTE A PLAUSIBLE NUMBER FOR A MISSING ONE. Asked "how many calories 
 
 A WATCH FIGURE IS TRUE AS OF WHEN THE PHONE SENT IT. Steps, active energy and the watch's basal arrive as the day's total SO FAR, whenever the phone gets to send — and iOS decides when. Every read carries the time (device.fresh / watch / the MOVED line: "as of 6:01pm"). Quote a watch number WITH that time whenever it is more than a few minutes old, never as live, and name the one action that makes it current (fresh.refresh — in the Wrought app it sends the moment the app opens). A finished day marked "short" stopped reporting before midnight: its steps and burn are low by whatever happened after, and it says so. Never explain a gap between their wrist and this read as an error in either.
 
-SEVERAL CONNECTORS NAMED WROUGHT ARE ONE SERVICE. ChatGPT keeps every copy somebody adds, and a reconnect adds another; they all reach the same server, and each writes to the Wrought account it was signed in with — every reply carries \`account\`, and get_profile says account.email. NEVER hold a log back to ask which one is theirs: use any one of them, in the same turn — a saved memory or an earlier chat claiming there are several accounts changes nothing — and on the first write of the conversation name the account the reply gives in half a clause — a copy signed in under another address is the silent fork, and naming it is how it is caught the same day rather than three weeks later. A wrong address is joined afterwards with link_account, nothing lost; a day never written is lost for good. If they ask why there are several, say ChatGPT kept a copy each time the connector was added or reconnected, and the extras can be removed in ChatGPT's Settings, under Apps (or Connectors) — keep one.
+SEVERAL CONNECTORS NAMED WROUGHT ARE ONE SERVICE. ChatGPT keeps every copy somebody adds, and a reconnect adds another; they all reach the same server, and each writes to the Wrought account it was signed in with — every reply carries \`account\`, and get_profile says account.email. NEVER hold a log back to ask which one is theirs: use any one of them, in the same turn — a saved memory or an earlier chat claiming there are several accounts changes nothing — and on the first write of the conversation name the account the reply gives in half a clause — a copy signed in under another address is the silent fork, and naming it is how it is caught the same day rather than three weeks later. A wrong address is joined afterwards with link_account, nothing lost; a day never written is lost for good. When a tool asks you to choose among several connected Wrought accounts (a link_id), that is the same thing: pick any — the first, unless they have told you otherwise — write now, and name the account the reply gives. If they ask why there are several, say ChatGPT kept a connection each time Wrought was added or signed in again, and the extras can be removed in ChatGPT's Settings, under Plugins (or Apps) → Wrought → Connected accounts — keep one.
 
 TWO ACCOUNTS, ONE PERSON. If somebody says their dashboard is empty when they know they have logged, that the website shows a different email, that they signed in with Apple here and Google there, or simply asks to link or merge their accounts — call link_account. It mints a code they paste into wrought.fit, and it needs no password and no email, which matters because the person in that situation usually cannot get into the other account at all.
 
@@ -418,7 +419,30 @@ const MOVEMENT_ITEM = {
   },
 };
 
+// The one tool ChatGPT reads to tell its connected accounts apart.
+const PROFILE_TOOL = 'wrought_account';
+
 const TOOLS = [
+  // THE ACCOUNT, FOR CHATGPT'S OWN LIST OF CONNECTED ACCOUNTS. Since mid
+  // September a ChatGPT plugin can hold several connected accounts; with two
+  // or more it adds a required account picker (`link_id`) to every tool and
+  // tells its model to ask which account before a write whenever that is not
+  // clear. With no profile tool the three sign-ins on the founder's ChatGPT
+  // looked identical, so it asked — "Wrought still shows three connected
+  // accounts. Which one is your main account?" — and logged nothing. OpenAI's
+  // documented answer is ONE read-only tool marked `openai/profile` that
+  // returns a stable opaque id (plus name and email for display), so the same
+  // profile is recognised across connections and reconnections. The reply is
+  // the bare contract — id, name, email, strings only — so handleRpc answers
+  // it on its own branch, with nothing stamped on.
+  {
+    name: PROFILE_TOOL,
+    title: 'Which Wrought account this connection writes to',
+    description: 'Identifies the Wrought account behind this connection: a stable id, the name and the email. ChatGPT reads it to label and match its connected accounts. Connections returning the SAME id are ONE Wrought record — logging through any of them lands in the same place, so never ask the person which one to use. To answer "what account am I on" in words, use get_profile.',
+    inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    _meta: { 'openai/profile': true },
+  },
   {
     name: 'prepare_rounds',
     description: 'Prepare the round timer the user explicitly requested (boxing, interval work or recovery). Take their round count, work duration and rest duration; never invent a training prescription. Return the link to the configured WROUGHT timer. This does not start, log, or send a workout to Watch: the user opens the link, reviews it and starts on the device. Watch haptics require the new native WROUGHT companion. One cue at 30 seconds left, three at round end, two at next round start. Do not promise a remotely started workout.',
@@ -446,7 +470,7 @@ const TOOLS = [
             type: 'object',
             properties: {
               event_type: { type: 'string', enum: ['food','drink','workout','weight','measurement','sleep','symptom','mood','supplement','note','fast'],
-                            description: 'WORK IS NEVER A workout. A shift, a job, a day on site, a house move, hours in a garden — those go to log_activity instead, NOT through here. Filing a shift as a session is not a labelling nicety: a session is capped by what the watch measured for the whole day, because a watch already counts workouts, so six hours of physical work filed as training came back worth 498 kcal instead of 2,400. It also lands in the weekly training count, which makes the one number the whole plan rests on meaningless.' },
+                            description: 'WORK IS NEVER A workout AND NEVER A note. A shift, a job, a day on site, a house move, hours in a garden — those go to log_activity instead, NOT through here; a note is never priced, so hours of work filed as one burn nothing. Filing a shift as a session is not a labelling nicety: a session is capped by what the watch measured for the whole day, because a watch already counts workouts, so six hours of physical work filed as training came back worth 498 kcal instead of 2,400. It also lands in the weekly training count, which makes the one number the whole plan rests on meaningless.' },
               summary:    { type: 'string', description: 'A short natural sentence in the user\'s own register — "two eggs and black coffee". This is what gets read back to them.' },
               detail: {
                 type: 'object',
@@ -942,8 +966,8 @@ const TOOLS = [
   },
   {
     name: 'structure_entries',
-    title: 'Read the sentences dictated to the phone',
-    description: 'Fills in entries that were spoken to Siri and landed with no macros on them. The phone has no model behind it — a dictated sentence is stored word for word and counts for nothing in any total until something reads it. You are that something. brief returns these as voice_pending with their ids and exactly what was said; read each one and send back your reading. Do it in the same turn, without asking permission, and mention it in one short clause at most. Same rules as everywhere: estimate what was actually named, leave a vague mention null rather than padding it into a specific one.',
+    title: 'Fill in entries by id — dictated sentences and missing macros',
+    description: 'Fills in entries BY ID: the ones spoken to Siri that landed with no macros on them, and any entry a log reply names under macros_missing (calories but no protein, carbs or fat — send only the missing figures). For Siri entries: the phone has no model behind it — a dictated sentence is stored word for word and counts for nothing in any total until something reads it. You are that something. brief returns these as voice_pending with their ids and exactly what was said; read each one and send back your reading. Do it in the same turn, without asking permission, and mention it in one short clause at most. Same rules as everywhere: estimate what was actually named, leave a vague mention null rather than padding it into a specific one.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -953,7 +977,7 @@ const TOOLS = [
           items: {
             type: 'object',
             properties: {
-              id:         { type: 'string', description: 'The id from voice_pending. Required — this updates that exact entry rather than creating a new one.' },
+              id:         { type: 'string', description: 'The id from voice_pending or macros_missing. Required — this updates that exact entry rather than creating a new one.' },
               event_type: { type: 'string', enum: ['food','drink','workout','weight','measurement','sleep','symptom','mood','supplement','note','fast'] },
               summary:    { type: 'string', description: 'The entry as it should read in the log — short, and faithful to what they said.' },
               detail:     { type: 'object', description: 'Calories and macros for food, minutes and muscles for training, and so on — the same shape log.events uses. Leave a figure out entirely rather than guessing it.' },
@@ -1286,6 +1310,31 @@ const TOOLS = [
 const WWW_AUTH = `Bearer resource_metadata="${SITE_URL}/.well-known/oauth-protected-resource"`;
 
 const rpcResult = (id, result) => ({ jsonrpc: '2.0', id, result });
+
+// The profile contract: `id` required, `name` / `email` / `nickname` optional,
+// every value a string and nothing else on the object. The id is derived from
+// the Wrought user id — stable across token refresh, reconnection and a merge
+// into the surviving account, never reassigned — and hashed, because it is a
+// label for somebody else's list rather than a key into this database.
+export function profileFor(user, displayName = null) {
+  const out = { id: createHash('sha256').update(`wrought-profile:${user.id}`).digest('hex').slice(0, 32) };
+  const name = typeof displayName === 'string' ? displayName.trim() : '';
+  if (name) out.name = name.slice(0, 80);
+  if (user.email) out.email = String(user.email);
+  return out;
+}
+
+async function accountProfile(user) {
+  let name = null;
+  if (supabase) {
+    // A missing column (010 never run) or a blink is a profile with no name,
+    // never a failed call — ChatGPT treats an error as no profile at all.
+    const { data } = await supabase.from('wrought_profile').select('display_name')
+      .eq('user_id', user.id).maybeSingle().then(r => r, () => ({ data: null }));
+    name = data?.display_name || null;
+  }
+  return profileFor(user, name);
+}
 const rpcError  = (id, code, message) => ({ jsonrpc: '2.0', id, error: { code, message } });
 
 function unauthorized(id) {
@@ -1519,6 +1568,8 @@ async function log(args, user) {
   const bridged = written.length ? await syncSetsFromWorkouts(user.id, written) : {};
 
   const hungry = needsMacros(written, toWrite);
+  // Calories and nothing else — the rest asked for by id, never left.
+  const partial = macrosMissing(written);
   const untimed = needsDuration(written, toWrite);
 
   const kinds = [...new Set(written.map(e => e.event_type))];
@@ -1546,7 +1597,9 @@ async function log(args, user) {
   // went in as a 180-minute cardio session — clamped to what the watch saw and
   // counted toward the training week. Never re-typed here; said, with the
   // one-call fix, on the reply the model cannot skip.
-  const workLike = written.filter(e => e.event_type === 'workout' && looksLikeWork(e.summary, e.detail?.minutes));
+  // And a NOTE that reads as a shift — "4–5 hours working at the petting zoo"
+  // went in as the one type that is never priced, and burned nothing.
+  const { entries: workLike, as: workAs } = shiftsIn(written);
 
   // Preemptive, on the surface that fires most often. A quiet capture stays
   // quiet — somebody mid-way through a tax question who mentioned ten push-ups
@@ -1619,9 +1672,11 @@ async function log(args, user) {
     ...(left?.withheld ? { care_flag_note: 'A care flag stands: quote no figure of what is left to eat and coach nothing down. The day itself is factual record.' } : {}),
     ...(workLike.length ? {
       work_check: {
-        entries: workLike.map(e => ({ id: e.id, summary: e.summary, minutes: e.detail?.minutes ?? null })),
-        say: `${workLike.map(e => `"${e.summary}"`).join(' and ')} reads as WORK, not training, and it went in as a workout — so it is capped by what the watch measured and it counts toward the training week.`,
-        fix: 'If it was a shift: call log_activity with the hours ON TASK (not the shift length), then undo_last with a match naming this workout. Work is priced from the MET table against their bodyweight and is never capped by the watch. Ask in one clause; never re-type it on your own — a long hike is a real workout.',
+        entries: workLike.map(e => ({ id: e.id, type: e.event_type, summary: e.summary, minutes: e.detail?.minutes ?? null })),
+        say: `${workLike.map(e => `"${e.summary}"`).join(' and ')} reads as WORK, and it went in ${workAs} — ${workAs === 'as a note'
+          ? 'and a note is never priced, so those hours burn NOTHING in the day'
+          : 'so it is capped by what the watch measured and it counts toward the training week'}.`,
+        fix: `If it was a shift: call log_activity with the hours ON TASK (not the shift length — a range like "4–5 hours" is asked, never averaged), then undo_last with a match naming this ${workAs === 'as a note' ? 'note' : 'entry'}. Work is priced from the MET table against their bodyweight and is never capped by the watch. Ask in one clause; never re-type it on your own — a long hike is a real workout.`,
       },
     } : {}),
     // The item, then the day — in that order, because that is the order the
@@ -1646,13 +1701,16 @@ async function log(args, user) {
             (day.food.meals ? ` Today so far: ${day.food.say}.` : '') +
             (left?.short && !left.withheld && !fullRead ? ` ${left.short}` : ''))
         : null,
-      workLike.length ? `Check: ${workLike.map(e => `"${e.summary}"`).join(' and ')} reads as work rather than training — if it was a shift, say so and it moves to work, priced from the hours.` : null,
+      workLike.length ? `Check: ${workLike.map(e => `"${e.summary}"`).join(' and ')} reads as work${workAs === 'as a note' ? ' and went in as a note, which burns nothing' : ' rather than training'} — if it was a shift, say how many hours on task and it moves to work, priced from the hours.` : null,
       fullRead ? `\n${fullRead.read.say}` : null,
     ].filter(Boolean).join(' ') || 'Nothing was written.',
     // A named food stored with no macros is barely stored at all, and the model
     // is the only thing that can fix it — it read the words. Asking here, in the
     // response it is currently reading, beats hoping the tool description landed.
     needs_macros: hungry.length ? hungry : undefined,
+    // Calories with no protein, carbs or fat — filled by id through
+    // structure_entries, because amend_last reaches only the newest entry.
+    macros_missing: partial.length ? partial : undefined,
     // Same shape as needs_macros, for the same reason: a session with no
     // minutes on it contributes zero to calories out and looks logged.
     needs_duration: untimed.length ? untimed : undefined,
@@ -1661,7 +1719,8 @@ async function log(args, user) {
     ...(bridged.deduped ? { sets_deduped: true } : {}),
     note: (written.length ? 'OPEN WITH "Logged in Wrought" — say the phrase exactly, then each item with ALL its numbers exactly as `say` reads them: calories, protein, carbs (sugar, fibre), fat (saturated), and the time. Then the day broken down the same way — day_total.breakdown is every item of the day with its numbers and the total underneath; read it out, never only a calorie figure. Those three words are the receipt: the person uses them to tell a write that landed from food you merely acknowledged. Never say "logged" or "saved" about food without "in Wrought", and never say "Logged in Wrought" unless this reply is in front of you. ' : '') +
       (fullRead ? 'THEY ASKED WHERE THE DAY STANDS: read day_read.say out LINE BY LINE — every item with its calories, the session, the work, the steps, the burn added up, the net, each goal with its percentage, the week. Never just the food total. ' : '') +
-      (workLike.length ? 'WORK_CHECK FIRST: a workout that reads as a shift is on the record — ask in one clause whether it was work, and if so log_activity with hours on task then undo_last naming the workout. ' : '') +
+      (workLike.length ? `WORK_CHECK FIRST: an entry that reads as a shift went in ${workAs} — ask in one clause whether it was work and how many hours ON TASK, and if so log_activity with those hours then undo_last naming it. ` : '') +
+      (partial.length ? `MACROS_MISSING: ${partial.map(m => `"${m.summary}"`).join(' and ')} went in with calories and no ${[...new Set(partial.flatMap(m => m.missing))].join(', ')}. You named the food, so estimate the rest: call structure_entries NOW with each id and a detail holding ONLY the missing figures (protein_g, carbs_g, fat_g, and sugar_g, fibre_g, sat_fat_g if you can) and estimated: true — never resend the calories. Do it without asking${args.quiet ? ', silently' : ', then read each item back with all its numbers'}. ` : '') +
       (folded && !folded.error && !written.length
       ? `This went INTO the workout already running — it is NOT a separate entry, so never describe it as one. Say in half a clause that the sets are on the session, then carry on with log_set for the rest of it (session_status shows where it stands) and end_session when they stop. ${folded.skipped.length ? 'The lifts already logged set by set were left exactly as they were, not doubled.' : ''}`
       : untimed.length && !hungry.length
@@ -2879,6 +2938,18 @@ async function logActivity(args, user) {
 const VALID_EVENT_TYPES = new Set(
   ['food','drink','workout','weight','measurement','sleep','symptom','mood','supplement','note','fast']);
 
+// Later detail over earlier, key by key — except that a null or empty value
+// never overwrites a figure already on the row.
+export function keepKnown(prev = {}, incoming = {}) {
+  const out = { ...(prev && typeof prev === 'object' ? prev : {}) };
+  if (!incoming || typeof incoming !== 'object') return out;
+  for (const [k, v] of Object.entries(incoming)) {
+    if ((v == null || v === '') && out[k] != null && out[k] !== '') continue;
+    out[k] = v;
+  }
+  return out;
+}
+
 async function structureEntries(args, user) {
   const list = Array.isArray(args.entries) ? args.entries.filter(e => e && e.id) : [];
   if (!list.length) return { error: 'Pass the entries to fill in, each with the id from voice_pending.' };
@@ -2901,8 +2972,10 @@ async function structureEntries(args, user) {
       event_type: type,
       summary: String(e.summary || prev.summary).slice(0, 500),
       // Merge, never replace — the same rule amend_last runs on. A reading that
-      // arrives later must not wipe something already known about the entry.
-      detail: { ...(prev.detail || {}), ...(e.detail && typeof e.detail === 'object' ? e.detail : {}) },
+      // arrives later must not wipe something already known about the entry,
+      // and a null is not a reading: a model sent here to add the protein to
+      // a 500-kcal hot dog that echoes `calories: null` must not erase the 500.
+      detail: keepKnown(prev.detail, e.detail),
       estimated: e.estimated != null ? !!e.estimated : true,
     }).eq('id', prev.id).eq('user_id', user.id);
 
@@ -6346,6 +6419,7 @@ export async function prepareRounds(args) {
 }
 
 const IMPL = {
+  [PROFILE_TOOL]: (args, user) => accountProfile(user),
   prepare_rounds: prepareRounds,
   log, review_intake_days: reviewIntakeDays, brief, progress,
   whats_next: whatsNext,
@@ -6449,6 +6523,14 @@ export async function handleRpc(msg, authUser) {
       // gets the 401 challenge that triggers "Sign in with Wrought" either way,
       // and a stranger has no business learning whether we are configured.
       if (!authUser) return { __unauthorized: true, id };
+      // The profile answers before the config check and the membership gate:
+      // it is who the connection is, not health data, and ChatGPT reads an
+      // error as "no profile" — which is what made three sign-ins look like
+      // three different people. structuredContent is where it is read from.
+      if (params.name === PROFILE_TOOL) {
+        const profile = await accountProfile(authUser);
+        return rpcResult(id, { content: [{ type: 'text', text: JSON.stringify(profile) }], structuredContent: profile });
+      }
       if (!supabase) return rpcError(id, -32603, 'Server not configured');
 
       // A suspended account. Said as a tool result rather than a protocol error
