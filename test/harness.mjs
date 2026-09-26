@@ -3075,9 +3075,16 @@ await test('ChatGPT can tell its connected accounts apart: one profile tool, the
   assert.ok(!('name' in profileFor(me, '   ')));
   assert.equal(profileFor(me, 'Laszlo').name, 'Laszlo');
   assert.ok(contract(profileFor({ id: 'x' })), 'a user with no email still answers the contract');
+  // The optional name is bounded: a retrying client can hold a failing GET
+  // for ~7s, and ChatGPT reads a slow profile as none.
+  const src = readFileSync(new URL('../netlify/functions/mcp.js', import.meta.url), 'utf8');
+  const ap = src.slice(src.indexOf('async function accountProfile('), src.indexOf('async function accountProfile(') + 900);
+  assert.match(ap, /\.abortSignal\(AbortSignal\.timeout\(\d{3,4}\)\)/);
   // And when ChatGPT does offer a choice of accounts, the tools say to pick one and write.
-  assert.match(TOOLS.find(t => t.name === 'log').description, /a choice of connected Wrought accounts on this tool \(link_id\): pick any/);
-  assert.match(SERVER_INSTRUCTIONS, /choose among several connected Wrought accounts \(a link_id\), that is the same thing: pick any/);
+  // …and never claims different emails are one record: the same email is, a different one may not be.
+  assert.match(TOOLS.find(t => t.name === 'log').description, /\(link_id\) never holds a log back either: the same email is one record, so pick any; different emails, pick the one matching/);
+  assert.match(SERVER_INSTRUCTIONS, /\(a link_id\), never hold the log back: accounts showing the same email are one record[^.]*different emails may be different records/);
+  assert.ok(!/link_id\)?,? that is the same thing/.test(SERVER_INSTRUCTIONS));
   // And a stranger still gets the sign-in challenge, not a profile.
   const anon = await handleRpc({ jsonrpc: '2.0', id: 10, method: 'tools/call', params: { name: tool.name, arguments: {} } }, null);
   assert.ok(anon.__unauthorized);
@@ -4815,10 +4822,18 @@ await test('a note that reads as a shift is said with its fix, and calories with
   assert.equal(shiftsIn([shiftSession]).as, 'as a workout');
   assert.equal(shiftsIn([shiftSession, zoo]).as, 'as a workout or a note');
   // A note needs the job AND a stretch of time — "work was rough" is a note.
-  for (const t of ['6 hours at the petting zoo', 'worked a double shift', '3 hours in the garden', 'worked 4-5 hrs']) {
+  for (const t of ['6 hours at the petting zoo', 'worked a double shift', 'worked 4-5 hrs', '3 hrs at the zoo feeding animals', '8 hours on the warehouse floor']) {
     assert.equal(noteLooksLikeWork(t), true, `"${t}" is not caught`);
   }
-  for (const t of ['work was stressful today', 'slept 8 hours', 'fasted 16 hours', '2 hours at the gym', 'walked 2 hours', 'worked 20 minutes on emails', 'watched TV for 3 hours']) {
+  // A false positive asks somebody about a shift they never worked — and the
+  // first version fired on every one of these (the review ran them).
+  for (const t of ['work was stressful today', 'slept 8 hours', 'fasted 16 hours', '2 hours at the gym', 'walked 2 hours',
+    'worked 20 minutes on emails', 'watched TV for 3 hours', '3 hours in the garden',
+    'slept 7 hours after my shift', 'slept 45 minutes on the couch after work', '16 hours into my fast, still going strong',
+    '8 hour flight for work', '6 hours driving to the cottage', 'still hungry 3 hours after lunch', 'headache for 3 hours, still there',
+    'nursing a hangover for 3 hours', 'felt dizzy for an hour at the office', 'carb loading 3 hours before the race',
+    'packing for vacation took 2 hours', 'electric bill took an hour to sort', 'went walking for 2 hours',
+    'hiking for 3 hours with friends', 'horse riding for an hour', 'work call for an hour']) {
     assert.equal(noteLooksLikeWork(t), false, `"${t}" is asked about as a shift`);
   }
   assert.equal(shiftsIn([{ id: 'n2', event_type: 'note', summary: 'work was rough', detail: {} }]).entries.length, 0);
@@ -4856,6 +4871,17 @@ await test('a note that reads as a shift is said with its fix, and calories with
   assert.match(lg, /a range like "4–5 hours" is asked, never averaged/);
   const se = mcp.slice(mcp.indexOf('async function structureEntries('), mcp.indexOf('async function structureEntries(') + 2500);
   assert.match(se, /detail: keepKnown\(prev\.detail, e\.detail\)/);
+  // The set bridge gets the SAME merge as the row, or an echoed exercises:null
+  // keeps the exercises on the row and rebuilds the set record from none.
+  const seFull = mcp.slice(mcp.indexOf('async function structureEntries('), mcp.indexOf('async function undoLast('));
+  assert.match(seFull, /const structured = updated\.map[\s\S]*?detail: keepKnown\(prev\.detail, incoming\?\.detail\)/);
+  assert.ok(!/detail: \{ \.\.\.\(prev\.detail \|\| \{\}\)/.test(seFull), 'structure_entries still spreads raw somewhere');
+  // Entries filled from a log reply are not "things you told the phone".
+  assert.match(seFull, /every\(u => byId\.get\(String\(u\.id\)\)\?\.source === 'voice'\) \? ' you told the phone' : ''/);
+  // A quiet capture stays quiet: the shift question is deferred, never asked mid-way through something else.
+  assert.match(lg, /workLike\.length && !args\.quiet \? `WORK_CHECK FIRST/);
+  assert.match(lg, /workLike\.length && !args\.quiet \? `Check:/);
+  assert.match(lg, /do NOT ask now/);
   const seTool = mcp.slice(mcp.indexOf("name: 'structure_entries'"), mcp.indexOf("name: 'structure_entries'") + 1200);
   assert.match(seTool, /macros_missing/);
   const logTool = mcp.slice(mcp.indexOf("name: 'log',"), mcp.indexOf("name: 'log_activity'"));
@@ -5020,7 +5046,13 @@ await test('a custom ChatGPT reaches the same tools by Actions, with the sheet i
   const names = TOOLS.map(t => t.name);
   for (const n of ACTION_TOOLS) assert.ok(names.includes(n), `${n} is not a tool`);
   const rest = doc.paths['/actions/call_tool'].post.requestBody.content['application/json'].schema.properties.tool.enum;
-  assert.deepEqual(new Set([...ACTION_TOOLS, ...rest]), new Set(names));
+  // …except the profile tool, which answers ChatGPT's own account list and
+  // is not a thing for a GPT to call (naming it pushed a real tool out of the
+  // 300-character list).
+  const profileTools = TOOLS.filter(t => t._meta?.['openai/profile']).map(t => t.name);
+  assert.equal(profileTools.length, 1);
+  assert.ok(!rest.includes(profileTools[0]) && !ACTION_TOOLS.includes(profileTools[0]));
+  assert.deepEqual(new Set([...ACTION_TOOLS, ...rest]), new Set(names.filter(n => !profileTools.includes(n))));
   assert.ok(ACTION_TOOLS.includes('log') && ACTION_TOOLS.includes('log_set') && ACTION_TOOLS.includes('get_profile') && ACTION_TOOLS.includes('brief'));
   // The document points at the real OAuth endpoints, and the input schema is
   // the tool's own, so the GPT and the connector argue over one shape.
@@ -15203,7 +15235,9 @@ await test('several connectors named Wrought never stop a log, and every write n
   assert.match(ROUTING_HABIT, /more than one connected account or copy, they are the same service, each writing to the Wrought account it signed in with/);
   assert.ok(!/my one Wrought account|all (?:write|log) to (?:one|my) account/.test(ROUTING_HABIT), 'the habit promises every copy is one account');
   assert.match(ROUTING_HABIT, /log through any one and never hold back to ask me which/);
-  assert.match(ROUTING_HABIT, /an earlier chat saying there were several accounts changes nothing/);
+  assert.match(ROUTING_HABIT, /an earlier chat saying there were several accounts is never a reason to hold one back/);
+  // Switched on in the chat, never added again — adding is what bred three.
+  assert.match(ROUTING_HABIT, /switch it on from that chat\u2019s \+ menu, never by adding it again/);
   assert.match(ROUTING_HABIT, /If Wrought\u2019s tools aren\u2019t available in a chat, say so in one line/);
   // "So I can turn it on" sent people to add another copy — the thing that bred three.
   assert.ok(!/turn it on/.test(ROUTING_HABIT));
@@ -15554,11 +15588,11 @@ await test('several connectors never hold a log back, and the account is named o
   assert.match(logDesc, /never ask which is theirs first — [^—]*— and on the first write of the conversation name the reply's `account`/);
   // A remembered "several accounts" is named as changing nothing, on the tool
   // and the sheet alike.
-  assert.match(logDesc, /a saved memory or an earlier chat saying there are several accounts changes nothing/);
+  assert.match(logDesc, /a saved memory or an earlier chat saying there are several accounts is never a reason to hold a log back: log now and name the account/);
   const para = SERVER_INSTRUCTIONS.slice(SERVER_INSTRUCTIONS.indexOf('SEVERAL CONNECTORS NAMED WROUGHT'), SERVER_INSTRUCTIONS.indexOf('\n\n', SERVER_INSTRUCTIONS.indexOf('SEVERAL CONNECTORS NAMED WROUGHT')));
   assert.match(para, /on the first write of the conversation name the account the reply gives/);
   assert.ok(!/if they asked/.test(para), 'naming the account is conditional on being asked again');
-  assert.match(para, /a saved memory or an earlier chat claiming there are several accounts changes nothing/);
+  assert.match(para, /a saved memory or an earlier chat claiming there are several accounts is never a reason to hold a log back: log now and name the account/);
   // The dashboard says what the server knows: its own sign-ins, never that
   // every copy ChatGPT shows is this account.
   const conn = readFileSync(new URL('../netlify/functions/api-connections.js', import.meta.url), 'utf8');

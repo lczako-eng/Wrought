@@ -184,11 +184,22 @@ export function looksLikeWork(summary = '', minutes = null) {
 // fix. A note needs a stated stretch of time as well as the job — "work was
 // rough today" is a note, and asking about it every time is the interrogation
 // this product refuses to be.
+// Only the WORK half of the table counts for a note — "3 hours in the garden"
+// is life, not a shift nobody priced — and it is matched on a word boundary,
+// because "till" is inside "still", "nurs" inside "nursing a hangover" and
+// "packing" is a suitcase as often as a warehouse. A note that is about
+// sleep, a fast, travel or how somebody feels is never asked about as work,
+// whatever else it mentions ("slept 7 hours after my shift").
+const WORK_KEYS = new Set(ACTIVITIES.slice(0, ACTIVITIES.findIndex(a => a.key === 'gardening')).map(a => a.key));
+const NOT_A_SHIFT = /\b(slept|sleep(ing)?|nap(ped|ping)?|fast(ed|ing)?|into my fast|flight|flew|drove|driving to|commute|hungry|headache|migraine|dizzy|tired|exhausted|hangover|hungover|sore|sick|ill|pain|ache|walking|hiking|riding|cycling|swimming|workout|vacation|holiday|carbs?|bills?|race|phone call|work call|zoom call|meetings?)\b/i;
+function workOnTable(s) {
+  return ACTIVITIES.some(a => WORK_KEYS.has(a.key) && new RegExp(`\\b(?:${a.match.source})`, 'i').test(s));
+}
 const HOURS_SAID = /\b\d+(?:\.\d+)?\s*(?:(?:-|–|—|to|or)\s*\d+(?:\.\d+)?\s*)?(?:h|hrs?|hours?)\b|\b(?:an|one|a couple of|a few|several) hours?\b|\b(?:all day|full day|half (?:a )?day|double shift)\b|\b(?:[3-9]\d|\d{3,})\s*(?:min|mins|minutes)\b/i;
 export function noteLooksLikeWork(text = '') {
   const s = String(text || '');
-  if (!s || TRAINING_WORDS.test(s)) return false;
-  if (!WORK_WORDS.test(s) && !matchActivity(s)) return false;
+  if (!s || TRAINING_WORDS.test(s) || NOT_A_SHIFT.test(s)) return false;
+  if (!WORK_WORDS.test(s) && !workOnTable(s)) return false;
   return HOURS_SAID.test(s);
 }
 

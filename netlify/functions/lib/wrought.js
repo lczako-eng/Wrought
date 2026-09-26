@@ -1813,9 +1813,10 @@ export const ROUTING_HABIT =
   'Numbers about my calories, targets, or weights only ever come from Wrought\u2019s tools. ' +
   'If Wrought shows more than one connected account or copy, they are the same service, each writing to the ' +
   'Wrought account it signed in with \u2014 log through any one and never hold back to ask me which (an earlier ' +
-  'chat saying there were several accounts changes nothing), but in each new chat tell me which account the ' +
+  'chat saying there were several accounts is never a reason to hold one back), but in each new chat tell me which account the ' +
   'first log went to, so I can catch a wrong one. If Wrought\u2019s tools aren\u2019t available in a chat, say so ' +
-  'in one line \u2014 never add up my food in the chat instead.';
+  'in one line (I\u2019ll switch it on from that chat\u2019s + menu, never by adding it again) \u2014 never add up ' +
+  'my food in the chat instead.';
 
 /**
  * One retry for a query the gateway refused — pure over the query it is given.

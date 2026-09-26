@@ -75,7 +75,9 @@ export function openapi(base = SITE_URL) {
       },
     };
   }
-  const rest = TOOLS.map(t => t.name).filter(n => !ACTION_TOOLS.includes(n));
+  // The profile tool is for ChatGPT's own list of connected accounts, not a
+  // thing to call — and naming it here pushed a real tool out of the 300-char list.
+  const rest = TOOLS.filter(t => !t._meta?.['openai/profile']).map(t => t.name).filter(n => !ACTION_TOOLS.includes(n));
   paths['/actions/call_tool'] = {
     post: {
       operationId: 'call_tool',

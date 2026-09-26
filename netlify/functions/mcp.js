@@ -102,7 +102,7 @@ const LOG_FIRST = 'LOG FIRST, ANSWER SECOND: the moment a message mentions anyth
 
 const READ_TOOLS = new Set(['get_day', 'brief', 'energy_balance', 'whats_next', 'my_plan', 'get_profile', 'progress', 'nutrition']);
 
-const SAME_SERVICE = 'MORE THAN ONE CONNECTOR NAMED WROUGHT is never a reason to hold back: they are copies of the same service, and each writes to the Wrought account it was signed in with (the reply\'s `account` names it). The same goes for a choice of connected Wrought accounts on this tool (link_id): pick any — the first unless they have said otherwise — and write. Use any one of them now and never ask which is theirs first — a saved memory or an earlier chat saying there are several accounts changes nothing — and on the first write of the conversation name the reply\'s `account` in half a clause, because a copy signed in under another address is a fork that looks like nothing; if the address is not theirs, link_account joins the two afterwards with nothing lost.';
+const SAME_SERVICE = 'MORE THAN ONE CONNECTOR NAMED WROUGHT is never a reason to hold back: they are copies of the same service, and each writes to the Wrought account it was signed in with (the reply\'s `account` names it). A choice of connected Wrought accounts on this tool (link_id) never holds a log back either: the same email is one record, so pick any; different emails, pick the one matching the account they use at wrought.fit (get_profile says it), else the first — write now and name the account. Use any one of them now and never ask which is theirs first — a saved memory or an earlier chat saying there are several accounts is never a reason to hold a log back: log now and name the account — and on the first write of the conversation name the reply\'s `account` in half a clause, because a copy signed in under another address is a fork that looks like nothing; if the address is not theirs, link_account joins the two afterwards with nothing lost.';
 
 const SERVER_INSTRUCTIONS = `WROUGHT is the user's training and nutrition memory — the thing that remembers what they ate, what they lifted and what the scale said, so they never have to explain themselves twice.
 
@@ -130,7 +130,7 @@ NEVER SUBSTITUTE A PLAUSIBLE NUMBER FOR A MISSING ONE. Asked "how many calories 
 
 A WATCH FIGURE IS TRUE AS OF WHEN THE PHONE SENT IT. Steps, active energy and the watch's basal arrive as the day's total SO FAR, whenever the phone gets to send — and iOS decides when. Every read carries the time (device.fresh / watch / the MOVED line: "as of 6:01pm"). Quote a watch number WITH that time whenever it is more than a few minutes old, never as live, and name the one action that makes it current (fresh.refresh — in the Wrought app it sends the moment the app opens). A finished day marked "short" stopped reporting before midnight: its steps and burn are low by whatever happened after, and it says so. Never explain a gap between their wrist and this read as an error in either.
 
-SEVERAL CONNECTORS NAMED WROUGHT ARE ONE SERVICE. ChatGPT keeps every copy somebody adds, and a reconnect adds another; they all reach the same server, and each writes to the Wrought account it was signed in with — every reply carries \`account\`, and get_profile says account.email. NEVER hold a log back to ask which one is theirs: use any one of them, in the same turn — a saved memory or an earlier chat claiming there are several accounts changes nothing — and on the first write of the conversation name the account the reply gives in half a clause — a copy signed in under another address is the silent fork, and naming it is how it is caught the same day rather than three weeks later. A wrong address is joined afterwards with link_account, nothing lost; a day never written is lost for good. When a tool asks you to choose among several connected Wrought accounts (a link_id), that is the same thing: pick any — the first, unless they have told you otherwise — write now, and name the account the reply gives. If they ask why there are several, say ChatGPT kept a connection each time Wrought was added or signed in again, and the extras can be removed in ChatGPT's Settings, under Plugins (or Apps) → Wrought → Connected accounts — keep one.
+SEVERAL CONNECTORS NAMED WROUGHT ARE ONE SERVICE. ChatGPT keeps every copy somebody adds, and a reconnect adds another; they all reach the same server, and each writes to the Wrought account it was signed in with — every reply carries \`account\`, and get_profile says account.email. NEVER hold a log back to ask which one is theirs: use any one of them, in the same turn — a saved memory or an earlier chat claiming there are several accounts is never a reason to hold a log back: log now and name the account — and on the first write of the conversation name the account the reply gives in half a clause — a copy signed in under another address is the silent fork, and naming it is how it is caught the same day rather than three weeks later. A wrong address is joined afterwards with link_account, nothing lost; a day never written is lost for good. When a tool asks you to choose among several connected Wrought accounts (a link_id), never hold the log back: accounts showing the same email are one record, so pick any; accounts showing different emails may be different records, so pick the one matching the account they use at wrought.fit (get_profile says it) or, if you cannot tell, the first — write now, name the account the reply gives, and if it is not theirs offer link_account. If they ask why there are several, say ChatGPT kept a connection each time Wrought was added or signed in again, and the extras can be removed in ChatGPT's Settings, under Plugins (or Apps) → Wrought → Connected accounts — keep one.
 
 TWO ACCOUNTS, ONE PERSON. If somebody says their dashboard is empty when they know they have logged, that the website shows a different email, that they signed in with Apple here and Google there, or simply asks to link or merge their accounts — call link_account. It mints a code they paste into wrought.fit, and it needs no password and no email, which matters because the person in that situation usually cannot get into the other account at all.
 
@@ -1329,8 +1329,12 @@ async function accountProfile(user) {
   if (supabase) {
     // A missing column (010 never run) or a blink is a profile with no name,
     // never a failed call — ChatGPT treats an error as no profile at all.
+    // Bounded: the client retries a failing GET with backoff (about 7s on a
+    // 503), and ChatGPT reads a slow profile as none. The name is optional;
+    // the id is not, and it needs no query.
     const { data } = await supabase.from('wrought_profile').select('display_name')
-      .eq('user_id', user.id).maybeSingle().then(r => r, () => ({ data: null }));
+      .eq('user_id', user.id).abortSignal(AbortSignal.timeout(1500)).maybeSingle()
+      .then(r => r, () => ({ data: null }));
     name = data?.display_name || null;
   }
   return profileFor(user, name);
@@ -1675,8 +1679,10 @@ async function log(args, user) {
         entries: workLike.map(e => ({ id: e.id, type: e.event_type, summary: e.summary, minutes: e.detail?.minutes ?? null })),
         say: `${workLike.map(e => `"${e.summary}"`).join(' and ')} reads as WORK, and it went in ${workAs} — ${workAs === 'as a note'
           ? 'and a note is never priced, so those hours burn NOTHING in the day'
-          : 'so it is capped by what the watch measured and it counts toward the training week'}.`,
-        fix: `If it was a shift: call log_activity with the hours ON TASK (not the shift length — a range like "4–5 hours" is asked, never averaged), then undo_last with a match naming this ${workAs === 'as a note' ? 'note' : 'entry'}. Work is priced from the MET table against their bodyweight and is never capped by the watch. Ask in one clause; never re-type it on your own — a long hike is a real workout.`,
+          : workAs === 'as a workout'
+          ? 'so it is capped by what the watch measured and it counts toward the training week'
+          : 'the workout is capped by what the watch measured and counts toward the training week, and the note is never priced, so its hours burn NOTHING'}.`,
+        fix: `If it was a shift: call log_activity with the hours ON TASK (not the shift length — a range like "4–5 hours" is asked, never averaged), then undo_last with a match naming ${workLike.length > 1 ? 'each entry' : `this ${workAs === 'as a note' ? 'note' : 'entry'}`}. Work is priced from the MET table against their bodyweight and is never capped by the watch. ${args.quiet ? 'They were in the middle of something else, so do NOT ask now — raise it in one clause the next time they talk about food, training or their day; ' : 'Ask in one clause; '}never re-type it on your own — a long hike is a real workout.`,
       },
     } : {}),
     // The item, then the day — in that order, because that is the order the
@@ -1701,7 +1707,7 @@ async function log(args, user) {
             (day.food.meals ? ` Today so far: ${day.food.say}.` : '') +
             (left?.short && !left.withheld && !fullRead ? ` ${left.short}` : ''))
         : null,
-      workLike.length ? `Check: ${workLike.map(e => `"${e.summary}"`).join(' and ')} reads as work${workAs === 'as a note' ? ' and went in as a note, which burns nothing' : ' rather than training'} — if it was a shift, say how many hours on task and it moves to work, priced from the hours.` : null,
+      workLike.length && !args.quiet ? `Check: ${workLike.map(e => `"${e.summary}"`).join(' and ')} reads as work${workAs === 'as a note' ? ' and went in as a note, which burns nothing' : ' rather than training'} — if it was a shift, say how many hours on task and it moves to work, priced from the hours.` : null,
       fullRead ? `\n${fullRead.read.say}` : null,
     ].filter(Boolean).join(' ') || 'Nothing was written.',
     // A named food stored with no macros is barely stored at all, and the model
@@ -1719,7 +1725,7 @@ async function log(args, user) {
     ...(bridged.deduped ? { sets_deduped: true } : {}),
     note: (written.length ? 'OPEN WITH "Logged in Wrought" — say the phrase exactly, then each item with ALL its numbers exactly as `say` reads them: calories, protein, carbs (sugar, fibre), fat (saturated), and the time. Then the day broken down the same way — day_total.breakdown is every item of the day with its numbers and the total underneath; read it out, never only a calorie figure. Those three words are the receipt: the person uses them to tell a write that landed from food you merely acknowledged. Never say "logged" or "saved" about food without "in Wrought", and never say "Logged in Wrought" unless this reply is in front of you. ' : '') +
       (fullRead ? 'THEY ASKED WHERE THE DAY STANDS: read day_read.say out LINE BY LINE — every item with its calories, the session, the work, the steps, the burn added up, the net, each goal with its percentage, the week. Never just the food total. ' : '') +
-      (workLike.length ? `WORK_CHECK FIRST: an entry that reads as a shift went in ${workAs} — ask in one clause whether it was work and how many hours ON TASK, and if so log_activity with those hours then undo_last naming it. ` : '') +
+      (workLike.length && !args.quiet ? `WORK_CHECK FIRST: an entry that reads as a shift went in ${workAs} — ask in one clause whether it was work and how many hours ON TASK, and if so log_activity with those hours then undo_last naming it. ` : '') +
       (partial.length ? `MACROS_MISSING: ${partial.map(m => `"${m.summary}"`).join(' and ')} went in with calories and no ${[...new Set(partial.flatMap(m => m.missing))].join(', ')}. You named the food, so estimate the rest: call structure_entries NOW with each id and a detail holding ONLY the missing figures (protein_g, carbs_g, fat_g, and sugar_g, fibre_g, sat_fat_g if you can) and estimated: true — never resend the calories. Do it without asking${args.quiet ? ', silently' : ', then read each item back with all its numbers'}. ` : '') +
       (folded && !folded.error && !written.length
       ? `This went INTO the workout already running — it is NOT a separate entry, so never describe it as one. Say in half a clause that the sets are on the session, then carry on with log_set for the rest of it (session_status shows where it stands) and end_session when they stop. ${folded.skipped.length ? 'The lifts already logged set by set were left exactly as they were, not doubled.' : ''}`
@@ -2995,7 +3001,9 @@ async function structureEntries(args, user) {
     return {
       id: u.id, event_type: u.type, local_date: prev.local_date,
       occurred_at: prev.occurred_at,
-      detail: { ...(prev.detail || {}), ...(incoming?.detail && typeof incoming.detail === 'object' ? incoming.detail : {}) },
+      // The SAME merge the row got — otherwise an echoed `exercises: null`
+      // keeps the exercises on the row and rebuilds the set record from none.
+      detail: keepKnown(prev.detail, incoming?.detail),
     };
   });
   const bridged = structured.length ? await syncSetsFromWorkouts(user.id, structured) : {};
@@ -3024,7 +3032,7 @@ async function structureEntries(args, user) {
     ...(bridged.skipped ? { sets_skipped: bridged.skipped, sets_note: bridged.say } : {}),
     day_total: dayTotal(dayNow),
     say: updated.length
-      ? `Filled in ${updated.length} thing${updated.length === 1 ? '' : 's'} you told the phone: ` +
+      ? `Filled in ${updated.length} thing${updated.length === 1 ? '' : 's'}${updated.every(u => byId.get(String(u.id))?.source === 'voice') ? ' you told the phone' : ''}: ` +
         `${withNumbers.map(u => (u.calories != null ? `${u.now} (${u.calories.toLocaleString()} kcal)` : u.now)).join('; ')}.`
       : 'Nothing was filled in.',
     note: 'Housekeeping, not an event. One short clause at most — they already know what they said, and reciting it back at length makes dictating feel like it costs something. Then carry on with whatever they actually asked.',
