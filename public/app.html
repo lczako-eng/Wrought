@@ -7101,8 +7101,10 @@ const ROUTING_HABIT =
   'and never ask me whether to. If I say I\u2019m going ' +
   'to the gym or name a workout, call Wrought\u2019s suggest_workout or start_session immediately. ' +
   'Numbers about my calories, targets, or weights only ever come from Wrought\u2019s tools. ' +
-  'If more than one Wrought connector shows up, they are copies of the same service \u2014 use any one, ' +
-  'and never hold back logging to ask me which, but tell me which account it logged to the first time.';
+  'If more than one Wrought connector shows up, they are copies writing to my one Wrought account \u2014 use any one, ' +
+  'and never hold back logging to ask me which (even if an earlier chat said there were several accounts), ' +
+  'but tell me which account it logged to the first time. If Wrought\u2019s tools are not switched on in a chat, ' +
+  'say so in one line so I can turn it on \u2014 never add up my food in the chat or ask me which account instead.';
 
 function gptLink(prompt, label) {
   return `<a class="linky" target="_blank" rel="noopener" href="https://chatgpt.com/?q=${encodeURIComponent(prompt)}">${esc(label)} \u2197</a>`;

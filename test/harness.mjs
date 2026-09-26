@@ -15072,7 +15072,17 @@ await test('several connectors named Wrought never stop a log, and every write n
   assert.match(GPT_INSTRUCTIONS, /copies of ONE service/);
   assert.ok(GPT_INSTRUCTIONS.length <= 8000, `the GPT sheet is ${GPT_INSTRUCTIONS.length} characters`);
   const { ROUTING_HABIT } = await import('../netlify/functions/lib/wrought.js');
-  assert.match(ROUTING_HABIT, /more than one Wrought connector shows up, they are copies of the same service/);
+  assert.match(ROUTING_HABIT, /more than one Wrought connector shows up, they are copies writing to my one Wrought account/);
+  // The saved habit is the one channel that reaches a chat where Wrought's
+  // tools are OFF — 26 Sep, 11:18: no call reached the server at all, and the
+  // model asked "which account" off its memory of the 24th. So the habit
+  // itself says a stale memory changes nothing, and that a chat without the
+  // tools says so rather than totting food up or asking.
+  assert.match(ROUTING_HABIT, /never hold back logging to ask me which \(even if an earlier chat said there were several accounts\)/);
+  assert.match(ROUTING_HABIT, /If Wrought\u2019s tools are not switched on in a chat, say so in one line so I can turn it on/);
+  assert.match(ROUTING_HABIT, /never add up my food in the chat or ask me which account instead/);
+  // ChatGPT opens a ?q= link as a prefilled message: keep it well inside a URL.
+  assert.ok(encodeURIComponent(ROUTING_HABIT).length < 2000, 'the habit is too long to hand over as a link');
   // The reply to every write says which record it landed in.
   const mcp = decomment(readFileSync(new URL('../netlify/functions/mcp.js', import.meta.url), 'utf8'));
   const fnOf = name => mcp.slice(mcp.indexOf(`async function ${name}(`), mcp.indexOf('\nasync function ', mcp.indexOf(`async function ${name}(`) + 10));
@@ -15413,10 +15423,14 @@ await test('a silent watch at the 8pm close is a resting-only burn, said as one 
 await test('several connectors never hold a log back, and the account is named on the first write — never assumed to be one', async () => {
   const cut = t => String(t).replace(/\s+/g, ' ');
   const logDesc = cut(TOOLS.find(t => t.name === 'log').description);
-  assert.match(logDesc, /never ask which is theirs first — and on the first write of the conversation name the reply's `account`/);
+  assert.match(logDesc, /never ask which is theirs first — [^—]*— and on the first write of the conversation name the reply's `account`/);
+  // A remembered "several accounts" is named as changing nothing, on the tool
+  // and the sheet alike.
+  assert.match(logDesc, /a saved memory or an earlier chat saying there are several accounts changes nothing/);
   const para = SERVER_INSTRUCTIONS.slice(SERVER_INSTRUCTIONS.indexOf('SEVERAL CONNECTORS NAMED WROUGHT'), SERVER_INSTRUCTIONS.indexOf('\n\n', SERVER_INSTRUCTIONS.indexOf('SEVERAL CONNECTORS NAMED WROUGHT')));
   assert.match(para, /on the first write of the conversation name the account the reply gives/);
   assert.ok(!/if they asked/.test(para), 'naming the account is conditional on being asked again');
+  assert.match(para, /a saved memory or an earlier chat claiming there are several accounts changes nothing/);
   // The dashboard says what the server knows: its own sign-ins, never that
   // every copy ChatGPT shows is this account.
   const conn = readFileSync(new URL('../netlify/functions/api-connections.js', import.meta.url), 'utf8');
@@ -15495,6 +15509,32 @@ await test('the watch clock reaches every reader: sign-ins, the receipt in both 
   const nightly = readFileSync(new URL('../netlify/functions/brief-nightly.js', import.meta.url), 'utf8');
   assert.match(nightly, /from\('wrought_connections'\)\s*\.select\('last_sync_at'\)\.eq\('user_id', userId\)\.eq\('mode', 'push'\)/);
   assert.match(nightly, /deviceExpected: Date\.now\(\) - lastPush < 3 \* 86400000,/);
+});
+
+await test('the scheduler retries a refused audience read once and says so, never reading a failure as nobody', async () => {
+  const { retryOnce } = await import('../netlify/functions/lib/wrought.js');
+  // The 26 Sep shape: the gateway refuses the first attempt (PGRST303), the
+  // second answers.
+  let n = 0;
+  const flaky = async () => (++n === 1 ? { data: null, error: { code: 'PGRST303', message: 'JWT claims' } } : { data: [{ user_id: 'u1' }], error: null });
+  assert.deepEqual(await retryOnce(flaky, 'test'), [{ user_id: 'u1' }]);
+  assert.equal(n, 2);
+  // Twice refused: no rows, no throw, and the log says which read.
+  const said = [];
+  const orig = console.error; console.error = m => said.push(String(m));
+  try {
+    assert.deepEqual(await retryOnce(async () => ({ data: null, error: { message: 'nope' } }), 'audience: subscribed phones'), []);
+  } finally { console.error = orig; }
+  assert.ok(said.some(m => /audience: subscribed phones failed twice: nope/.test(m)));
+  // A clean read is one call.
+  let c = 0;
+  assert.deepEqual(await retryOnce(async () => { c++; return { data: [], error: null }; }), []);
+  assert.equal(c, 1);
+  // Both audience reads go through it.
+  const nightly = readFileSync(new URL('../netlify/functions/brief-nightly.js', import.meta.url), 'utf8');
+  const au = nightly.slice(nightly.indexOf('async function activeUsers('), nightly.indexOf('async function storeBrief('));
+  assert.match(au, /retryOnce\(\(\) => supabase\.from\('wrought_events'\)/);
+  assert.match(au, /retryOnce\(\(\) => supabase\.from\('wrought_push_subs'\)/);
 });
 
 // ── Report ──────────────────────────────────────────────────────────────────

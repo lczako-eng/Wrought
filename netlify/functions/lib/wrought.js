@@ -1788,8 +1788,25 @@ export const ROUTING_HABIT =
   'and never ask me whether to. If I say I\u2019m going ' +
   'to the gym or name a workout, call Wrought\u2019s suggest_workout or start_session immediately. ' +
   'Numbers about my calories, targets, or weights only ever come from Wrought\u2019s tools. ' +
-  'If more than one Wrought connector shows up, they are copies of the same service \u2014 use any one, ' +
-  'and never hold back logging to ask me which, but tell me which account it logged to the first time.';
+  'If more than one Wrought connector shows up, they are copies writing to my one Wrought account \u2014 use any one, ' +
+  'and never hold back logging to ask me which (even if an earlier chat said there were several accounts), ' +
+  'but tell me which account it logged to the first time. If Wrought\u2019s tools are not switched on in a chat, ' +
+  'say so in one line so I can turn it on \u2014 never add up my food in the chat or ask me which account instead.';
+
+/**
+ * One retry for a query the gateway refused — pure over the query it is given.
+ * Supabase now and then rejects a perfectly good secret key at the gateway
+ * (PGRST303, a claims check on the token it mints for the key): on 26 Sep it
+ * failed the scheduler's phone-audience read on every :30 run and passed on
+ * every :00. Once more, then the failure is SAID in the log and the caller gets
+ * no rows rather than a thrown run — never silently read as "nobody".
+ */
+export async function retryOnce(query, label = 'query') {
+  let r = await query();
+  if (r?.error) r = await query();
+  if (r?.error) console.error(`${label} failed twice: ${r.error.message || r.error.code || r.error}`);
+  return r?.error ? [] : (r?.data || []);
+}
 
 export const VALID_TYPES = new Set(['food','drink','workout','weight','measurement','sleep','symptom','mood','supplement','note','fast','activity']);
 

@@ -25,7 +25,7 @@
 import {
   supabase, openai, localDateFor, localMinutesFor, addDays,
   getProfile, getGoals, getMemory, humanDuration,
-  dayFacts, rangeFacts, summariseRange, scoreGoals, careFlags, writeVerdict, briefStamp,
+  dayFacts, rangeFacts, summariseRange, scoreGoals, careFlags, writeVerdict, briefStamp, retryOnce,
 } from './lib/wrought.js';
 import { sendPush, vapidConfigured } from './lib/push.js';
 import { eveningNotification, eveningReceipt, plainBrief } from './lib/voice.js';
@@ -44,11 +44,13 @@ const SEND_HOUR = 20;
 // three appointments and user-authored alerts eligible to run.
 async function activeUsers() {
   const since = addDays(new Date().toISOString().slice(0, 10), -14);
-  const [{ data: events }, { data: push }] = await Promise.all([
-    supabase.from('wrought_events').select('user_id').gte('local_date', since).limit(5000),
-    supabase.from('wrought_push_subs').select('user_id').limit(5000),
+  // Each read retried once: the gateway's occasional refusal of a good key
+  // dropped every phone-only person from the :30 runs on 26 Sep.
+  const [events, push] = await Promise.all([
+    retryOnce(() => supabase.from('wrought_events').select('user_id').gte('local_date', since).limit(5000), 'audience: recent loggers'),
+    retryOnce(() => supabase.from('wrought_push_subs').select('user_id').limit(5000), 'audience: subscribed phones'),
   ]);
-  return [...new Set([...(events || []), ...(push || [])].map(r => r.user_id))];
+  return [...new Set([...events, ...push].map(r => r.user_id))];
 }
 
 // A brief row is the durable receipt for both the words and their delivery.
