@@ -2697,6 +2697,57 @@ settings; removing the extras (keep one) is the founder's. The day of the
 24th was never written; the conversation that holds it can flush it once the
 connector answers.
 
+### The morning after — asked again, and the server never heard a word
+
+26 September, 11:18, the morning after all of the above went live: *"two
+slices of thick cob sourdough with light margarine and a slice of Havarti on
+each"* came back as a tidy calorie table, *"Today's estimated intake: 530
+kcal"*, and then: *"Wrought still shows three connected accounts. Which one is
+your main account? I don't want to log your breakfast in the wrong account."*
+Nothing was written.
+
+**Read the logs before touching the code — they settled it in three queries.**
+The MCP handler looks the bearer up on EVERY request, the `initialize`
+handshake and `tools/list` included, so every contact leaves a token lookup in
+Supabase's edge log. From 14:30 to 16:30 UTC there was none — only the
+half-hourly scheduler. **ChatGPT did not handshake, list the tools or call
+anything.** The evening before at 18:42 it had contacted all three copies at
+once and the 18 September copy made both writes, so a working turn is
+visible; this one was silence. The tools were not in that chat, and the model
+answered from its own memory of the 24th. The database holds **one user**:
+there was never a wrong account to write into.
+
+- **When the model never calls, nothing the server says can reach it.** Every
+  fix in the entry above rides on a tool description or a tool reply, and a
+  chat without the tools reads neither. The one channel that does reach such
+  a chat is ChatGPT's own saved memory — which is what `ROUTING_HABIT` is for.
+  So the habit now says the copies write to one account, that an earlier chat
+  saying otherwise changes nothing, and that **a chat without Wrought's tools
+  says so in one line** rather than totting food up or asking which account.
+  Installed from the dashboard's *Teach it again* link — and now also from a
+  *Teach ChatGPT the one-account habit* link printed directly under the
+  copies count on the Account panel, where somebody who has just been asked
+  "which account?" is looking. Both open ChatGPT with it prefilled.
+- **The stale memory is named on the tools too** (`SAME_SERVICE`, the sheet,
+  the GPT sheet): a remembered "several accounts" changes nothing. The fork
+  guard is unchanged — the first write still names the account.
+- **The durable fix is still the custom GPT** (`docs/CUSTOM_GPT.md`): its
+  Actions are attached in every chat with it and cannot be duplicated. It has
+  never been set up — `wrought_oauth_clients` holds one client, the ChatGPT
+  connector.
+- **What only the founder can do**: remove the extra Wrought copies in
+  ChatGPT's settings, switch Wrought on in a chat that lacks it, and
+  re-teach the habit. Revoking the stale grants from here would make those
+  copies fail rather than disappear, and is his call, not a sweep.
+
+**Found on the way: the scheduler's audience read failed on every :30 run.**
+`wrought_push_subs` answered **401 `PGRST303`** at 14:30 and 15:30 and 200 at
+14:00, 15:00 and 16:00 — the same secret key every time, a claims check at
+Supabase's gateway on the token it mints for the key. The phone-only half of
+the audience silently vanished from every half-past run. `retryOnce()` in
+`lib/wrought.js` re-sends once and then says so in the log; a failure is
+never read as "nobody".
+
 ### The standing coach shapes the day — rhythm and register, never food, never more
 
 `STYLE_DAYS` in `lib/voices.js` + `coachDay()` / `coachRegister()` /
@@ -5428,7 +5479,7 @@ self-reporting scale removes the most-abandoned manual entry), then Strava.
 
 ## Conventions
 
-- `npm test` runs `test/harness.mjs` — 781 offline tests, no network, no database.
+- `npm test` runs `test/harness.mjs` — 782 offline tests, no network, no database.
   Run it before every push. It covers the JSON-RPC envelope (which fails as an
   uninformative "could not connect" inside ChatGPT) and all the arithmetic
   (which fails as a confidently wrong number in somebody's verdict).

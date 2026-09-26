@@ -3501,7 +3501,10 @@ async function loadConnections() {
           <span class="sub">connected ${esc(String(c.connected_at).slice(0, 10))}</span></div>
         <button class="ghost small" data-cut="${esc(c.client_id || '')}">Disconnect</button>
       </div>`).join('')}</div>` : ''}
-    ${d.copies_note ? `<p class="sub">${esc(d.copies_note)}</p>` : ''}
+    ${d.copies_note ? `<p class="sub">${esc(d.copies_note)}</p>
+    <p class="sub">${gptLink(ROUTING_HABIT, 'Teach ChatGPT the one-account habit')} — it saves the rule to
+    ChatGPT's own memory, which is the one thing a chat without Wrought switched on still reads: log through
+    any copy, never ask which account.</p>` : ''}
     <p class="sub dim">${esc(d.note)}</p>
     ${live.length ? '<div class="btnrow"><button class="ghost" id="cut-all">Disconnect everything</button></div>' : ''}`;
 

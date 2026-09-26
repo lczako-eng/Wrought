@@ -15098,7 +15098,8 @@ await test('several connectors named Wrought never stop a log, and every write n
   assert.match(conn, /from\('wrought_oauth_refresh'\)\s*\.select\('client_id, created_at'\)/);
   assert.ok(!/select\([^)]*token_hash/.test(conn), 'the connections screen reads token hashes');
   assert.match(conn, /signed in to this account \$\{c\.sign_ins\} separate times/);
-  assert.match(decomment(page('app.html')), /d\.copies_note \? `<p class="sub">\$\{esc\(d\.copies_note\)\}<\/p>` : ''/);
+  // Drawn only when the server sent it, and escaped — the shape, not the markup.
+  assert.match(decomment(page('app.html')), /d\.copies_note \? `<p class="sub">\$\{esc\(d\.copies_note\)\}<\/p>/);
   // And the advice that bred the copies no longer does.
   assert.match(page('app.html'), /adding it a second time makes another copy of the\s+same account/);
   assert.match(page('connect.html'), /Already listed\? Reconnect that one instead of adding it again/);
@@ -15442,6 +15443,11 @@ await test('several connectors never hold a log back, and the account is named o
   const { GPT_INSTRUCTIONS } = await import('../netlify/functions/lib/gpt_instructions.js');
   assert.match(GPT_INSTRUCTIONS, /name the reply's account on the first write/);
   assert.ok(GPT_INSTRUCTIONS.length <= 8000);
+  // Where the copies are named on the dashboard, the habit that fixes a
+  // stale memory is one tap away — the channel that reaches a chat with no tools.
+  const conns = decomment(page('app.html'));
+  const cn = conns.slice(conns.indexOf('d.copies_note ?'), conns.indexOf('esc(d.note)'));
+  assert.match(cn, /gptLink\(ROUTING_HABIT, 'Teach ChatGPT the one-account habit'\)/);
 });
 
 await test('a finished day sent after it closed is whole, never "short" at a time that was not on it', async () => {
