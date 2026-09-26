@@ -2697,6 +2697,151 @@ settings; removing the extras (keep one) is the founder's. The day of the
 24th was never written; the conversation that holds it can flush it once the
 connector answers.
 
+### The morning after — ChatGPT's own account picker, and the diagnosis I got wrong first
+
+26 September, 11:18, the morning after all of the above went live: *"two
+slices of thick cob sourdough with light margarine and a slice of Havarti on
+each"* came back as a tidy calorie table, *"Today's estimated intake: 530
+kcal"*, and then: *"Wrought still shows three connected accounts. Which one is
+your main account? I don't want to log your breakfast in the wrong account."*
+Nothing was written.
+
+**The first diagnosis was wrong, and the review caught it.** Supabase's edge
+log showed no token lookup between 14:30 and 16:30 UTC, and I read that as
+*"the tools were not in that chat."* It proves less than that. **ChatGPT keeps
+a frozen snapshot of a connector's tool list and does not handshake per
+conversation** — on the working evening of the 25th every tool call arrived
+with no `initialize` or `tools/list` in front of it — so a chat that HAS the
+tools and calls none leaves exactly the same silence. Zero requests means no
+call, never "no tools".
+
+**What it most likely was: ChatGPT's multi-account picker.** Since 17–18 September
+a ChatGPT plugin can hold several *connected accounts*. With two or more, ChatGPT
+adds a required account selector (`link_id`) to every tool of the app and ships
+it with the instruction *"if multiple listed accounts could satisfy a write
+request and the intended account is not clear… ask which account to use before
+calling this tool."* The founder's grants from 18 and 20 September, right after
+that rollout, and ChatGPT calling all three at once on the 25th, fit it exactly;
+his reply is that instruction, nearly word for word. The model was obeying the
+host, not ignoring us — which is why no amount of tool-description wording
+stopped it. (Third-party observation of ChatGPT plus OpenAI's own docs via
+search excerpts; OpenAI's pages were unreachable from the session.)
+
+- **The documented fix is a profile tool, and Wrought had none.** OpenAI's
+  plugin auth docs ask for ONE read-only tool marked `_meta["openai/profile"]:
+  true` that takes no arguments and returns a stable opaque `id` (plus
+  `name` / `email` for display), so the same person is recognised across
+  connections and reconnections. Without it the three connections were
+  identical and the model had no way to see they were one person.
+  `wrought_account` is that tool. `profileFor()` hashes the user id (stable
+  across refresh and reconnection, never the raw id; a merge moves the
+  absorbed account's grants to the kept one, whose id they then report).
+  The optional name lookup is bounded at 1.5s — the client retries a failing
+  GET for about seven, and a slow profile reads as none. The custom GPT's
+  `call_tool` list leaves it out: it is for ChatGPT's account list, and naming
+  it pushed a real tool out of the 300-character description; handleRpc answers it on its own branch, before the config check
+  and the membership gate, with the object in `structuredContent` and **nothing
+  stamped on** — the contract admits only `id`, `name`, `email` and `nickname`,
+  all strings, so the `account` every other reply carries would make it read
+  as no profile at all. Whether ChatGPT then merges or merely labels three
+  same-id connections is unverified; at worst the picker shows the same email
+  three times, which is "clear from the conversation".
+- **A tool change reaches ChatGPT only after a Refresh.** OpenAI's own app
+  skill: *"tell users to refresh the app after MCP tool/metadata changes."*
+  Every tool-description fix in this file since the connector was first added
+  may never have reached the founder's model. The connect page now says to
+  choose Refresh after Wrought updates.
+- **Re-signing in can ADD an account.** The new ChatGPT UI offers *Connect
+  another account* beside *Reconnect*; the former is how one person becomes
+  three connections. connect.html and the "never written here" panel say
+  Reconnect or Refresh, never Connect another account, and the copies note
+  names the place to remove extras: Settings → Plugins (or Apps) → Wrought →
+  Connected accounts, the ••• beside each. **Connectors were renamed Plugins
+  on 9 July**; the pages said Connectors and now say both.
+- **The tools say what to do when the picker appears** — `SAME_SERVICE` and
+  the sheet: a choice of connected Wrought accounts (a `link_id`) never holds
+  a log back. The same email is one record, so pick any; **different emails
+  may be different records** — the review caught the first version calling
+  them "the same thing" — so pick the one matching the account they use at
+  wrought.fit, else the first, write now, name the account, and offer
+  `link_account` if it is not theirs. An earlier chat's "several accounts" is
+  likewise never a reason to hold a log back — log now and name the account —
+  rather than something to discard, because a remembered fork can be real.
+  It all lands only after a Refresh.
+- **The saved habit was corrected by the review.** The first version put
+  *"copies writing to my one Wrought account"* in the person's own voice — a
+  promise the server cannot make (a copy authorised through Sign in with Apple
+  can be a second account) and one that teaches the model to ignore a real
+  fork. It now says the copies are one service, each writing to the account
+  it signed in with; log through any one; never hold back to ask; an earlier
+  "several accounts" is never a reason to hold one back; and **in each new
+  chat** name the account of the first log, so a fork is caught that day.
+  *"Say so so I can turn it on"* came out too — it sent people to add another
+  connection, the exact thing that bred three; it now says the switch is that
+  chat's + menu, never adding it again. Tested that neither comes back.
+- **The custom GPT is no longer the durable fix.** New GPT creation ended on
+  personal plans in August 2026 and OpenAI announced custom GPTs' retirement
+  on 11 September (third-party summaries of OpenAI's FAQ, unverified
+  first-hand). The Actions door stays for anybody who already has one;
+  `docs/CUSTOM_GPT.md` says so at the top. Reports also say turning on
+  Developer Mode, which a custom connector needs, can switch ChatGPT's Memory
+  off — so the saved habit may not be saved at all. Check Memory before
+  leaning on it.
+- **What only the founder can do**: in ChatGPT, remove two of the three
+  connected accounts (keep one), then Refresh Wrought so the profile tool and
+  the current descriptions load. Revoking grants from here would leave broken
+  entries in ChatGPT rather than remove them, and is his call, not a sweep.
+
+**Then it logged — and the rows showed two more holes.** At 13:59 local the
+same conversation called `log` twice and wrote three rows, with no
+intervention: the breakfast (590 kcal), a jumbo hot dog (500 kcal), and
+*"4–5 hours working at the petting zoo"* **as a note**.
+
+- **A shift filed as a note burns nothing.** `work_check` only ever looked
+  at workouts. `shiftsIn()` in `lib/activity.js` now also catches a note
+  that names work (or a job from the WORK half of the MET table, matched on
+  a word boundary) AND a stretch of time. The review ran the first version
+  over two dozen ordinary notes and it asked about *"slept 7 hours after my
+  shift"*, *"16 hours into my fast"*, *"8 hour flight for work"*, *"nursing
+  a hangover"* (`nurs` is on the healthcare row) and *"still hungry"*
+  (`till` is retail) — so sleep, fasting, travel, symptoms and walks never
+  count, and all of those are pinned as negatives. A missed note costs what
+  it always did; a false one asks somebody about a shift they never worked.
+  **A quiet capture never asks**: the check waits for the next time they
+  talk about food, training or their day. The reply
+  says it went in as a note and burns nothing, and names the fix:
+  `log_activity` with hours ON TASK — a range like "4–5" is asked, never
+  averaged — then `undo_last` naming the note. Never re-typed by the server.
+  `log`'s `event_type` now says work is never a note either.
+- **Calories and nothing else passed as structured.** `needsMacros` stops at
+  the calories, so both meals sat at *"protein, carbs, fat not on it"*.
+  `macrosMissing()` lists every named food with calories and a missing
+  macro; the reply carries `macros_missing` and tells the model to fill them
+  through `structure_entries` BY ID — `amend_last` only reaches the newest
+  entry, and one sentence had two meals in it — sending only the missing
+  figures. `structure_entries` now merges with `keepKnown()`: a null is not
+  a reading, so a model echoing `calories: null` cannot erase the 500 it was
+  sent to add to — and the set bridge gets the SAME merge, or an echoed
+  `exercises: null` would keep the lifts on the row and clear them from the
+  set record. Entries filled from a chat reply no longer say *"you told the
+  phone"*.
+- **The breakfast is filed at 1:59pm** — a catch-up with no `time_hint`,
+  which `log`'s field description already forbids. Nothing server-side can
+  know when it was eaten; the confirmation says the time back so the person
+  can correct it.
+
+**Found on the way: the scheduler's audience read.** The gateway answered
+**401 `PGRST303`** a dozen times between 25 and 26 September, on either of
+the two audience reads, at :00 and :30 runs alike, always among the first
+requests of a run, with the same secret key that answered 200 moments later.
+(The first write-up said "every :30, the phone read only" — the review read
+the whole day's logs and corrected it.) `retryOnce()` in `lib/wrought.js`
+re-sends straight away and says so in the log if the retry fails too.
+`activeUsers(db)` takes its client so the harness RUNS the union — one read
+refused once, the other clean, the phone-only person still in the audience —
+because the first guard pinned both reads and passed with the phone half
+dropped from the result.
+
 ### The standing coach shapes the day — rhythm and register, never food, never more
 
 `STYLE_DAYS` in `lib/voices.js` + `coachDay()` / `coachRegister()` /
@@ -5428,7 +5573,7 @@ self-reporting scale removes the most-abandoned manual entry), then Strava.
 
 ## Conventions
 
-- `npm test` runs `test/harness.mjs` — 781 offline tests, no network, no database.
+- `npm test` runs `test/harness.mjs` — 784 offline tests, no network, no database.
   Run it before every push. It covers the JSON-RPC envelope (which fails as an
   uninformative "could not connect" inside ChatGPT) and all the arithmetic
   (which fails as a confidently wrong number in somebody's verdict).

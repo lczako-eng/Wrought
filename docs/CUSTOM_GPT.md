@@ -1,5 +1,14 @@
 # A custom ChatGPT for WROUGHT
 
+> **September 2026: custom GPTs are being retired.** New GPT creation ended on
+> personal plans (Free, Go, Plus, Pro) in August 2026, and OpenAI announced the
+> retirement of custom GPTs on 11 September; Actions do not carry over to
+> plugins. (From third-party summaries of OpenAI's retirement FAQ — the FAQ
+> itself could not be read from the build session.) An existing GPT keeps
+> working and this door stays up for it, but this is no longer the durable fix
+> for a new account. For ChatGPT, use the connector (a *plugin* now), keep ONE
+> connected account, and choose *Refresh* after Wrought updates.
+
 The pasted-in connector (`https://wrought.fit/mcp`) works, and it has one
 structural weakness: ChatGPT does not reliably show the MCP instruction sheet
 to its model. That is the cause of most of the failures in the memory file —

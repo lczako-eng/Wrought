@@ -3501,7 +3501,10 @@ async function loadConnections() {
           <span class="sub">connected ${esc(String(c.connected_at).slice(0, 10))}</span></div>
         <button class="ghost small" data-cut="${esc(c.client_id || '')}">Disconnect</button>
       </div>`).join('')}</div>` : ''}
-    ${d.copies_note ? `<p class="sub">${esc(d.copies_note)}</p>` : ''}
+    ${d.copies_note ? `<p class="sub">${esc(d.copies_note)}</p>
+    <p class="sub">${gptLink(ROUTING_HABIT, 'Teach ChatGPT never to hold a log back')} — it saves the rule to
+    ChatGPT's memory, if Memory is on: log through any connected Wrought, never stop to ask which, and name the
+    account on the first log of each chat.</p>` : ''}
     <p class="sub dim">${esc(d.note)}</p>
     ${live.length ? '<div class="btnrow"><button class="ghost" id="cut-all">Disconnect everything</button></div>' : ''}`;
 
@@ -5080,8 +5083,9 @@ function notConnectedCallout() {
       <p class="sub">The token is good and pointed at this account — nothing has ever come through it. So the
       connector is attached and is not being <em>used</em>: your AI is answering from the conversation instead
       of calling it.</p>
-      <p class="sub dim">Two things fix it. Disconnect and reconnect the WROUGHT that is already in your AI's
-      settings, so it picks up the current instructions — adding it a second time makes another copy of the
+      <p class="sub dim">Two things fix it. Open the WROUGHT already in your AI's settings and choose
+      <em>Refresh</em> (or <em>Reconnect</em>), so it picks up the current tools and instructions — ChatGPT keeps
+      its own copy until you do, and adding it a second time makes another copy of the
       same account, not a fix. Then name it in the sentence — <em>"use Wrought and tell me what account I
       am on"</em> — because an assistant that answers without calling anything is the one failure this end
       cannot see or correct.</p>
@@ -7101,8 +7105,12 @@ const ROUTING_HABIT =
   'and never ask me whether to. If I say I\u2019m going ' +
   'to the gym or name a workout, call Wrought\u2019s suggest_workout or start_session immediately. ' +
   'Numbers about my calories, targets, or weights only ever come from Wrought\u2019s tools. ' +
-  'If more than one Wrought connector shows up, they are copies of the same service \u2014 use any one, ' +
-  'and never hold back logging to ask me which, but tell me which account it logged to the first time.';
+  'If Wrought shows more than one connected account or copy, they are the same service, each writing to the ' +
+  'Wrought account it signed in with \u2014 log through any one and never hold back to ask me which (an earlier ' +
+  'chat saying there were several accounts is never a reason to hold one back), but in each new chat tell me which account the ' +
+  'first log went to, so I can catch a wrong one. If Wrought\u2019s tools aren\u2019t available in a chat, say so ' +
+  'in one line (I\u2019ll switch it on from that chat\u2019s + menu, never by adding it again) \u2014 never add up ' +
+  'my food in the chat instead.';
 
 function gptLink(prompt, label) {
   return `<a class="linky" target="_blank" rel="noopener" href="https://chatgpt.com/?q=${encodeURIComponent(prompt)}">${esc(label)} \u2197</a>`;

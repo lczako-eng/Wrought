@@ -81,7 +81,7 @@ on the other side, and it is exactly what this document is for.
 | | what it is | who controls it |
 |---|---|---|
 | In the built-in list beside Drive and Notion | directory listing | OpenAI, by review |
-| Addable by URL in Settings → Connectors | a custom connector | already works |
+| Addable by URL in Settings → Plugins (Connectors before July 2026) | a custom connector | already works |
 | Switched ON inside one conversation | a per-chat toggle | the user, every chat |
 
 The third one is the cause of *"I don't currently have its logging connection
@@ -96,7 +96,7 @@ context to steer anything. The catch-up flush is the recovery.
 
 ### ChatGPT
 
-**Works today, unlisted:** Settings → Connectors → Add custom connector → paste
+**Works today, unlisted:** Settings → Plugins (Connectors before July 2026) → add one by URL → paste
 `https://wrought.fit/mcp`. That's the back door, and it's genuinely fine for
 early users.
 

@@ -107,7 +107,7 @@ export const handler = async (event) => {
     // expires, so the count can only be an upper bound on what ChatGPT shows.
     const many = active.filter(c => c.sign_ins > 1);
     const copiesNote = many.length
-      ? `${many.map(c => `${c.name} has signed in to this account ${c.sign_ins} separate times`).join('; ')} — once each time Wrought was added or reconnected. Those copies all log to this record. Any other Wrought showing there is a separate sign-in this page cannot see — ask it "what account am I on" to check it logs here. To tidy up, remove the extras in ${many.length === 1 ? many[0].name : 'the assistant'}'s own settings and keep one. Disconnect below signs every copy out at once.`
+      ? `${many.map(c => `${c.name} has signed in to this account ${c.sign_ins} separate times`).join('; ')} — once each time Wrought was added or reconnected. Those copies all log to this record. Any other Wrought showing there is a separate sign-in this page cannot see — ask it "what account am I on" to check it logs here. To tidy up, remove the extras in ${many.length === 1 ? many[0].name : 'the assistant'}'s own settings and keep one${many.some(c => /chatgpt/i.test(c.name)) ? ' (in ChatGPT: Settings → Plugins → Wrought → Connected accounts, the ••• beside each extra) — while more than one is connected, ChatGPT stops before a log to ask which' : ''}. Disconnect below signs every copy out at once.`
       : null;
 
     // HAS AN ASSISTANT EVER ACTUALLY WRITTEN TO THIS ACCOUNT.

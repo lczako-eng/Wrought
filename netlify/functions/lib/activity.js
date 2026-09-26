@@ -175,6 +175,46 @@ export function looksLikeWork(summary = '', minutes = null) {
   return !Number.isFinite(m) || m >= 30;
 }
 
+// A NOTE THAT READS AS A SHIFT. 26 September: "4–5 hours working at the
+// petting zoo" went in through `log` as a NOTE — the one type that is never
+// priced — so a morning of hauling feed counted for nothing in the burn, on
+// the first day the connector logged without being asked. Same doctrine as
+// the workout case: never re-typed here (hours ON TASK are the person's to
+// say, and "4–5" is not a number), but said on the reply with the one-call
+// fix. A note needs a stated stretch of time as well as the job — "work was
+// rough today" is a note, and asking about it every time is the interrogation
+// this product refuses to be.
+// Only the WORK half of the table counts for a note — "3 hours in the garden"
+// is life, not a shift nobody priced — and it is matched on a word boundary,
+// because "till" is inside "still", "nurs" inside "nursing a hangover" and
+// "packing" is a suitcase as often as a warehouse. A note that is about
+// sleep, a fast, travel or how somebody feels is never asked about as work,
+// whatever else it mentions ("slept 7 hours after my shift").
+const WORK_KEYS = new Set(ACTIVITIES.slice(0, ACTIVITIES.findIndex(a => a.key === 'gardening')).map(a => a.key));
+const NOT_A_SHIFT = /\b(slept|sleep(ing)?|nap(ped|ping)?|fast(ed|ing)?|into my fast|flight|flew|drove|driving to|commute|hungry|headache|migraine|dizzy|tired|exhausted|hangover|hungover|sore|sick|ill|pain|ache|walking|hiking|riding|cycling|swimming|workout|vacation|holiday|carbs?|bills?|race|phone call|work call|zoom call|meetings?)\b/i;
+function workOnTable(s) {
+  return ACTIVITIES.some(a => WORK_KEYS.has(a.key) && new RegExp(`\\b(?:${a.match.source})`, 'i').test(s));
+}
+const HOURS_SAID = /\b\d+(?:\.\d+)?\s*(?:(?:-|–|—|to|or)\s*\d+(?:\.\d+)?\s*)?(?:h|hrs?|hours?)\b|\b(?:an|one|a couple of|a few|several) hours?\b|\b(?:all day|full day|half (?:a )?day|double shift)\b|\b(?:[3-9]\d|\d{3,})\s*(?:min|mins|minutes)\b/i;
+export function noteLooksLikeWork(text = '') {
+  const s = String(text || '');
+  if (!s || TRAINING_WORDS.test(s) || NOT_A_SHIFT.test(s)) return false;
+  if (!WORK_WORDS.test(s) && !workOnTable(s)) return false;
+  return HOURS_SAID.test(s);
+}
+
+// Which of the rows just written read as a shift, and what they went in as —
+// the one decision `log`'s work_check rides on, kept pure so the harness runs
+// it rather than pinning how the filter is spelled.
+export function shiftsIn(written = []) {
+  const entries = (written || []).filter(e =>
+    (e?.event_type === 'workout' && looksLikeWork(e.summary, e.detail?.minutes)) ||
+    (e?.event_type === 'note' && noteLooksLikeWork(`${e.summary || ''} ${e.detail?.note || ''}`)));
+  const notes = entries.some(e => e.event_type === 'note');
+  const workouts = entries.some(e => e.event_type === 'workout');
+  return { entries, as: notes && workouts ? 'as a workout or a note' : notes ? 'as a note' : 'as a workout' };
+}
+
 export function activityTotal(events = [], restingKcal = null) {
   // Promoted first: a shift stored as a note because the database has not been
   // taught 'activity' yet is still a shift, and counting it zero is exactly the

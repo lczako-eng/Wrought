@@ -3028,10 +3028,66 @@ await test('using a tool still requires a verified user', () => {
   // that 401 is what makes "Sign in with Wrought" appear. Actually CALLING one
   // must not.
   const src = readFileSync(new URL('../netlify/functions/mcp.js', import.meta.url), 'utf8');
-  const call = src.slice(src.indexOf("case 'tools/call'"), src.indexOf("case 'tools/call'") + 1600);
+  const from = src.indexOf("case 'tools/call'");
+  const call = src.slice(from, src.indexOf('} catch (err) {', from));
   assert.match(call, /if \(!authUser\) return \{ __unauthorized: true, id \};/);
-  // And the check comes before anything is executed.
-  assert.ok(call.indexOf('__unauthorized') < call.indexOf('await impl('));
+  // And the check comes before anything is executed — the profile branch included.
+  assert.ok(call.includes('await impl(') && call.indexOf('__unauthorized') < call.indexOf('await impl('));
+  assert.ok(call.includes('accountProfile(') && call.indexOf('__unauthorized') < call.indexOf('accountProfile('));
+});
+
+await test('ChatGPT can tell its connected accounts apart: one profile tool, the bare contract, the same id for the same person', async () => {
+  // 26 September, 11:18: "Wrought still shows three connected accounts. Which
+  // one is your main account? I don't want to log your breakfast in the wrong
+  // account." ChatGPT's own account picker asks before a write when the
+  // accounts cannot be told apart, and with no profile tool they could not.
+  const marked = TOOLS.filter(t => t._meta?.['openai/profile'] === true);
+  assert.equal(marked.length, 1, 'ChatGPT reads a profile only when exactly one tool is marked');
+  const tool = marked[0];
+  assert.equal(tool.annotations?.readOnlyHint, true);
+  assert.deepEqual(Object.keys(tool.inputSchema.properties || {}), [], 'the profile tool takes an empty argument object');
+
+  // The contract, as a client validates it: id a non-blank string, and no key
+  // but id / name / email / nickname, every one a string.
+  const contract = v => !!v && typeof v === 'object' && !Array.isArray(v) &&
+    typeof v.id === 'string' && /\S/.test(v.id) &&
+    Object.entries(v).every(([k, f]) => ['id', 'name', 'email', 'nickname'].includes(k) && typeof f === 'string');
+
+  const me = { id: '9be0a0cb-3422-471e-abd7-3738858c792b', email: 'someone@example.com' };
+  const res = await handleRpc({ jsonrpc: '2.0', id: 7, method: 'tools/call', params: { name: tool.name, arguments: {} } }, me);
+  const sc = res.result?.structuredContent;
+  assert.ok(contract(sc), `the profile reply breaks the contract: ${JSON.stringify(sc)}`);
+  assert.ok(contract(JSON.parse(res.result.content[0].text)), 'the text copy breaks the contract');
+  assert.equal(sc.email, me.email);
+  assert.equal(res.result.isError, undefined);
+  // Nothing stamped on — `account` and `log_first` ride every other reply and
+  // would make this one fail validation, which reads as "no profile".
+  assert.equal(sc.account, undefined);
+  // Opaque and stable: the same person on any connection is the same id; a
+  // different person is not; neither the raw user id nor the email is the id.
+  const again = await handleRpc({ jsonrpc: '2.0', id: 8, method: 'tools/call', params: { name: tool.name, arguments: {} } }, { ...me });
+  assert.equal(again.result.structuredContent.id, sc.id);
+  const other = await handleRpc({ jsonrpc: '2.0', id: 9, method: 'tools/call', params: { name: tool.name, arguments: {} } }, { id: 'another-user', email: 'someone@example.com' });
+  assert.notEqual(other.result.structuredContent.id, sc.id);
+  assert.ok(!sc.id.includes(me.id) && !sc.id.includes('@'));
+  // A name only when one is on file; never an empty string.
+  const { profileFor } = await import('../netlify/functions/mcp.js');
+  assert.ok(!('name' in profileFor(me, '   ')));
+  assert.equal(profileFor(me, 'Laszlo').name, 'Laszlo');
+  assert.ok(contract(profileFor({ id: 'x' })), 'a user with no email still answers the contract');
+  // The optional name is bounded: a retrying client can hold a failing GET
+  // for ~7s, and ChatGPT reads a slow profile as none.
+  const src = readFileSync(new URL('../netlify/functions/mcp.js', import.meta.url), 'utf8');
+  const ap = src.slice(src.indexOf('async function accountProfile('), src.indexOf('async function accountProfile(') + 900);
+  assert.match(ap, /\.abortSignal\(AbortSignal\.timeout\(\d{3,4}\)\)/);
+  // And when ChatGPT does offer a choice of accounts, the tools say to pick one and write.
+  // …and never claims different emails are one record: the same email is, a different one may not be.
+  assert.match(TOOLS.find(t => t.name === 'log').description, /\(link_id\) never holds a log back either: the same email is one record, so pick any; different emails, pick the one matching/);
+  assert.match(SERVER_INSTRUCTIONS, /\(a link_id\), never hold the log back: accounts showing the same email are one record[^.]*different emails may be different records/);
+  assert.ok(!/link_id\)?,? that is the same thing/.test(SERVER_INSTRUCTIONS));
+  // And a stranger still gets the sign-in challenge, not a profile.
+  const anon = await handleRpc({ jsonrpc: '2.0', id: 10, method: 'tools/call', params: { name: tool.name, arguments: {} } }, null);
+  assert.ok(anon.__unauthorized);
 });
 
 group('Memberships, trials and codes');
@@ -4737,10 +4793,103 @@ await test('"where am I at" is the whole day — every item, the session, the wo
   assert.equal(looksLikeWork('walked to work', 30), false, 'a walk is training');
   assert.equal(looksLikeWork('worked on my bench press', 45), false);
   assert.equal(looksLikeWork('worked 10 minutes in the garden', 10), false, 'ten minutes is not a shift');
-  assert.match(lg, /const workLike = written\.filter\(e => e\.event_type === 'workout' && looksLikeWork\(e\.summary, e\.detail\?\.minutes\)\)/);
+  // The reply's shift check is the pure decision the harness runs below.
+  assert.match(lg, /=\s*shiftsIn\(written\)/);
   assert.match(lg, /work_check: \{/);
   assert.match(lg, /never re-type it on your own — a long hike is a real workout/);
   assert.ok(!/event_type = 'activity'|event_type: 'activity'/.test(lg.slice(lg.indexOf('const workLike'))), 'log re-types a workout on its own');
+});
+
+await test('a note that reads as a shift is said with its fix, and calories with nothing else are asked for by id', async () => {
+  // 26 September, 1:59pm, the first day the connector logged without being
+  // asked: "4–5 hours working at the petting zoo" went in as a NOTE — never
+  // priced, so the morning burned nothing — and both meals went in as a
+  // calorie figure with no protein, carbs or fat.
+  const { shiftsIn, noteLooksLikeWork } = await import('../netlify/functions/lib/activity.js');
+  const { macrosMissing } = await import('../netlify/functions/lib/wrought.js');
+  const { keepKnown } = await import('../netlify/functions/mcp.js');
+
+  // The founder's own rows, as stored.
+  const zoo = { id: 'n1', event_type: 'note', summary: '4–5 hours working at the petting zoo', detail: { note: '4–5 hours of petting zoo work' } };
+  const dog = { id: 'f1', event_type: 'food', summary: 'a jumbo hotdog', detail: { items: ['jumbo hot dog'], calories: 500, protein_g: null, carbs_g: null, fat_g: null } };
+  const toast = { id: 'f2', event_type: 'food', summary: 'two slices of thick COBS sourdough with light margarine and a slice of Havarti on each', detail: { calories: 590, protein_g: null, carbs_g: null, fat_g: null } };
+
+  const got = shiftsIn([zoo, dog, toast]);
+  assert.deepEqual(got.entries.map(e => e.id), ['n1'], 'the petting zoo note is not caught');
+  assert.equal(got.as, 'as a note');
+  // A workout that reads as work is still caught, and both at once say both.
+  const shiftSession = { id: 'w1', event_type: 'workout', summary: 'worked three hours in the Petting Zoo', detail: { minutes: 180 } };
+  assert.equal(shiftsIn([shiftSession]).as, 'as a workout');
+  assert.equal(shiftsIn([shiftSession, zoo]).as, 'as a workout or a note');
+  // A note needs the job AND a stretch of time — "work was rough" is a note.
+  for (const t of ['6 hours at the petting zoo', 'worked a double shift', 'worked 4-5 hrs', '3 hrs at the zoo feeding animals', '8 hours on the warehouse floor']) {
+    assert.equal(noteLooksLikeWork(t), true, `"${t}" is not caught`);
+  }
+  // A false positive asks somebody about a shift they never worked — and the
+  // first version fired on every one of these (the review ran them).
+  for (const t of ['work was stressful today', 'slept 8 hours', 'fasted 16 hours', '2 hours at the gym', 'walked 2 hours',
+    'worked 20 minutes on emails', 'watched TV for 3 hours', '3 hours in the garden',
+    'slept 7 hours after my shift', 'slept 45 minutes on the couch after work', '16 hours into my fast, still going strong',
+    '8 hour flight for work', '6 hours driving to the cottage', 'still hungry 3 hours after lunch', 'headache for 3 hours, still there',
+    'nursing a hangover for 3 hours', 'felt dizzy for an hour at the office', 'carb loading 3 hours before the race',
+    'packing for vacation took 2 hours', 'electric bill took an hour to sort', 'went walking for 2 hours',
+    'hiking for 3 hours with friends', 'horse riding for an hour', 'work call for an hour']) {
+    assert.equal(noteLooksLikeWork(t), false, `"${t}" is asked about as a shift`);
+  }
+  assert.equal(shiftsIn([{ id: 'n2', event_type: 'note', summary: 'work was rough', detail: {} }]).entries.length, 0);
+  // Food is never a shift, whatever it says.
+  assert.equal(shiftsIn([{ id: 'f3', event_type: 'food', summary: 'lunch at work, 2 hours in', detail: {} }]).entries.length, 0);
+
+  // Calories and nothing else: both meals named, by id, with what is missing.
+  assert.deepEqual(macrosMissing([zoo, dog, toast]), [
+    { id: 'f1', summary: 'a jumbo hotdog', calories: 500, missing: ['protein', 'carbs', 'fat'] },
+    { id: 'f2', summary: toast.summary, calories: 590, missing: ['protein', 'carbs', 'fat'] },
+  ]);
+  // A complete row, a zero-calorie drink and a row with no calories at all
+  // (needs_macros' case) are not asked for here.
+  assert.deepEqual(macrosMissing([
+    { id: 'a', event_type: 'food', summary: 'steak', detail: { calories: 600, protein_g: 50, carbs_g: 0, fat_g: 40 } },
+    { id: 'b', event_type: 'drink', summary: 'water', detail: { calories: 0 } },
+    { id: 'c', event_type: 'food', summary: 'had lunch', detail: { calories: null } },
+  ]), []);
+  assert.deepEqual(macrosMissing([{ id: 'd', event_type: 'food', summary: 'toast', detail: { calories: 200, protein_g: 6, carbs_g: 30 } }])[0].missing, ['fat']);
+
+  // The by-id door must not erase what it was sent to add to: a null is not a reading.
+  assert.deepEqual(keepKnown({ items: ['jumbo hot dog'], calories: 500, protein_g: null }, { calories: null, protein_g: 18, carbs_g: 40, fat_g: 28 }),
+    { items: ['jumbo hot dog'], calories: 500, protein_g: 18, carbs_g: 40, fat_g: 28 });
+  assert.equal(keepKnown({ calories: 500 }, { calories: 450 }).calories, 450, 'a real correction still lands');
+  assert.equal(keepKnown({ calories: 500 }, { calories: '' }).calories, 500);
+
+  // The wiring: the reply carries them, and says the door.
+  const mcp = readFileSync(new URL('../netlify/functions/mcp.js', import.meta.url), 'utf8');
+  const lg = mcp.slice(mcp.indexOf('async function log(args, user)'), mcp.indexOf('async function reviewIntakeDays('));
+  assert.match(lg, /=\s*macrosMissing\(written\)/);
+  assert.match(lg, /macros_missing: partial\.length \? partial : undefined/);
+  assert.match(lg, /MACROS_MISSING:[\s\S]{0,400}call structure_entries NOW with each id/);
+  assert.match(lg, /never resend the calories/);
+  assert.match(lg, /a note is never priced, so those hours burn NOTHING/);
+  assert.match(lg, /a range like "4–5 hours" is asked, never averaged/);
+  const se = mcp.slice(mcp.indexOf('async function structureEntries('), mcp.indexOf('async function structureEntries(') + 2500);
+  assert.match(se, /detail: keepKnown\(prev\.detail, e\.detail\)/);
+  // The set bridge gets the SAME merge as the row, or an echoed exercises:null
+  // keeps the exercises on the row and rebuilds the set record from none.
+  const seFull = mcp.slice(mcp.indexOf('async function structureEntries('), mcp.indexOf('async function undoLast('));
+  assert.match(seFull, /const structured = updated\.map[\s\S]*?detail: keepKnown\(prev\.detail, incoming\?\.detail\)/);
+  assert.ok(!/detail: \{ \.\.\.\(prev\.detail \|\| \{\}\)/.test(seFull), 'structure_entries still spreads raw somewhere');
+  // Entries filled from a log reply are not "things you told the phone".
+  assert.match(seFull, /every\(u => byId\.get\(String\(u\.id\)\)\?\.source === 'voice'\) \? ' you told the phone' : ''/);
+  // A quiet capture stays quiet: the shift question is deferred, never asked mid-way through something else.
+  assert.match(lg, /workLike\.length && !args\.quiet \? `WORK_CHECK FIRST/);
+  assert.match(lg, /workLike\.length && !args\.quiet \? `Check:/);
+  assert.match(lg, /do NOT ask now/);
+  const seTool = mcp.slice(mcp.indexOf("name: 'structure_entries'"), mcp.indexOf("name: 'structure_entries'") + 1200);
+  assert.match(seTool, /macros_missing/);
+  const logTool = mcp.slice(mcp.indexOf("name: 'log',"), mcp.indexOf("name: 'log_activity'"));
+  assert.match(logTool, /WORK IS NEVER A workout AND NEVER A note/);
+  const { GPT_INSTRUCTIONS } = await import('../netlify/functions/lib/gpt_instructions.js');
+  assert.match(GPT_INSTRUCTIONS, /macros_missing: structure_entries by id/);
+  assert.match(GPT_INSTRUCTIONS, /work_check means an entry reads as a shift/);
+  assert.ok(GPT_INSTRUCTIONS.length <= 8000);
 });
 
 await test('every item carries all of its numbers, and the day is broken down the same way — never a bare calorie figure', async () => {
@@ -4897,7 +5046,13 @@ await test('a custom ChatGPT reaches the same tools by Actions, with the sheet i
   const names = TOOLS.map(t => t.name);
   for (const n of ACTION_TOOLS) assert.ok(names.includes(n), `${n} is not a tool`);
   const rest = doc.paths['/actions/call_tool'].post.requestBody.content['application/json'].schema.properties.tool.enum;
-  assert.deepEqual(new Set([...ACTION_TOOLS, ...rest]), new Set(names));
+  // …except the profile tool, which answers ChatGPT's own account list and
+  // is not a thing for a GPT to call (naming it pushed a real tool out of the
+  // 300-character list).
+  const profileTools = TOOLS.filter(t => t._meta?.['openai/profile']).map(t => t.name);
+  assert.equal(profileTools.length, 1);
+  assert.ok(!rest.includes(profileTools[0]) && !ACTION_TOOLS.includes(profileTools[0]));
+  assert.deepEqual(new Set([...ACTION_TOOLS, ...rest]), new Set(names.filter(n => !profileTools.includes(n))));
   assert.ok(ACTION_TOOLS.includes('log') && ACTION_TOOLS.includes('log_set') && ACTION_TOOLS.includes('get_profile') && ACTION_TOOLS.includes('brief'));
   // The document points at the real OAuth endpoints, and the input schema is
   // the tool's own, so the GPT and the connector argue over one shape.
@@ -15072,7 +15227,23 @@ await test('several connectors named Wrought never stop a log, and every write n
   assert.match(GPT_INSTRUCTIONS, /copies of ONE service/);
   assert.ok(GPT_INSTRUCTIONS.length <= 8000, `the GPT sheet is ${GPT_INSTRUCTIONS.length} characters`);
   const { ROUTING_HABIT } = await import('../netlify/functions/lib/wrought.js');
-  assert.match(ROUTING_HABIT, /more than one Wrought connector shows up, they are copies of the same service/);
+  // The saved habit says what the server can stand behind: the copies are one
+  // service, each writing to the account IT signed in with — never that they
+  // are all one account, which the server cannot see and a real fork would
+  // make false. A stale "several accounts" from an earlier chat changes
+  // nothing, and a chat without the tools says so rather than totting food up.
+  assert.match(ROUTING_HABIT, /more than one connected account or copy, they are the same service, each writing to the Wrought account it signed in with/);
+  assert.ok(!/my one Wrought account|all (?:write|log) to (?:one|my) account/.test(ROUTING_HABIT), 'the habit promises every copy is one account');
+  assert.match(ROUTING_HABIT, /log through any one and never hold back to ask me which/);
+  assert.match(ROUTING_HABIT, /an earlier chat saying there were several accounts is never a reason to hold one back/);
+  // Switched on in the chat, never added again — adding is what bred three.
+  assert.match(ROUTING_HABIT, /switch it on from that chat\u2019s \+ menu, never by adding it again/);
+  assert.match(ROUTING_HABIT, /If Wrought\u2019s tools aren\u2019t available in a chat, say so in one line/);
+  // "So I can turn it on" sent people to add another copy — the thing that bred three.
+  assert.ok(!/turn it on/.test(ROUTING_HABIT));
+  assert.match(ROUTING_HABIT, /never add up my food in the chat instead/);
+  // ChatGPT opens a ?q= link as a prefilled message: keep it well inside a URL.
+  assert.ok(encodeURIComponent(ROUTING_HABIT).length < 2000, 'the habit is too long to hand over as a link');
   // The reply to every write says which record it landed in.
   const mcp = decomment(readFileSync(new URL('../netlify/functions/mcp.js', import.meta.url), 'utf8'));
   const fnOf = name => mcp.slice(mcp.indexOf(`async function ${name}(`), mcp.indexOf('\nasync function ', mcp.indexOf(`async function ${name}(`) + 10));
@@ -15088,7 +15259,8 @@ await test('several connectors named Wrought never stop a log, and every write n
   assert.match(conn, /from\('wrought_oauth_refresh'\)\s*\.select\('client_id, created_at'\)/);
   assert.ok(!/select\([^)]*token_hash/.test(conn), 'the connections screen reads token hashes');
   assert.match(conn, /signed in to this account \$\{c\.sign_ins\} separate times/);
-  assert.match(decomment(page('app.html')), /d\.copies_note \? `<p class="sub">\$\{esc\(d\.copies_note\)\}<\/p>` : ''/);
+  // Drawn only when the server sent it, and escaped — the shape, not the markup.
+  assert.match(decomment(page('app.html')), /d\.copies_note \? `<p class="sub">\$\{esc\(d\.copies_note\)\}<\/p>/);
   // And the advice that bred the copies no longer does.
   assert.match(page('app.html'), /adding it a second time makes another copy of the\s+same account/);
   assert.match(page('connect.html'), /Already listed\? Reconnect that one instead of adding it again/);
@@ -15413,21 +15585,33 @@ await test('a silent watch at the 8pm close is a resting-only burn, said as one 
 await test('several connectors never hold a log back, and the account is named on the first write — never assumed to be one', async () => {
   const cut = t => String(t).replace(/\s+/g, ' ');
   const logDesc = cut(TOOLS.find(t => t.name === 'log').description);
-  assert.match(logDesc, /never ask which is theirs first — and on the first write of the conversation name the reply's `account`/);
+  assert.match(logDesc, /never ask which is theirs first — [^—]*— and on the first write of the conversation name the reply's `account`/);
+  // A remembered "several accounts" is named as changing nothing, on the tool
+  // and the sheet alike.
+  assert.match(logDesc, /a saved memory or an earlier chat saying there are several accounts is never a reason to hold a log back: log now and name the account/);
   const para = SERVER_INSTRUCTIONS.slice(SERVER_INSTRUCTIONS.indexOf('SEVERAL CONNECTORS NAMED WROUGHT'), SERVER_INSTRUCTIONS.indexOf('\n\n', SERVER_INSTRUCTIONS.indexOf('SEVERAL CONNECTORS NAMED WROUGHT')));
   assert.match(para, /on the first write of the conversation name the account the reply gives/);
   assert.ok(!/if they asked/.test(para), 'naming the account is conditional on being asked again');
+  assert.match(para, /a saved memory or an earlier chat claiming there are several accounts is never a reason to hold a log back: log now and name the account/);
   // The dashboard says what the server knows: its own sign-ins, never that
   // every copy ChatGPT shows is this account.
   const conn = readFileSync(new URL('../netlify/functions/api-connections.js', import.meta.url), 'utf8');
   assert.ok(!/every one of them is this same account/.test(conn));
   assert.match(conn, /Any other Wrought showing there is a separate sign-in this page cannot see/);
   const { ROUTING_HABIT } = await import('../netlify/functions/lib/wrought.js');
-  assert.match(ROUTING_HABIT, /tell me which account it logged to the first time/);
-  assert.match(page('app.html'), /tell me which account it logged to the first time/);
+  // Once per CHAT, not once ever — a fork is caught the day it happens.
+  assert.match(ROUTING_HABIT, /in each new chat tell me which account the first log went to/);
+  assert.ok(page('app.html').includes('in each new chat tell me which account the'), 'the page\'s copy of the habit drifted');
   const { GPT_INSTRUCTIONS } = await import('../netlify/functions/lib/gpt_instructions.js');
   assert.match(GPT_INSTRUCTIONS, /name the reply's account on the first write/);
   assert.ok(GPT_INSTRUCTIONS.length <= 8000);
+  // Where the copies are named on the dashboard, the habit that fixes a
+  // stale memory is one tap away — the channel that reaches a chat with no tools.
+  const conns = decomment(page('app.html'));
+  const cn = conns.slice(conns.indexOf('d.copies_note ?'), conns.indexOf('esc(d.note)'));
+  assert.match(cn, /gptLink\(ROUTING_HABIT, 'Teach ChatGPT never to hold a log back'\)/);
+  // The GPT sheet names the stale memory too.
+  assert.match(GPT_INSTRUCTIONS, /whatever an earlier chat said/);
 });
 
 await test('a finished day sent after it closed is whole, never "short" at a time that was not on it', async () => {
@@ -15495,6 +15679,40 @@ await test('the watch clock reaches every reader: sign-ins, the receipt in both 
   const nightly = readFileSync(new URL('../netlify/functions/brief-nightly.js', import.meta.url), 'utf8');
   assert.match(nightly, /from\('wrought_connections'\)\s*\.select\('last_sync_at'\)\.eq\('user_id', userId\)\.eq\('mode', 'push'\)/);
   assert.match(nightly, /deviceExpected: Date\.now\(\) - lastPush < 3 \* 86400000,/);
+});
+
+await test('the scheduler retries a refused audience read once and says so, never reading a failure as nobody', async () => {
+  const { retryOnce } = await import('../netlify/functions/lib/wrought.js');
+  // The shape in the logs: the gateway refuses the first attempt (401
+  // PGRST303, on either read, early in a run), the second answers.
+  let n = 0;
+  const flaky = async () => (++n === 1 ? { data: null, error: { code: 'PGRST303', message: 'JWT claims' } } : { data: [{ user_id: 'u1' }], error: null });
+  assert.deepEqual(await retryOnce(flaky, 'test'), [{ user_id: 'u1' }]);
+  assert.equal(n, 2);
+  // Twice refused: no rows, no throw, and the log says which read.
+  const said = [];
+  const orig = console.error; console.error = m => said.push(String(m));
+  try {
+    assert.deepEqual(await retryOnce(async () => ({ data: null, error: { message: 'nope' } }), 'audience: subscribed phones'), []);
+  } finally { console.error = orig; }
+  assert.ok(said.some(m => /audience: subscribed phones failed twice: nope/.test(m)));
+  // A clean read is one call.
+  let c = 0;
+  assert.deepEqual(await retryOnce(async () => { c++; return { data: [], error: null }; }), []);
+  assert.equal(c, 1);
+  // Both audience reads go through it.
+  const nightly = readFileSync(new URL('../netlify/functions/brief-nightly.js', import.meta.url), 'utf8');
+  const au = nightly.slice(nightly.indexOf('async function activeUsers('), nightly.indexOf('async function storeBrief('));
+  // RUN it: one read answers, the other is refused once and then answers. The
+  // audience is everybody either read found — the phone-only person included.
+  const { activeUsers } = await import('../netlify/functions/brief-nightly.js');
+  const queue = {
+    wrought_events: [{ data: [{ user_id: 'logger' }, { user_id: 'both' }], error: null }],
+    wrought_push_subs: [{ data: null, error: { code: 'PGRST303', message: 'JWT claims' } }, { data: [{ user_id: 'phone-only' }, { user_id: 'both' }], error: null }],
+  };
+  const stub = { from(t) { const b = { select: () => b, gte: () => b, limit: async () => queue[t].shift() }; return b; } };
+  assert.deepEqual((await activeUsers(stub)).sort(), ['both', 'logger', 'phone-only']);
+  assert.equal(queue.wrought_push_subs.length, 0, 'the refused read was not retried');
 });
 
 // ── Report ──────────────────────────────────────────────────────────────────
