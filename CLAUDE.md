@@ -2715,7 +2715,7 @@ with no `initialize` or `tools/list` in front of it — so a chat that HAS the
 tools and calls none leaves exactly the same silence. Zero requests means no
 call, never "no tools".
 
-**What it actually was: ChatGPT's multi-account picker.** Since 17–18 September
+**What it most likely was: ChatGPT's multi-account picker.** Since 17–18 September
 a ChatGPT plugin can hold several *connected accounts*. With two or more, ChatGPT
 adds a required account selector (`link_id`) to every tool of the app and ships
 it with the instruction *"if multiple listed accounts could satisfy a write
@@ -2734,8 +2734,12 @@ search excerpts; OpenAI's pages were unreachable from the session.)
   connections and reconnections. Without it the three connections were
   identical and the model had no way to see they were one person.
   `wrought_account` is that tool. `profileFor()` hashes the user id (stable
-  across refresh, reconnection and a merge into the surviving account, never
-  the raw id); handleRpc answers it on its own branch, before the config check
+  across refresh and reconnection, never the raw id; a merge moves the
+  absorbed account's grants to the kept one, whose id they then report).
+  The optional name lookup is bounded at 1.5s — the client retries a failing
+  GET for about seven, and a slow profile reads as none. The custom GPT's
+  `call_tool` list leaves it out: it is for ChatGPT's account list, and naming
+  it pushed a real tool out of the 300-character description; handleRpc answers it on its own branch, before the config check
   and the membership gate, with the object in `structuredContent` and **nothing
   stamped on** — the contract admits only `id`, `name`, `email` and `nickname`,
   all strings, so the `account` every other reply carries would make it read
@@ -2755,19 +2759,26 @@ search excerpts; OpenAI's pages were unreachable from the session.)
   Connected accounts, the ••• beside each. **Connectors were renamed Plugins
   on 9 July**; the pages said Connectors and now say both.
 - **The tools say what to do when the picker appears** — `SAME_SERVICE` and
-  the sheet: a choice of connected Wrought accounts (a `link_id`) is the same
-  thing as several copies — pick any, the first unless they said otherwise,
-  write now, name the account on the reply. It lands only after a Refresh.
+  the sheet: a choice of connected Wrought accounts (a `link_id`) never holds
+  a log back. The same email is one record, so pick any; **different emails
+  may be different records** — the review caught the first version calling
+  them "the same thing" — so pick the one matching the account they use at
+  wrought.fit, else the first, write now, name the account, and offer
+  `link_account` if it is not theirs. An earlier chat's "several accounts" is
+  likewise never a reason to hold a log back — log now and name the account —
+  rather than something to discard, because a remembered fork can be real.
+  It all lands only after a Refresh.
 - **The saved habit was corrected by the review.** The first version put
   *"copies writing to my one Wrought account"* in the person's own voice — a
   promise the server cannot make (a copy authorised through Sign in with Apple
   can be a second account) and one that teaches the model to ignore a real
   fork. It now says the copies are one service, each writing to the account
   it signed in with; log through any one; never hold back to ask; an earlier
-  "several accounts" changes nothing; and **in each new chat** name the
-  account of the first log, so a fork is caught that day. *"Say so so I can
-  turn it on"* came out too — it sent people to add another connection, the
-  exact thing that bred three. Tested that neither comes back.
+  "several accounts" is never a reason to hold one back; and **in each new
+  chat** name the account of the first log, so a fork is caught that day.
+  *"Say so so I can turn it on"* came out too — it sent people to add another
+  connection, the exact thing that bred three; it now says the switch is that
+  chat's + menu, never adding it again. Tested that neither comes back.
 - **The custom GPT is no longer the durable fix.** New GPT creation ended on
   personal plans in August 2026 and OpenAI announced custom GPTs' retirement
   on 11 September (third-party summaries of OpenAI's FAQ, unverified
@@ -2788,8 +2799,16 @@ intervention: the breakfast (590 kcal), a jumbo hot dog (500 kcal), and
 
 - **A shift filed as a note burns nothing.** `work_check` only ever looked
   at workouts. `shiftsIn()` in `lib/activity.js` now also catches a note
-  that names work (or a job on the MET table) AND a stretch of time —
-  *"work was rough today"* is still a note, never asked about. The reply
+  that names work (or a job from the WORK half of the MET table, matched on
+  a word boundary) AND a stretch of time. The review ran the first version
+  over two dozen ordinary notes and it asked about *"slept 7 hours after my
+  shift"*, *"16 hours into my fast"*, *"8 hour flight for work"*, *"nursing
+  a hangover"* (`nurs` is on the healthcare row) and *"still hungry"*
+  (`till` is retail) — so sleep, fasting, travel, symptoms and walks never
+  count, and all of those are pinned as negatives. A missed note costs what
+  it always did; a false one asks somebody about a shift they never worked.
+  **A quiet capture never asks**: the check waits for the next time they
+  talk about food, training or their day. The reply
   says it went in as a note and burns nothing, and names the fix:
   `log_activity` with hours ON TASK — a range like "4–5" is asked, never
   averaged — then `undo_last` naming the note. Never re-typed by the server.
@@ -2802,7 +2821,10 @@ intervention: the breakfast (590 kcal), a jumbo hot dog (500 kcal), and
   entry, and one sentence had two meals in it — sending only the missing
   figures. `structure_entries` now merges with `keepKnown()`: a null is not
   a reading, so a model echoing `calories: null` cannot erase the 500 it was
-  sent to add to.
+  sent to add to — and the set bridge gets the SAME merge, or an echoed
+  `exercises: null` would keep the lifts on the row and clear them from the
+  set record. Entries filled from a chat reply no longer say *"you told the
+  phone"*.
 - **The breakfast is filed at 1:59pm** — a catch-up with no `time_hint`,
   which `log`'s field description already forbids. Nothing server-side can
   know when it was eaten; the confirmation says the time back so the person
