@@ -4755,7 +4755,11 @@ await test('"where am I at" is the whole day — every item, the session, the wo
   // receipt's burn block and wrought's macro line — so the receipt, the log
   // confirmation and the whole-day read cannot read the same figures out
   // four different ways. Nothing else from wrought.js may be imported here.
-  assert.match(src, /import \{ outSay \} from '\.\/receipt\.js'/);
+  // From the receipt: its burn renderer and its one decision about what the
+  // burn covers (burnSpan / netCaveat) — words and a classification, never
+  // the receipt's arithmetic.
+  assert.match(src, /import \{[^}]*\boutSay\b[^}]*\} from '\.\/receipt\.js'/);
+  assert.ok(!/import \{[^}]*\bdayReceipt\b[^}]*\} from '\.\/receipt\.js'/.test(src), 'the readout is building its own receipt');
   assert.match(src, /import \{ macroLine \} from '\.\/wrought\.js'/);
   assert.equal((src.match(/from '\.\/wrought\.js'/g) || []).length, 1);
 
@@ -4929,7 +4933,11 @@ await test('every item carries all of its numbers, and the day is broken down th
   const wrought = readFileSync(new URL('../netlify/functions/lib/wrought.js', import.meta.url), 'utf8');
   assert.match(wrought, /sugar_g:\s+a\.sugar_g\s+\+ (num|r)\(e\.detail\?\.sugar_g\)/);
   assert.match(wrought, /sat_fat_g: a\.sat_fat_g \+ (num|r)\(e\.detail\?\.sat_fat_g\)/);
-  assert.match(wrought, /g carbs \(\$\{Math\.round\(food\.sugar_g\)\}g sugar, \$\{Math\.round\(food\.fibre_g\)\}g fibre\)/);
+  // …and says them only when some item carries them: the sums start at zero,
+  // so a day where nobody stated a sugar figure read "0g sugar, 0g fibre".
+  assert.match(wrought, /sugar_g: minor\('sugar_g'\), fibre_g: minor\('fibre_g'\), sat_fat_g: minor\('sat_fat_g'\)/);
+  assert.match(wrought, /minor\('sugar_g'\) != null \? `\$\{minor\('sugar_g'\)\}g sugar`/);
+  assert.match(wrought, /const minor = k => \(carries\(k\) \?/);
 });
 
 await test('"Logged in Wrought" — the confirmation names where the record is, on the tool, the reply and the sheet', async () => {
@@ -15840,7 +15848,7 @@ await test('the day card is the layout the founder asked to keep — the food ta
   const nothingCard = dayCard(nothing);
   assert.match(nothingCard, /\| \*\*Burn counted — resting( and training)? only\*\* \|/);
   assert.ok(!/\| \*\*Net/.test(nothingCard), nothingCard);
-  assert.match(nothingCard, /^- No net: nothing is measuring the rest of the day, so the real burn is higher than this\.$/m);
+  assert.match(nothingCard, /^- No net: nothing is measuring the rest of the day, so only the resting burn is counted and the real figure is higher\.$/m);
   // A projection is named as one, on the row and on the total.
   const projected = read({ log, prof: { ...profile, activity_level: 'active' }, bal: { activeCalories: 0 } });
   assert.equal(projected.out.source, 'activity_level');
@@ -15878,6 +15886,96 @@ await test('the day card is the layout the founder asked to keep — the food ta
   // A backslash before a pipe in what somebody said cannot break the row.
   const slashy = dayCard(read({ log: [item('10:00', 'a \\| b', 100)], bal: { activeCalories: 100 } }));
   assert.ok(slashy.includes('| a \\\\\\| b (10:00am) | 100 |'), slashy);
+
+  // ── One decision about the net, on every surface (burnSpan) ─────────────
+  // The card withheld the net on half a burn while day_read.say — the same
+  // reply's words — still printed "2,179 down so far — the burn is the whole
+  // day". The decision is made once now, and the card, the read and the
+  // receipt all relay it.
+  const { burnSpan, netCaveat, wholeDayBurn } = await import('../netlify/functions/lib/receipt.js');
+  for (const [name, r] of [['waiting', waiting], ['nothing', nothing]]) {
+    assert.equal(r.net, null, `${name}: the read carries a net the card withholds`);
+    assert.match(r.say, /^NET — not worked out: /m, `${name}: day_read.say still prints a net:\n${r.say}`);
+    assert.ok(!/NET — [\d,]+ in − /.test(r.say), r.say);
+    assert.match(r.note, /There is NO NET today/);
+  }
+  // …and the receipt on its own says the same, in its say, its math and its note.
+  const halfDay = { date: TODAY, logged: true, food: foodOf(log), log, training: { sessions: 0, entries: [] }, activity: { count: 0, entries: [] }, device: {} };
+  const halfBal = energyBalance({ profile, weightKg: 150, caloriesIn: 2205, foodEstimated: true, workouts: [], activities: [], activeCalories: 0, deviceExpected: true });
+  const halfReceipt = dayReceipt({ day: halfDay, balance: halfBal, date: TODAY, today: TODAY });
+  assert.equal(halfReceipt.net, null);
+  assert.match(halfReceipt.math.net, /^not worked out — the watch has not sent today/);
+  assert.match(halfReceipt.say, /^NET — not worked out: /m);
+  assert.match(halfReceipt.partial_note, /No net is given until it is/);
+  assert.match(halfReceipt.note, /THERE IS NO NET HERE/);
+  assert.equal(wholeDayBurn({ balance: halfBal, day: halfDay, partial: true }), null, 'half a burn was quoted beside the target as the whole day');
+  // The watch as of 6:01pm: the net stands, labelled — never "the burn is the whole day".
+  assert.match(watch.say, /^NET — .* so far — resting is the whole day, the watch's part is as of 6:01pm/m, watch.say);
+  assert.ok(!/the burn is the whole day|the burn above is the whole day/.test(watch.say + watch.note), watch.say);
+  assert.equal(wholeDayBurn({ balance: energyBalance({ profile, weightKg: 150, caloriesIn: 2205, workouts: [], activities: [], activeCalories: 953 }), day: { device: { fresh: { at: '6:01pm' } } }, partial: true }), null);
+
+  // THE WATCH'S BASAL AS IT STOOD AT 3PM IS NOT THE WHOLE DAY. Health Auto
+  // Export's basal is used as sent; at 3pm that is three-fifths of a day, and
+  // "Net so far 5 over" off it told somebody roughly 900 under that they had
+  // eaten too much.
+  const soFarDevice = { active_calories: 600, resting_calories: 1500, resting_so_far: 1500, resting_projected: false, fresh: { at: '3:00pm' } };
+  const restPart = read({ log, device: soFarDevice, bal: { activeCalories: 600, deviceResting: 1500, deviceRestingSoFar: 1500 } });
+  assert.equal(restPart.burn.resting_whole, false);
+  assert.equal(restPart.net, null);
+  const restPartCard = dayCard(restPart);
+  assert.match(restPartCard, /\| \*\*Burn counted so far — the watch's resting figure only up to 3:00pm\*\* \|/, restPartCard);
+  assert.ok(!/\| \*\*Net|for the whole day|is the whole day/.test(restPartCard), `a so-far basal drew a net or a whole day:\n${restPartCard}`);
+  assert.match(restPartCard, /^- No net yet: the resting figure is only what your watch had counted by 3:00pm, not the whole day/m);
+  assert.match(restPart.say, /^NET — not worked out: the resting figure is only what your watch had counted by 3:00pm/m);
+  // Carried to midnight (the phone's own clock), it IS the whole day again.
+  const carried = read({ log, device: { ...soFarDevice, resting_calories: 2480, resting_projected: true }, bal: { activeCalories: 600, deviceResting: 2480, deviceRestingSoFar: 1500 } });
+  assert.equal(carried.burn.resting_whole, true);
+  assert.match(dayCard(carried), /\| \*\*Net so far\*\* \|/);
+
+  // A FINISHED DAY WHOSE WATCH STOPPED AT 6PM is missing its evening, and says so.
+  const shortDay = read({ log, date: '2026-09-25', device: { active_calories: 953, fresh: { short: true, final: false, at: '6:01pm' } }, bal: { activeCalories: 953 } });
+  const shortCard = dayCard(shortDay);
+  assert.match(shortCard, /\| \*\*Burn — the watch only as of 6:01pm\*\* \|/, shortCard);
+  assert.match(shortCard, /^- The watch stopped reporting for this day at 6:01pm, so the evening is missing from the burn: the real burn is higher and the real net further down\.$/m);
+  assert.match(shortDay.say, /the watch's last send for this day was 6:01pm/);
+  // A closed day is never "so far" and never "not over".
+  for (const c of [closed, past, shortCard]) assert.ok(!/so far|isn't over|not over/.test(c), `a finished day reads as still running:\n${c}`);
+
+  // Zero sugar, fibre and saturated fat were never there — in the read and
+  // the receipt as on the card.
+  assert.ok(!/0g sugar|0g fibre|0g saturated/.test(watch.say), watch.say);
+  assert.ok(!/0g sugar|0g fibre|0g saturated/.test(dayReceipt({ day: halfDay, balance: halfBal, date: TODAY, today: TODAY }).say));
+
+  // The watch's figure less the training — named as exactly that.
+  const trained = read({ log, device: { steps: 8020, active_calories: 953, fresh: { at: '6:01pm' } }, bal: { activeCalories: 953, workouts: [{ event_type: 'workout', summary: 'leg day', detail: { minutes: 45 } }] } });
+  assert.equal(trained.out.source, 'device');
+  assert.ok(trained.out.lines.find(l => /^training/i.test(l.what)).calories > 0);
+  assert.match(dayCard(trained), /\| Work and moving about \(the watch's 953 as of 6:01pm, less the training above\) \|/);
+
+  // The activity level beating the logged work is a projection, on the total too.
+  const levelOver = read({ log, prof: { ...profile, activity_level: 'very_active' }, bal: { activeCalories: 0 }, work: [{ event_type: 'activity', summary: 'filing, 1h', detail: { kcal: 40, hours: 1, label: 'desk work' } }] });
+  assert.equal(levelOver.out.source, 'logged');
+  assert.ok(levelOver.out.lines.find(l => /^work/i.test(l.what)).of?.some(i => /activity level/i.test(i.what) && i.counted), 'the level did not win — the case this guards is not being built');
+  assert.match(dayCard(levelOver), /\| \*\*Burn for the whole day, projected\*\* \|/);
+
+  // Over the target, an uncounted item makes the real figure OVER higher.
+  const overCard = dayCard(read({ log: [...log, item('19:00', 'a snack', null)], bal: { activeCalories: 953 }, left: { short: 'About 482 over today\'s 1,723 target.', withheld: false, over: true } }));
+  assert.match(overCard, /^- Target: About 482 over today's 1,723 target\. Plus 1 item with no calories yet, so the real figure over is higher\.$/m, overCard);
+  // With no burn known, the footer never speaks of one.
+  const unknownDay = { date: TODAY, logged: true, food: foodOf(log), log, training: { sessions: 0, entries: [] }, activity: { count: 0, entries: [] }, device: {} };
+  const unknownBal = { known: false, missing: ['a recent weigh-in'] };
+  const unknownCard = dayCard(dayReadout({ day: unknownDay, balance: unknownBal, receipt: dayReceipt({ day: unknownDay, balance: unknownBal, date: TODAY, today: TODAY }), scored: [], date: TODAY, today: TODAY }));
+  assert.match(unknownCard, /Calories out isn't known yet — it needs a recent weigh-in/);
+  assert.ok(!/burn/i.test(unknownCard.split('\n').slice(-1)[0]), unknownCard);
+
+  // "I'm hungry" is unprompted: no held target under a flag.
+  const mcpRaw = readFileSync(new URL('../netlify/functions/mcp.js', import.meta.url), 'utf8');
+  const wn = mcpRaw.slice(mcpRaw.indexOf('async function whatsNext('), mcpRaw.indexOf('\nasync function ', mcpRaw.indexOf('async function whatsNext(') + 10));
+  assert.match(wn, /left && !left\.withheld \? \{ left_today: left \}/, 'whats_next hands the held target to an unprompted reply');
+  // The burn beside the target is only ever the whole day's.
+  assert.equal((mcpRaw.match(/burn: wholeDayBurn\(\{ balance, day, partial: date === today \}\)/g) || []).length, 2);
+  // The calendar rounds each item before it sums, as dayFacts does.
+  assert.match(readFileSync(new URL('../netlify/functions/lib/wrought.js', import.meta.url), 'utf8'), /day\.calories\s+\+= Math\.round\(num\(e\.detail\?\.calories\)\)/);
 
   // ── WIRED: every reply that answers the day carries it, a quiet capture never ──
   assert.match(DAY_CARD_NOTE, /EXACTLY AS WRITTEN/);

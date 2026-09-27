@@ -2908,6 +2908,35 @@ model's own. Nothing on the server had ever asked for it, so nothing kept it.
   somebody said is escaped, and the notes under the tables are a list so a
   strict renderer keeps each on its own line.
 
+**The second review found the card right and the reply around it wrong.**
+The card withheld the net on half a burn while `day_read.say`, the words in
+the same reply, still printed *"2,179 down so far — the burn is the whole
+day"*. **A rule enforced on one surface of a reply is not enforced.**
+
+- **`burnSpan()` in `lib/receipt.js` makes the call once.** It decides
+  whether a net can be given and what must be said beside it. The receipt,
+  the whole-day read and the card all relay that one decision (`read.burn`),
+  so they cannot disagree about the same day.
+- **No net comes off a burn that is only part of the day.** That covers:
+  - half a burn (the watch has not sent, or nothing measures the day);
+  - **the watch's basal as it stood at its last send.** Health Auto Export's
+    basal is used as sent, so at 3pm it is about three-fifths of a day.
+    *"Net so far 5 over"* off that figure told somebody roughly 900 under
+    that they had eaten too much.
+  A basal carried to midnight is the whole day again.
+- **A finished day whose watch stopped at 6pm says the evening is missing.**
+  The total is labelled with the watch's last send, and a note says the real
+  net is further down.
+- **The burn is quoted beside the target only when it is the whole day's**
+  (`wholeDayBurn`), never a resting half called "the whole day".
+- **Zero sugar, fibre and saturated fat are gone from every surface.** They
+  had been removed from the card only. The day's sums start at zero, so
+  `dayFacts` now makes them null when no item carries one.
+- **`whats_next` withholds the held target under a flag.** *"I'm hungry"* is
+  unprompted, the same rule as `log`.
+- **The calendar rounds each item before summing,** as `dayFacts` does, so
+  the square and the card cannot differ by a calorie.
+
 ### The standing coach shapes the day — rhythm and register, never food, never more
 
 `STYLE_DAYS` in `lib/voices.js` + `coachDay()` / `coachRegister()` /

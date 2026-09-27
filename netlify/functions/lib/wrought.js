@@ -566,6 +566,12 @@ export async function dayFacts(userId, profile, date) {
     sat_fat_g: a.sat_fat_g + r(e.detail?.sat_fat_g),
   }), { calories: 0, protein_g: 0, carbs_g: 0, fat_g: 0, sugar_g: 0, fibre_g: 0, sat_fat_g: 0 });
   const foodEstimated = meals.some(e => e.estimated);
+  // Sugar, fibre and saturated fat are null for the day when NO item carries
+  // them. The sums start at zero, so a day where nobody ever stated a sugar
+  // figure read "0g sugar, 0g fibre" on every surface — a zero that was never
+  // there, and one a person reads as a fact about what they ate.
+  const carries = k => meals.some(e => e.detail?.[k] != null && e.detail[k] !== '' && Number.isFinite(Number(e.detail[k])));
+  const minor = k => (carries(k) ? Math.round(food[k]) : null);
 
   // A meal with no calorie figure is UNKNOWN, not zero, and the difference is
   // the whole estimates doctrine. Summing nulls to zero is right for the
@@ -632,6 +638,7 @@ export async function dayFacts(userId, profile, date) {
     entries: evs.length,
     food: {
       ...roundMacros(food),
+      sugar_g: minor('sugar_g'), fibre_g: minor('fibre_g'), sat_fat_g: minor('sat_fat_g'),
       meals: meals.length,
       estimated: foodEstimated,
       meals_uncounted: mealsUncounted,
@@ -644,7 +651,9 @@ export async function dayFacts(userId, profile, date) {
         // zero here is the single easiest way to be confidently wrong.
         : mealsUncounted === meals.length
           ? `${meals.length} thing${meals.length === 1 ? '' : 's'} logged, no macros on ${meals.length === 1 ? 'it' : 'any of them'} yet — the total is unknown rather than zero.`
-          : `${Math.round(food.calories)} kcal · ${Math.round(food.protein_g)}g protein · ${Math.round(food.carbs_g)}g carbs (${Math.round(food.sugar_g)}g sugar, ${Math.round(food.fibre_g)}g fibre) · ${Math.round(food.fat_g)}g fat (${Math.round(food.sat_fat_g)}g saturated)` +
+          : `${Math.round(food.calories)} kcal · ${Math.round(food.protein_g)}g protein · ${Math.round(food.carbs_g)}g carbs${
+              [minor('sugar_g') != null ? `${minor('sugar_g')}g sugar` : null, minor('fibre_g') != null ? `${minor('fibre_g')}g fibre` : null].filter(Boolean).join(', ').replace(/^(.+)$/, ' ($1)')
+            } · ${Math.round(food.fat_g)}g fat${minor('sat_fat_g') != null ? ` (${minor('sat_fat_g')}g saturated)` : ''}` +
             (foodEstimated ? ' (estimated from what you described)' : '') +
             (mealsUncounted ? ` — and ${mealsUncounted} logged with no macros, so the real total is higher.` : ''),
     },
@@ -842,10 +851,12 @@ export async function rangeFacts(userId, profile, fromDate, toDate) {
     const day = dayOf(e.local_date);
     day.logged = true;
     if (e.event_type === 'food' || e.event_type === 'drink') {
-      day.calories  += num(e.detail?.calories);
-      day.protein_g += num(e.detail?.protein_g);
-      day.carbs_g   += num(e.detail?.carbs_g);
-      day.fat_g     += num(e.detail?.fat_g);
+      // Each item rounded before it is summed, exactly as dayFacts does, so
+      // the calendar square and the day card never differ by a calorie.
+      day.calories  += Math.round(num(e.detail?.calories));
+      day.protein_g += Math.round(num(e.detail?.protein_g));
+      day.carbs_g   += Math.round(num(e.detail?.carbs_g));
+      day.fat_g     += Math.round(num(e.detail?.fat_g));
       day.meals     += 1;
       // WHEN they ate, as minutes into their own day — the raw material of
       // the when-you-eat read. The clock is the entry's own stamp: the time

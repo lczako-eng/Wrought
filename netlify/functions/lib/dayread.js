@@ -20,7 +20,7 @@
 // every figure is the receipt's, scoreGoals', dayFacts' or weekSoFar's own,
 // which is what lets a line here never disagree with a panel or a brief.
 
-import { outSay } from './receipt.js';
+import { outSay, burnSpan, netCaveat } from './receipt.js';
 import { macroLine } from './wrought.js';
 
 // A missing figure is null, never a zero: Number(null) is 0, and a meal
@@ -51,6 +51,11 @@ export function dayReadout({ day = null, balance = null, receipt = null, scored 
   if (!day) return null;
   const partial = !!(today && (date || day.date) === today);
   const lines = [];
+  // How much of the day the burn covers, decided once (burnSpan) and shared
+  // with the receipt and the card, so the three never make different calls
+  // about whether a net can be given.
+  const span = burnSpan({ balance, day, partial });
+  const cav = netCaveat(span, { partial, training: n(balance?.training_burn) || 0 });
 
   // ── IN ────────────────────────────────────────────────────────────────────
   const food = (day.log || []).filter(e => e.type === 'food' || e.type === 'drink');
@@ -60,8 +65,9 @@ export function dayReadout({ day = null, balance = null, receipt = null, scored 
   const inn = {
     total: n(day.food?.calories) || 0,
     protein_g: n(day.food?.protein_g) || 0, carbs_g: n(day.food?.carbs_g) || 0, fat_g: n(day.food?.fat_g) || 0,
-    // Null when the day never carried them, never a zero standing in.
-    sugar_g: n(day.food?.sugar_g), fibre_g: n(day.food?.fibre_g), sat_fat_g: n(day.food?.sat_fat_g),
+    // Null when no item carries them, never a zero standing in — the day's
+    // sums start at zero, so the day's own figure cannot say.
+    ...Object.fromEntries(['sugar_g', 'fibre_g', 'sat_fat_g'].map(k => [k, food.some(e => n(e[k]) != null) ? n(day.food?.[k]) : null])),
     items: food.map(e => ({
       at: e.at, what: e.summary, calories: e.calories,
       protein_g: e.protein_g ?? null, carbs_g: e.carbs_g ?? null, fat_g: e.fat_g ?? null,
@@ -114,8 +120,11 @@ export function dayReadout({ day = null, balance = null, receipt = null, scored 
     // breakfast the subtraction reads "3,420 down", an artifact of a day four
     // hours old, and an overstated deficit is the dangerous direction.
     lines.push(partial && !inn.total
-      ? 'NET — nothing eaten is logged yet, so there is no in-versus-out; the burn above is the whole day\'s estimate'
-      : `NET — ${receipt.math.net}${partial ? ' so far — the burn is the whole day, the food is only what is logged yet' : ''}`);
+      ? `NET — nothing eaten is logged yet, so there is no in-versus-out; ${!cav.show ? cav.why
+        : span.watchSoFar ? `the burn above is resting for the whole day plus the watch as of ${span.at || 'its last send'}`
+        : 'the burn above is the whole day\'s estimate'}`
+      : !cav.show ? `NET — not worked out: ${cav.why}`
+      : `NET — ${receipt.math.net}${cav.tail ? ` ${cav.tail}` : ''}`);
     for (const s of receipt.set_aside || []) lines.push(`  set aside: ${s}`);
   } else {
     lines.push(`OUT — not known yet${balance?.missing?.length ? ` (needs ${balance.missing.join(' and ')})` : ''}`);
@@ -172,7 +181,9 @@ export function dayReadout({ day = null, balance = null, receipt = null, scored 
       source: receipt.out.source ?? null, projected: !!receipt.out.projected,
       lines: receipt.out.lines.map(l => ({ what: l.what, calories: l.calories, ...(l.note ? { note: l.note } : {}), ...(l.basis ? { basis: l.basis } : {}), ...(l.of?.length ? { of: l.of } : {}) })),
     } : null,
-    net: receipt?.net ?? null,
+    net: cav.show ? (receipt?.net ?? null) : null,
+    // What the burn covers — the card reads this rather than deciding again.
+    burn: { half: span.half, resting_whole: span.restingWhole, watch_so_far: span.watchSoFar, short: span.short, at: span.at, net_shown: cav.show, ...(cav.show ? {} : { net_why: cav.why }) },
     set_aside: receipt?.set_aside || [],
     goals,
     left: left || null,
@@ -186,7 +197,12 @@ export function dayReadout({ day = null, balance = null, receipt = null, scored 
     estimated: true,
     say: lines.join('\n'),
     note: 'THIS IS THE WHOLE DAY. Read it out LINE BY LINE as it stands — every item eaten with its own calories, the session, the work, the steps, the burn added up WITH EVERY INPUT UNDER IT (the resting figure and what it is computed from, each session, each shift with its hours, the watch\'s figure for the day, and which of them counted and which was set aside and why), the net with its sign, each goal with its percentage, the week. Never collapse the burn into "resting + active" — every calorie is accounted for on its own line and that is the point. Never quote only a total, never add anything up yourself, never answer "where am I at" from the food alone. ' +
-      (partial ? 'Say the day is not over: the burn is a whole-day figure and the food is only what has been logged so far. ' : '') +
+      (receipt?.out && !cav.show ? `There is NO NET today: ${cav.why}. Say so and never work one out yourself. ` : '') +
+      (partial ? (span.watchSoFar
+        ? `Say the day is not over: resting is a whole-day figure, the watch's part is only as of ${span.at || 'its last send'}, and the food is only what has been logged so far. `
+        : !span.restingWhole ? 'Say the day is not over: the resting figure is only what the watch had counted so far, and the food is only what has been logged so far. '
+        : 'Say the day is not over: the burn is a whole-day figure and the food is only what has been logged so far. ') : '') +
+      (span.short ? `Say the watch stopped reporting for this day at ${span.at || 'before midnight'}, so the burn is short and the real net is further down. ` : '') +
       (left ? '"How much should I eat today" / "how much have I got left" is the LEFT line, said as it stands: the figure left (or that it is withheld and why), the target and its basis — basal less the deficit — and that today\'s burn comes off on top. Never a figure of your own, never recomputed. '
         : goals.some(g => g.metric === 'calories' && g.direction === 'at_most') ? '"How much should I eat today" is answered from the calorie GOALS line as it stands — the target, where the day is against it, and that the target is priced off basal so today\'s training and work come off on top of it. Never a figure of your own. ' : '') +
       (moved.fresh?.stale ? `Say WHEN the watch figures are from (${moved.fresh.at}) — never present them as current; if they want them current, the Wrought app on their phone sends the latest the moment it opens. ` : '') +
@@ -241,6 +257,10 @@ const dayName = iso => {
 // receipt's own inputs, so the row never names a shift the watch outranked,
 // never calls the watch's figure less the training "the watch", and never
 // credits the sedentary floor or a projection to the work.
+// The activity-level projection beat the logged work — the "other" figure is
+// then a forecast, whatever the balance's own flag says.
+const levelWon = read => (read.out?.lines || []).find(l => /^work/i.test(l.what))?.of?.some(i => /activity level/i.test(i.what) && i.counted) || false;
+
 function workLabel(read, train) {
   const src = read.out?.source;
   const of = (read.out?.lines || []).find(l => /^work/i.test(l.what))?.of || [];
@@ -259,7 +279,7 @@ function workLabel(read, train) {
         : `watch${at ? `, ${at}` : ''}`;
     }
     case 'logged':
-      return of.some(i => /activity level/i.test(i.what) && i.counted)
+      return levelWon(read)
         ? `projected from your activity level, which is above the work you logged${lessTrain}`
         : `work: ${shifts}, plus the rest of the day at the sedentary floor${lessTrain}`;
     case 'activity_level':
@@ -311,11 +331,19 @@ export function dayCard(read, { explicit = false } = {}) {
   const notes = [];
   const src = read.out?.source;
   const fresh = read.moved?.fresh;
-  const watchSoFar = src === 'device' && partial && !fresh?.final;
+  // What the burn covers, as dayReadout decided it (burnSpan) — the card
+  // never decides again, so it cannot print a net the read withheld.
+  const burn = read.burn || {};
+  const watchSoFar = !!burn.watch_so_far;
   // Only the resting half (and any training) is counted: the watch has not
   // sent, or nothing measures the rest of the day. The real burn is higher,
   // so a net here would read as eating over when somebody may be under.
-  const halfBurn = ['awaiting_device', 'none', 'training_only'].includes(src);
+  const halfBurn = !!burn.half;
+  // The resting figure is the watch's basal as it stood at its last send —
+  // part of the day, not the whole of it.
+  const restingPart = burn.resting_whole === false;
+  const short = !!burn.short;
+  const at = burn.at || fresh?.at || null;
   if (read.out) {
     const trainLine = (read.out.lines || []).find(l => /^training/i.test(l.what));
     const train = n(trainLine?.calories) || 0;
@@ -327,25 +355,31 @@ export function dayCard(read, { explicit = false } = {}) {
       out.push(`| ${cell(`${l.what}${said}`)} | ${money(l.calories)} |`);
     }
     const counts = `resting${train > 0 ? ' and training' : ''} only`;
+    const projected = read.out.projected || (src === 'logged' && levelWon(read));
     const burnLabel = halfBurn
       ? (partial && src === 'awaiting_device' ? `Burn counted so far — ${counts}` : `Burn counted — ${counts}`)
-      : watchSoFar
-        ? (fresh?.at ? `Burn so far — resting for the whole day, the watch as of ${fresh.at}` : 'Burn so far')
-        : partial ? `Burn for the whole day${read.out.projected ? ', projected' : ''}` : 'Burn';
+      : restingPart
+        ? `Burn counted so far — the watch's resting figure only up to ${at || 'its last send'}`
+        : watchSoFar
+          ? (at ? `Burn so far — resting for the whole day, the watch as of ${at}` : 'Burn so far')
+          : short ? `Burn — the watch only as of ${at || 'its last send'}`
+          : partial ? `Burn for the whole day${projected ? ', projected' : ''}` : `Burn${projected ? ', projected' : ''}`;
     out.push(`| **${burnLabel}** | **${money(read.out.total)}** |`);
     // NO NET off nothing eaten, off a half burn, or — unprompted — under a
     // care flag. Each is a number that reads as a deficit (or a surplus) the
     // person has not run.
     const net = n(read.net);
-    if (net != null && counted && n(inn.total) > 0 && !halfBurn && (!flagged || explicit)) {
+    if (net != null && burn.net_shown !== false && counted && n(inn.total) > 0 && !halfBurn && !restingPart && (!flagged || explicit)) {
       out.push(`| **Net${partial ? ' so far' : ''}** | **${net < 0 ? `${money(-net)} down` : net > 0 ? `${money(net)} over` : 'level'}** |`);
     }
     out.push('');
-    if (halfBurn && counted && n(inn.total) > 0) {
-      notes.push(src === 'awaiting_device'
-        ? `No net${partial ? ' yet' : ''}: the watch ${partial ? 'has not sent today' : 'sent nothing for this day'}, so only the ${counts.replace(' only', '')} burn is counted and the real figure is higher.`
-        : 'No net: nothing is measuring the rest of the day, so the real burn is higher than this.');
+    // The reason, in the read's own words — never a second wording here.
+    if (burn.net_shown === false && counted && n(inn.total) > 0) {
+      // "Yet" only where the rest of the burn is coming — a watch still to
+      // send, a basal still accruing. Nothing measuring the day never will.
+      notes.push(`No net${partial && (src === 'awaiting_device' || restingPart) ? ' yet' : ''}: ${burn.net_why}.`);
     }
+    if (short) notes.push(`The watch stopped reporting for this day at ${at || 'before midnight'}, so the evening is missing from the burn: the real burn is higher${net != null ? ' and the real net further down' : ''}.`);
     for (const s of read.set_aside || []) {
       // Said once already, under the food table.
       if (/you ate (has|have) no calories/.test(s)) continue;
@@ -369,15 +403,19 @@ export function dayCard(read, { explicit = false } = {}) {
   // What is left — and under a care flag the held line only on a read the
   // person ASKED for; an unprompted reply never carries the held target.
   if (read.left?.short && (!read.left.withheld || explicit)) {
-    notes.push(`Left: ${read.left.short}${!read.left.withheld && inn.without_calories ? ` Plus ${inn.without_calories} item${inn.without_calories === 1 ? '' : 's'} with no calories yet, so the real figure left is lower.` : ''}`);
+    const uncounted = !read.left.withheld && inn.without_calories
+      ? ` Plus ${inn.without_calories} item${inn.without_calories === 1 ? '' : 's'} with no calories yet, so ${read.left.over ? 'the real figure over is higher' : 'the real figure left is lower'}.`
+      : '';
+    notes.push(`${read.left.over ? 'Target' : 'Left'}: ${read.left.short}${uncounted}`);
   }
   if (read.week?.say) notes.push(`Week: ${read.week.say}`);
   // A list, so a strict markdown renderer keeps each on its own line.
   for (const x of notes) out.push(`- ${x}`);
   if (notes.length) out.push('');
   out.push(`_Every figure is an estimate.${!partial ? ''
-    : halfBurn ? ' The day isn\'t over: the food is only what\'s logged so far.'
-    : watchSoFar ? ` The day isn't over: resting is the whole day, the watch's part${fresh?.at ? ` is as of ${fresh.at}` : ' is only what it has sent'}, and the food is only what's logged so far.`
+    : !read.out || halfBurn ? ' The day isn\'t over: the food is only what\'s logged so far.'
+    : restingPart ? ' The day isn\'t over: the burn and the food are only what\'s in so far.'
+    : watchSoFar ? ` The day isn't over: resting is the whole day, the watch's part${at ? ` is as of ${at}` : ' is only what it has sent'}, and the food is only what's logged so far.`
     : ' The day isn\'t over: the burn is the whole day, the food is only what\'s logged so far.'}_`);
 
   return out.join('\n').replace(/\n{3,}/g, '\n\n').trim();

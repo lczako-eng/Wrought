@@ -61,7 +61,7 @@ import { styleRoutine, STYLE_ROUTINES } from './lib/style_routines.js';
 import { pickDue } from './lib/morning.js';
 import { athleteRows, athleteRead, TESTS, parseTestValue, ATHLETE_COMMITMENT } from './lib/athlete.js';
 import { resolvePlace, placeEquipment, listPlaces, bumpPlace, applyPlaces, sessionsCanCarryPlace, PLACE_KINDS } from './lib/places.js';
-import { dayReceipt } from './lib/receipt.js';
+import { dayReceipt, wholeDayBurn } from './lib/receipt.js';
 import { dayReadout, roomless, dayCard, DAY_CARD_NOTE } from './lib/dayread.js';
 import { mealTiming } from './lib/timing.js';
 import { validatePlan, totalSeconds, workoutLink } from '../../public/workout-clock.js';
@@ -246,7 +246,7 @@ A RUNNING TOTAL IS THE WHOLE DAY, NEVER THE THING JUST LOGGED. "How many am I at
 
 SAYING SOMETHING WAS SAVED IS A CLAIM ABOUT THE RECORD, AND IT MAY ONLY EVER COME FROM A TOOL. Never say saved, added, logged, updated, changed, removed or "it's on your list" unless a tool call in THIS turn came back and said so. This has already gone wrong in production: "Added, Broski — S-Tier Home Workout is now saved" was answered without save_routine ever being called, and the account held one workout, not two. On a product whose entire promise is that it remembers, a claimed write that never happened is the worst failure there is — worse than a crash, because a crash is visible and this looks exactly like success. Nobody discovers it until they open the dashboard weeks later and their workout is not there. So: if they ask for something to be kept, CALL THE TOOL, in the same turn, before answering — "add that to my list", "save that", "keep it" are instructions, not conversation. Then quote what came back: save_routine returns on_file, which is every saved workout read from the database AFTER the write, and saying the count and the names is the only thing that tells a real save apart from a claimed one. If a call fails, say it failed and what to do — an honest error is worth ten confident sentences. Never write the confirmation first and the tool call later, and never let a long conversation about designing something stand in for having stored it.
 
-BOTH SIDES OF THE SUBTRACTION GET ITEMISED, NOT JUST THE EATING. "What did I do today", "how many calories", "what were those hours worth", "how am I doing on the day", "break it down", "where am I at today", "daily totals", "give me everything", "where do I stand", "including activity", "what's my net", "am I up or down" are answered from the receipt block — which brief, log_activity, energy_balance and get_day all return — and best of all from get_day's day_read — THE WHOLE DAY in one read: every item eaten with its calories, the session and its worth, the work and its worth, the steps, the burn added up, the net, each goal with its percentage, the week. When those words ride on a log, the log reply carries day_read too. ANY QUESTION WITH "INCLUDING ACTIVITY", "MY STEPS", "MY MOVE", "MY NET", OR "WHERE AM I AT" MEANS CALL get_day (or energy_balance, or brief) — that response carries the workout burn AND the steps AND the watch's active calories, so answering it from a food total alone, or saying a workout has no burn number, is the tool not being called rather than a number that does not exist. The server prices every logged workout from its minutes and their bodyweight when no watch measured it; there is always a number. Read it out LINE BY LINE: every item in with its own calories, then resting, training and work each with their own figure and what each is made of, then the two totals, then the net. Do not collapse it into a sentence, do not quote only the totals, and never add anything up yourself — the lines are there so each one can be argued with separately, which is the only way an estimate is worth anything. LOGGING WORK ALWAYS COMES BACK WITH WHAT IT WAS WORTH: "logged four hours as activity" with no number is the feature failing, because the number is the entire reason to log it. And set_aside is not optional — a figure that looks smaller than somebody's own arithmetic reads as the log having been ignored, so say what was not counted and why.
+BOTH SIDES OF THE SUBTRACTION GET ITEMISED, NOT JUST THE EATING. "What did I do today", "how many calories", "what were those hours worth", "how am I doing on the day", "break it down", "where am I at today", "daily totals", "give me everything", "where do I stand", "including activity", "what's my net", "am I up or down" are answered from the receipt block — which brief, log_activity, energy_balance and get_day all return — and best of all from get_day's day_read — THE WHOLE DAY in one read: every item eaten with its calories, the session and its worth, the work and its worth, the steps, the burn added up, the net, each goal with its percentage, the week. When those words ride on a log, the log reply carries day_read too. ANY QUESTION WITH "INCLUDING ACTIVITY", "MY STEPS", "MY MOVE", "MY NET", OR "WHERE AM I AT" MEANS CALL get_day (or energy_balance, or brief) — that response carries the workout burn AND the steps AND the watch's active calories, so answering it from a food total alone, or saying a workout has no burn number, is the tool not being called rather than a number that does not exist. The server prices every logged workout from its minutes and their bodyweight when no watch measured it; there is always a number. When the reply carries day_card, SHOW THE CARD first, exactly as written, and read from day_read.say or the receipt only what the card does not already show (what each burn line is made of, each goal with its percentage, a session or shift's worth) — never a figure twice. Without a card, read it out LINE BY LINE: every item in with its own calories, then resting, training and work each with their own figure and what each is made of, then the two totals, then the net. Either way, do not collapse it into a sentence, do not quote only the totals, and never add anything up yourself — the lines are there so each one can be argued with separately, which is the only way an estimate is worth anything. LOGGING WORK ALWAYS COMES BACK WITH WHAT IT WAS WORTH: "logged four hours as activity" with no number is the feature failing, because the number is the entire reason to log it. And set_aside is not optional — a figure that looks smaller than somebody's own arithmetic reads as the log having been ignored, so say what was not counted and why.
 
 THE DAY CARD IS THE LAYOUT — KEEP IT. Every log that is not a quiet capture, and get_day, log_activity, amend_last, structure_entries (when it fills in today), energy_balance and brief (when there is no written verdict) return day_card: markdown with the food table (each item, its time, its calories, the total underneath) and the energy balance (eaten, resting, training, work and moving about, the burn, the net), then steps, what is left and the week. The person asked for exactly this layout to stay. Show it EXACTLY as written, after your first line — never rebuild it, reorder it, drop or add a row, put a figure of your own in it, or turn a number into a range. A quiet capture carries no card and gets none.
 
@@ -3323,7 +3323,7 @@ async function brief(args, user) {
   // read get_day gives — never "food · training". Every nickname lands here,
   // and "jim bro, what did I eat today" came back without the shift, the burn
   // or the steps.
-  const left = await leftFor(user.id, profile, date, { day, flags, burn: balance?.known ? balance.calories_out : null }).catch(() => null);
+  const left = await leftFor(user.id, profile, date, { day, flags, burn: wholeDayBurn({ balance, day, partial: date === today }) }).catch(() => null);
   const wholeDay = verdict ? null : dayReadout({ day, balance, receipt, scored, week: facts.training_week, date, today, flags, left });
 
   return {
@@ -3348,7 +3348,13 @@ async function brief(args, user) {
     } : {}),
     say: verdict || wholeDay?.say || `${date}: ${day.food.say} · ${day.training.say}`,
     note: (flags.length
-      ? 'Care flags are up. They override the honesty doctrine — follow their guidance exactly and do not coach intake down. The flag leads. If they asked where the day stands, the receipt may still be read after it — it is factual record, not coaching — but nothing in it may become advice about eating less. No coach_day while a care flag stands — plain delivery; if they ask where their coach went, say coach_paused.say.'
+      ? 'Care flags are up. They override the honesty doctrine — follow their guidance exactly and do not coach intake down. The flag leads. ' +
+        (wholeDay
+          // The card is the day's figures; the receipt read on top of it would
+          // say every one twice.
+          ? 'If they asked where the day stands, the card after it is the answer — factual record, not coaching — and from day_read.say only what the card does not carry; nothing in either may become advice about eating less. '
+          : 'If they asked where the day stands, the receipt may still be read after it — it is factual record, not coaching — but nothing in it may become advice about eating less. ') +
+        'No coach_day while a care flag stands — plain delivery; if they ask where their coach went, say coach_paused.say.'
       : (wholeDay
         // No written verdict: the card IS the answer, and the receipt read
         // line by line under it would say every figure twice.
@@ -3409,7 +3415,9 @@ async function fullDayRead(userId, profile, date, { day: known = null } = {}) {
   // much should I eat" gets answered, and under a flag no figure of what is
   // left is ever quoted.
   const flags = careFlags(careRange || range, profile, { openDate: today });
-  const left = await leftFor(userId, profile, date, { day, flags, facts, burn: balance?.known ? balance.calories_out : null }).catch(() => null);
+  // The burn beside the target only when it is the whole day's — never a
+  // resting half or a watch's so-far called "the whole day".
+  const left = await leftFor(userId, profile, date, { day, flags, facts, burn: wholeDayBurn({ balance, day, partial: date === today }) }).catch(() => null);
   return { day, balance, receipt, scored, week, flags, left,
            read: dayReadout({ day, balance, receipt, scored, week, date, today, flags, left }) };
 }
@@ -3647,7 +3655,9 @@ Answer in 2-4 short sentences: what to do right now and why, in their units. If 
   return {
     situation,
     recommendation,
-    ...(left ? { left_today: left } : {}),
+    // "I'm hungry" is an unprompted read: under a flag it carries not even
+    // the held target — only an explicit read says it is withheld and why.
+    ...(left && !left.withheld ? { left_today: left } : {}),
     ...(flags.length ? { care_flags: flags } : {}),
     ...(setup ? { setup_needed: setup } : {}),
     say: recommendation || [
