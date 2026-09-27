@@ -2871,20 +2871,34 @@ model's own. Nothing on the server had ever asked for it, so nothing kept it.
   (`energyBalance` → `dayReceipt` → `dayReadout` → `dayCard`) on the shapes
   the database actually stores, because the first tests left the field out
   instead of setting it to null and passed on the bug.
-- **Every burn row says where it came from.** The work row names the shift
-  when the logged work counted, the watch *"as of 6:01pm"* when it did not, a
-  projection as a projection. **A resting-only burn gets no net**: with the
-  watch not yet sent the total reads *"Burn counted so far — resting only"* —
-  the 8pm-close lesson, which the first card had lost.
+- **Every burn row says where it came from**, read off the receipt's own
+  inputs: the shift when the logged work counted, *"plus the rest of the day
+  at the sedentary floor"* when that is part of it, *"the watch's 953 as of
+  6:01pm, less the training above"* rather than calling 335 the watch, a
+  projection as a projection. **A watch figure is only as of its last
+  send**, so that total reads *"Burn so far — resting for the whole day, the
+  watch as of 6:01pm"*, never *"the whole day"*.
+- **Half a burn gets no net.** With the watch not yet sent, or nothing
+  measuring the day at all, the total is *"resting (and training) only"* and
+  the net is withheld with the reason — the real burn is higher, so a net
+  would read as over when somebody may be under. The 8pm-close lesson, which
+  the first card had lost, and a second review found the version that fixed
+  it still said *"resting only"* over a figure that held a workout.
 - **Nothing eaten yet is not a deficit** — nor is a black coffee, nor an
   unlogged day in the past. **Under a care flag an unprompted card carries
-  neither the net nor the held target**; a read somebody asked for carries
-  both, as the whole-day read does.
+  neither the net nor the held target** (and the log reply's structured
+  `left_today` stops carrying it too); a read somebody asked for carries
+  both, and `energy_balance` now carries the flags beside its card.
 - **On every write that is not a quiet capture**, read beside the nudge rather
   than after it and caught, so a failure there never costs a write its
-  confirmation. `amend_last` and `structure_entries` carry the card too — the
-  model is sent to them in the same turn to fill in macros — and the note
-  says to show only the latest card, once.
+  confirmation. The read is one batch when the day is in hand —
+  `balanceFor` and `planFacts` were each two serial queries and are one now.
+  `amend_last` carries the card; `structure_entries` does only when it filled
+  in something from TODAY, because dictation from days ago filled in under
+  the morning brief would otherwise swap yesterday's card for an empty today.
+  The note says to show the latest card for a day, once.
+- **Items add up to their total.** `dayFacts` rounds each item before it
+  sums, so three stored 100.4s read 100, 100, 100 over 300, not 301.
 - **Tool results, not descriptions.** A description reaches ChatGPT only
   after a Refresh; a result is read on the next call. So the rule rides every
   reply's `note` (*show day_card EXACTLY AS WRITTEN — never rebuild it, drop

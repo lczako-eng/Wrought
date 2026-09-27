@@ -248,7 +248,7 @@ SAYING SOMETHING WAS SAVED IS A CLAIM ABOUT THE RECORD, AND IT MAY ONLY EVER COM
 
 BOTH SIDES OF THE SUBTRACTION GET ITEMISED, NOT JUST THE EATING. "What did I do today", "how many calories", "what were those hours worth", "how am I doing on the day", "break it down", "where am I at today", "daily totals", "give me everything", "where do I stand", "including activity", "what's my net", "am I up or down" are answered from the receipt block — which brief, log_activity, energy_balance and get_day all return — and best of all from get_day's day_read — THE WHOLE DAY in one read: every item eaten with its calories, the session and its worth, the work and its worth, the steps, the burn added up, the net, each goal with its percentage, the week. When those words ride on a log, the log reply carries day_read too. ANY QUESTION WITH "INCLUDING ACTIVITY", "MY STEPS", "MY MOVE", "MY NET", OR "WHERE AM I AT" MEANS CALL get_day (or energy_balance, or brief) — that response carries the workout burn AND the steps AND the watch's active calories, so answering it from a food total alone, or saying a workout has no burn number, is the tool not being called rather than a number that does not exist. The server prices every logged workout from its minutes and their bodyweight when no watch measured it; there is always a number. Read it out LINE BY LINE: every item in with its own calories, then resting, training and work each with their own figure and what each is made of, then the two totals, then the net. Do not collapse it into a sentence, do not quote only the totals, and never add anything up yourself — the lines are there so each one can be argued with separately, which is the only way an estimate is worth anything. LOGGING WORK ALWAYS COMES BACK WITH WHAT IT WAS WORTH: "logged four hours as activity" with no number is the feature failing, because the number is the entire reason to log it. And set_aside is not optional — a figure that looks smaller than somebody's own arithmetic reads as the log having been ignored, so say what was not counted and why.
 
-THE DAY CARD IS THE LAYOUT — KEEP IT. Every log that is not a quiet capture, every get_day and every log_activity returns day_card: markdown with the food table (each item, its time, its calories, the total underneath) and the energy balance (eaten, resting, training, work and moving about, the burn, the net), then steps, what is left and the week. The person asked for exactly this layout to stay. Show it EXACTLY as written, after your first line — never rebuild it, reorder it, drop or add a row, put a figure of your own in it, or turn a number into a range. A quiet capture carries no card and gets none.
+THE DAY CARD IS THE LAYOUT — KEEP IT. Every log that is not a quiet capture, and get_day, log_activity, amend_last, structure_entries (when it fills in today), energy_balance and brief (when there is no written verdict) return day_card: markdown with the food table (each item, its time, its calories, the total underneath) and the energy balance (eaten, resting, training, work and moving about, the burn, the net), then steps, what is left and the week. The person asked for exactly this layout to stay. Show it EXACTLY as written, after your first line — never rebuild it, reorder it, drop or add a row, put a figure of your own in it, or turn a number into a range. A quiet capture carries no card and gets none.
 
 STEPS AND EVERY WATCH READING ARE READ, NEVER ASKED FOR. Steps, active calories, resting heart rate, distance, sleep — these arrive from the person's phone and sit on the record. energy_balance and get_day return them directly (device.steps, device.active_calories, and energy_balance's logged.steps). When somebody says "plus my steps", "include my steps", "add my steps", "what are my steps", or anything asking to fold movement in, CALL energy_balance (or get_day) and READ THE NUMBER OFF IT. NEVER ask them for their step count or any watch figure — the watch already sent it, and asking a connected person for data the connector is holding is the exact failure they will call out: "you should know that you're connected." The ONLY honest "no steps" answer is when the tool itself returns none because the watch has not synced today — and even then you say the watch has not sent yet and to open the app, you never ask them to count. This is not a number you are allowed to collect by asking; it is one you are required to look up.
 
@@ -1678,7 +1678,9 @@ async function log(args, user) {
     // The whole day, in numbers. "How many am I at today" is answered from
     // HERE and never from the item that was just written.
     day_total: dayTotal(day),
-    ...(left ? { left_today: left } : {}),
+    // An unprompted reply under a care flag carries not even the held target —
+    // only a read somebody asked for says it is withheld and how it clears.
+    ...(left && (!left.withheld || fullRead) ? { left_today: left } : {}),
     // And when the sentence asked where the day stands, the WHOLE day — food,
     // training, work, steps, burn, net, goals, week — from lib/dayread.js.
     ...(fullRead ? { day_read: fullRead.read } : {}),
@@ -1739,6 +1741,7 @@ async function log(args, user) {
     note: (written.length ? 'OPEN WITH "Logged in Wrought" — say the phrase exactly, then each item with ALL its numbers exactly as `say` reads them: calories, protein, carbs (sugar, fibre), fat (saturated), and the time. ' + (cardRead
       ? 'Then the day: ' + DAY_CARD_NOTE + 'The card IS the day broken down — never also read day_total.breakdown or the day in prose. '
       : 'Then the day broken down the same way — day_total.breakdown is every item of the day with its numbers and the total underneath; read it out, never only a calorie figure. ') + 'Those three words are the receipt: the person uses them to tell a write that landed from food you merely acknowledged. Never say "logged" or "saved" about food without "in Wrought", and never say "Logged in Wrought" unless this reply is in front of you. ' : '') +
+      (cardRead && !written.length ? DAY_CARD_NOTE : '') +
       (fullRead ? 'THEY ASKED WHERE THE DAY STANDS: read day_read.say out LINE BY LINE for everything the card does not already show — each goal with its percentage, what the session and the work were, what each burn row is made of, anything set aside — never the card\'s figures twice, never just the food total. ' : '') +
       (workLike.length && !args.quiet ? `WORK_CHECK FIRST: an entry that reads as a shift went in ${workAs} — ask in one clause whether it was work and how many hours ON TASK, and if so log_activity with those hours then undo_last naming it. ` : '') +
       (partial.length ? `MACROS_MISSING: ${partial.map(m => `"${m.summary}"`).join(' and ')} went in with calories and no ${[...new Set(partial.flatMap(m => m.missing))].join(', ')}. You named the food, so estimate the rest: call structure_entries NOW with each id and a detail holding ONLY the missing figures (protein_g, carbs_g, fat_g, and sugar_g, fibre_g, sat_fat_g if you can) and estimated: true — never resend the calories. Do it without asking${args.quiet ? ', silently' : ', then read each item back with all its numbers'}. ` : '') +
@@ -2144,11 +2147,12 @@ async function savePlan(userId, patch) {
 }
 
 async function planFacts(userId) {
-  const [profile, goals] = await Promise.all([getProfile(userId), getGoals(userId)]);
-
-  const { data: recent } = await supabase.from('wrought_events')
-    .select('detail').eq('user_id', userId).eq('event_type', 'weight')
-    .order('occurred_at', { ascending: false }).limit(1);
+  const [profile, goals, { data: recent }] = await Promise.all([
+    getProfile(userId), getGoals(userId),
+    supabase.from('wrought_events')
+      .select('detail').eq('user_id', userId).eq('event_type', 'weight')
+      .order('occurred_at', { ascending: false }).limit(1),
+  ]);
   const weightKg = recent?.[0]?.detail?.value_kg ?? null;
 
   const bodyGoal = goals.find(g => g.metric === 'weight_kg');
@@ -3035,8 +3039,13 @@ async function structureEntries(args, user) {
   // the day's totals, and the model must not be left holding only the item.
   const profileNow = await getProfile(user.id);
   const dayNow = await dayFacts(user.id, profileNow, localDateFor(profileNow.timezone));
-  const cardRead = updated.length
-    ? await fullDayRead(user.id, profileNow, localDateFor(profileNow.timezone), { day: dayNow }).catch(() => null) : null;
+  // The card is TODAY's, so it rides only when something filled in was
+  // today's — dictation from days ago, filled in under the morning brief,
+  // must not swap yesterday's card for an empty today.
+  const todayNow = localDateFor(profileNow.timezone);
+  const touchesToday = updated.some(u => byId.get(String(u.id))?.local_date === todayNow);
+  const cardRead = touchesToday
+    ? await fullDayRead(user.id, profileNow, todayNow, { day: dayNow }).catch(() => null) : null;
 
   // Each entry with the numbers the record now holds for it, not the ones that
   // were passed in. Same rule as log and amend_last: the item's own figure
@@ -3340,7 +3349,11 @@ async function brief(args, user) {
     say: verdict || wholeDay?.say || `${date}: ${day.food.say} · ${day.training.say}`,
     note: (flags.length
       ? 'Care flags are up. They override the honesty doctrine — follow their guidance exactly and do not coach intake down. The flag leads. If they asked where the day stands, the receipt may still be read after it — it is factual record, not coaching — but nothing in it may become advice about eating less. No coach_day while a care flag stands — plain delivery; if they ask where their coach went, say coach_paused.say.'
-      : 'Deliver the verdict as written. It is already pitched to the bluntness they chose; do not soften it or add praise. Then read the receipt LINE BY LINE, both sides: each thing eaten with its own calories, then resting, training and work each with their figure, the two totals, the net. Every number comes off a receipt line — one figure each, never a range, never added up by you.' +
+      : (wholeDay
+        // No written verdict: the card IS the answer, and the receipt read
+        // line by line under it would say every figure twice.
+        ? 'There is no written verdict. Show the card, then from day_read.say only what the card does not carry — each goal with its percentage, what a session or shift was — never the card\'s figures twice, never a range, never added up by you.'
+        : 'Deliver the verdict as written. It is already pitched to the bluntness they chose; do not soften it or add praise. Then read the receipt LINE BY LINE, both sides: each thing eaten with its own calories, then resting, training and work each with their figure, the two totals, the net. Every number comes off a receipt line — one figure each, never a range, never added up by you.') +
         (coach ? ' If coach_day is present, follow coach_day.note: its one line, once, in its register, after the facts.' : '') +
         (paused ? ' A care flag stands today, so the coach is paused: no coach line; if they ask where it went, say coach_paused.say.' : '')) +
       (wholeDay ? ' ' + DAY_CARD_NOTE + (flags.length ? 'The flag still leads; the card comes after it.' : 'With no written verdict, the card leads.') : ''),
@@ -3358,13 +3371,13 @@ async function brief(args, user) {
 // every door that answers it, so log, get_day, brief, my_plan and whats_next
 // cannot state two different figures. Care flags are read here when the
 // caller has not already read them.
-async function leftFor(userId, profile, date, { day, flags = null, burn = null } = {}) {
+async function leftFor(userId, profile, date, { day, flags = null, burn = null, facts = null } = {}) {
   const today = localDateFor(profile.timezone);
   // Today only: the plan's target is TODAY's, and pricing a past day off it
   // would score last Tuesday against a target set this morning.
   if (date !== today) return null;
   const [f, careRange] = await Promise.all([
-    planFacts(userId),
+    facts ? Promise.resolve(facts) : planFacts(userId),
     flags ? Promise.resolve(null) : rangeFacts(userId, profile, addDays(today, -(CARE_WINDOW_DAYS - 1)), today),
   ]);
   const plan = planRead({ profile: f.profile, goals: f.goals, weightKg: f.weightKg });
@@ -3377,13 +3390,17 @@ async function fullDayRead(userId, profile, date, { day: known = null } = {}) {
   // The flags stand TODAY whatever date is read — "what did I eat on Aug 20"
   // must not lead with a warning that cleared weeks ago, nor miss one standing
   // now. A window is not a memory.
-  const [day, goals, range, careRange] = await Promise.all([
+  // One batch: with the day already in hand (every write door has it) the
+  // burn and the plan are read beside everything else, not after it.
+  const [day, goals, range, careRange, knownBalance, facts] = await Promise.all([
     known ? Promise.resolve(known) : dayFacts(userId, profile, date),
     getGoals(userId),
     rangeFacts(userId, profile, addDays(date, -29), date),
     date === today ? Promise.resolve(null) : rangeFacts(userId, profile, addDays(today, -(CARE_WINDOW_DAYS - 1)), today),
+    known ? balanceFor(userId, profile, date, known) : Promise.resolve(null),
+    date === today ? planFacts(userId).catch(() => null) : Promise.resolve(null),
   ]);
-  const balance = await balanceFor(userId, profile, date, day);
+  const balance = knownBalance || await balanceFor(userId, profile, date, day);
   const summary = summariseRange(range, profile);
   const scored = scoreGoals(goals, day, summary, profile);
   const week = weekSoFar(range.days, { today: date, ...weekTargets(profile) });
@@ -3392,7 +3409,7 @@ async function fullDayRead(userId, profile, date, { day: known = null } = {}) {
   // much should I eat" gets answered, and under a flag no figure of what is
   // left is ever quoted.
   const flags = careFlags(careRange || range, profile, { openDate: today });
-  const left = await leftFor(userId, profile, date, { day, flags, burn: balance?.known ? balance.calories_out : null }).catch(() => null);
+  const left = await leftFor(userId, profile, date, { day, flags, facts, burn: balance?.known ? balance.calories_out : null }).catch(() => null);
   return { day, balance, receipt, scored, week, flags, left,
            read: dayReadout({ day, balance, receipt, scored, week, date, today, flags, left }) };
 }
@@ -5336,19 +5353,19 @@ async function targetsFor(userId, profile, day = null) {
 async function balanceFor(userId, profile, date, day) {
   // Bodyweight for the burn calculation: today's if there is one, otherwise
   // the most recent — nobody weighs in daily and the maths should not stop.
-  let weightKg = day.body.weight_kg;
-  if (weightKg == null) {
-    const { data } = await supabase.from('wrought_events')
-      .select('detail').eq('user_id', userId).eq('event_type', 'weight')
-      .order('occurred_at', { ascending: false }).limit(1);
-    weightKg = data?.[0]?.detail?.value_kg ?? null;
-  }
   // A device that synced in the last three days is a device that normally
   // reports — for that account, a silent morning means "not sent yet", never
-  // "project a whole day instead".
-  const { data: conn } = await supabase.from('wrought_connections')
-    .select('last_sync_at').eq('user_id', userId).eq('mode', 'push')
-    .order('last_sync_at', { ascending: false, nullsFirst: false }).limit(1);
+  // "project a whole day instead". Both reads at once: neither needs the other.
+  const [weightKg, { data: conn }] = await Promise.all([
+    day.body.weight_kg != null ? Promise.resolve(day.body.weight_kg)
+      : supabase.from('wrought_events')
+        .select('detail').eq('user_id', userId).eq('event_type', 'weight')
+        .order('occurred_at', { ascending: false }).limit(1)
+        .then(({ data }) => data?.[0]?.detail?.value_kg ?? null),
+    supabase.from('wrought_connections')
+      .select('last_sync_at').eq('user_id', userId).eq('mode', 'push')
+      .order('last_sync_at', { ascending: false, nullsFirst: false }).limit(1),
+  ]);
   const lastSync = conn?.[0]?.last_sync_at ? new Date(conn[0].last_sync_at).getTime() : 0;
 
   return energyBalance({
@@ -5379,6 +5396,9 @@ async function energyBalanceTool(args, user) {
   return {
     date, ...balance,
     ...(cardRead ? { day_card: dayCard(cardRead.read, { explicit: true }) } : {}),
+    // The card carries the day under the flags that stand today, so the
+    // reply carries the flags and the rule for saying it.
+    ...(cardRead?.flags?.length ? { care_flags: cardRead.flags, care_flag_note: 'A care flag stands: quote no figure of what is left to eat and coach nothing down. The day itself is factual record.' } : {}),
     ...(targets ? { no_target_set: targets } : {}),
     logged: { food: day.food.say, training: day.training.say, steps: day.device.steps },
     // WHEN the watch's part was sent — "8,020 steps" at 7pm was a 6pm figure.

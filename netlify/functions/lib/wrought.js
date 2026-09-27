@@ -552,14 +552,18 @@ export async function dayFacts(userId, profile, date) {
   // fat and all the other nutrients — that should always do that, a total
   // always of everything you've eaten and broken down." Sugar, fibre and
   // saturated fat were on every stored row and summed nowhere.
+  // Each item rounded BEFORE it is summed, so the rows a card prints add up
+  // to the total printed under them — a model can store 100.4, and three of
+  // those read 100, 100, 100 over a total of 301.
+  const r = v => Math.round(num(v));
   const food = meals.reduce((a, e) => ({
-    calories:  a.calories  + num(e.detail?.calories),
-    protein_g: a.protein_g + num(e.detail?.protein_g),
-    carbs_g:   a.carbs_g   + num(e.detail?.carbs_g),
-    fat_g:     a.fat_g     + num(e.detail?.fat_g),
-    sugar_g:   a.sugar_g   + num(e.detail?.sugar_g),
-    fibre_g:   a.fibre_g   + num(e.detail?.fibre_g),
-    sat_fat_g: a.sat_fat_g + num(e.detail?.sat_fat_g),
+    calories:  a.calories  + r(e.detail?.calories),
+    protein_g: a.protein_g + r(e.detail?.protein_g),
+    carbs_g:   a.carbs_g   + r(e.detail?.carbs_g),
+    fat_g:     a.fat_g     + r(e.detail?.fat_g),
+    sugar_g:   a.sugar_g   + r(e.detail?.sugar_g),
+    fibre_g:   a.fibre_g   + r(e.detail?.fibre_g),
+    sat_fat_g: a.sat_fat_g + r(e.detail?.sat_fat_g),
   }), { calories: 0, protein_g: 0, carbs_g: 0, fat_g: 0, sugar_g: 0, fibre_g: 0, sat_fat_g: 0 });
   const foodEstimated = meals.some(e => e.estimated);
 

@@ -220,20 +220,55 @@ export function dayReadout({ day = null, balance = null, receipt = null, scored 
 //     watch and when it sent, a projection named as one;
 //   - under a care flag an unprompted reply carries neither the net nor the
 //     held target; a read somebody asked for carries both, as dayReadout does.
-const cell = s => String(s ?? '').replace(/\|/g, '\\|').replace(/[\r\n]+/g, ' ').trim();
+const cell = s => String(s ?? '').replace(/\\/g, '\\\\').replace(/\|/g, '\\|').replace(/[\r\n]+/g, ' ').trim();
 const grams = v => (n(v) == null ? '—' : `${money(v)}g`);
+// Every clock on the card reads the same way: "17:00" off the log becomes
+// "5:00pm", like the watch's "as of 6:01pm" beside it.
+const clock = at => {
+  const m = /^(\d{1,2}):(\d{2})$/.exec(String(at || ''));
+  if (!m) return at || '';
+  const h = Number(m[1]);
+  return `${h % 12 || 12}:${m[2]}${h < 12 ? 'am' : 'pm'}`;
+};
+const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const dayName = iso => {
+  const d = new Date(`${iso}T12:00:00Z`);
+  return Number.isNaN(d.getTime()) ? iso : `${DAYS[d.getUTCDay()]} ${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]}`;
+};
 
-function workLabel(read) {
+// Where the "work and moving about" figure came from — read off the
+// receipt's own inputs, so the row never names a shift the watch outranked,
+// never calls the watch's figure less the training "the watch", and never
+// credits the sedentary floor or a projection to the work.
+function workLabel(read, train) {
   const src = read.out?.source;
-  const work = (read.work || []).filter(w => w.calories != null);
-  const at = read.moved?.fresh?.at && !read.moved.fresh.final ? `, as of ${read.moved.fresh.at}` : '';
-  if ((src === 'logged' || src === 'logged_over_device') && work.length) {
-    return `work: ${work.map(w => `${w.what}${w.hours ? `, ${w.hours}h on task` : ''}`).join('; ')}`;
+  const of = (read.out?.lines || []).find(l => /^work/i.test(l.what))?.of || [];
+  const fresh = read.moved?.fresh;
+  const at = fresh?.at && !fresh.final ? `as of ${fresh.at}` : '';
+  const shifts = (read.work || []).filter(w => w.calories != null)
+    .map(w => `${w.what}${w.hours ? `, ${w.hours}h on task` : ''}`).join('; ');
+  const lessTrain = train > 0 ? ', less the training above' : '';
+  switch (src) {
+    case 'logged_over_device':
+      return `work: ${shifts}`;
+    case 'device': {
+      const watch = of.find(i => i.measured);
+      return train > 0 && watch
+        ? `the watch's ${money(watch.calories)}${at ? ` ${at}` : ''}, less the training above`
+        : `watch${at ? `, ${at}` : ''}`;
+    }
+    case 'logged':
+      return of.some(i => /activity level/i.test(i.what) && i.counted)
+        ? `projected from your activity level, which is above the work you logged${lessTrain}`
+        : `work: ${shifts}, plus the rest of the day at the sedentary floor${lessTrain}`;
+    case 'activity_level':
+      return `projected from your activity level — nothing measured it${lessTrain}`;
+    case 'awaiting_device':
+      return read.partial ? 'the watch has not sent today — nothing counted yet' : 'the watch sent nothing for this day';
+    default:
+      return 'nothing is measuring it';
   }
-  if (src === 'device') return `watch${at}`;
-  if (src === 'activity_level') return 'projected from your activity level — nothing measured it';
-  if (src === 'awaiting_device') return 'the watch has not sent today — nothing counted yet';
-  return 'nothing is measuring it';
 }
 
 export function dayCard(read, { explicit = false } = {}) {
@@ -242,56 +277,88 @@ export function dayCard(read, { explicit = false } = {}) {
   const inn = read.in || { items: [], total: 0 };
   const items = inn.items || [];
   const counted = items.some(it => n(it.calories) != null);
+  const has = k => items.some(it => n(it[k]) != null);
   const flagged = !!read.flagged;
   const out = [];
 
   // ── What was eaten ──────────────────────────────────────────────────────
-  out.push(`**${partial ? 'Today\'s calorie breakdown so far' : `Calorie breakdown · ${read.date}`}**`, '');
+  out.push(`**${partial ? 'Today\'s calorie breakdown so far' : `Calorie breakdown · ${dayName(read.date)}`}**`, '');
   if (items.length) {
     out.push('| Food | kcal | Protein | Carbs | Fat |', '|---|---:|---:|---:|---:|');
     for (const it of items) {
-      out.push(`| ${cell(`${it.what}${it.at ? ` (${it.at})` : ''}`)} | ${n(it.calories) == null ? 'not counted yet' : money(it.calories)} | ${grams(it.protein_g)} | ${grams(it.carbs_g)} | ${grams(it.fat_g)} |`);
+      out.push(`| ${cell(`${it.what}${it.at ? ` (${clock(it.at)})` : ''}`)} | ${n(it.calories) == null ? 'not counted yet' : money(it.calories)} | ${grams(it.protein_g)} | ${grams(it.carbs_g)} | ${grams(it.fat_g)} |`);
     }
-    const has = k => items.some(it => n(it[k]) != null);
     out.push(`| **Total** | **${counted ? money(inn.total) : 'not counted yet'}** | **${has('protein_g') ? grams(inn.protein_g) : '—'}** | **${has('carbs_g') ? grams(inn.carbs_g) : '—'}** | **${has('fat_g') ? grams(inn.fat_g) : '—'}** |`, '');
+    // Captions, each its own paragraph so no renderer runs them together.
     const bare = items.filter(it => n(it.protein_g) == null || n(it.carbs_g) == null || n(it.fat_g) == null).length;
     if (bare) out.push(bare === items.length
       ? '— means that figure is not on the item yet.'
-      : `— means that figure is not on the item yet: ${bare} of ${items.length} items have none, so those totals count only the items that carry them.`);
-    const extra = [inn.sugar_g != null ? `sugar ${money(inn.sugar_g)}g` : null, inn.fibre_g != null ? `fibre ${money(inn.fibre_g)}g` : null, inn.sat_fat_g != null ? `saturated fat ${money(inn.sat_fat_g)}g` : null].filter(Boolean);
-    if (extra.length) out.push(`${extra.join(' · ').replace(/^./, c => c.toUpperCase())}${bare ? ' (of the items that carry it)' : ''}.`);
-    if (inn.without_calories) out.push(`${inn.without_calories} item${inn.without_calories === 1 ? ' has' : 's have'} no calories on ${inn.without_calories === 1 ? 'it' : 'them'} yet, so the real total is higher.`);
+      : `— means that figure is not on the item yet: ${bare} of ${items.length} items ${bare === 1 ? 'has' : 'have'} none, so those totals count only the items that carry them.`, '');
+    // Sugar, fibre and saturated fat — only the ones some item carries. The
+    // day's sums start at zero, so a figure no item holds is a zero that was
+    // never there; it is left out, and a partial one says so.
+    const extra = [['sugar_g', 'sugar'], ['fibre_g', 'fibre'], ['sat_fat_g', 'saturated fat']]
+      .filter(([k]) => has(k))
+      .map(([k, label]) => `${label} ${money(inn[k])}g${items.every(it => n(it[k]) != null) ? '' : ' (only the items that carry it)'}`);
+    if (extra.length) out.push(`${extra.join(' · ').replace(/^./, c => c.toUpperCase())}.`, '');
+    if (inn.without_calories) out.push(`${inn.without_calories} item${inn.without_calories === 1 ? ' has' : 's have'} no calories on ${inn.without_calories === 1 ? 'it' : 'them'} yet, so the real total is higher.`, '');
   } else {
-    out.push(partial ? 'Nothing eaten is logged yet today.' : 'Nothing eaten was logged this day.');
+    out.push(partial ? 'Nothing eaten is logged yet today.' : 'Nothing eaten was logged this day.', '');
   }
-  out.push('');
 
   // ── The energy balance ──────────────────────────────────────────────────
   out.push(`**${partial ? 'Today\'s estimated energy balance' : 'Estimated energy balance'}**`, '');
   const notes = [];
+  const src = read.out?.source;
+  const fresh = read.moved?.fresh;
+  const watchSoFar = src === 'device' && partial && !fresh?.final;
+  // Only the resting half (and any training) is counted: the watch has not
+  // sent, or nothing measures the rest of the day. The real burn is higher,
+  // so a net here would read as eating over when somebody may be under.
+  const halfBurn = ['awaiting_device', 'none', 'training_only'].includes(src);
   if (read.out) {
-    const awaiting = read.out.source === 'awaiting_device';
+    const trainLine = (read.out.lines || []).find(l => /^training/i.test(l.what));
+    const train = n(trainLine?.calories) || 0;
     const trainSaid = (read.training || []).map(t => `${t.what}${t.minutes ? `, ${t.minutes} min` : ''}`).join('; ');
     out.push('| | kcal |', '|---|---:|');
     if (counted) out.push(`| Eaten | ${money(inn.total)} |`);
     for (const l of read.out.lines || []) {
-      const said = /^resting/i.test(l.what) ? '' : /^training/i.test(l.what) ? (trainSaid ? ` (${trainSaid})` : '') : ` (${workLabel(read)})`;
+      const said = /^resting/i.test(l.what) ? '' : /^training/i.test(l.what) ? (trainSaid ? ` (${trainSaid})` : '') : ` (${workLabel(read, train)})`;
       out.push(`| ${cell(`${l.what}${said}`)} | ${money(l.calories)} |`);
     }
-    out.push(`| **${awaiting ? 'Burn counted so far — resting only' : partial ? `Burn for the whole day${read.out.projected ? ', projected' : ''}` : 'Burn'}** | **${money(read.out.total)}** |`);
-    // NO NET off nothing eaten, off a resting-only burn, or — unprompted —
-    // under a care flag. Each of those is a number that reads as a deficit
-    // the person has not run.
+    const counts = `resting${train > 0 ? ' and training' : ''} only`;
+    const burnLabel = halfBurn
+      ? (partial && src === 'awaiting_device' ? `Burn counted so far — ${counts}` : `Burn counted — ${counts}`)
+      : watchSoFar
+        ? (fresh?.at ? `Burn so far — resting for the whole day, the watch as of ${fresh.at}` : 'Burn so far')
+        : partial ? `Burn for the whole day${read.out.projected ? ', projected' : ''}` : 'Burn';
+    out.push(`| **${burnLabel}** | **${money(read.out.total)}** |`);
+    // NO NET off nothing eaten, off a half burn, or — unprompted — under a
+    // care flag. Each is a number that reads as a deficit (or a surplus) the
+    // person has not run.
     const net = n(read.net);
-    if (net != null && counted && n(inn.total) > 0 && !awaiting && (!flagged || explicit)) {
+    if (net != null && counted && n(inn.total) > 0 && !halfBurn && (!flagged || explicit)) {
       out.push(`| **Net${partial ? ' so far' : ''}** | **${net < 0 ? `${money(-net)} down` : net > 0 ? `${money(net)} over` : 'level'}** |`);
     }
     out.push('');
-    if (awaiting) notes.push('No net yet: the watch has not sent today, so only the resting burn is counted.');
-    for (const s of read.set_aside || []) notes.push(`Not added: ${s.replace(/the total below/g, 'the total above')}`);
+    if (halfBurn && counted && n(inn.total) > 0) {
+      notes.push(src === 'awaiting_device'
+        ? `No net${partial ? ' yet' : ''}: the watch ${partial ? 'has not sent today' : 'sent nothing for this day'}, so only the ${counts.replace(' only', '')} burn is counted and the real figure is higher.`
+        : 'No net: nothing is measuring the rest of the day, so the real burn is higher than this.');
+    }
+    for (const s of read.set_aside || []) {
+      // Said once already, under the food table.
+      if (/you ate (has|have) no calories/.test(s)) continue;
+      notes.push(`Not added: ${s.replace(/log it with log_activity instead/, 'say so and it goes in as work instead')}`);
+    }
   } else {
     const miss = read.out_missing || [];
     out.push(`Calories out isn't known yet${miss.length ? ` — it needs ${miss.join(' and ')}` : ''}.`, '');
+  }
+  // A shift with no figure yet is on the record and counts for nothing —
+  // said, never left off the card.
+  for (const w of (read.work || []).filter(x => x.calories == null)) {
+    notes.push(`${w.what}${w.hours ? ` (${w.hours}h on task)` : ''}: not priced yet — it needs a recent weigh-in.`);
   }
 
   const mv = read.moved || {};
@@ -301,16 +368,21 @@ export function dayCard(read, { explicit = false } = {}) {
   }
   // What is left — and under a care flag the held line only on a read the
   // person ASKED for; an unprompted reply never carries the held target.
-  if (read.left?.short && (!read.left.withheld || explicit)) notes.push(`Left: ${read.left.short}`);
+  if (read.left?.short && (!read.left.withheld || explicit)) {
+    notes.push(`Left: ${read.left.short}${!read.left.withheld && inn.without_calories ? ` Plus ${inn.without_calories} item${inn.without_calories === 1 ? '' : 's'} with no calories yet, so the real figure left is lower.` : ''}`);
+  }
   if (read.week?.say) notes.push(`Week: ${read.week.say}`);
   // A list, so a strict markdown renderer keeps each on its own line.
   for (const x of notes) out.push(`- ${x}`);
   if (notes.length) out.push('');
-  out.push(`_Every figure is an estimate.${partial ? ' The day isn\'t over: the burn is the whole day, the food is only what\'s logged so far.' : ''}_`);
+  out.push(`_Every figure is an estimate.${!partial ? ''
+    : halfBurn ? ' The day isn\'t over: the food is only what\'s logged so far.'
+    : watchSoFar ? ` The day isn't over: resting is the whole day, the watch's part${fresh?.at ? ` is as of ${fresh.at}` : ' is only what it has sent'}, and the food is only what's logged so far.`
+    : ' The day isn\'t over: the burn is the whole day, the food is only what\'s logged so far.'}_`);
 
   return out.join('\n').replace(/\n{3,}/g, '\n\n').trim();
 }
 
 // How the card is to be shown — one sentence, shared by every reply that
 // carries it, so the instruction cannot drift between tools.
-export const DAY_CARD_NOTE = 'SHOW day_card EXACTLY AS WRITTEN — it is the layout the person asked to keep: the food table with each item\'s calories and macros and the totals, then the energy balance. Put it after your first line, as markdown, unchanged: never rebuild it, reorder it, drop a row, add a row or a figure of your own, or turn any number into a range. If more than one reply this turn carries day_card, show only the LATEST one, once. ';
+export const DAY_CARD_NOTE = 'SHOW day_card EXACTLY AS WRITTEN — it is the layout the person asked to keep: the food table with each item\'s calories and macros and the totals, then the energy balance. Put it after your first line, as markdown, unchanged: never rebuild it, reorder it, drop a row, add a row or a figure of your own, or turn any number into a range. If more than one reply this turn carries a day_card for the same day, show only the LATEST one, once. ';
