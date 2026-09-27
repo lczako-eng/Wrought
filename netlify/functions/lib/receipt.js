@@ -78,9 +78,9 @@ export function dayReceipt({ day = null, balance = null, date = null, today = nu
     protein_g: n(day.food?.protein_g),
     carbs_g: n(day.food?.carbs_g),
     fat_g: n(day.food?.fat_g),
-    sugar_g: day.food?.sugar_g != null ? n(day.food.sugar_g) : null,
-    fibre_g: day.food?.fibre_g != null ? n(day.food.fibre_g) : null,
-    sat_fat_g: day.food?.sat_fat_g != null ? n(day.food.sat_fat_g) : null,
+    // Only when some item carries them: the day's sums start at zero, so a
+    // figure nobody stated would read as "0g sugar".
+    ...Object.fromEntries(['sugar_g', 'fibre_g', 'sat_fat_g'].map(k => [k, inLines.some(l => l[k] != null && Number.isFinite(Number(l[k]))) ? n(day.food?.[k]) : null])),
     items: inLines.length,
     without_calories: n(day.food?.meals_uncounted),
     estimated: !!day.food?.estimated,
@@ -93,7 +93,7 @@ export function dayReceipt({ day = null, balance = null, date = null, today = nu
       out: null,
       net: null,
       partial,
-      say: receiptSay(inn, null, null, partial),
+      say: receiptSay(inn, null, null),
       note: 'Only the eating half can be shown — calories out needs the missing profile facts before the subtraction means anything. Say so rather than presenting the intake alone as if it were the whole picture.',
     };
   }
@@ -105,6 +105,10 @@ export function dayReceipt({ day = null, balance = null, date = null, today = nu
   // whole file exists to avoid.
   const t = balance.training_detail || {};
   const a = balance.logged_activity || {};
+  // How much of the day this burn covers, decided once (burnSpan) — whether a
+  // net can be given at all, and what has to be said beside it.
+  const span = burnSpan({ balance, day, partial });
+  const cav = netCaveat(span, { partial, training: n(balance.training_burn) });
 
   const outLines = [
     {
@@ -114,7 +118,9 @@ export function dayReceipt({ day = null, balance = null, date = null, today = nu
       // the figure the founder could not audit and stopped believing.
       ...(balance.resting_basis?.say ? { basis: balance.resting_basis.say } : {}),
       note: balance.resting_source === 'device'
-        ? 'your watch\'s own basal figure for today'
+        ? (span.restingWhole
+          ? 'your watch\'s own basal figure for today'
+          : `your watch's own basal, only what it had counted${span.at ? ` by ${span.at}` : ' so far'} — not the whole day`)
         : 'estimated from your height, weight, age and sex — the whole day, not what has been spent so far',
     },
     {
@@ -182,7 +188,9 @@ export function dayReceipt({ day = null, balance = null, date = null, today = nu
     setAside.push(`${inn.without_calories} thing${inn.without_calories === 1 ? '' : 's'} you ate ${inn.without_calories === 1 ? 'has' : 'have'} no calories on ${inn.without_calories === 1 ? 'it' : 'them'}, so the real intake is higher than the total below.`);
   }
 
-  const net = inn.total - out.total;
+  // No net off half a burn, or off a resting figure that is only part of the
+  // day: a number that reads as eating over when somebody may be well under.
+  const net = cav.show ? inn.total - out.total : null;
 
   // THE MATH, SHOWN. The founder, on being handed lines without the add-up:
   // "do the math, do the add-up — we have to see either plus or minus. My
@@ -193,7 +201,9 @@ export function dayReceipt({ day = null, balance = null, date = null, today = nu
   // can never argue with the receipt it sits on.
   const math = {
     out: `${out.lines.map(l => `${money(l.calories)} ${shortName(l.what)}`).join(' + ')} = ${money(out.total)} out`,
-    net: `${money(inn.total)} in − ${money(out.total)} out = ${net < 0 ? `${money(Math.abs(net))} down` : net > 0 ? `${money(net)} over` : 'level'}`,
+    net: net == null
+      ? `not worked out — ${cav.why}`
+      : `${money(inn.total)} in − ${money(out.total)} out = ${net < 0 ? `${money(Math.abs(net))} down` : net > 0 ? `${money(net)} over` : 'level'}`,
   };
 
   return {
@@ -205,14 +215,20 @@ export function dayReceipt({ day = null, balance = null, date = null, today = nu
     direction: balance.direction,
     projected_kg_per_week: balance.projected_kg_per_week,
     partial,
-    ...(partial ? { partial_note:
-      'Today is not over. The burn is the WHOLE day\'s figure while the food is only what has been logged so far, so the net will close up as they eat — it is not a deficit they have actually run.' } : {}),
+    ...(partial ? { partial_note: !cav.show
+      ? `Today is not over, and the burn is not whole yet: ${cav.why}. No net is given until it is — never work one out.`
+      : span.watchSoFar
+        ? `Today is not over. Resting is the whole day's figure, but the watch's part is only as of ${span.at || 'its last send'} and the food is only what has been logged so far, so the net will move as they eat and move — it is not a deficit they have actually run.`
+        : 'Today is not over. The burn is the WHOLE day\'s figure while the food is only what has been logged so far, so the net will close up as they eat — it is not a deficit they have actually run.' } : {}),
+    ...(span.short ? { short_note: `The watch stopped reporting for this day at ${span.at || 'before midnight'}, so the evening is missing from the burn: the real burn is higher and the real net further down.` } : {}),
     ...(setAside.length ? { set_aside: setAside } : {}),
     estimated: true,
-    say: receiptSay(inn, out, net, partial),
+    say: receiptSay(inn, out, net, cav),
     note:
       'READ THIS OUT AS A RECEIPT, line by line, not as a summary. Every line keeps its own number and the two totals go underneath, ' +
-      (partial ? 'SAY THAT TODAY IS NOT OVER whenever you quote the net: the burn is a whole-day figure and the food is only what has been logged so far, so a large-looking deficit is the day being incomplete rather than a deficit they have run. Never let it stand as a finished number — an overstated deficit is the one that tells somebody to eat less than they need. ' : '') +
+      (!cav.show ? `THERE IS NO NET HERE: ${cav.why}. Say that, and never work one out yourself. `
+        : partial ? 'SAY THAT TODAY IS NOT OVER whenever you quote the net: ' + (span.watchSoFar ? `resting is a whole-day figure, the watch's part is only as of ${span.at || 'its last send'}` : 'the burn is a whole-day figure') + ' and the food is only what has been logged so far, so a large-looking deficit is the day being incomplete rather than a deficit they have run. Never let it stand as a finished number — an overstated deficit is the one that tells somebody to eat less than they need. '
+        : span.short ? 'Say the watch stopped reporting early on this day, so the burn is short and the net is further down than it reads. ' : '') +
       'then the net. Do not round them differently, do not add them up yourself, and do not drop the lines and quote only the totals — ' +
       'the whole point is that they can be checked one at a time. ' +
       (setAside.length ? 'Say what was set aside and why — a correct figure that looks smaller than their own arithmetic reads as the log having been ignored. ' : '') +
@@ -220,6 +236,73 @@ export function dayReceipt({ day = null, balance = null, date = null, today = nu
       'THE BURN IS NEVER YOURS TO ESTIMATE. It comes only off these lines. If a piece is missing — a session with no minutes, a watch that has not synced — say exactly what is missing and ask for it, then log it and read the day again. Never fill the gap with a figure or a range of your own, at any size, under any framing. ' +
       'Every figure here is an estimate and is said to be one.',
   };
+}
+
+/**
+ * HOW MUCH OF THE DAY THE BURN COVERS — pure, and the one place it is decided,
+ * so the card, the whole-day read and the receipt cannot make three different
+ * calls about the same net.
+ *
+ *   half         only the resting half (and any training) is counted — the
+ *                watch has not sent, or nothing measures the rest of the day.
+ *                The real burn is higher, so a net would read as eating over.
+ *   restingWhole false when the resting figure is the watch's basal as it
+ *                stood at its last send (Health Auto Export's 3pm basal is
+ *                three-fifths of a day) and nothing carried it to midnight.
+ *   watchSoFar   a day still running whose "other" line is the watch's figure
+ *                as of its last send.
+ *   short        a finished day whose watch stopped reporting before midnight
+ *                — the evening is missing from the burn.
+ *   netOk        a net can be printed at all: never off half a burn, never off
+ *                a resting figure that is only part of the day.
+ */
+export function burnSpan({ balance = null, day = null, partial = false } = {}) {
+  const src = balance?.active_source ?? null;
+  const fresh = day?.device?.fresh || null;
+  const half = ['awaiting_device', 'none', 'training_only'].includes(src);
+  const deviceRest = balance?.resting_source === 'device';
+  const restingWhole = !partial || !deviceRest || !!day?.device?.resting_projected;
+  const watchSoFar = src === 'device' && partial && !fresh?.final;
+  const short = !partial && !!fresh?.short && (src === 'device' || deviceRest);
+  const at = fresh?.at || null;
+  return { src, half, restingWhole, watchSoFar, short, at, netOk: !!balance?.known && !half && restingWhole };
+}
+
+/**
+ * The day's burn when it can honestly be called the whole day — pure. Null
+ * when only half of it is counted, when the resting figure is the watch's so
+ * far, or when the watch's part is only as of its last send: "today's burn is
+ * about 2,479 for the whole day" beside a target is false on every one.
+ */
+export function wholeDayBurn({ balance = null, day = null, partial = false } = {}) {
+  if (!balance?.known) return null;
+  const span = burnSpan({ balance, day, partial });
+  return span.netOk && !span.watchSoFar && !span.short ? balance.calories_out : null;
+}
+
+/**
+ * What goes with the net — pure. `show` false means no net is printed at all
+ * and `why` says why in words a person reads; `tail` rides after a net that is
+ * printed ("so far — …", or the short watch). `training` is the counted
+ * training figure, so "resting only" is never said over a workout.
+ */
+export function netCaveat(span, { partial = false, training = 0 } = {}) {
+  const counts = `resting${training > 0 ? ' and training' : ''}`;
+  if (span.half) {
+    return { show: false, why: span.src === 'awaiting_device'
+      ? `the watch ${partial ? 'has not sent today' : 'sent nothing for this day'}, so only the ${counts} burn is counted and the real figure is higher`
+      : `nothing is measuring the rest of the day, so only the ${counts} burn is counted and the real figure is higher` };
+  }
+  if (!span.restingWhole) {
+    return { show: false, why: `the resting figure is only what your watch had counted${span.at ? ` by ${span.at}` : ' so far'}, not the whole day, so the real burn is higher` };
+  }
+  if (span.short) {
+    return { show: true, tail: `— the watch's last send for this day was ${span.at || 'before midnight'}, so the evening is missing from the burn and the real net is further down than this` };
+  }
+  if (!partial) return { show: true, tail: '' };
+  return { show: true, tail: span.watchSoFar
+    ? `so far — resting is the whole day, the watch's part is as of ${span.at || 'its last send'}, and the food is only what is logged yet`
+    : 'so far — the burn is the whole day, the food is only what is logged yet' };
 }
 
 // The equation reads as words a person says — "resting", not a column header.
@@ -344,7 +427,7 @@ function otherNote(balance, a) {
 // The receipt as something a person can hear or read straight through. Composed
 // here, like every other number in this server, so the model relays rather than
 // arranges.
-function receiptSay(inn, out, net, partial = false) {
+function receiptSay(inn, out, net, cav = { show: true, tail: '' }) {
   const lines = [];
 
   // Every item with all of its numbers, and the total in the same shape —
@@ -367,10 +450,14 @@ function receiptSay(inn, out, net, partial = false) {
 
   // The subtraction, written out with its plus or minus — never a bare verdict
   // whose working the reader has to reconstruct.
+  if (net == null) {
+    lines.push(`NET — not worked out: ${cav.why}`);
+    return lines.join('\n');
+  }
   lines.push(`NET — ${money(inn.total)} in − ${money(out.total)} out = `
     + (net < 0 ? `${money(Math.abs(net))} down`
      : net > 0 ? `${money(net)} over`
      : 'level')
-    + (partial ? ' so far — the burn is the whole day, the food is only what is logged yet' : ''));
+    + (cav.tail ? ` ${cav.tail}` : ''));
   return lines.join('\n');
 }

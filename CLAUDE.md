@@ -2842,6 +2842,101 @@ refused once, the other clean, the phone-only person still in the audience —
 because the first guard pinned both reads and passed with the phone half
 dropped from the result.
 
+### The layout he asked to keep — the day card, composed on the server
+
+`dayCard()` in `lib/dayread.js` + `day_card` on `log`, `get_day`,
+`log_activity`, `amend_last`, `structure_entries`, `energy_balance` and
+`brief`. 26 September: ChatGPT drew the founder's day on its own — a table of
+what he ate, each item's calories, the total underneath, then an *"energy
+balance"* card — and he said *"Love the format."* The next reply was a
+paragraph again: *"what about the layout from before like I asked her to keep
+— why don't you ever do what I ask?"*
+
+**He was right, and the reason is this file's oldest rule.** A layout the
+model invents is a layout the model can drop, and the numbers in it were the
+model's own. Nothing on the server had ever asked for it, so nothing kept it.
+
+- **The card is composed from `dayReadout`'s figures and nothing else**: the
+  items and totals are `in`, the burn rows are the receipt's three counted
+  lines (which sum to the total), the net is the receipt's, what is left is
+  `leftFor`'s. Nothing is added up in the function. Each item carries its
+  time, calories, protein, carbs and fat; the day's sugar, fibre and
+  saturated fat sit under the table — *"every item with all its numbers"*,
+  which the first version dropped and the review caught.
+- **A missing figure is never a zero — and the first version printed one.**
+  `n()` read `Number(null)` as 0, so *"had lunch"* with no calories became a
+  zero row, *"Eaten 0"* and a 2,975 deficit. A missing macro is a dash said to
+  be one, an item with no calories says *not counted yet*, and a day with no
+  calories counted has no Eaten row and no net. The tests run the real chain
+  (`energyBalance` → `dayReceipt` → `dayReadout` → `dayCard`) on the shapes
+  the database actually stores, because the first tests left the field out
+  instead of setting it to null and passed on the bug.
+- **Every burn row says where it came from**, read off the receipt's own
+  inputs: the shift when the logged work counted, *"plus the rest of the day
+  at the sedentary floor"* when that is part of it, *"the watch's 953 as of
+  6:01pm, less the training above"* rather than calling 335 the watch, a
+  projection as a projection. **A watch figure is only as of its last
+  send**, so that total reads *"Burn so far — resting for the whole day, the
+  watch as of 6:01pm"*, never *"the whole day"*.
+- **Half a burn gets no net.** With the watch not yet sent, or nothing
+  measuring the day at all, the total is *"resting (and training) only"* and
+  the net is withheld with the reason — the real burn is higher, so a net
+  would read as over when somebody may be under. The 8pm-close lesson, which
+  the first card had lost, and a second review found the version that fixed
+  it still said *"resting only"* over a figure that held a workout.
+- **Nothing eaten yet is not a deficit** — nor is a black coffee, nor an
+  unlogged day in the past. **Under a care flag an unprompted card carries
+  neither the net nor the held target** (and the log reply's structured
+  `left_today` stops carrying it too); a read somebody asked for carries
+  both, and `energy_balance` now carries the flags beside its card.
+- **On every write that is not a quiet capture**, read beside the nudge rather
+  than after it and caught, so a failure there never costs a write its
+  confirmation. The read is one batch when the day is in hand —
+  `balanceFor` and `planFacts` were each two serial queries and are one now.
+  `amend_last` carries the card; `structure_entries` does only when it filled
+  in something from TODAY, because dictation from days ago filled in under
+  the morning brief would otherwise swap yesterday's card for an empty today.
+  The note says to show the latest card for a day, once.
+- **Items add up to their total.** `dayFacts` rounds each item before it
+  sums, so three stored 100.4s read 100, 100, 100 over 300, not 301.
+- **Tool results, not descriptions.** A description reaches ChatGPT only
+  after a Refresh; a result is read on the next call. So the rule rides every
+  reply's `note` (*show day_card EXACTLY AS WRITTEN — never rebuild it, drop
+  a row, add a figure or turn a number into a range*), with the sheet,
+  `get_day`'s description and the GPT sheet as the belt.
+- **Markdown, because every chat client renders a table.** A pipe in what
+  somebody said is escaped, and the notes under the tables are a list so a
+  strict renderer keeps each on its own line.
+
+**The second review found the card right and the reply around it wrong.**
+The card withheld the net on half a burn while `day_read.say`, the words in
+the same reply, still printed *"2,179 down so far — the burn is the whole
+day"*. **A rule enforced on one surface of a reply is not enforced.**
+
+- **`burnSpan()` in `lib/receipt.js` makes the call once.** It decides
+  whether a net can be given and what must be said beside it. The receipt,
+  the whole-day read and the card all relay that one decision (`read.burn`),
+  so they cannot disagree about the same day.
+- **No net comes off a burn that is only part of the day.** That covers:
+  - half a burn (the watch has not sent, or nothing measures the day);
+  - **the watch's basal as it stood at its last send.** Health Auto Export's
+    basal is used as sent, so at 3pm it is about three-fifths of a day.
+    *"Net so far 5 over"* off that figure told somebody roughly 900 under
+    that they had eaten too much.
+  A basal carried to midnight is the whole day again.
+- **A finished day whose watch stopped at 6pm says the evening is missing.**
+  The total is labelled with the watch's last send, and a note says the real
+  net is further down.
+- **The burn is quoted beside the target only when it is the whole day's**
+  (`wholeDayBurn`), never a resting half called "the whole day".
+- **Zero sugar, fibre and saturated fat are gone from every surface.** They
+  had been removed from the card only. The day's sums start at zero, so
+  `dayFacts` now makes them null when no item carries one.
+- **`whats_next` withholds the held target under a flag.** *"I'm hungry"* is
+  unprompted, the same rule as `log`.
+- **The calendar rounds each item before summing,** as `dayFacts` does, so
+  the square and the card cannot differ by a calorie.
+
 ### The standing coach shapes the day — rhythm and register, never food, never more
 
 `STYLE_DAYS` in `lib/voices.js` + `coachDay()` / `coachRegister()` /
@@ -5573,7 +5668,7 @@ self-reporting scale removes the most-abandoned manual entry), then Strava.
 
 ## Conventions
 
-- `npm test` runs `test/harness.mjs` — 784 offline tests, no network, no database.
+- `npm test` runs `test/harness.mjs` — 785 offline tests, no network, no database.
   Run it before every push. It covers the JSON-RPC envelope (which fails as an
   uninformative "could not connect" inside ChatGPT) and all the arithmetic
   (which fails as a confidently wrong number in somebody's verdict).

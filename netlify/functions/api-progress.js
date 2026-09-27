@@ -16,6 +16,7 @@ import { orderInsight, earnedRoom, energyBalance, exerciseKey, deviceMatrix, wee
          weekSoFar, weekTargets, readiness, targetOptions, estimatedMax, liftTrend, readMovement, backfillDerivedSets, goalsToSet, rekeySets, resyncMuscles } from './lib/training.js';
 import { weeklyVolume } from './lib/volume.js';
 import { planRead, coachDay, coachPaused, leftToday } from './lib/plan.js';
+import { wholeDayBurn } from './lib/receipt.js';
 import { liveConnections } from './lib/providers.js';
 import { calibration } from './lib/adapt.js';
 import { recordCheck } from './lib/integrity.js';
@@ -628,7 +629,7 @@ export const handler = async (event) => {
   // helper and words the connector uses, so the screen and the conversation
   // quote one figure. Withheld, and said, under a care flag.
   const leftRead = isToday ? leftToday({
-    plan, eaten: today.food.calories, burn: balance.known ? balance.calories_out : null,
+    plan, eaten: today.food.calories, burn: wholeDayBurn({ balance, day: today, partial: true }),
     flags, open: true, uncounted: today.food.meals_uncounted || 0,
   }) : null;
 
