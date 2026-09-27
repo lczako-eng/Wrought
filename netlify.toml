@@ -233,6 +233,15 @@
   [headers.values]
     Cache-Control = "no-cache, no-store, must-revalidate"
 
+# The exercise pictures are an ES module the dashboard imports: the right
+# Content-Type or the import fails, and revalidated like the rest of the shell
+# so a redrawn figure reaches the installed app with the release.
+[[headers]]
+  for = "/exercise-pictures.js"
+  [headers.values]
+    Content-Type = "text/javascript; charset=utf-8"
+    Cache-Control = "no-cache, no-store, must-revalidate"
+
 # Directories fetch the icon cross-origin to render a listing, so it needs the
 # same open CORS the connector manifest gets.
 [[headers]]

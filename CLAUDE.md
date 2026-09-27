@@ -76,7 +76,7 @@ nothing else.
   MCP brief and the web dashboard cannot disagree. `api-progress.js` exists
   purely so the dashboard calls the same code rather than recomputing in JS.
 - **MCP server**: `netlify/functions/mcp.js` at `/mcp` — stateless Streamable
-  HTTP, JSON-RPC. 42 tools. Doctrines ship in `SERVER_INSTRUCTIONS`.
+  HTTP, JSON-RPC. 60 tools. Doctrines ship in `SERVER_INSTRUCTIONS`.
 - **Auth**: OAuth 2.1 (PKCE, dynamic client registration) so "Sign in with
   Wrought" appears in ChatGPT/Claude. Supabase session JWTs also accepted as a
   fallback. Everything secret is stored SHA-256 hashed.
@@ -1220,7 +1220,7 @@ copying a link into three pages.
 The smaller public doors use `public/shell.css`. It deliberately owns only the
 room — atmosphere, surface depth, safe areas and touch finish — while each page
 keeps its own layout and behaviour. `shell.css` and `app-info.json` are part of
-the service-worker shell, currently `wrought-shell-v13`. A public redesign that
+the service-worker shell, currently `wrought-shell-v22`. A public redesign that
 does not bump that name has not reached the installed product.
 
 **The cover page is the one from BEFORE the Forge 03 redesign.** Codex
@@ -2936,6 +2936,109 @@ day"*. **A rule enforced on one surface of a reply is not enforced.**
   unprompted, the same rule as `log`.
 - **The calendar rounds each item before summing,** as `dayFacts` does, so
   the square and the card cannot differ by a calorie.
+
+### The card you can see, and pictures nobody traced
+
+`show_workout` + `lib/views.js` + `lib/widgets.js` + `lib/widget_runtime.js`
++ `public/exercise-pictures.js` + `lib/pictures.js`. The founder, holding up
+ChatGPT drawing pictures in a chat: *"Why can't our Wrought do this — show you
+weightlifting techniques… I want it showing techniques."* One workout, drawn
+as an MCP Apps card where the host can draw one: each movement with a small
+figure doing the MOVEMENT and the curated library's one-line cue. Every other
+client reads `say` (every movement once, on one line) and `card_md`.
+
+- **The card never shows a weight.** Not from a live session, not from a
+  typed reference, not from a tradition — the view has no key for one.
+  `progressionCall`'s sentence is written in kilograms whatever the person's
+  units, and under a care flag an "add load" call is exactly the push a flag
+  withholds, so loads stay with `log_set` and the rack screen and the card
+  says so in one line. A routine with a typed reference is told it is on the
+  Trainer tab, never that none exists — two surfaces disagreeing.
+- **A picture shows the movement, never their form.** WROUGHT cannot see
+  anybody lift, so no drawing, label or cue says anything about technique
+  being right or wrong, and a test greps for the words. The cue is the
+  library's own line (or a written tradition's); a movement with no curated
+  cue gets none, and an advanced lifter is left alone. A figure drawn from the
+  movement PATTERN with generic kit says *"not your exact equipment"*.
+- **One view model, two renderers.** `workoutView` composes every figure as a
+  string; the widget and `workoutMarkdown` print it. The widget computes
+  nothing — not a count, not a percentage (*"Show all 7"* arrives written, and
+  the row budget that keeps the folded card inside a host's 400px is the
+  server's) — and a sentinel test turns every digit in the view into a letter
+  and asserts the card draws no digit of its own.
+- **Ids, never blobs.** The server stamps a picture id; the widget and the
+  dashboard draw from the id, checked against the list of drawings that exist.
+  No SVG travels in message data (a host may drop `_meta`, a raw SVG through
+  innerHTML is an injection surface, and ChatGPT re-renders months-old
+  messages with today's page — an id survives that, a blob does not).
+- **The card calls nothing.** `visibility: ['model']`, `widgetAccessible:
+  false`, no `tools/call`, no `ui/message`, no display-mode request: every tool
+  is callable from a widget by default, and a card that can call nothing cannot
+  be made to call `undo_last`. Its one outbound act is opening the rack screen,
+  only if the address starts `https://wrought.fit/`. Both CSP dialects are
+  empty, so it cannot fetch anything — not a signed progress-photo URL either.
+- **Escaped at both renderers.** HTML (text and attributes) in the widget,
+  Markdown in `card_md` — a routine named like a Markdown image would make a
+  chat client fetch a URL. Host theme variables go in through the CSSOM, and
+  only colour, font and radius.
+- **The page is served as text and tested as served.** The widget's one
+  `<script>` is composed from `String()` of self-contained functions, so the
+  harness runs that exact script in a bare `vm` context — the handshake, the
+  ChatGPT `window.openai` fallback, the teardown, a stranger's message
+  ignored. The `ui://` address carries the page's hash and any hash is
+  answered with today's page; a result with no view draws one neutral line,
+  never an old card. `resources/*` and the handshake need no sign-in, and an
+  auth outage can no longer take them down.
+- **Our own drawings, and the founder signs them off.** Joint-angle tables
+  through one forward-kinematic rig — hands solved onto a straight bar path,
+  feet held planted, a treadmill deck the feet rest on, the fly drawn from the
+  front because it cannot be seen side-on. A neutral figure (a circle for a
+  head, no face, no muscle), generic kit, no brand in a drawing or a label, no
+  coach ever drawn, no SVG file committed and no borrowed illustration set.
+  Two repetitions and it holds its pose — never `infinite` — and still under
+  reduced motion. A picture whose start is somebody standing upright (the
+  hinge, the squat, the press) holds the OTHER end (`hold: 'b'`), or three
+  still tiles in a list read as one movement. **A wrong pose teaches a wrong movement**, so every
+  drawing goes to the founder as start and end poses side by side before it
+  merges, the W tile's precedent. Eleven are drawn — every lift on his record
+  plus the back squat and the pulldown; the rest sit in `PICTURES_PENDING` and
+  resolve to no picture rather than the nearest wrong one.
+- **The lookup refuses what it is not sure of.** Library name first, then
+  ordered word rules that decide the variant before the base movement: a bench
+  dip is a dip, a walk in the park is not a treadmill, a pistol squat is not a
+  back squat, `hammer` never matches alone. Never merged into `exerciseKey`
+  (which must over-split for a load) or `muscleFor` (which may over-merge).
+- **On the dashboard the figures are still until tapped**, and the rack
+  screen's moves once when the movement on the rack changes — a trainer poll
+  repaint never replays it, and one in the middle of the repetitions carries
+  on from where they were rather than snapping the figure back mid-rep. The
+  routine tiles live inside folded rows, so no fold position moved; the live
+  checklist grows by the 96px figure.
+- **Three adversarial reviews ran the code and the drawings, and every finding
+  was the shape of a rule already written down.** Six drawings bent the elbow
+  BACKWARDS at the straight-arm end — four on the still tile — because the
+  two-link solver took whichever elbow was nearer a hint; near a straight arm
+  it now takes the one that flexes forward. The animation rules were global
+  to the page, so tapping one bench moved every bench (`.wp-play` scopes them
+  to the copy that is playing — the `@keyframes grow` lesson one level down).
+  The bent-over row held its bar eight units past the toes. The reverse pec
+  deck, rear-delt fly, straight-arm pulldown, single-leg RDL and supported
+  rows drew the opposite movement, and draw none now. On the card: the host's
+  theme never reached `color-scheme` (light text on a light page), a flagged
+  routine with a write-up folded to 431px, a running session folded the
+  movement on NOW behind "Show all", a finished-but-open session read
+  "set 5 of 4", a detail like *"sled at 60kg"* sat beside *"nothing here is a
+  weight"*, a routine with every movement taken out said *"no saved workouts"*,
+  the flag said *"Tap to review"* where a tap reviews nothing, the card named
+  `log_set` to a person, every ChatGPT globals change redrew it, and its
+  "Open the rack screen" opened the Record tab — `app.html` never read
+  `#trainer`. Each has a test that was broken on purpose and failed.
+- **Unverified in real hosts.** Rendering was checked against a hand-built
+  host and in Chromium only; whether ChatGPT Developer Mode and Claude draw it
+  is the founder's first test, and if either does not, `say` and `card_md`
+  still carry the whole workout. A tool change reaches ChatGPT only after a
+  Refresh. `show_day`, live loads on the card and ticking a set from it are the
+  next PR, deliberately.
 
 ### The standing coach shapes the day — rhythm and register, never food, never more
 
@@ -5668,7 +5771,7 @@ self-reporting scale removes the most-abandoned manual entry), then Strava.
 
 ## Conventions
 
-- `npm test` runs `test/harness.mjs` — 785 offline tests, no network, no database.
+- `npm test` runs `test/harness.mjs` — 835 offline tests, no network, no database.
   Run it before every push. It covers the JSON-RPC envelope (which fails as an
   uninformative "could not connect" inside ChatGPT) and all the arithmetic
   (which fails as a confidently wrong number in somebody's verdict).

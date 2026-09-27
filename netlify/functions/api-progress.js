@@ -29,6 +29,7 @@ import { athleteRows, athleteRead } from './lib/athlete.js';
 import { formWatch, cardioProgress } from './lib/form.js';
 import { nextNudge } from './lib/prompt.js';
 import { blockPosition } from './lib/library.js';
+import { pictureFor } from './lib/pictures.js';
 import { closeStaleSessions, workoutList, backfillCompletion, refileMisdated, refileMistypedActivity } from './lib/session.js';
 import { allowed } from './lib/membership.js';
 import { nutritionTotals, composition, macroMatrix, yearOverYear } from './lib/nutrition.js';
@@ -847,7 +848,8 @@ export const handler = async (event) => {
         // from the old default kept being read back as if somebody meant it.
         movements: (r.exercises || []).map(e => {
           const m = readMovement(e);
-          return { name: m.name, sets: m.sets, reps: m.reps, minutes: m.minutes, detail: m.detail, cue: m.cue };
+          return { name: m.name, sets: m.sets, reps: m.reps, minutes: m.minutes, detail: m.detail, cue: m.cue,
+            picture: pictureFor(m.name)?.id || null };
         }),
         sets: (r.exercises || []).reduce((a, e) => a + (Number(e.sets) || 0), 0),
         notes: r.notes || null,

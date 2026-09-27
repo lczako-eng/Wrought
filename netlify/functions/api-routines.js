@@ -32,6 +32,7 @@
 import { getAuthUser, supabase } from './lib/wrought.js';
 import { normaliseMovement, readMovement } from './lib/training.js';
 import { allowed } from './lib/membership.js';
+import { pictureFor } from './lib/pictures.js';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -83,7 +84,9 @@ export const handler = async (event) => {
       const shown = (r.exercises || []).map(readMovement);
       return {
         ...r,
-        exercises: shown,
+        // The drawing is chosen HERE and sent as an id; the page never picks a
+        // picture from a name.
+        exercises: shown.map(m => ({ ...m, picture: pictureFor(m.name)?.id || null })),
         // Only what is actually IN the session. A movement taken out still
         // shows on the list — that is the whole point of taking it out rather
         // than deleting it — but counting its sets would make the badge

@@ -174,6 +174,23 @@ export function warmupFor(plan = [], { minutes = null, limitations = [] } = {}) 
   };
 }
 
+/**
+ * What a movement asks for, as a person reads it — always from the RAW plan
+ * entry. `${sets}×${reps}` printed a treadmill walk as "null×null" (and the
+ * progress count, which works in numbers, as "0×null"), which reads as a
+ * broken row rather than twenty-five minutes of walking. Five places print a
+ * target; all five come through here.
+ */
+export function targetLabel(entry = {}) {
+  const e = entry || {};
+  const sets = Number(e.sets) || null, reps = e.reps != null && e.reps !== '' ? e.reps : null;
+  const minutes = Number(e.minutes) || null;
+  if (sets && reps != null) return `${sets}×${reps}`;
+  if (minutes) return `${minutes} min`;
+  if (sets) return `${sets} sets`;
+  return 'not set';
+}
+
 /** How much of the session is actually done — sets, not exercises. */
 export function sessionProgress(plan = [], setsDone = []) {
   const planned = plan.reduce((a, e) => a + (Number(e.sets) || 0), 0);
@@ -186,7 +203,7 @@ export function sessionProgress(plan = [], setsDone = []) {
       String(s.exercise || '').toLowerCase() === String(e.name || '').toLowerCase()).length;
     return {
       exercise: e.name,
-      target: `${target}×${e.reps}`,
+      target: targetLabel(e),
       sets: target,
       done: Math.min(done, target),
       complete: target > 0 && done >= target,

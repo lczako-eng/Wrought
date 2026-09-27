@@ -5060,7 +5060,11 @@ await test('a custom ChatGPT reaches the same tools by Actions, with the sheet i
   const profileTools = TOOLS.filter(t => t._meta?.['openai/profile']).map(t => t.name);
   assert.equal(profileTools.length, 1);
   assert.ok(!rest.includes(profileTools[0]) && !ACTION_TOOLS.includes(profileTools[0]));
-  assert.deepEqual(new Set([...ACTION_TOOLS, ...rest]), new Set(names.filter(n => !profileTools.includes(n))));
+  // …and a tool that draws a card: a custom GPT cannot render one, so there
+  // it would only repeat list_routines, in a description already at its cap.
+  const cardTools = TOOLS.filter(t => t._meta?.ui?.resourceUri).map(t => t.name);
+  assert.ok(cardTools.length >= 1 && cardTools.every(n => !rest.includes(n) && !ACTION_TOOLS.includes(n)));
+  assert.deepEqual(new Set([...ACTION_TOOLS, ...rest]), new Set(names.filter(n => !profileTools.includes(n) && !cardTools.includes(n))));
   assert.ok(ACTION_TOOLS.includes('log') && ACTION_TOOLS.includes('log_set') && ACTION_TOOLS.includes('get_profile') && ACTION_TOOLS.includes('brief'));
   // The document points at the real OAuth endpoints, and the input schema is
   // the tool's own, so the GPT and the connector argue over one shape.
@@ -9369,7 +9373,10 @@ await test('a failed write says the words back and does not lose them', () => {
   // else, and it is gone.
   const src = readFileSync(new URL('../netlify/functions/mcp.js', import.meta.url), 'utf8');
   const block = src.slice(src.indexOf("error: 'tool_failed'"), src.indexOf("error: 'tool_failed'") + 1600);
-  assert.match(block, /tool: params\.name/);
+  // The failure is composed in toolFailure, and the catch hands it the tool
+  // actually called — never a name of its own.
+  assert.match(block, /tool: name,/);
+  assert.match(src, /toolFailure\(params\.name, err\)/);
   assert.match(block, /detail: err\.message/);
   assert.match(block, /say:/, 'nothing human to relay');
   assert.match(block, /NOTHING WAS WRITTEN/);
@@ -16015,6 +16022,816 @@ await test('the day card is the layout the founder asked to keep — the food ta
   assert.match(SERVER_INSTRUCTIONS, /THE DAY CARD IS THE LAYOUT — KEEP IT\./);
   assert.match(SERVER_INSTRUCTIONS, /amend_last, structure_entries \(when it fills in today\), energy_balance and brief/);
   assert.match(SERVER_INSTRUCTIONS, /A quiet capture carries no card/);
+});
+
+// ── The card you can see, and pictures nobody traced ──────────────────────
+// The founder, holding up ChatGPT drawing pictures in a chat: "Why can't our
+// Wrought do this — show you weightlifting techniques." show_workout draws one
+// workout as an MCP Apps card, each movement with a small figure drawn from
+// joint angles in public/exercise-pictures.js. The card never shows a weight,
+// computes nothing, calls nothing, and every picture is an id on a list.
+
+group('The card you can see, and pictures nobody traced');
+
+const CARD = {
+  PIC: await import('../public/exercise-pictures.js'),
+  PICS: await import('../netlify/functions/lib/pictures.js'),
+  VIEWS: await import('../netlify/functions/lib/views.js'),
+  WIDG: await import('../netlify/functions/lib/widgets.js'),
+  WRT: await import('../netlify/functions/lib/widget_runtime.js'),
+  MCP: await import('../netlify/functions/mcp.js'),
+  WROUGHT: await import('../netlify/functions/lib/wrought.js'),
+  STYLE_R: await import('../netlify/functions/lib/style_routines.js'),
+  DESIGN: await import('../netlify/functions/lib/design.js'),
+  vm: await import('node:vm'),
+};
+// The card's script exactly as served — the one a host runs.
+CARD.script = CARD.WIDG.WIDGETS.workout.html.match(/<script>([\s\S]*)<\/script>/)[1];
+CARD.run = ({ openai } = {}) => {
+  const posted = [], listeners = {};
+  const cls = new Set();
+  const root = { innerHTML: '', classList: { add: c => cls.add(c), remove: c => cls.delete(c), contains: c => cls.has(c) }, querySelector: () => null, querySelectorAll: () => [] };
+  const parent = { postMessage: m => posted.push(JSON.parse(JSON.stringify(m))) };
+  const docEl = { props: {}, attrs: {}, style: { setProperty(k, v) { docEl.props[k] = v; } },
+    setAttribute(k, v) { docEl.attrs[k] = v; }, getBoundingClientRect: () => ({ width: 400, height: 320 }) };
+  const document = { getElementById: id => (id === 'wr-root' ? root : null), documentElement: docEl };
+  const window = { addEventListener: (t, fn) => { (listeners[t] ||= []).push(fn); }, openai };
+  // A real ResizeObserver reports once as soon as it observes — before any
+  // host has answered the handshake — so the stub does too.
+  const ctx = { window, document, parent, ResizeObserver: class { constructor(fn) { this.fn = fn; } observe() { this.fn([]); } } };
+  CARD.vm.createContext(ctx);
+  CARD.vm.runInContext(CARD.script, ctx);
+  const send = (data, source = parent) => (listeners.message || []).forEach(fn => fn({ source, data }));
+  const fire = (type, detail) => (listeners[type] || []).forEach(fn => fn({ detail }));
+  const render = view => { ctx.__v = view; return CARD.vm.runInContext('wrRenderWorkout(__v, { table: WR_PICTURES, ids: WR_PICTURE_IDS, svg: wpSvg })', ctx); };
+  return { posted, root, send, fire, ctx, docEl, render };
+};
+// The fixtures every card test reads: one per source, and one under a flag.
+{
+  const { workoutView } = CARD.VIEWS;
+  const { readMovement, planFromRoutine } = await import('../netlify/functions/lib/training.js');
+  const stier = [
+    { name: 'Bench press', sets: 3, reps: 8, rest_s: 120, load_kg: 102.5 },
+    { name: 'Seated row machine', sets: 3, reps: 10, rest_s: 90, load_kg: 102.5 },
+    { name: 'Incline barbell press', sets: 3, reps: 8 },
+    { name: 'Pec-deck/chest fly', sets: 2, reps: 16, rest_s: 60 },
+    { name: 'Hammer Strength shoulder press', sets: 3, reps: 10 },
+    { name: 'Romanian deadlift (Smith machine)', sets: 3, reps: 10 },
+    { name: 'Incline treadmill', minutes: 25, detail: 'level 10+, 2.5-3 mph' },
+    { name: 'Calf raise', sets: 4, reps: 12, off: true },
+  ].map(readMovement);
+  const inWorkout = stier.filter(m => !m.off);
+  const plan = planFromRoutine({ exercises: stier, tier: 'intermediate' }).map(e => ({ ...e, load_kg: 102.5 }));
+  const arnold = CARD.STYLE_R.styleRoutine('golden_era');
+  const flags = [{ flag: 'low_intake', detail: 'Under 1,200 on 4 of the last 7 logged days.' }];
+  CARD.fixtures = {
+    routine: workoutView({ source: 'routine', name: 'S-Tier', subtitle: 'About 55 minutes', notes: 'Heavy first.', movements: inWorkout, taken_out: 1 }),
+    tradition: workoutView({ source: 'tradition', name: arnold.name, subtitle: 'Not in your workouts yet · About 60 minutes', notes: arnold.notes, curated: true,
+      movements: arnold.exercises.map(e => ({ ...readMovement(e), load_kg: 102.5 })) }),
+    live: workoutView({ source: 'live', name: 'S-Tier', subtitle: 'Running now', aim: 'Beat 185 for 8', movements: plan,
+      live: { cursor: 1, done_here: 1 }, progress: { percent: 24, say: '24% through — 4 of 17 sets.' } }),
+    up_next: workoutView({ source: 'up_next', name: 'Leg day', subtitle: 'Up next · About 50 minutes', movements: [
+      { name: 'Back squat', sets: 5, reps: 5, rest_s: 180, load_kg: 102.5 }, { name: 'Romanian deadlift', sets: 3, reps: 8 }, { name: 'Lat pulldown', sets: 3, reps: 10 }].map(readMovement) }),
+    flagged: workoutView({ source: 'routine', name: 'S-Tier', movements: inWorkout, flags }),
+  };
+  CARD.reply = view => ({ view, card_md: CARD.VIEWS.workoutMarkdown(view), say: CARD.VIEWS.workoutSay(view), note: 'n', next_actions: [] });
+}
+
+// ── Plumbing ──────────────────────────────────────────────────────────────
+
+await test('the card is declared: resources advertised, show_workout carries its ui:// address, model-only and read-only', async () => {
+  const init = JSON.parse((await post(rpc('initialize', { protocolVersion: '2025-06-18' }))).body);
+  assert.ok(init.result.capabilities.resources, 'initialize must advertise resources, or no host reads the card');
+  const list = JSON.parse((await post(rpc('tools/list'))).body).result.tools;
+  const sw = list.find(t => t.name === 'show_workout');
+  assert.ok(sw, 'show_workout is listed');
+  assert.match(sw._meta.ui.resourceUri, /^ui:\/\/wrought\/workout-[0-9a-f]{10}\.html$/);
+  assert.deepEqual(sw._meta.ui.visibility, ['model'], 'a widget may call any tool whose visibility includes "app"');
+  assert.equal(sw._meta['openai/widgetAccessible'], false);
+  assert.equal(sw.annotations.readOnlyHint, true);
+  assert.equal(sw.inputSchema.additionalProperties, undefined, 'ChatGPT adds link_id to every tool when several accounts are connected');
+});
+
+await test('resources/list names exactly one page, served as text/html;profile=mcp-app', async () => {
+  const r = JSON.parse((await post(rpc('resources/list'))).body).result.resources;
+  assert.equal(r.length, 1);
+  assert.equal(r[0].mimeType, 'text/html;profile=mcp-app');
+  assert.equal(r[0].uri, CARD.WIDG.WIDGETS.workout.uri);
+});
+
+await test('resources/read serves the whole page, self-contained: both CSP dialects empty, no fixed domain', async () => {
+  const uri = CARD.WIDG.WIDGETS.workout.uri;
+  const c = JSON.parse((await post(rpc('resources/read', { uri }))).body).result.contents[0];
+  assert.equal(c.uri, uri);
+  assert.equal(c.mimeType, 'text/html;profile=mcp-app');
+  assert.ok(c.text.startsWith('<!DOCTYPE html>'));
+  assert.ok(c.text.includes('<meta charset="utf-8">'));
+  assert.deepEqual(c._meta.ui.csp, { connectDomains: [], resourceDomains: [] });
+  assert.deepEqual(c._meta['openai/widgetCSP'].connect_domains, []);
+  assert.deepEqual(c._meta['openai/widgetCSP'].resource_domains, []);
+  assert.equal(c._meta.ui.domain, undefined, 'a mismatched domain shows an error instead of the card on Claude');
+});
+
+await test('an old card address is answered with today\'s page; unknown and malformed ones are refused', async () => {
+  const stale = JSON.parse((await post(rpc('resources/read', { uri: 'ui://wrought/workout-deadbeef00.html' }))).body);
+  assert.equal(stale.result.contents[0].text, CARD.WIDG.WIDGETS.workout.html);
+  assert.equal(stale.result.contents[0].uri, 'ui://wrought/workout-deadbeef00.html');
+  const unknown = JSON.parse((await post(rpc('resources/read', { uri: 'ui://wrought/day-deadbeef00.html' }))).body);
+  assert.equal(unknown.error.code, -32002);
+  const bad = JSON.parse((await post(rpc('resources/read', { uri: 42 }))).body);
+  assert.equal(bad.error.code, -32602);
+  const tpl = JSON.parse((await post(rpc('resources/templates/list'))).body);
+  assert.deepEqual(tpl.result.resourceTemplates, []);
+});
+
+await test('the card\'s address carries the hash of the page, so a changed page is a new address', () => {
+  const { html, uri } = CARD.WIDG.WIDGETS.workout;
+  assert.equal(uri, 'ui://wrought/workout-' + crypto.createHash('sha256').update(html).digest('hex').slice(0, 10) + '.html');
+});
+
+await test('every tool that draws a card is served, its three addresses agree, and it is read-only', async () => {
+  const drawn = TOOLS.filter(t => t._meta?.ui?.resourceUri);
+  assert.ok(drawn.length >= 1);
+  for (const t of drawn) {
+    const u = t._meta.ui.resourceUri;
+    assert.equal(t._meta['ui/resourceUri'], u);
+    assert.equal(t._meta['openai/outputTemplate'], u);
+    assert.equal(t.annotations.readOnlyHint, true, `${t.name} draws a card and must not write`);
+    const r = JSON.parse((await post(rpc('resources/read', { uri: u }))).body);
+    assert.ok(r.result?.contents?.[0]?.text, `${t.name}'s card is not served`);
+  }
+});
+
+await test('an auth outage never takes the card\'s page down: only calling a tool asks who you are', async () => {
+  const { AuthUnavailable } = CARD.WROUGHT;
+  const down = { auth: async () => { throw new AuthUnavailable('lookup_failed'); } };
+  const call = (body, headers = { authorization: 'Bearer x' }) => handler({ httpMethod: 'POST', headers, body: JSON.stringify(body) }, {}, down);
+  for (const m of [rpc('initialize', { protocolVersion: '2025-06-18' }), rpc('tools/list'), rpc('resources/read', { uri: CARD.WIDG.WIDGETS.workout.uri })]) {
+    assert.equal((await call(m)).statusCode, 200, `${m.method} must not need a sign-in`);
+  }
+  assert.equal((await call(rpc('tools/call', { name: 'show_workout', arguments: {} }))).statusCode, 503);
+  // No token at all is still the sign-in challenge.
+  const anon = await handler({ httpMethod: 'POST', headers: {}, body: JSON.stringify(rpc('tools/call', { name: 'show_workout', arguments: {} })) });
+  assert.equal(anon.statusCode, 401);
+  assert.equal(CARD.MCP.needsAuth('tools/call'), true);
+  assert.equal(CARD.MCP.needsAuth('resources/read'), false);
+});
+
+await test('a card tool\'s structuredContent IS its text; every other tool stays text-only; a throw stays text-only', async () => {
+  const { toolResult, toolFailure } = CARD.MCP;
+  const out = CARD.reply(CARD.fixtures.routine);
+  const r = toolResult('show_workout', out);
+  assert.deepEqual(r.structuredContent, JSON.parse(r.content[0].text));
+  assert.equal(r.isError, false);
+  const plain = toolResult('get_day', { say: 'x' });
+  assert.equal(plain.structuredContent, undefined, 'Claude Code reads structuredContent INSTEAD of content — other tools must not change');
+  // The profile reply is unchanged: the bare contract in both places.
+  const me = { id: '9be0a0cb-3422-471e-abd7-3738858c792b', email: 'someone@example.com' };
+  const prof = await handleRpc({ jsonrpc: '2.0', id: 7, method: 'tools/call', params: { name: 'wrought_account', arguments: {} } }, me);
+  assert.deepEqual(Object.keys(prof.result).sort(), ['content', 'structuredContent']);
+  assert.deepEqual(prof.result.structuredContent, JSON.parse(prof.result.content[0].text));
+  // A card tool that throws: content only, which the card draws as one neutral line.
+  const failed = toolFailure('show_workout', new Error('boom'));
+  assert.equal(failed.structuredContent, undefined);
+  assert.equal(failed.isError, true);
+  assert.equal(JSON.parse(failed.content[0].text).error, 'tool_failed');
+  const src = decomment(readFileSync(new URL('../netlify/functions/mcp.js', import.meta.url), 'utf8'));
+  assert.match(src, /catch \(err\) \{\s*return rpcResult\(id, toolFailure\(params\.name, err\)\);/);
+});
+
+await test('the custom GPT\'s Actions door leaves the card tool out, and call_tool reads as it did before it existed', async () => {
+  const { openapi, ACTION_TOOLS, MAX_DESCRIPTION } = await import('../netlify/functions/actions.js');
+  const doc = openapi('https://wrought.fit');
+  const op = doc.paths['/actions/call_tool'].post;
+  const en = op.requestBody.content['application/json'].schema.properties.tool.enum;
+  const cards = TOOLS.filter(t => t._meta?.ui?.resourceUri).map(t => t.name);
+  for (const n of cards) assert.ok(!en.includes(n) && !ACTION_TOOLS.includes(n), `${n} reaches the GPT door`);
+  const before = TOOLS.filter(t => !t._meta?.['openai/profile'] && !cards.includes(t.name)).map(t => t.name).filter(n => !ACTION_TOOLS.includes(n));
+  const t = `Calls any WROUGHT tool not listed as its own operation, by name, with its arguments. Reaches: ${before.join(', ')}.`.replace(/\s+/g, ' ').trim();
+  const cut = t.length <= MAX_DESCRIPTION ? t : `${t.slice(0, MAX_DESCRIPTION - 1).trimEnd()}…`;
+  assert.equal(op.description, cut);
+});
+
+await test('the card\'s page loads nothing and reaches nowhere but wrought.fit', () => {
+  const html = CARD.WIDG.WIDGETS.workout.html;
+  for (const bad of ['<script src', '<link', '<img', 'fetch(', 'XMLHttpRequest', 'WebSocket', 'EventSource', 'localStorage', 'sessionStorage', 'eval(', 'new Function', 'import(']) {
+    assert.ok(!html.includes(bad), `the card's page contains ${bad}`);
+  }
+  for (const m of html.matchAll(/https:\/\/[^\s"'`)<]*/g)) assert.ok(m[0].startsWith('https://wrought.fit'), `the card names ${m[0]}`);
+});
+
+await test('the card calls no tool and posts nothing to the model', () => {
+  for (const bad of ['tools/call', 'callTool', 'ui/message', 'sendFollowUpMessage', 'ui/update-model-context', 'request-display-mode']) {
+    assert.ok(!CARD.script.includes(bad), `the card's script contains ${bad}`);
+  }
+});
+
+await test('the card fits: the page under 80,000 bytes, the largest reply under 20,000 characters', () => {
+  const bytes = Buffer.byteLength(CARD.WIDG.WIDGETS.workout.html);
+  assert.ok(bytes <= 80000, `the card's page is ${bytes} bytes`);
+  for (const [k, v] of Object.entries(CARD.fixtures)) {
+    const r = { jsonrpc: '2.0', id: 1, result: CARD.MCP.toolResult('show_workout', CARD.reply(v)) };
+    const n = JSON.stringify(r).length;
+    assert.ok(n <= 20000, `the ${k} reply is ${n} characters`);
+  }
+});
+
+// ── The bridge, run exactly as served ─────────────────────────────────────
+
+await test('the handshake: one ui/initialize, then initialized, then the card; strangers ignored; teardown answered', () => {
+  const s = CARD.run();
+  assert.equal(s.posted.length, 1, 'nothing may be posted before the host answers the handshake');
+  assert.equal(s.posted[0].method, 'ui/initialize');
+  assert.ok(s.posted[0].id !== undefined);
+  assert.equal(s.posted[0].params.protocolVersion, '2026-01-26');
+  s.send({ jsonrpc: '2.0', id: s.posted[0].id, result: { hostContext: { theme: 'light' } } });
+  const init = s.posted.find(m => m.method === 'ui/notifications/initialized');
+  assert.ok(init && init.id === undefined, 'initialized is a notification');
+  assert.equal(s.docEl.attrs['data-theme'], 'light');
+  s.send({ jsonrpc: '2.0', method: 'ui/notifications/tool-result', params: { content: [], structuredContent: { view: CARD.fixtures.routine } } });
+  assert.ok(s.root.innerHTML.includes('S-Tier'), 'the tool result draws the card');
+  const drawn = s.root.innerHTML;
+  s.send({ jsonrpc: '2.0', method: 'ui/notifications/tool-result', params: { structuredContent: { view: { ...CARD.fixtures.routine, title: 'Imposter' } } } }, { not: 'the host' });
+  assert.equal(s.root.innerHTML, drawn, 'a message from anywhere but the host changes nothing');
+  s.send({ jsonrpc: '2.0', id: 7, method: 'ui/resource-teardown', params: {} });
+  assert.ok(s.posted.some(m => m.id === 7 && m.result && Object.keys(m.result).length === 0 && !m.method));
+  // A link anywhere but wrought.fit is never opened.
+  const before = s.posted.length;
+  s.send({ jsonrpc: '2.0', method: 'ui/notifications/tool-result', params: { structuredContent: { view: { ...CARD.fixtures.routine, links: { rack: 'https://evil.example' } } } } });
+  assert.ok(!s.root.innerHTML.includes('data-wr-open'));
+  s.ctx.__post = m => s.posted.push(m);
+  assert.equal(CARD.vm.runInContext('wrOpen("https://evil.example", __post, () => 99)', s.ctx), false);
+  assert.ok(!s.posted.slice(before).some(m => m.method === 'ui/open-link'));
+  assert.equal(CARD.vm.runInContext('wrOpen("https://wrought.fit/app.html#trainer", __post, () => 99)', s.ctx), true);
+  assert.ok(s.posted.some(m => m.method === 'ui/open-link' && m.params.url === 'https://wrought.fit/app.html#trainer'));
+});
+
+await test('ChatGPT\'s window.openai draws the card at once, and set_globals redraws it', () => {
+  const s = CARD.run({ openai: { toolOutput: { view: CARD.fixtures.routine } } });
+  assert.ok(s.root.innerHTML.includes('S-Tier'), 'the card must draw with no bridge answer at all');
+  s.fire('openai:set_globals', { globals: { toolOutput: { view: CARD.fixtures.up_next } } });
+  assert.ok(s.root.innerHTML.includes('Leg day'));
+});
+
+await test('no view is one neutral line, never an old card; a view with fields it does not know still draws', () => {
+  const s = CARD.run();
+  s.send({ jsonrpc: '2.0', id: 1, result: {} });
+  s.send({ jsonrpc: '2.0', method: 'ui/notifications/tool-result', params: { structuredContent: { view: CARD.fixtures.routine } } });
+  s.send({ jsonrpc: '2.0', method: 'ui/notifications/tool-result', params: { content: [{ type: 'text', text: '{}' }] } });
+  assert.match(s.root.innerHTML, /^<p class="wr-none">Couldn't draw this one/);
+  assert.ok(!s.root.innerHTML.includes('S-Tier'));
+  const future = { ...CARD.fixtures.routine, v: 1, shiny: { x: 1 }, exercises: CARD.fixtures.routine.exercises.map(e => ({ ...e, sparkle: true })) };
+  assert.ok(s.render(future).includes('S-Tier'));
+});
+
+// ── The card computes nothing ─────────────────────────────────────────────
+
+await test('every figure on the card is the server\'s: with every digit in the view turned to a letter, no digit is drawn', () => {
+  const letters = 'abcdefghij';
+  const sentinel = v => (typeof v === 'string' ? v.replace(/\d/g, d => letters[d])
+    : Array.isArray(v) ? v.map(sentinel) : v && typeof v === 'object' ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, sentinel(x)])) : v);
+  const s = CARD.run();
+  for (const [k, view] of Object.entries(CARD.fixtures)) {
+    const html = s.render(sentinel(view));
+    const text = html.replace(/<svg[\s\S]*?<\/svg>/g, ' ').replace(/<[^>]*>/g, ' ')
+      .replace(/&#39;/g, "'").replace(/&quot;/g, '"').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
+    assert.ok(!/\d/.test(text), `the ${k} card drew a digit of its own: ${text.match(/.{0,30}\d.{0,30}/)?.[0]}`);
+  }
+});
+
+await test('the card\'s script does no arithmetic of its own', () => {
+  for (const bad of ['reduce(', 'toFixed(', 'toLocaleString(', 'Intl.', 'parseFloat(', 'parseInt(']) {
+    assert.ok(!CARD.script.includes(bad), `the card's script contains ${bad}`);
+  }
+  assert.ok(!/\.length\b/.test(String(CARD.WRT.wrRenderWorkout)), 'the renderer counts something');
+});
+
+await test('everything the card prints is escaped — text, attributes, and a picture id that is not on the list', () => {
+  const s = CARD.run();
+  const evil = '<img src=x onerror=alert(1)>';
+  const v = { ...CARD.fixtures.live, title: evil, notes: evil, aim: evil,
+    exercises: [{ ...CARD.fixtures.live.exercises[0], name: '" onmouseover=x "' }, { ...CARD.fixtures.live.exercises[1], picture: 'bench"><script>' }] };
+  const html = s.render(v);
+  assert.ok(!html.includes('<img'), 'markup in a name reached the page');
+  assert.ok(html.includes('&lt;img src=x onerror=alert(1)&gt;'));
+  assert.ok(!/"\s*onmouseover=/.test(html), 'a quote escaped an attribute');
+  assert.ok(!html.includes('<script'), 'a picture id smuggled markup');
+  const rows = html.split('<li').slice(1);
+  assert.ok(rows.length >= 2 && !rows[1].includes('<svg'), 'an id off the list drew a picture');
+  // Host theme values go in through the CSSOM, and only colour, font and radius.
+  s.send({ jsonrpc: '2.0', id: 1, result: { hostContext: { styles: { variables: { '--color-text-primary': 'red', '--evil': 'x', 'background': 'url(x)' } } } } });
+  assert.deepEqual(Object.keys(s.docEl.props), ['--color-text-primary']);
+});
+
+await test('the markdown card turns a routine named like an image into text, never a fetch', () => {
+  const v = CARD.VIEWS.workoutView({ source: 'routine', name: '![x](https://evil.example/p)', movements: [{ name: '[a](https://evil.example)', sets: 3, reps: 8 }], notes: '| a | b |' });
+  const md = CARD.VIEWS.workoutMarkdown(v);
+  assert.ok(!/(^|[^\\])!\[/.test(md), 'an image survived the markdown card');
+  assert.ok(!/(^|[^\\])\]\(/.test(md), 'a link survived the markdown card');
+  assert.ok(!/(^|[^\\])\|/.test(md), 'a pipe survived and could open a table');
+});
+
+// ── The workout view ──────────────────────────────────────────────────────
+
+await test('no weight anywhere on the card, from any source — and a typed reference is not denied', () => {
+  const walk = (o, path = '') => Object.entries(o || {}).flatMap(([k, v]) => [path + k, ...(v && typeof v === 'object' ? walk(v, `${path}${k}.`) : [])]);
+  for (const [k, v] of Object.entries(CARD.fixtures)) {
+    const r = CARD.reply(v);
+    for (const s of [JSON.stringify(v), r.say, r.card_md]) assert.ok(!s.includes('102.5'), `a weight reached the ${k} card`);
+    for (const key of walk(v)) {
+      const leaf = key.split('.').pop();
+      if (leaf === 'loads_line') continue;
+      assert.ok(!/load|weight|_kg$/.test(leaf), `the ${k} view has a key ${key}`);
+    }
+  }
+  assert.equal(CARD.fixtures.routine.loads_line, CARD.VIEWS.LOADS_TYPED, 'a routine with a typed reference must not claim it has none');
+  assert.equal(CARD.fixtures.up_next.loads_line, CARD.VIEWS.LOADS_TYPED);
+  const bare = CARD.VIEWS.workoutView({ source: 'routine', name: 'x', movements: [{ name: 'Bench press', sets: 3, reps: 8 }] });
+  assert.equal(bare.loads_line, CARD.VIEWS.LOADS_NONE);
+  assert.equal(CARD.fixtures.live.loads_line, CARD.VIEWS.LOADS_LIVE);
+});
+
+await test('a target reads as a person reads it: minutes for timed work, never null×null', async () => {
+  const { targetLabel } = await import('../netlify/functions/lib/warmup.js');
+  assert.equal(targetLabel({ minutes: 25 }), '25 min');
+  assert.equal(targetLabel({}), 'not set');
+  assert.equal(targetLabel({ sets: 3, reps: 8 }), '3×8');
+  assert.equal(targetLabel({ sets: 4 }), '4 sets');
+  assert.equal(sessionProgress([{ name: 'Incline treadmill', sets: null, reps: null, minutes: 25 }], []).exercises[0].target, '25 min');
+  const mcp = decomment(readFileSync(new URL('../netlify/functions/mcp.js', import.meta.url), 'utf8'));
+  const warm = decomment(readFileSync(new URL('../netlify/functions/lib/warmup.js', import.meta.url), 'utf8'));
+  assert.ok(!mcp.includes('sets}\\u00d7${'), 'mcp.js builds sets×reps by hand');
+  assert.ok(!warm.includes('${target}×${e.reps}'), 'sessionProgress builds its target by hand');
+  assert.ok(!/exercises: plan\.map\(e => `\$\{e\.name\} — \$\{e\.sets\}×/.test(mcp), 'start_session builds its targets by hand');
+  assert.match(mcp, /target: targetLabel\(e\),/, 'the checklist target goes through targetLabel');
+});
+
+await test('list_routines reads a routine the way the website does: taken-out movements off, minutes and setup kept', () => {
+  const src = decomment(readFileSync(new URL('../netlify/functions/mcp.js', import.meta.url), 'utf8'));
+  const fn = src.slice(src.indexOf('async function listRoutines('), src.indexOf('\nasync function', src.indexOf('async function listRoutines(') + 10));
+  assert.match(fn, /\.map\(readMovement\)/);
+  assert.match(fn, /\.filter\(m => !m\.off\)/);
+  assert.match(fn, /movements: inWorkout\.map\(m => `\$\{m\.name\} — \$\{targetLabel\(m\)\}/);
+  assert.ok(!/e\.sets\}\\u00d7/.test(fn));
+});
+
+await test('a credit only through the tradition\'s exact tail, and their edited copy is the one drawn', () => {
+  const { workoutView, traditionCopy } = CARD.VIEWS;
+  const g = workoutView({ source: 'routine', name: 'Golden-era volume (Arnold Schwarzenegger tradition)', movements: [{ name: 'Bench press', sets: 5, reps: 10 }] });
+  assert.equal(g.title, 'Golden-era volume');
+  assert.equal(g.credit, 'in the tradition of Arnold Schwarzenegger');
+  assert.equal(g.credit_name, 'Arnold Schwarzenegger');
+  const mine = workoutView({ source: 'routine', name: 'Arnold chest day', movements: [{ name: 'Bench press', sets: 5, reps: 10 }] });
+  assert.equal(mine.credit, null, 'a name that merely mentions a person credits nobody');
+  assert.equal(mine.title, 'Arnold chest day');
+  // Their copy, edited, wins over the written original.
+  const key = CARD.DESIGN.styleFrom('arnold');
+  const edited = { name: 'Golden-era chest and back (Arnold Schwarzenegger tradition)', exercises: [{ name: 'Incline barbell press', sets: 4, reps: 10 }] };
+  const hit = traditionCopy([{ name: 'S-Tier', exercises: [] }, edited], key);
+  assert.equal(hit, edited);
+  const v = workoutView({ source: 'tradition', name: hit.name, movements: hit.exercises });
+  assert.deepEqual(v.exercises.map(e => e.name), ['Incline barbell press']);
+  assert.equal(traditionCopy([{ name: 'Arnold chest day' }], key), null);
+  const src = decomment(readFileSync(new URL('../netlify/functions/mcp.js', import.meta.url), 'utf8'));
+  const fn = src.slice(src.indexOf('async function showWorkout('));
+  assert.ok(fn.indexOf('traditionCopy(routines, key)') > -1 && fn.indexOf('traditionCopy(routines, key)') < fn.indexOf('styleRoutine(key)'), 'their copy is looked for first');
+});
+
+await test('under a care flag the card leads with REVIEW and carries no coach voice, coach day, push or nudge', () => {
+  const v = CARD.fixtures.flagged;
+  assert.ok(v.flag && v.flag.title === 'REVIEW' && v.flag.say);
+  const html = CARD.run().render(v);
+  assert.ok(html.startsWith('<div class="wr-flag"'), 'the flag is not the first thing on the card');
+  assert.ok(CARD.VIEWS.workoutSay(v).startsWith(v.flag.say));
+  assert.ok(CARD.VIEWS.workoutMarkdown(v).startsWith('**REVIEW**'));
+  const keys = JSON.stringify(Object.values(CARD.fixtures)).match(/"[a-z_]+":/g).map(k => k.slice(1, -2));
+  for (const bad of ['voice', 'coach_day', 'push', 'nudge']) assert.ok(!keys.includes(bad), `a card carries ${bad}`);
+});
+
+await test('nothing on the card claims to see their form', () => {
+  const words = /\b(correct|proper|good|perfect) form\b/i;
+  const s = CARD.run();
+  const all = [
+    ...Object.values(CARD.fixtures).flatMap(v => [JSON.stringify(v), s.render(v), CARD.VIEWS.workoutMarkdown(v), CARD.VIEWS.workoutSay(v)]),
+    ...Object.values(CARD.PIC.PICTURES).map(p => p.label),
+    ...MOVEMENTS.map(m => m.cue || ''),
+    ...Object.values(CARD.STYLE_R.STYLE_ROUTINES).flatMap(r => r.exercises.map(e => e.cue || '')),
+    TOOLS.find(t => t.name === 'show_workout').description,
+  ];
+  for (const t of all) assert.ok(!words.test(t), `"${t.match(words)?.[0]}" appears on the card`);
+});
+
+await test('the credit\'s name is set at the title\'s size, never larger', () => {
+  const css = CARD.WRT.WIDGET_CSS;
+  const size = sel => css.match(new RegExp(`\\${sel}\\{[^}]*font-size:(var\\(--[a-z-]+\\))`))?.[1];
+  assert.ok(size('.wr-title'), 'the title has no size variable');
+  assert.equal(size('.wr-credit-name'), size('.wr-title'));
+});
+
+await test('show_workout\'s phrases are its own — none of them is claimed by another tool', () => {
+  const desc = TOOLS.find(t => t.name === 'show_workout').description;
+  const seg = desc.slice(desc.indexOf('workout: ') + 'workout: '.length, desc.indexOf('(The LIST'));
+  const phrases = seg.split(/',\s*'/).map(p => p.replace(/^\s*'|'\.?\s*$/g, '').trim().toLowerCase()).filter(Boolean);
+  assert.ok(phrases.length >= 5, `could not read the phrases: ${JSON.stringify(phrases)}`);
+  for (const name of ['list_routines', 'trainer_styles', 'get_day', 'energy_balance', 'session_status']) {
+    const other = TOOLS.find(t => t.name === name).description.toLowerCase();
+    for (const p of phrases) assert.ok(!other.includes(p), `"${p}" is also in ${name}`);
+  }
+  assert.match(TOOLS.find(t => t.name === 'list_routines').description, /show_workout/);
+  assert.match(TOOLS.find(t => t.name === 'trainer_styles').description, /show_workout/);
+  assert.match(SERVER_INSTRUCTIONS, /SEEING A WORKOUT: show_workout/);
+});
+
+// ── Pictures ──────────────────────────────────────────────────────────────
+
+await test('every library movement has a drawing or is waiting for one, and the founder\'s lifts all resolve', () => {
+  const { resolvePicture, pictureFor } = CARD.PICS;
+  const { PICTURE_IDS, PICTURES_PENDING } = CARD.PIC;
+  assert.ok(!PICTURE_IDS.some(id => PICTURES_PENDING.includes(id)), 'an id is both drawn and pending');
+  for (const m of MOVEMENTS) {
+    const r = resolvePicture(m.name);
+    assert.ok(r && r.grain === 'exact', `${m.name} does not resolve exactly`);
+    assert.ok(PICTURE_IDS.includes(r.id) || PICTURES_PENDING.includes(r.id), `${m.name} → ${r.id}, neither drawn nor pending`);
+    assert.equal(pictureFor(m.name)?.id ?? null, PICTURE_IDS.includes(r.id) ? r.id : null, `${m.name}: a pending picture was returned`);
+  }
+  // The founder's live record, every key it holds (queried read-only).
+  const founder = {
+    'bench press': 'bench', 'seated row machine': 'row-seated', 'hammer strength row': 'row-seated', 'incline press': 'bench-incline',
+    'row': 'row-bent', 'pec-deck chest fly': 'fly-machine', 'overhead press': 'press-standing', 'hammer strength shoulder press': 'press-machine',
+    'romanian deadlift rdl smith machine': 'rdl', 'incline treadmill walking': 'treadmill',
+    'incline treadmill level 12 at 2 5 mph': 'treadmill', 'incline treadmill incline 12 5 2 5 3 0 mph': 'treadmill',
+  };
+  for (const [k, id] of Object.entries(founder)) assert.equal(pictureFor(k)?.id, id, `${k} → ${pictureFor(k)?.id}`);
+  for (const id of ['squat-barbell', 'pulldown']) assert.ok(PICTURE_IDS.includes(id));
+  // Every id the lookup can return is either drawn or on the pending list.
+  const src = readFileSync(new URL('../netlify/functions/lib/pictures.js', import.meta.url), 'utf8');
+  const lib = src.slice(src.indexOf('const LIBRARY_PICTURE'), src.indexOf('};', src.indexOf('const LIBRARY_PICTURE')));
+  const ternary = [...src.matchAll(/\? '([a-z]+(?:-[a-z]+)*)' : '([a-z]+(?:-[a-z]+)*)'/g)].flatMap(m => [m[1], m[2]]);
+  const ids = new Set([...[...src.matchAll(/return '([a-z]+(?:-[a-z]+)*)'/g), ...lib.matchAll(/:\s*'([a-z]+(?:-[a-z]+)*)'/g)].map(m => m[1]), ...ternary]);
+  assert.ok(ids.size >= 30, `read only ${ids.size} ids out of the lookup`);
+  for (const id of ids) assert.ok(PICTURE_IDS.includes(id) || PICTURES_PENDING.includes(id), `the lookup can return ${id}, which is neither drawn nor pending`);
+});
+
+await test('the lookup refuses what it is not sure of: a walk is not a treadmill, a bench dip is a dip', () => {
+  const { resolvePicture } = CARD.PICS;
+  const must = { 'farmers walk': 'carry', 'walking lunge': 'lunge', 'incline treadmill level 12': 'treadmill', 'rowing machine': 'rower', 'bench dip': 'dip' };
+  for (const [n, id] of Object.entries(must)) assert.equal(resolvePicture(n)?.id, id, `${n} → ${resolvePicture(n)?.id}`);
+  for (const n of ['walk', 'outdoor walk', 'pistol squat', 'jump squat', 'overhead squat', 'hammer curl', 'leg curl', 'leg extension',
+    'lateral raise', 'crunch', 'turkish get-up', 'upright row', 'cable flye',
+    // The nearest drawing for each of these teaches the opposite movement: a
+    // reverse fly is the chest fly run backwards, a straight-arm pulldown never
+    // bends the elbow, a single-leg hinge stands on one leg, a supported row
+    // lies on a pad.
+    'reverse pec deck', 'Reverse Pec-Deck', 'rear delt fly machine', 'reverse fly machine', 'straight arm pulldown',
+    'Straight-arm pulldown', 'single leg rdl', 'single-leg romanian deadlift', 'one leg rdl', 'chest supported row', 'seal row']) {
+    assert.equal(resolvePicture(n), null, `${n} → ${JSON.stringify(resolvePicture(n))}`);
+  }
+  for (const n of ['pec deck', 'Pec-deck/chest fly', 'lat pulldown', 't-bar row']) assert.ok(resolvePicture(n), `${n} lost its drawing`);
+  assert.deepEqual(resolvePicture('dumbbell rdl'), { id: 'rdl', grain: 'pattern' });
+  assert.notEqual(resolvePicture('overhead carry')?.id?.startsWith('press'), true, 'an overhead carry is not a press');
+});
+
+await test('pictures stand apart: the key, the muscles and the library never import them', () => {
+  const read = f => readFileSync(new URL(`../netlify/functions/lib/${f}`, import.meta.url), 'utf8');
+  for (const f of ['training.js', 'muscles.js', 'library.js']) assert.ok(!/from '\.\/pictures\.js'/.test(read(f)), `${f} imports pictures.js`);
+  assert.ok(!/from '\.\/muscles\.js'/.test(read('pictures.js')), 'pictures.js imports muscles.js');
+});
+
+await test('every drawing: no text, no link, no image, never looping, still for reduced motion, wp- names, a plain label, under 8,000 bytes', () => {
+  const { PICTURE_IDS, PICTURES, pictureSvg } = CARD.PIC;
+  for (const id of PICTURE_IDS) {
+    for (const svg of [pictureSvg(id), pictureSvg(id, { still: true })]) {
+      for (const bad of ['<text', '<image', 'href', '<script', '<foreignObject', '<a ', 'infinite']) assert.ok(!svg.includes(bad), `${id} contains ${bad}`);
+      assert.ok(svg.includes('prefers-reduced-motion'), `${id} ignores reduced motion`);
+      for (const m of svg.matchAll(/class="([^"]*)"/g)) for (const tok of m[1].split(/\s+/)) assert.match(tok, /^wp-/, `${id} has a class ${tok}`);
+      for (const m of svg.matchAll(/\.([a-zA-Z][\w-]*)/g)) if (!/^\d/.test(m[1]) && svg.includes(`.${m[1]}{`)) assert.match(m[1], /^wp-/, `${id} styles .${m[1]}`);
+      assert.ok(Buffer.byteLength(svg) <= 8000, `${id} is ${Buffer.byteLength(svg)} bytes`);
+    }
+    assert.ok(!/\d/.test(PICTURES[id].label), `${id}'s label has a digit`);
+    assert.ok(!/hammer|strength|life ?fitness|technogym|cybex|precor|nautilus/i.test(PICTURES[id].label), `${id}'s label names a brand`);
+    assert.ok(pictureSvg(id).includes(`aria-label="${PICTURES[id].label}"`) && pictureSvg(id).includes(`<title>${PICTURES[id].label}</title>`));
+    assert.match(pictureSvg(id), / 4 alternate(-reverse)? both/, `${id} does not stop after two repetitions`);
+  }
+  assert.equal(pictureSvg('not-a-picture'), null);
+  assert.equal(pictureSvg.length <= 2, true, 'pictureSvg takes no label');
+});
+
+await test('every keyframe is its picture\'s own and collides with nothing on the page or the card', () => {
+  const { PICTURE_IDS, pictureSvg } = CARD.PIC;
+  const seen = new Set();
+  const theirs = new Set([...page('app.html').matchAll(/@keyframes\s+([\w-]+)/g), ...CARD.WRT.WIDGET_CSS.matchAll(/@keyframes\s+([\w-]+)/g)].map(m => m[1]));
+  for (const id of PICTURE_IDS) {
+    for (const m of pictureSvg(id).matchAll(/@keyframes\s+([\w-]+)/g)) {
+      assert.ok(m[1].startsWith(`wp-${id}-`), `${m[1]} is not ${id}'s`);
+      assert.ok(!seen.has(m[1]), `${m[1]} twice`);
+      assert.ok(!theirs.has(m[1]), `${m[1]} collides with the page`);
+      seen.add(m[1]);
+    }
+  }
+  assert.ok(seen.size > PICTURE_IDS.length, 'the pictures animate');
+});
+
+await test('a planted foot stays planted: the anchor wanders half a unit at most between keyframes', () => {
+  const { PICTURE_IDS, PICTURES, anchorDrift } = CARD.PIC;
+  let anchored = 0;
+  for (const id of PICTURE_IDS) {
+    if (!PICTURES[id].anchor && !PICTURES[id].floor) continue;
+    anchored++;
+    assert.ok(anchorDrift(id) <= 0.5, `${id} drifts ${anchorDrift(id)}`);
+  }
+  assert.ok(anchored >= 5);
+});
+
+await test('the dashboard draws only ids the server stamped, checks them, and a rack repaint never replays a figure', () => {
+  const app = decomment(page('app.html'));
+  assert.ok(!app.includes('pictureFor('), 'the page resolves a picture from a name');
+  assert.match(app, /data-pic-want="\$\{esc\(m\.picture\)\}"/, 'the routines panel reads the stamped picture');
+  assert.match(app, /picture: c\?\.picture \|\| null/, 'the rack screen reads the stamped picture');
+  assert.match(app, /mod\.PICTURE_IDS\.includes\(id\)/, 'the page draws an id it has not checked');
+  assert.match(app, /import\('\/exercise-pictures\.js'\)/);
+  for (const [f, pat] of [['api-routines.js', /picture: pictureFor\(m\.name\)\?\.id \|\| null/], ['api-progress.js', /picture: pictureFor\(m\.name\)\?\.id \|\| null/],
+    ['api-session.js', /picture: pictureFor\(current\.name\)\?\.id \|\| null/], ['api-session.js', /upcoming: upcoming\.map\(e => \(\{[^}]*picture: pictureFor\(e\.name\)/]]) {
+    assert.match(readFileSync(new URL(`../netlify/functions/${f}`, import.meta.url), 'utf8'), pat, `${f} does not stamp the picture`);
+  }
+  // setPicture, run: an unchanged id draws nothing; a live figure moves once.
+  const src = app.slice(app.indexOf('function setPicture('), app.indexOf('async function drawPictures('));
+  const make = new Function(`const rackPic = { id: null, at: 0 }; ${src}; return setPicture;`);
+  const setPicture = make();
+  const mod = { PICTURE_IDS: ['bench', 'rdl'], pictureSvg: (id, { still }) => `${id}:${still ? 'still' : 'moving'}`, pictureRunMs: () => 9600 };
+  const el = { dataset: { pic: 'bench' }, innerHTML: 'kept' };
+  setPicture(el, 'bench', mod, { animate: true });
+  assert.equal(el.innerHTML, 'kept', 'an unchanged id repainted the figure');
+  const a = { dataset: {}, innerHTML: '' }; setPicture(a, 'rdl', mod, { animate: true, now: 1000 });
+  const b = { dataset: {}, innerHTML: '' }; setPicture(b, 'rdl', mod, { animate: true, now: 1000 });
+  assert.equal(a.innerHTML, 'rdl:moving');
+  assert.equal(b.innerHTML, 'rdl:still', 'a repaint of the same movement replayed it');
+  // A repaint in the middle of the repetitions carries on from where they
+  // were — the rest clock repaints every five seconds, and drawing the figure
+  // still there snapped it back to its pose mid-rep. After them, still.
+  const anims = [{ currentTime: 0 }, { currentTime: 0 }];
+  const mid = { dataset: {}, innerHTML: '', getAnimations: () => anims };
+  setPicture(mid, 'rdl', mod, { animate: true, now: 6000 });
+  assert.equal(mid.innerHTML, 'rdl:moving', 'a repaint mid-rep froze the figure');
+  assert.deepEqual(anims.map(x => x.currentTime), [5000, 5000], 'a repaint mid-rep restarted the figure');
+  const over = { dataset: {}, innerHTML: '', getAnimations: () => [] };
+  setPicture(over, 'rdl', mod, { animate: true, now: 11000 });
+  assert.equal(over.innerHTML, 'rdl:still', 'a repaint after the repetitions replayed them');
+  const c = { dataset: {}, innerHTML: '', hidden: false }; setPicture(c, 'bench"><x', mod);
+  assert.equal(c.innerHTML, '');
+  assert.ok(!/\.wp-[\w-]+\s*[{,]/.test(app.replace(/<script[\s\S]*?<\/script>/g, '')), 'the page styles the drawings\' own classes');
+  assert.equal((app.match(/^\.expic \{/gm) || []).length, 1, '.expic is defined once');
+});
+
+await test('no drawing is a committed file, and nothing names a borrowed source', () => {
+  const svgs = [];
+  const walk = d => { for (const e of readdirSync(d, { withFileTypes: true })) { const p = path.join(d, e.name); if (e.isDirectory()) walk(p); else if (e.name.endsWith('.svg')) svgs.push(path.relative('public', p)); } };
+  walk('public');
+  assert.deepEqual(svgs, ['icon.svg']);
+  const hits = [];
+  const scan = d => { for (const e of readdirSync(d, { withFileTypes: true })) { const p = path.join(d, e.name); if (e.isDirectory()) { if (e.name !== 'node_modules') scan(p); } else if (/\.(js|mjs|html|css|json|txt)$/.test(e.name) && /everkinetic|free-exercise-db/i.test(readFileSync(p, 'utf8'))) hits.push(p); } };
+  scan('public'); scan('netlify');
+  assert.deepEqual(hits, []);
+});
+
+await test('the pictures reach the installed app: in the shell, served as a module, linted', () => {
+  const sw = readFileSync(new URL('../public/sw.js', import.meta.url), 'utf8');
+  assert.match(sw, /'\/exercise-pictures\.js'/);
+  const toml = readFileSync(new URL('../netlify.toml', import.meta.url), 'utf8');
+  assert.match(toml, /for = "\/exercise-pictures\.js"\s*\[headers\.values\]\s*Content-Type = "text\/javascript; charset=utf-8"/);
+  assert.match(readFileSync(new URL('../package.json', import.meta.url), 'utf8'), /undeclared\.mjs[^"]*public\/exercise-pictures\.js/);
+});
+
+// ── Review fixes: the card, the view and the drawings ─────────────────────
+
+await test('the host\'s theme reaches color-scheme, so the text is never drawn in the page\'s own colour', () => {
+  const s = CARD.run();
+  s.send({ jsonrpc: '2.0', id: s.posted[0].id, result: { hostContext: { theme: 'light' } } });
+  assert.equal(s.docEl.style.colorScheme, 'light', 'a light host on a dark phone drew light text on a light page');
+  s.send({ jsonrpc: '2.0', method: 'ui/notifications/host-context-changed', params: { theme: 'dark' } });
+  assert.equal(s.docEl.style.colorScheme, 'dark');
+  s.send({ jsonrpc: '2.0', method: 'ui/notifications/host-context-changed', params: { theme: 'sepia' } });
+  assert.equal(s.docEl.style.colorScheme, 'dark', 'an unknown theme name reached the page');
+  const o = CARD.run({ openai: { theme: 'light', toolOutput: { view: CARD.fixtures.routine } } });
+  assert.equal(o.docEl.style.colorScheme, 'light', 'ChatGPT\'s theme never reached color-scheme');
+});
+
+await test('only a NEW tool output redraws a ChatGPT card — the theme, the height and a fresh copy of the same card leave it alone', () => {
+  const s = CARD.run({ openai: { toolOutput: { view: CARD.fixtures.routine } } });
+  s.root.innerHTML = 'OPENED';
+  s.fire('openai:set_globals', { globals: { maxHeight: 480 } });
+  s.fire('openai:set_globals', { globals: { theme: 'dark' } });
+  s.fire('openai:set_globals', { globals: { toolOutput: JSON.parse(JSON.stringify({ view: CARD.fixtures.routine })) } });
+  assert.equal(s.root.innerHTML, 'OPENED', 'a globals change that brought no new card redrew it — the figure replayed and the opened row shut');
+  s.fire('openai:set_globals', { globals: { toolOutput: { view: CARD.fixtures.up_next } } });
+  assert.ok(s.root.innerHTML.includes('Leg day'), 'a new card never drew');
+  // A new card starts folded, whatever the last one was opened to.
+  s.root.classList.add('wr-all');
+  s.send({ jsonrpc: '2.0', method: 'ui/notifications/tool-result', params: { structuredContent: { view: CARD.fixtures.routine } } });
+  assert.ok(!s.root.classList.contains('wr-all'), 'the new card arrived unfolded, with no "Show all" and every row open');
+});
+
+await test('a running workout keeps the movement on now in view, and a finished one still open reads as done', async () => {
+  const { workoutView, liveInput, workoutSay } = CARD.VIEWS;
+  const { readMovement } = await import('../netlify/functions/lib/training.js');
+  const plan = ['Bench press', 'Seated row machine', 'Incline barbell press', 'Pec-deck/chest fly', 'Hammer Strength shoulder press',
+    'Overhead press', 'Romanian deadlift', 'Lat pulldown'].map(name => readMovement({ name, sets: 3, reps: 8 }));
+  const v = workoutView({ ...liveInput({ name: 'S-Tier', plan, cursor_index: 5, aim: 'Beat 185' }, [{ exercise: 'Overhead press' }]), flags: [] });
+  const cur = v.exercises.find(e => e.status === 'current');
+  assert.equal(cur.name, 'Overhead press');
+  assert.equal(cur.folded, false, 'the movement on now was folded behind "Show all"');
+  assert.equal(v.exercises.filter(e => !e.folded).length, v.visible_rows);
+  const html = CARD.run().render(v);
+  assert.ok(!/class="wr-row wr-current[^"]*wr-more/.test(html), 'the card hid the current row');
+  // A view from before the server said which rows fold still folds from the bottom.
+  const old = { ...CARD.fixtures.routine, exercises: CARD.fixtures.routine.exercises.map(({ folded, ...e }) => e) };
+  assert.equal((CARD.run().render(old).match(/class="wr-row[^"]*\bwr-more\b/g) || []).length, old.exercises.length - old.visible_rows);
+  // Every set in and no end_session yet: the cursor sits past the plan.
+  const two = [readMovement({ name: 'Bench press', sets: 4, reps: 8 }), readMovement({ name: 'Barbell row', sets: 4, reps: 8 })];
+  const sets = [...Array(4).fill({ exercise: 'Bench press' }), ...Array(4).fill({ exercise: 'Barbell row' })];
+  const done = workoutView({ ...liveInput({ name: 'Push', plan: two, cursor_index: 2 }, sets), flags: [] });
+  assert.deepEqual(done.exercises.map(e => e.status), ['done', 'done'], 'a finished session ticked a movement as current');
+  const said = workoutSay(done) + CARD.VIEWS.workoutMarkdown(done);
+  assert.ok(!/set 5 of 4|Now:/.test(said), `a finished session reads as still going: ${said.slice(0, 160)}`);
+  // A current movement with every set in never counts past its own sets.
+  const over = workoutView({ ...liveInput({ name: 'Push', plan: two, cursor_index: 1 }, sets), flags: [] });
+  assert.equal(over.exercises[1].sets_text, 'all 4 sets in');
+  const src = decomment(readFileSync(new URL('../netlify/functions/mcp.js', import.meta.url), 'utf8'));
+  const fn = src.slice(src.indexOf('async function showWorkout('), src.indexOf('\nasync function', src.indexOf('async function showWorkout(') + 10));
+  assert.match(fn, /liveInput\(session, /, 'show_workout builds its own live input again');
+});
+
+await test('the folded card fits a chat host: two rows is the floor, under a REVIEW banner with a write-up above it', () => {
+  const { workoutView, VISIBLE_ROWS } = CARD.VIEWS;
+  const flags = [{ flag: 'very_low_intake', detail: 'Under 1,200 on 4 of the last 7 logged days.', needs_review: true, evidence_dates: ['2026-09-20', '2026-09-21'] }];
+  const ms = CARD.fixtures.routine.exercises.map(e => ({ name: e.name, sets: 3, reps: 8 }));
+  const v = workoutView({ source: 'routine', name: 'S-Tier', subtitle: 'About 55 minutes', notes: 'Heavy first.', movements: ms, flags });
+  assert.equal(v.visible_rows, 2, `a flagged routine with notes shows ${v.visible_rows} rows — 431px at 360 with three`);
+  const live = workoutView({ source: 'live', name: 'S-Tier', aim: 'Beat 185', movements: ms, flags, live: { cursor: 1, done_here: 0 }, progress: { percent: 5, say: '5% through.' } });
+  assert.equal(live.visible_rows, 2);
+  assert.ok(VISIBLE_ROWS - 4 < 2, 'the floor never binds, so this guards nothing');
+});
+
+await test('a weight typed into the setup text is a typed reference: kept off the card, and the card says where it is', () => {
+  const { workoutView, workoutMarkdown, LOADS_TYPED, LOADS_NONE, LOADS_LIVE, detailForCard } = CARD.VIEWS;
+  const sled = workoutView({ source: 'routine', name: 'Legs', movements: [{ name: 'Sled push', sets: 4, reps: 20, detail: 'sled at 60kg' }] });
+  assert.equal(sled.exercises[0].detail, 'sled');
+  assert.equal(sled.loads_line, LOADS_TYPED, 'a card showing "at 60kg" said nothing here is a weight');
+  const bare = workoutView({ source: 'routine', name: 'Push', movements: [{ name: 'Bench press', sets: 3, reps: 8, detail: 'at 185' }] });
+  assert.equal(bare.exercises[0].detail, null);
+  assert.equal(bare.loads_line, LOADS_TYPED);
+  for (const v of [sled, bare]) assert.ok(!/60|185/.test(JSON.stringify(v) + workoutMarkdown(v)), 'the typed weight reached the card');
+  const live = workoutView({ source: 'live', name: 'Legs', movements: [{ name: 'Sled push', sets: 4, reps: 20, detail: 'sled @ 135 lb' }], live: { cursor: 0, done_here: 0 } });
+  assert.equal(live.loads_line, LOADS_LIVE);
+  assert.ok(!/135/.test(JSON.stringify(live)), 'a live card showed the typed weight beside "the card never shows one"');
+  // Setup text that is not a weight is theirs, word for word.
+  const walk = workoutView({ source: 'routine', name: 'S', movements: [{ name: 'Incline treadmill', minutes: 25, detail: 'level 10+, 2.5-3 mph' }] });
+  assert.equal(walk.exercises[0].detail, 'level 10+, 2.5-3 mph');
+  assert.equal(walk.loads_line, LOADS_NONE);
+  assert.deepEqual(detailForCard('sled at 60kg, 20m pushes'), { detail: 'sled, 20m pushes', held: true });
+  assert.deepEqual(detailForCard('incline 12.5'), { detail: 'incline 12.5', held: false });
+});
+
+await test('a workout with every movement taken out says so — never "no saved workouts"', () => {
+  const { workoutView, workoutSay, workoutNext, EMPTY_SAY } = CARD.VIEWS;
+  const v = workoutView({ source: 'routine', name: 'S-Tier', movements: [], taken_out: 8 });
+  assert.equal(v.state, 'none');
+  assert.notEqual(v.empty, EMPTY_SAY, 'a workout that is on file read as none saved');
+  assert.match(workoutSay(v), /S-Tier/);
+  assert.match(workoutSay(v), /taken out/);
+  assert.equal(v.taken_out_line, '8 taken out of this workout');
+  const next = workoutNext(v, { name: 'S-Tier' }).join(' ');
+  assert.ok(!/design_workout/.test(next), 'the reply offered to build a workout they already have');
+  assert.match(next, /app\.html#trainer/);
+  assert.equal(workoutView({ source: 'up_next', movements: [] }).empty, EMPTY_SAY);
+});
+
+await test('rest belongs to sets: timed work, a movement with no sets and the retired default print none', async () => {
+  const { workoutView } = CARD.VIEWS;
+  const { readMovement } = await import('../netlify/functions/lib/training.js');
+  const v = workoutView({ source: 'routine', name: 'S', movements: [
+    readMovement({ name: 'Incline treadmill walk', sets: 3, reps: 8 }),
+    readMovement({ name: 'Incline treadmill', minutes: 25 }),
+    readMovement({ name: 'Mystery machine' }),
+    readMovement({ name: 'Bench press', sets: 3, reps: 8, rest_s: 150 }),
+  ].map(m => (m.name === 'Mystery machine' ? { ...m, sets: null, reps: null } : m)) });
+  assert.deepEqual(v.exercises.map(e => e.rest), [null, null, null, '150 s rest'], 'a rest nobody set reached the card');
+});
+
+await test('a care flag on the card names its door: no "Tap to review", and review_intake_days offered first', () => {
+  const { workoutView, workoutNext, workoutSay } = CARD.VIEWS;
+  const flags = [{ flag: 'very_low_intake', detail: 'Under 1,200 on 4 of the last 7 logged days.', needs_review: true, evidence_dates: ['2026-09-20', '2026-09-21'] }];
+  const v = workoutView({ source: 'routine', name: 'S-Tier', movements: [{ name: 'Bench press', sets: 3, reps: 8 }], flags });
+  assert.ok(!/\btap\b/i.test(v.flag.say), `the card says "${v.flag.say.match(/.{0,20}tap.{0,20}/i)?.[0]}" where a tap opens nothing`);
+  assert.match(v.flag.say, /Sep 20 and Sep 21/);
+  assert.ok(workoutSay(v).startsWith(v.flag.say));
+  assert.match(workoutNext(v, { name: 'S-Tier' })[0], /^review_intake_days/);
+  const plain = workoutView({ source: 'routine', name: 'S-Tier', movements: [{ name: 'Bench press', sets: 3, reps: 8 }], flags: [{ flag: 'no_rest', detail: 'No rest in 14 days.' }] });
+  assert.ok(!workoutNext(plain, { name: 'S-Tier' }).some(a => /review_intake_days/.test(a)), 'a flag with nothing to review offered the review door');
+});
+
+await test('a card a person reads never names an internal tool', () => {
+  const { workoutView, liveInput, LOADS_LIVE, LOADS_TYPED, LOADS_NONE, EMPTY_SAY, PATTERN_NOTE } = CARD.VIEWS;
+  const names = TOOLS.map(t => t.name).filter(n => n.includes('_'));
+  const views = [...Object.values(CARD.fixtures), workoutView({ source: 'routine', name: 'S', movements: [], taken_out: 2 }),
+    workoutView({ source: 'up_next', movements: [] })];
+  const texts = [LOADS_LIVE, LOADS_TYPED, LOADS_NONE, EMPTY_SAY, PATTERN_NOTE];
+  const walk = v => (typeof v === 'string' ? [v] : Array.isArray(v) ? v.flatMap(walk) : v && typeof v === 'object' ? Object.values(v).flatMap(walk) : []);
+  for (const t of [...texts, ...views.flatMap(walk)]) {
+    const hit = names.find(n => new RegExp(`\\b${n}\\b`).test(t));
+    assert.ok(!hit, `"${t.slice(0, 80)}" names ${hit}`);
+  }
+});
+
+await test('a still tile never moves: only a playing copy animates, scoped to itself, starting and stopping on the pose it holds', () => {
+  const { PICTURE_IDS, pictureSvg } = CARD.PIC;
+  for (const id of PICTURE_IDS) {
+    const still = pictureSvg(id, { still: true }), moving = pictureSvg(id);
+    assert.ok(!still.includes('wp-play') && !/animation:wp-/.test(still), `${id}'s still tile carries an animation`);
+    assert.ok(moving.includes(`class="wp-${id} wp-play"`), `${id}'s playing copy is not marked`);
+    const rules = [...moving.matchAll(/([^{}]+)\{animation:(wp-[\w-]+) [\d.]+s \S+ 4 (alternate|alternate-reverse) both\}/g)];
+    assert.ok(rules.length, `${id} has no repetitions`);
+    assert.equal(rules.length, (moving.match(/animation:wp-/g) || []).length, `${id} has an animation rule this test cannot read`);
+    for (const [, sel, name, dir] of rules) {
+      // Styles in an inline SVG are global to the page: an unscoped rule from
+      // one playing figure moved every still tile of the same movement.
+      assert.ok(sel.startsWith(`.wp-${id}.wp-play .wp-`), `${id}: "${sel}" reaches every copy on the page`);
+      const part = sel.split(' .wp-')[1];
+      const kf = moving.match(new RegExp(`@keyframes ${name}\\{0%\\{transform:([^}]*)\\}.*?100%\\{transform:([^}]*)\\}\\}`));
+      const drawn = moving.match(new RegExp(`class="[^"]*\\bwp-${part}\\b[^"]*"[^>]*?style="transform:([^"]*)"`));
+      assert.ok(kf && drawn, `${id}: cannot read ${part}`);
+      // Four alternating iterations end where they began; the pose drawn in
+      // the markup (and under reduced motion) has to be that pose.
+      assert.equal(drawn[1], dir === 'alternate' ? kf[1] : kf[2], `${id}: ${part} is drawn in a pose its repetitions neither start nor stop on`);
+    }
+  }
+});
+
+await test('no elbow bends backwards, at any frame of any side-on picture', () => {
+  const { PICTURE_IDS, PICTURES, wpKin } = CARD.PIC;
+  // Forearm angle less upper-arm angle, read in [-90, 270): an elbow flexes
+  // forward of the upper arm; below zero is a hyperextended lockout.
+  const flex = (u, f) => ((f - u + 90) % 360 + 360) % 360 - 90;
+  let seen = 0;
+  for (const id of PICTURE_IDS) {
+    if (PICTURES[id].front) continue; // the fly is drawn from the front; its elbow bends out of the picture's plane
+    for (const [i, f] of wpKin(PICTURES[id]).frames.entries()) {
+      for (const [u, fa] of [['uarm', 'farm'], ['uarm2', 'farm2']]) {
+        const x = flex(f.p[u], f.p[fa]);
+        seen++;
+        assert.ok(x >= -0.5, `${id}, frame ${i}: the ${u === 'uarm' ? 'near' : 'far'} elbow is bent ${(-x).toFixed(1)}° backwards`);
+      }
+    }
+  }
+  assert.ok(seen > 100);
+});
+
+await test('no two still tiles hold the same pose — three upright figures in a list read as one movement', () => {
+  const { PICTURE_IDS, PICTURES, wpKin } = CARD.PIC;
+  const pts = ['hip', 'sh', 'el', 'hand', 'kn', 'an', 'toe', 'el2', 'hand2', 'kn2', 'an2'];
+  const held = id => {
+    const k = wpKin(PICTURES[id]);
+    const f = PICTURES[id].hold === 'b' ? k.frames[k.frames.length - 1] : k.frames[0];
+    return pts.map(p => [f.j[p][0] - f.j.hip[0], f.j[p][1] - f.j.hip[1]]);
+  };
+  const H = Object.fromEntries(PICTURE_IDS.map(id => [id, held(id)]));
+  for (let i = 0; i < PICTURE_IDS.length; i++) {
+    for (let j = i + 1; j < PICTURE_IDS.length; j++) {
+      const [a, b] = [H[PICTURE_IDS[i]], H[PICTURE_IDS[j]]];
+      const d = a.reduce((t, p, n) => t + Math.hypot(p[0] - b[n][0], p[1] - b[n][1]), 0) / a.length;
+      assert.ok(d >= 8, `${PICTURE_IDS[i]} and ${PICTURE_IDS[j]} hold nearly the same pose (${d.toFixed(1)} units apart)`);
+    }
+  }
+});
+
+await test('a loaded bar hangs over the feet, at every frame, or the figure would tip', () => {
+  const { PICTURE_IDS, PICTURES, wpKin } = CARD.PIC;
+  let n = 0;
+  for (const id of PICTURE_IDS) {
+    const s = PICTURES[id];
+    if (!s.anchor || !/wp-h"/.test(s.props?.hand || '')) continue;
+    n++;
+    for (const [i, f] of wpKin(s).frames.entries()) {
+      const x = f.j.hand[0];
+      assert.ok(x >= f.j.an[0] - 1.5 && x <= f.j.toe[0] + 1.5, `${id}, frame ${i}: the bar is at ${x.toFixed(1)}, the foot runs ${f.j.an[0].toFixed(1)}–${f.j.toe[0].toFixed(1)}`);
+    }
+  }
+  assert.ok(n >= 3, `only ${n} standing pictures hold a bar`);
+});
+
+await test('the rack screen link opens the rack screen, and a picture on a movement row takes a mouse click', () => {
+  const app = decomment(page('app.html'));
+  const src = app.slice(app.indexOf('function tabFromHash('), app.indexOf('}', app.indexOf('function tabFromHash(')) + 1);
+  const tabFromHash = new Function(`${src}; return tabFromHash;`)();
+  assert.equal(tabFromHash(new URL(CARD.VIEWS.RACK_URL).hash), 'trainer', 'the card\'s own link does not open the Trainer tab');
+  assert.equal(tabFromHash('#targets'), null);
+  assert.equal(tabFromHash(''), null);
+  assert.match(app, /const tab = tabFromHash\(location\.hash\);\s*if \(tab\) \{\s*view = tab;/, 'the page never reads the tab from its address');
+  // wireSwipe captures the pointer on the row; a press that starts on the
+  // picture has to be left to the picture, or its click lands on the row.
+  const swipe = app.slice(app.indexOf('function wireSwipe('), app.indexOf('function wireRoutines('));
+  const guard = swipe.match(/addEventListener\('pointerdown', \(e\) => \{\s*if \(e\.target\.closest\('([^']*)'\)\) return;/);
+  assert.ok(guard, 'the row takes every press');
+  assert.ok(guard[1].split(',').map(x => x.trim()).includes('.expic'), 'a press on a picture is captured by the row, so a mouse never plays it');
 });
 
 // ── Report ──────────────────────────────────────────────────────────────────

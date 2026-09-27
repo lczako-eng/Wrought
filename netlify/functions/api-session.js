@@ -17,6 +17,7 @@ import {
 import { lastPerformance, progressionCall, sessionTotals, exerciseKey, sessionsCanCarryAim } from './lib/training.js';
 import { sessionProgress } from './lib/warmup.js';
 import { recordSet, finaliseSession } from './lib/session.js';
+import { pictureFor } from './lib/pictures.js';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -151,7 +152,7 @@ export const handler = async (event) => {
       routines: (saved || []).map(r => ({
         name: r.name, kind: r.kind,
         exercises: (r.exercises || []).length,
-        movements: (r.exercises || []).map(e => ({ name: e.name, sets: e.sets, reps: e.reps })),
+        movements: (r.exercises || []).map(e => ({ name: e.name, sets: e.sets, reps: e.reps, picture: pictureFor(e.name)?.id || null })),
         sets: (r.exercises || []).reduce((a, e) => a + (Number(e.sets) || 0), 0),
         notes: r.notes || null,
         minutes: r.est_minutes || null,
@@ -230,6 +231,9 @@ export const handler = async (event) => {
       target_reps: current.reps,
       cue: current.cue || null,
       muscles: current.muscles || [],
+      // The drawing for this movement, as an id — the rack screen never picks
+      // one from a name.
+      picture: pictureFor(current.name)?.id || null,
       // Prescribed load, already in the user's own units. Null is a real answer
       // — with no history it refuses to invent a weight and gives an RPE.
       prescribed: call?.weight_kg != null ? w(call.weight_kg) : null,
@@ -239,7 +243,7 @@ export const handler = async (event) => {
       done: doneHere.map(s => ({ reps: s.reps, weight: w(s.weight_kg), rpe: s.rpe })),
     },
     rest: { seconds: restFor, left: restLeft },
-    upcoming: upcoming.map(e => ({ name: e.name, sets: e.sets, reps: e.reps })),
+    upcoming: upcoming.map(e => ({ name: e.name, sets: e.sets, reps: e.reps, picture: pictureFor(e.name)?.id || null })),
     totals: { ...totals, volume: w(totals.volume_kg) },
     today: localDateFor(profile.timezone),
   });

@@ -28,7 +28,7 @@ import { createHash } from 'node:crypto';
 import { allowed } from './lib/membership.js';
 import { pendingVoice } from './lib/voice.js';
 import { activityBurn, EFFORTS, shiftsIn } from './lib/activity.js';
-import { warmupFor, cooldownFor, sessionProgress } from './lib/warmup.js';
+import { warmupFor, cooldownFor, sessionProgress, targetLabel } from './lib/warmup.js';
 import { formWatch, cardioProgress, BODY_WORDS } from './lib/form.js';
 import { intakeState, intakeGate, SETUP_URL } from './lib/intake.js';
 import { applyAnswers, setupState } from './lib/setup.js';
@@ -65,6 +65,8 @@ import { dayReceipt, wholeDayBurn } from './lib/receipt.js';
 import { dayReadout, roomless, dayCard, DAY_CARD_NOTE } from './lib/dayread.js';
 import { mealTiming } from './lib/timing.js';
 import { validatePlan, totalSeconds, workoutLink } from '../../public/workout-clock.js';
+import { workoutView, workoutMarkdown, workoutSay, workoutNext, liveInput, traditionCopy } from './lib/views.js';
+import { WIDGETS, widgetFor, RESOURCE_MIME } from './lib/widgets.js';
 
 // Newest first. The icons on serverInfo are only honoured by clients speaking
 // the newer revisions, so blindly answering 2025-06-18 quietly costs the tile.
@@ -249,6 +251,8 @@ SAYING SOMETHING WAS SAVED IS A CLAIM ABOUT THE RECORD, AND IT MAY ONLY EVER COM
 BOTH SIDES OF THE SUBTRACTION GET ITEMISED, NOT JUST THE EATING. "What did I do today", "how many calories", "what were those hours worth", "how am I doing on the day", "break it down", "where am I at today", "daily totals", "give me everything", "where do I stand", "including activity", "what's my net", "am I up or down" are answered from the receipt block — which brief, log_activity, energy_balance and get_day all return — and best of all from get_day's day_read — THE WHOLE DAY in one read: every item eaten with its calories, the session and its worth, the work and its worth, the steps, the burn added up, the net, each goal with its percentage, the week. When those words ride on a log, the log reply carries day_read too. ANY QUESTION WITH "INCLUDING ACTIVITY", "MY STEPS", "MY MOVE", "MY NET", OR "WHERE AM I AT" MEANS CALL get_day (or energy_balance, or brief) — that response carries the workout burn AND the steps AND the watch's active calories, so answering it from a food total alone, or saying a workout has no burn number, is the tool not being called rather than a number that does not exist. The server prices every logged workout from its minutes and their bodyweight when no watch measured it; there is always a number. When the reply carries day_card, SHOW THE CARD first, exactly as written, and read from day_read.say or the receipt only what the card does not already show (what each burn line is made of, each goal with its percentage, a session or shift's worth) — never a figure twice. Without a card, read it out LINE BY LINE: every item in with its own calories, then resting, training and work each with their own figure and what each is made of, then the two totals, then the net. Either way, do not collapse it into a sentence, do not quote only the totals, and never add anything up yourself — the lines are there so each one can be argued with separately, which is the only way an estimate is worth anything. LOGGING WORK ALWAYS COMES BACK WITH WHAT IT WAS WORTH: "logged four hours as activity" with no number is the feature failing, because the number is the entire reason to log it. And set_aside is not optional — a figure that looks smaller than somebody's own arithmetic reads as the log having been ignored, so say what was not counted and why.
 
 THE DAY CARD IS THE LAYOUT — KEEP IT. Every log that is not a quiet capture, and get_day, log_activity, amend_last, structure_entries (when it fills in today), energy_balance and brief (when there is no written verdict) return day_card: markdown with the food table (each item, its time, its calories, the total underneath) and the energy balance (eaten, resting, training, work and moving about, the burn, the net), then steps, what is left and the week. The person asked for exactly this layout to stay. Show it EXACTLY as written, after your first line — never rebuild it, reorder it, drop or add a row, put a figure of your own in it, or turn a number into a range. A quiet capture carries no card and gets none.
+
+SEEING A WORKOUT: show_workout draws one workout as a card where the host can; say the reply's \`say\`, never re-list what the card shows. A picture shows the MOVEMENT, never their form — WROUGHT cannot see anybody lift. The card never carries a weight. The list of saved workouts is list_routines; the styles shelf is trainer_styles.
 
 STEPS AND EVERY WATCH READING ARE READ, NEVER ASKED FOR. Steps, active calories, resting heart rate, distance, sleep — these arrive from the person's phone and sit on the record. energy_balance and get_day return them directly (device.steps, device.active_calories, and energy_balance's logged.steps). When somebody says "plus my steps", "include my steps", "add my steps", "what are my steps", or anything asking to fold movement in, CALL energy_balance (or get_day) and READ THE NUMBER OFF IT. NEVER ask them for their step count or any watch figure — the watch already sent it, and asking a connected person for data the connector is holding is the exact failure they will call out: "you should know that you're connected." The ONLY honest "no steps" answer is when the tool itself returns none because the watch has not synced today — and even then you say the watch has not sent yet and to open the app, you never ask them to count. This is not a number you are allowed to collect by asking; it is one you are required to look up.
 
@@ -716,9 +720,33 @@ const TOOLS = [
   {
     name: 'list_routines',
     title: 'What sessions they have saved',
-    description: 'Returns saved routines with how often each is used and when it was last run. Call this before building anything new — the answer to "what should I train" is usually a routine they already have and have not run in ten days.',
+    description: 'Returns saved routines with how often each is used and when it was last run, and the movements in each. Call this before building anything new — the answer to "what should I train" is usually a routine they already have and have not run in ten days. "Show me my routines", "what workouts do I have", "what\'s in my leg day" land here. (To SEE one workout drawn with its pictures, that is show_workout.)',
     inputSchema: { type: 'object', properties: {} },
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+  },
+  // ONE WORKOUT, DRAWN. The only tool that carries a widget: the host renders
+  // the card from `_meta.ui.resourceUri` where it can, and every other client
+  // reads `say` and `card_md`. visibility ['model'] and widgetAccessible false,
+  // because a widget may otherwise call ANY tool through the host — and this
+  // card calls none.
+  {
+    name: 'show_workout',
+    title: 'Show a workout, drawn',
+    description: 'Draws ONE workout as a card, with a small moving figure for each movement. Call it when they want to SEE a specific workout: \'show me my S-Tier\', \'let me see leg day\', \'what does the Arnold one look like\', \'draw my workout\', \'show the workout I\'m doing\'. (The LIST of saved workouts is list_routines; the shelf of trainer styles is trainer_styles; the day\'s totals are get_day.) Pass `routine` (a saved workout\'s name), `tradition` (a style or the famous name they said), `live: true`, or nothing (the running session, else the one up next). Say the reply\'s `say` and nothing more about the list. A picture shows the MOVEMENT, never their form — WROUGHT cannot see anybody lift. The card never carries a weight; loads come from log_set and the rack screen.',
+    inputSchema: { type: 'object', properties: {
+      routine:   { type: 'string',  description: 'A saved workout\'s name, as they said it — matched in full, ignoring case.' },
+      tradition: { type: 'string',  description: 'A trainer style or the famous name they said — "the Arnold one", "Fight camp". Their own saved copy is drawn first, with their edits.' },
+      live:      { type: 'boolean', description: 'The workout running right now.' },
+    } },
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    _meta: {
+      ui: { resourceUri: WIDGETS.workout.uri, visibility: ['model'] },
+      'ui/resourceUri': WIDGETS.workout.uri,
+      'openai/outputTemplate': WIDGETS.workout.uri,
+      'openai/widgetAccessible': false,
+      'openai/toolInvocation/invoking': 'Drawing the workout',
+      'openai/toolInvocation/invoked': 'Workout drawn',
+    },
   },
   {
     name: 'energy_balance',
@@ -1284,7 +1312,7 @@ const TOOLS = [
   {
     name: 'trainer_styles',
     title: 'The trainer styles you can be coached in',
-    description: 'THE SHELF, READ OUT. Every trainer style with what it DOES to a session, the shape it builds, the voice it coaches in, and the famous trainer whose tradition it comes from — twenty-one of them, Arnold Schwarzenegger, Freddie Roach, Louie Simmons, Mike Mentzer and the rest. "What trainer styles are there", "show me the coaches", "who can coach me", "which famous trainers do you have", "whose styles are these", "what is Fight camp", "how does the conjugate one work", "what would Arnold style do", "do you have Arnold\'s workout", "the Freddie Roach one". ALWAYS a tool call: naming the styles from memory is how a connector invents a coach that does not exist. Say each method WITH its credit — "Golden-era volume bodybuilding, in the tradition of Arnold Schwarzenegger" — never "Arnold\'s workout", never an endorsement. Picking one for good is set_plan style; for one session design_workout style; adding its written session to their workouts is save_routine tradition.',
+    description: 'THE SHELF, READ OUT. Every trainer style with what it DOES to a session, the shape it builds, the voice it coaches in, and the famous trainer whose tradition it comes from — twenty-one of them, Arnold Schwarzenegger, Freddie Roach, Louie Simmons, Mike Mentzer and the rest. "What trainer styles are there", "show me the coaches", "who can coach me", "which famous trainers do you have", "whose styles are these", "what is Fight camp", "how does the conjugate one work", "what would Arnold style do", "do you have Arnold\'s workout", "the Freddie Roach one". ALWAYS a tool call: naming the styles from memory is how a connector invents a coach that does not exist. Say each method WITH its credit — "Golden-era volume bodybuilding, in the tradition of Arnold Schwarzenegger" — never "Arnold\'s workout", never an endorsement. Picking one for good is set_plan style; for one session design_workout style; adding its written session to their workouts is save_routine tradition. (To SEE one written session drawn with its pictures, that is show_workout with tradition.)',
     inputSchema: { type: 'object', properties: {
       style: { type: 'string', description: 'One style, in full, instead of the whole shelf. A method name ("Fight camp") or the famous name people say ("Arnold style", "Louie Simmons").' },
       discipline: { type: 'string', description: 'Only this discipline: Boxing, Powerlifting, Strength & conditioning, Running, Kettlebell, Bodybuilding.' },
@@ -2764,7 +2792,7 @@ async function trainerStyles(args, user) {
       ...(written ? {
         written: {
           name: written.name, est_minutes: written.est_minutes, notes: written.notes,
-          movements: (written.exercises || []).map(e => e.minutes ? `${e.name} ${e.minutes} min` : `${e.name} ${e.sets}\u00d7${e.reps}`),
+          movements: (written.exercises || []).map(e => `${e.name} — ${targetLabel(e)}`),
         },
         in_your_workouts: inYours,
       } : {}),
@@ -2774,6 +2802,7 @@ async function trainerStyles(args, user) {
         (written ? (inYours ? ', and the written session is already theirs — start_session with its name.' : ', or add the written session to their workouts (save_routine tradition — the server writes it whole; never retype it).') : '.') +
         ' NEVER a weight: every load still comes from the person\'s own history.',
       not_an_endorsement: st.provenance,
+      ...(written ? { next_actions: [`show_workout with tradition "${st.key}" to see it with pictures`] } : {}),
     };
   }
 
@@ -4154,7 +4183,7 @@ async function startSession(args, user) {
     // order, and the reason it is in that order — losing the third makes it a
     // list, which is the thing people already have on their phone.
     routine_notes: routine?.notes || null,
-    exercises: plan.map(e => `${e.name} — ${e.sets}×${e.reps}`),
+    exercises: plan.map(e => `${e.name} — ${targetLabel(e)}`),
     checklist: planChecklist(plan, 0, 0),
     progress: sessionProgress(plan, []),
     total_exercises: plan.length,
@@ -4182,7 +4211,7 @@ async function startSession(args, user) {
         ? `THIS SESSION'S AIM, in their own words: "${aim}". Say it back in half a clause at the start and judge the session against it at the end — that is what makes this training rather than exercise. `
         : 'NO AIM WAS GIVEN for this session. Ask what they want out of THIS one in the same line as the preflight question — one clause, "anything you are chasing today?" — and pass it to end_session as `aim` if they answer. A session with a stated aim is training; one without is exercise. Never invent an aim for them, and never hold the session up waiting for one. ') +
       'Call log_set after EVERY set they report, even a bare "done". The server tracks their position and returns the percentage complete — never try to hold it yourself, and never re-state the whole plan between sets.',
-    next_actions: ['log_set when they finish a set', 'end_session when they are done'],
+    next_actions: ['log_set when they finish a set', 'end_session when they are done', 'show_workout to see it with pictures'],
   };
 }
 
@@ -4246,7 +4275,7 @@ async function loadCallFor(userId, exercise, tier) {
 function planChecklist(plan, cursor, setsDoneHere = 0) {
   return plan.map((e, i) => ({
     exercise: e.name,
-    target: `${e.sets}\u00d7${e.reps}`,
+    target: targetLabel(e),
     status: i < cursor ? 'done' : i === cursor ? 'current' : 'to_come',
     // A tick per line, so the checklist reads the same in a conversation as it
     // looks on the Trainer screen. Two representations of one thing that do
@@ -5230,7 +5259,7 @@ async function saveRoutine(args, user) {
       'COMPARE that list with every movement the user actually named. If ANY are missing, they did NOT save — you did not send them. Call save_routine again NOW with the missing ones in add[] (full shape: sets/reps, or minutes and detail for timed work), and only reply once the lists match. Never cover the gap with prose, and never store their workout in your own memory instead of here — your memory is not their record and does not appear on their Trainer screen. ' +
       'Say the count and the names from on_file — read back from the record AFTER the write, the only thing that distinguishes a real save from a claimed one. Read the exercise list back once too, so a mis-captured lift gets caught now.' +
       (row.notes ? '' : ' NO WRITE-UP ON IT YET. Offer one in half a line — how to run it, what to push, what to leave in the tank — and write it with save_routine notes if they want it. It is what turns a saved list of names into a workout, and it is shown at the top every time the session starts.'),
-    next_actions: [`start_session with routine "${name}"`, 'save_routine with add[] to grow it later'],
+    next_actions: [`start_session with routine "${name}"`, 'save_routine with add[] to grow it later', 'show_workout to see it with pictures'],
   };
 }
 
@@ -5301,7 +5330,7 @@ async function addTraditionWorkout(said, user) {
     },
     say: `${did === 'already' ? 'Already in your workouts' : did === 'put_back' ? 'Put back in your workouts' : 'Added to your workouts'}: "${written.name}" — ${credited}. ${moves.length} movements: ${moves.join(', ')}. You now have ${all.length} saved workout${all.length === 1 ? '' : 's'}.`,
     note: `Say the name WITH its credit, as said here — "${credited}" — never "his workout" and never as an endorsement: ${STYLES[key].provenance || 'published methodology, not his programme and not an endorsement'}. Say the count from on_file, the only proof the save is real. No loads are written: the rack works every weight out from their own history or gives an RPE. It is on the Trainer tab under Saved workouts, and starts when they say its name.`,
-    next_actions: [`start_session with routine "${written.name}"`],
+    next_actions: [`start_session with routine "${written.name}"`, 'show_workout to see it with pictures'],
   };
 }
 
@@ -5314,19 +5343,29 @@ async function listRoutines(_args, user) {
     .eq('user_id', user.id).eq('active', true)
     .order('last_used_on', { ascending: false, nullsFirst: false });
 
-  const routines = (data || []).map(r => ({
-    name: r.name, kind: r.kind, tier: r.tier,
-    exercises: (r.exercises || []).length,
-    // The movements themselves, so "what's in my chest day" is answered from
-    // this call rather than from whatever the model remembers of last week.
-    movements: (r.exercises || []).map(e => `${e.name} ${e.sets}\u00d7${e.reps}`),
-    sets: (r.exercises || []).reduce((a, e) => a + (Number(e.sets) || 0), 0),
-    notes: r.notes || null,
-    minutes: r.est_minutes,
-    times_used: r.times_used,
-    last_used: r.last_used_on,
-    days_since: r.last_used_on ? daysBetween(r.last_used_on, today) : null,
-  }));
+  const routines = (data || []).map(r => {
+    // THE SAME READ AS THE WEBSITE. The raw rows printed a treadmill walk as
+    // "null×null", counted the retired 3×8 default as a rep scheme, listed the
+    // movements they had taken OUT of the workout, and dropped the minutes and
+    // the setup. readMovement is the one read both surfaces use.
+    const shown = (r.exercises || []).map(readMovement);
+    const inWorkout = shown.filter(m => !m.off);
+    const takenOut = shown.length - inWorkout.length;
+    return {
+      name: r.name, kind: r.kind, tier: r.tier,
+      exercises: inWorkout.length,
+      // The movements themselves, so "what's in my chest day" is answered from
+      // this call rather than from whatever the model remembers of last week.
+      movements: inWorkout.map(m => `${m.name} — ${targetLabel(m)}${m.detail ? ` (${m.detail})` : ''}`),
+      sets: inWorkout.reduce((a, e) => a + (Number(e.sets) || 0), 0),
+      ...(takenOut ? { taken_out: takenOut } : {}),
+      notes: r.notes || null,
+      minutes: r.est_minutes,
+      times_used: r.times_used,
+      last_used: r.last_used_on,
+      days_since: r.last_used_on ? daysBetween(r.last_used_on, today) : null,
+    };
+  });
 
   const stale = routines.filter(r => r.days_since != null && r.days_since >= 7);
 
@@ -5338,7 +5377,125 @@ async function listRoutines(_args, user) {
         (stale.length ? ` Not run in a while: ${stale.map(r => `${r.name}, ${r.days_since} days`).join('; ')}.` : '')
       : 'Nothing saved yet. Build a session and save_routine keeps it for good.',
     note: 'The answer to "what should I train" is usually a routine they already have and have not run in ten days. Check here before building anything new.',
-    next_actions: ['start_session with one of these'],
+    next_actions: ['start_session with one of these', 'show_workout to see it with pictures'],
+  };
+}
+
+// ── Seeing a workout ────────────────────────────────────────────────────────
+// The founder, holding up ChatGPT drawing pictures in a chat: "Why can't our
+// Wrought do this — show you weightlifting techniques." One workout, drawn as a
+// card where the host can draw one: each movement with a small figure doing
+// the MOVEMENT and the curated library's one-line cue. The card is composed in
+// lib/views.js and printed by the widget; this only chooses which workout.
+//
+// READ-ONLY, AND IT NEVER CARRIES A WEIGHT. Loads stay with log_set and the
+// rack screen: progressionCall's sentence is written in kilograms whatever
+// the person's units, and under a care flag an "add load" call is the push a
+// flag withholds. A flag leads the card as REVIEW; the plan itself is a fact
+// and still shows, with no coach voice, coach day, push or nudge on it.
+async function showWorkout(args = {}, user) {
+  const [profile, canAim] = await Promise.all([getProfile(user.id), sessionsCanCarryAim()]);
+  const today = localDateFor(profile.timezone);
+  const [careRange, sessionRead, routineRead] = await Promise.all([
+    rangeFacts(user.id, profile, addDays(today, -(CARE_WINDOW_DAYS - 1)), today),
+    supabase.from('wrought_sessions')
+      .select('id, name, plan, cursor_index, started_at' + (canAim ? ', aim' : ''))
+      .eq('user_id', user.id).eq('status', 'active').maybeSingle(),
+    supabase.from('wrought_routines')
+      .select('name, kind, tier, exercises, notes, est_minutes, times_used, last_used_on, created_at')
+      .eq('user_id', user.id).eq('active', true),
+  ]);
+  const flags = careFlags(careRange, profile, { openDate: today });
+  const session = sessionRead?.data || null;
+  const routines = routineRead?.data || [];
+  const tier = profile.training_age === 'advanced' ? 'advanced' : null;
+  const named = String(args.routine || '').trim();
+  const traditionAsked = String(args.tradition || '').trim();
+
+  // A saved routine, read the way every screen reads it: taken-out movements
+  // stay off the card and are counted, never shown as part of the session.
+  const fromRoutine = (r, source, subtitle) => {
+    const shown = (r.exercises || []).map(readMovement);
+    const inWorkout = shown.filter(m => !m.off);
+    return {
+      source, name: r.name, subtitle, notes: r.notes || null,
+      movements: inWorkout, taken_out: shown.length - inWorkout.length,
+    };
+  };
+  const minutesLine = m => (m ? `About ${m} minutes` : null);
+
+  let input = null;
+  if (args.live || (!named && !traditionAsked && session)) {
+    if (!session) {
+      input = { source: 'live', name: 'No workout running', movements: [], empty: 'Nothing is running right now — say the name of a saved workout to start it.' };
+    } else {
+      const { data: logged } = await supabase.from('wrought_sets')
+        .select('exercise, exercise_key').eq('user_id', user.id).eq('session_id', session.id);
+      input = liveInput(session, logged || []);
+    }
+  } else if (named) {
+    // Matched here, in full and ignoring case — never a pattern handed to the
+    // database, so a name with % or _ in it cannot match somebody else's.
+    const hit = routines.find(r => String(r.name).toLowerCase() === named.toLowerCase());
+    if (!hit) {
+      const names = routines.map(r => r.name);
+      return {
+        error: 'not_found', names,
+        say: `No saved workout called "${named}".${names.length ? ` On file: ${names.join(', ')}.` : ' None are saved yet.'}`,
+        note: 'Say the names exactly as listed and let them pick; never draw a workout that is not on file.',
+        next_actions: ['list_routines', 'show_workout with one of these names'],
+      };
+    }
+    input = fromRoutine(hit, 'routine', minutesLine(hit.est_minutes));
+  } else if (traditionAsked) {
+    const key = styleFrom(traditionAsked);
+    const st = key ? STYLES[key] : null;
+    if (!st) {
+      return {
+        error: 'unknown_style',
+        say: `No trainer style by that name. The shelf: ${Object.values(STYLES).map(s => creditedName(s)).join('; ')}.`,
+        note: 'Never guess which style they meant — say the shelf and let them pick.',
+        next_actions: ['trainer_styles'],
+      };
+    }
+    // THEIR COPY FIRST. A written session is customisable — "add and subtract
+    // workouts" — so the one to draw is the one they edited, found by the exact
+    // tail it is saved under, never the pristine original with movements they
+    // took out.
+    const mine = traditionCopy(routines, key);
+    const written = styleRoutine(key);
+    if (mine) {
+      input = fromRoutine(mine, 'tradition', ['Your copy', minutesLine(mine.est_minutes)].filter(Boolean).join(' · '));
+    } else if (written) {
+      input = {
+        source: 'tradition', name: written.name, notes: written.notes, curated: true,
+        subtitle: ['Not in your workouts yet', minutesLine(written.est_minutes)].filter(Boolean).join(' · '),
+        movements: (written.exercises || []).map(readMovement),
+      };
+    } else {
+      return {
+        error: 'no_written_session',
+        say: `${creditedName(st)} has no written session to draw — it shapes a session built for the day.`,
+        next_actions: [`design_workout with style "${key}"`],
+      };
+    }
+  } else {
+    const due = pickDue(routines);
+    const r = due ? routines.find(x => x.name === due.name) : null;
+    input = r
+      ? fromRoutine(r, 'up_next', ['Up next', minutesLine(r.est_minutes)].filter(Boolean).join(' · '))
+      : { source: 'up_next', name: null, movements: [] };
+  }
+
+  const view = workoutView({ ...input, flags, tier });
+  const say = workoutSay(view);
+  const next = workoutNext(view, { name: input.name, tradition: traditionAsked });
+  return {
+    view,
+    card_md: workoutMarkdown(view),
+    say,
+    note: 'The host draws this as a card where it can. Say `say` and nothing more about the list. Never describe form or technique from a picture: WROUGHT cannot see anybody lift. Never state a weight — the card has none; loads come from log_set. If they ask for it as text, show card_md exactly.',
+    next_actions: next,
   };
 }
 
@@ -6509,6 +6666,7 @@ const IMPL = {
   end_session: endSession,
   save_routine: saveRoutine,
   list_routines: listRoutines,
+  show_workout: showWorkout,
   energy_balance: energyBalanceTool,
   nutrition,
   earned_room: earnedRoomTool,
@@ -6558,7 +6716,7 @@ export async function handleRpc(msg, authUser) {
     case 'initialize':
       return rpcResult(id, {
         protocolVersion: PROTOCOL_VERSIONS.includes(params.protocolVersion) ? params.protocolVersion : PROTOCOL_VERSION,
-        capabilities: { tools: { listChanged: false } },
+        capabilities: { tools: { listChanged: false }, resources: { listChanged: false } },
         // icons and websiteUrl ride on serverInfo because that is the one
         // place every client already reads. /.well-known/mcp.json carries the
         // same thing for directories, but a client that has just completed a
@@ -6636,10 +6794,7 @@ export async function handleRpc(msg, authUser) {
         if (out && typeof out === 'object' && !Array.isArray(out) && READ_TOOLS.has(params.name) && out.log_first === undefined) {
           out.log_first = 'Anything they mentioned in this conversation — food, drink, a workout, a shift, a weight — that is not on the record above: call log / log_activity for it NOW, before answering, and never ask first.';
         }
-        return rpcResult(id, {
-          content: [{ type: 'text', text: JSON.stringify(out, null, 2) }],
-          isError: Boolean(out && out.error),
-        });
+        return rpcResult(id, toolResult(params.name, out));
       } catch (err) {
         // A tool that throws used to hand back a bare error string, and the
         // assistant relayed it as "Wrought's logging action is erroring right
@@ -6648,22 +6803,26 @@ export async function handleRpc(msg, authUser) {
         // they said it once, in passing, and it is gone. So the failure carries
         // words to repeat, the reason in plain sight, and an instruction to try
         // again rather than move on.
-        const writing = /^(log|amend|undo|set_|start_|end_|remember|connect_)/.test(params.name);
-        return rpcResult(id, {
-          content: [{ type: 'text', text: JSON.stringify({
-            error: 'tool_failed',
-            tool: params.name,
-            detail: err.message,
-            say: writing
-              ? `That did not save — ${err.message}`
-              : `WROUGHT could not answer that — ${err.message}`,
-            note: writing
-              ? 'NOTHING WAS WRITTEN. Try the same call once more before saying anything; these are usually momentary. If it fails again, tell the user IN FULL what they said is not saved and repeat the detail back so they still have it, and give them the reason above rather than "it is erroring" — a reason can be acted on and an outage cannot.'
-              : 'Say what failed and why, in the words above. Never present a failed read as a real answer, and never substitute a number from your own memory of this conversation.',
-          }) }],
-          isError: true,
-        });
+        return rpcResult(id, toolFailure(params.name, err));
       }
+    }
+
+    // THE CARD'S PAGE. Open like tools/list: it is a template holding no user
+    // data, and a host fetches it before it has anything to draw in it.
+    case 'resources/list':
+      return rpcResult(id, { resources: [WIDGETS.workout.listing] });
+
+    case 'resources/templates/list':
+      return rpcResult(id, { resourceTemplates: [] });
+
+    case 'resources/read': {
+      if (typeof params.uri !== 'string' || !params.uri) return rpcError(id, -32602, 'uri required');
+      // Any hash of the card's address is answered with TODAY's page — a
+      // message from last month re-renders with the current script rather
+      // than failing to draw at all.
+      const w = widgetFor(params.uri);
+      if (!w) return rpcError(id, -32002, `Resource not found: ${params.uri}`);
+      return rpcResult(id, { contents: [{ uri: params.uri, mimeType: RESOURCE_MIME, text: w.html, _meta: w.meta }] });
     }
 
     default:
@@ -6671,7 +6830,54 @@ export async function handleRpc(msg, authUser) {
   }
 }
 
-export const handler = async (event) => {
+/**
+ * A tool that threw. Text only — never structuredContent, even for a card
+ * tool: the card renders one neutral line for a result with no view, never an
+ * old card, and the words here are what the model relays.
+ */
+export function toolFailure(name, err) {
+  const writing = /^(log|amend|undo|set_|start_|end_|remember|connect_)/.test(name);
+  return {
+    content: [{ type: 'text', text: JSON.stringify({
+      error: 'tool_failed',
+      tool: name,
+      detail: err.message,
+      say: writing
+        ? `That did not save — ${err.message}`
+        : `WROUGHT could not answer that — ${err.message}`,
+      note: writing
+        ? 'NOTHING WAS WRITTEN. Try the same call once more before saying anything; these are usually momentary. If it fails again, tell the user IN FULL what they said is not saved and repeat the detail back so they still have it, and give them the reason above rather than "it is erroring" — a reason can be acted on and an outage cannot.'
+        : 'Say what failed and why, in the words above. Never present a failed read as a real answer, and never substitute a number from your own memory of this conversation.',
+    }) }],
+    isError: true,
+  };
+}
+
+// The tools whose result a host draws as a card.
+export const WIDGET_TOOLS = new Set(['show_workout']);
+
+/**
+ * A tool's reply. For a widget tool, `structuredContent` is exactly the JSON
+ * in `content` — some hosts hand the model one and some the other, and two
+ * different objects would be two different answers. Everything else is text
+ * only, as it always was: Claude Code gives the model structuredContent INSTEAD
+ * of content, so adding it to the other tools would change what they read.
+ */
+export function toolResult(name, out) {
+  const isError = Boolean(out && out.error);
+  const text = JSON.stringify(out, null, 2);
+  if (!WIDGET_TOOLS.has(name) || !out || typeof out !== 'object' || Array.isArray(out)) {
+    return { content: [{ type: 'text', text }], isError };
+  }
+  return { content: [{ type: 'text', text }], structuredContent: JSON.parse(text), isError };
+}
+
+// Only calling a tool needs to know who is asking. The handshake, the tool
+// list and the card's page are open — and skipping the lookup for them means
+// an auth outage can never take the card's page down with it.
+export const needsAuth = method => method === 'tools/call';
+
+export const handler = async (event, context, { auth = getAuthUser } = {}) => {
   if (event.httpMethod === 'OPTIONS') return { statusCode: 204, headers: CORS, body: '' };
 
   if (event.httpMethod === 'GET' || event.httpMethod === 'DELETE') {
@@ -6700,12 +6906,14 @@ export const handler = async (event) => {
   // The handshake answers without auth so any client can discover the toolset.
   // Actually using a tool requires sign-in, and that 401 is what makes
   // "Sign in with Wrought" appear inside ChatGPT and Claude.
-  let authUser;
-  try {
-    authUser = await getAuthUser(event);
-  } catch (e) {
-    if (e instanceof AuthUnavailable) return unavailable(msg.id);
-    throw e;
+  let authUser = null;
+  if (needsAuth(msg.method)) {
+    try {
+      authUser = await auth(event);
+    } catch (e) {
+      if (e instanceof AuthUnavailable) return unavailable(msg.id);
+      throw e;
+    }
   }
   const response = await handleRpc(msg, authUser);
   if (response && response.__unauthorized) return unauthorized(response.id);

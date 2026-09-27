@@ -1496,6 +1496,16 @@ table.matrix td.rh.cold { color: var(--heat-3); }
 .sub.tight { margin: 2px 0 9px; }
 .taphint { text-align: center; margin: -2px 0 14px; }
 .rmvn { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+/* An exercise picture: drawn from an id the server stamped, still until it is
+   tapped (a list that moves by itself is wallpaper), and on the rack screen
+   moving once when the movement changes. Its colours are the page's own. */
+.expic { display: inline-block; width: 40px; height: 40px; border-radius: 8px; background: var(--iron); color: var(--bright);
+         flex: none; overflow: hidden; --wp-kit: var(--ash-dim); --wp-heat: var(--heat-3); --wp-floor: var(--edge); --wp-bg: var(--iron); }
+.expic.now { width: 96px; height: 96px; }
+.expic > svg { width: 100%; height: 100%; overflow: hidden; }
+.expic + .rmvn { flex: 1; }
+.rmv-body > .expic { margin: -8px 0; cursor: pointer; }
+.progtop > .expic { align-self: center; }
 .rmvn em { font-family: var(--mono); font-size: 10.5px; font-style: normal; color: var(--ash-dim);
            overflow-wrap: anywhere; }
 .radd { display: flex; gap: 8px; margin: 12px 0 6px; flex-wrap: wrap; }
@@ -2930,6 +2940,21 @@ function openManual(e) {
 }
 $('peek')?.addEventListener('click', openManual);
 $('downpeek')?.addEventListener('click', openManual);
+
+// A LINK CAN OPEN A TAB. The chat card's "Open the rack screen" is
+// wrought.fit/app.html#trainer, and this page never read the fragment — so
+// the button said where it went and then opened the Record tab.
+function tabFromHash(hash) {
+  return hash === '#trainer' ? 'trainer' : null;
+}
+{
+  const tab = tabFromHash(location.hash);
+  if (tab) {
+    view = tab;
+    document.querySelectorAll('.range.view').forEach(x => x.setAttribute('aria-pressed', String(x.dataset.view === tab)));
+    if ($('rangebtns')) $('rangebtns').style.display = 'none';
+  }
+}
 
 $('send')?.addEventListener('click', submitAuth);
 $('pass')?.addEventListener('keydown', e => { if (e.key === 'Enter') submitAuth(); });
@@ -4669,7 +4694,7 @@ function renderTrainer(d) {
       ${restBlock}
       ${done ? `<div class="setpills">${done}</div>` : ''}
     </section>
-    ${checklistPanel(d.progress, { live: true, at: (s.position || 1) - 1 })}
+    ${checklistPanel(d.progress, { live: true, at: (s.position || 1) - 1, picture: c?.picture || null })}
     <div class="tiles">
       ${tile('Sets', String(d.totals.sets), 'this session')}
       ${tile('Reps', String(d.totals.reps), 'this session')}
@@ -4976,7 +5001,9 @@ function wireSwipe() {
     let x0 = null, y0 = null, dx = 0, dragging = false;
 
     row.addEventListener('pointerdown', (e) => {
-      if (e.target.closest('.rmv-act')) return;      // a tap on the action is a tap
+      // A tap on the action, or on the picture, is a tap. Capturing the pointer
+      // for a picture sent its click to the row, so a mouse never played one.
+      if (e.target.closest('.rmv-act, .expic')) return;
       x0 = e.clientX; y0 = e.clientY; dx = 0; dragging = false;
       row.setPointerCapture(e.pointerId);
     });
@@ -5097,13 +5124,14 @@ function notConnectedCallout() {
 // `live` is false on the Record tab, where this panel is a READ of a finished
 // day — tappable rows there would offer to move a cursor in a session that
 // ended hours ago.
-function checklistPanel(p, { live = false, at = -1 } = {}) {
+function checklistPanel(p, { live = false, at = -1, picture = null } = {}) {
   if (!p || !p.exercises?.length) return '';
   return `<section class="panel">
     <h2>The workout</h2>
     <div class="progtop">
       <span class="progpct">${p.percent}<small>%</small></span>
       <span class="progsets">${p.sets_done} of ${p.sets_planned} sets</span>
+      ${live && picture ? `<span class="expic now" data-pic-want="${esc(picture)}" data-pic-live="1" aria-hidden="true"></span>` : ''}
     </div>
     <div class="progbar"><i style="width:${p.percent}%"></i></div>
     <ul class="ticks">
@@ -8977,6 +9005,54 @@ function render(d) {
 // the thumb instead of finishing their animation while nobody can see them.
 const enteredScreens = new Set();
 let revealObserver = null;
+// ── Exercise pictures ─────────────────────────────────────────────────────
+// Drawn from an id the SERVER stamped on each movement (api-routines,
+// api-progress's routines, api-session's current and upcoming) and checked
+// against the list of drawings that exist — the page never picks a picture
+// from a name. The drawing module loads only when a panel has a slot for one.
+let picturesLoad = null;
+const picturesModule = () => (picturesLoad ||= import('/exercise-pictures.js').catch(() => { picturesLoad = null; return null; }));
+// The rack screen repaints whenever the session changes, and a figure that
+// replayed on every repaint would be a poll animating. It moves once, when
+// the movement on the rack CHANGES, and is drawn still after that. A repaint
+// in the MIDDLE of those repetitions — the rest clock changes the payload
+// every five seconds — carries on from where they were: drawing it still
+// there would snap the figure back to its pose mid-rep.
+const rackPic = { id: null, at: 0 };
+
+function setPicture(el, id, mod, { animate = false, now = Date.now() } = {}) {
+  if (!el || el.dataset.pic === id) return;
+  if (!mod || !Array.isArray(mod.PICTURE_IDS) || !mod.PICTURE_IDS.includes(id)) { el.hidden = true; return; }
+  let moving = false, into = 0;
+  if (animate && id !== rackPic.id) { rackPic.id = id; rackPic.at = now; moving = true; }
+  else if (animate) {
+    into = now - rackPic.at;
+    moving = into < (typeof mod.pictureRunMs === 'function' ? mod.pictureRunMs(id) : 0) && typeof el.getAnimations === 'function';
+  }
+  el.innerHTML = mod.pictureSvg(id, { still: !moving }) || '';
+  el.dataset.pic = id;
+  if (moving && into > 0) for (const a of el.getAnimations({ subtree: true })) a.currentTime = into;
+}
+
+async function drawPictures(root = $('content')) {
+  const slots = root ? [...root.querySelectorAll('[data-pic-want]')] : [];
+  if (!slots.length) return;
+  const mod = await picturesModule();
+  for (const el of slots) {
+    setPicture(el, el.dataset.picWant, mod, { animate: el.dataset.picLive === '1' });
+    if (el.dataset.picTap === '1' && !el.dataset.tapWired && mod) {
+      el.dataset.tapWired = '1';
+      // A tap plays two repetitions and stops on the start pose.
+      const play = ev => {
+        ev.stopPropagation();
+        if (el.dataset.pic) el.innerHTML = mod.pictureSvg(el.dataset.pic, { still: false }) || el.innerHTML;
+      };
+      el.addEventListener('click', play);
+      el.addEventListener('keydown', ev => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); play(ev); } });
+    }
+  }
+}
+
 function stagger(root = $('content')) {
   const bits = root.querySelectorAll('.panel, .tile');
   makeFoldable(root);
@@ -8984,6 +9060,7 @@ function stagger(root = $('content')) {
   honourDailyCloseAnchor(root);
   honourSetupAnchor(root);
   wireCharts(root);
+  drawPictures(root);
 
   const screen = (view === 'record' || view === 'calendar') ? `${view}:${days}` : view;
   const first = !enteredScreens.has(screen);
@@ -10277,6 +10354,8 @@ function routinesPanel(d, { editable = false } = {}) {
         aria-label="${m.off ? `Delete ${esc(m.name)} for good` : `Take ${esc(m.name)} out of this workout`}">${
         m.off ? 'Delete' : 'Take out'}</button>` : ''}
       <div class="rmv-body">
+        ${m.picture ? `<span class="expic" data-pic-want="${esc(m.picture)}" data-pic-tap="1" role="button" tabindex="0"
+          aria-label="Play ${esc(m.name)}"></span>` : ''}
         <span class="rmvn">${esc(m.name)}${m.detail ? `<em>${esc(m.detail)}</em>` : ''}</span>
         <b${m.off ? ' class="unset"' : unset(m) ? ' class="unset"' : ''}>${
           m.off ? 'out' : howMuch(m) || (unset(m) ? 'not set' : '—')}</b>
