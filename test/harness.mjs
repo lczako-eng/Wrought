@@ -6308,7 +6308,7 @@ await test('the hyperlink pops up no matter what, until goals are set', () => {
   // quiet, because a tax conversation that mentioned ten push-ups did not
   // open a conversation about targets.
   assert.ok(mcp.includes('...(nr?.goals_link ? { goals_link: nr.goals_link } : {})'), 'log does not carry the link');
-  assert.ok(mcp.includes('const nr = args.quiet ? null : await nudgeFor'), 'the quiet exception is gone');
+  assert.match(mcp, /args\.quiet \? null : (await )?nudgeFor\(/, 'the quiet exception is gone');
   assert.ok(mcp.includes('goalsLink(user.id, goals, flags)'), 'the brief does not carry the link');
   assert.match(SERVER_INSTRUCTIONS, /THE LINK IS AMBIENT/);
 });
@@ -8620,7 +8620,7 @@ await test('one thing, never a list, and it is carried where the model will see 
   assert.match(SERVER_INSTRUCTIONS, /never as an opener/);
   // A capture in passing stays quiet — somebody mid-way through a tax question
   // did not open a conversation about their training week.
-  assert.match(mcp, /args\.quiet \? null : await nudgeFor/);
+  assert.match(mcp, /args\.quiet \? null : (await )?nudgeFor\(/);
 
   // And it is on the dashboard too: preemptive is not a conversation feature.
   const api = readFileSync(new URL('../netlify/functions/api-progress.js', import.meta.url), 'utf8');
@@ -14913,7 +14913,7 @@ await test('every surface computes the coach from the same function, with the fl
   assert.match(fnOf('startSession'), /!startFlags\.length && sessionVoice\(/, 'start_session voices past a care flag');
   // log carries the register — never on a quiet capture, never the day line.
   const logFn = fnOf('log');
-  assert.match(logFn, /args\.quiet \? null : await nudgeFor/);
+  assert.match(logFn, /args\.quiet \? null : (await )?nudgeFor\(/);
   assert.ok(!/coach_day/.test(logFn), 'log carries the coach\'s day line');
   // set_plan OFFERS the tradition's push and week; it never writes them.
   const sp = fnOf('setPlan');
@@ -15420,7 +15420,11 @@ await test('get_day, whats_next and brief answer the whole day, and a flag silen
     assert.ok(!re.test(t), `"${t}" triggers a whole-day read`);
   for (const t of ['how many calories did I burn', 'what did I burn today', "what's my burn"]) assert.ok(re.test(t), t);
   // A quiet capture never becomes a recital.
-  assert.match(lg, /const fullRead = askedForDay && !args\.quiet \?/);
+  // The whole-day read (and the card off it) is only ever fetched off a
+  // capture that is not quiet, and day_read rides only when the day was asked.
+  assert.match(lg, /const wantRead = !args\.quiet && \(askedForDay \|\| written\.length > 0\)/);
+  assert.match(lg, /wantRead \? fullDayRead\(/);
+  assert.match(lg, /const fullRead = askedForDay \? cardRead : null/);
   // The phrasebook sends the founder's questions to the whole day, not the verdict.
   const book = SERVER_INSTRUCTIONS.split('\n');
   const briefLine = book.find(l => l.startsWith('  brief —')), dayLine = book.find(l => l.startsWith('  get_day —'));
@@ -15713,6 +15717,154 @@ await test('the scheduler retries a refused audience read once and says so, neve
   const stub = { from(t) { const b = { select: () => b, gte: () => b, limit: async () => queue[t].shift() }; return b; } };
   assert.deepEqual((await activeUsers(stub)).sort(), ['both', 'logger', 'phone-only']);
   assert.equal(queue.wrought_push_subs.length, 0, 'the refused read was not retried');
+});
+
+await test('the day card is the layout the founder asked to keep — the food table and the energy balance, every figure the read\'s own', async () => {
+  // 26 September: ChatGPT drew his day as a table of what he ate with each
+  // item's calories and the total, then an energy balance — he loved it —
+  // and the next reply was a paragraph again: "what about the layout from
+  // before like I asked her to keep". A layout the model invents is one it
+  // can drop, with numbers of its own. So the card is composed on the server,
+  // off dayReadout's figures and nothing else — run here through the REAL
+  // chain (energyBalance → dayReceipt → dayReadout → dayCard), because the
+  // first version passed on fixtures that left out the shapes the database
+  // actually stores (a null calorie, a watch that has not sent).
+  const { dayReadout, dayCard, DAY_CARD_NOTE } = await import('../netlify/functions/lib/dayread.js');
+  const { dayReceipt } = await import('../netlify/functions/lib/receipt.js');
+  const profile = { height_cm: 191, birth_year: 1982, sex: 'male' };
+  const TODAY = '2026-09-26';
+  const foodOf = log => {
+    const f = log.filter(e => e.type === 'food' || e.type === 'drink');
+    const sum = k => f.reduce((t, e) => t + (Number(e[k]) || 0), 0);
+    return { calories: sum('calories'), protein_g: sum('protein_g'), carbs_g: sum('carbs_g'), fat_g: sum('fat_g'),
+             meals: f.length, estimated: true, meals_uncounted: f.filter(e => e.calories == null).length };
+  };
+  const read = ({ log = [], date = TODAY, device = {}, bal = {}, flags = [], left = null } = {}) => {
+    const day = { date, logged: log.length > 0, food: foodOf(log), log, training: { sessions: 0 }, activity: { count: 0 }, device };
+    const balance = energyBalance({ profile, weightKg: 150, caloriesIn: day.food.calories, foodEstimated: true, workouts: [], activities: [], ...bal });
+    const receipt = dayReceipt({ day, balance, date, today: TODAY });
+    return dayReadout({ day, balance, receipt, scored: [], week: { say: '1 of 3 sessions this week.' }, date, today: TODAY, flags, left });
+  };
+  const noRange = card => assert.ok(!/\d\s*[–-]\s*\d/.test(card.replace(/\d[\d,]* − \d[\d,]*/g, '')), `a range on the card:\n${card}`);
+  const rowsOf = card => card.split('\n').filter(r => r.startsWith('| ') && !/^\| (Food|\*\*Total)|^\|\s*\|/.test(r) && !/^\|---/.test(r));
+
+  // ── A real day off the watch: three meals, one carrying macros ──────────
+  const log = [
+    { type: 'food', at: '11:18am', summary: 'two slices COBS sourdough | margarine and Havarti', calories: 590, protein_g: null, carbs_g: null, fat_g: null, estimated: true },
+    { type: 'food', at: '1:59pm', summary: 'a jumbo hotdog', calories: 500, protein_g: null, carbs_g: null, fat_g: null, estimated: true },
+    { type: 'food', at: '5:00pm', summary: 'KFC strips, fries, gravy', calories: 1115, protein_g: 50, carbs_g: 90, fat_g: 60, estimated: true },
+  ];
+  const watch = read({ log, device: { steps: 8020, active_calories: 953, fresh: { at: '6:01pm', stale: false } }, bal: { activeCalories: 953 } });
+  const card = dayCard(watch);
+  const lines = card.split('\n');
+  // Every item on the table with ITS OWN calories, time and macros — a pipe
+  // in what somebody said is a character, never a column.
+  assert.ok(lines.includes('| two slices COBS sourdough \\| margarine and Havarti (11:18am) | 590 | — | — | — |'), card);
+  assert.ok(lines.includes('| KFC strips, fries, gravy (5:00pm) | 1,115 | 50g | 90g | 60g |'), card);
+  const foodRows = lines.slice(lines.indexOf('|---|---:|---:|---:|---:|') + 1, lines.findIndex(l => l.startsWith('| **Total**')));
+  assert.equal(foodRows.length, watch.in.items.length, 'the table does not hold every item');
+  assert.equal(foodRows.reduce((t, r) => t + Number(r.split(' | ')[1].replace(/,/g, '')), 0), watch.in.total, 'the items do not add up to the card\'s own total');
+  assert.ok(lines.includes('| **Total** | **2,205** | **50g** | **90g** | **60g** |'), card);
+  // A missing macro is a dash said to be one — never a zero.
+  assert.ok(!/\| 0g \|/.test(card), 'a missing macro printed as a zero');
+  assert.match(card, /2 of 3 items have none, so those totals count only the items that carry them/);
+  // The burn rows are the receipt's own counted lines, in order, and they sum.
+  const burnStart = lines.indexOf('| | kcal |');
+  const burnRows = lines.slice(burnStart + 2, lines.findIndex((l, i) => i > burnStart && l.startsWith('| **Burn')));
+  assert.equal(burnRows[0], '| Eaten | 2,205 |');
+  const counted = burnRows.slice(1);
+  assert.deepEqual(counted.map(r => r.split(' | ').pop().replace(/[ |,]/g, '')).map(Number), watch.out.lines.map(l => l.calories));
+  assert.equal(watch.out.lines.reduce((t, l) => t + l.calories, 0), watch.out.total);
+  assert.match(counted[2], /^\| Work and moving about \(watch, as of 6:01pm\) \| 953 \|$/, 'the watch row does not say when it sent');
+  assert.ok(lines.includes(`| **Burn for the whole day** | **${watch.out.total.toLocaleString()}** |`), card);
+  assert.ok(lines.includes(`| **Net so far** | **${Math.abs(watch.net).toLocaleString()} down** |`), card);
+  // The notes are a list, so a strict renderer keeps each on its own line.
+  assert.match(card, /^- Steps: \*\*8,020\*\* \(watch, as of 6:01pm\)$/m);
+  assert.match(card, /^- Week: 1 of 3 sessions this week\.$/m);
+  assert.match(card, /_Every figure is an estimate\. The day isn't over/);
+  noRange(card);
+
+  // ── A meal with no calories is not a zero-calorie meal ──────────────────
+  const lunch = dayCard(read({ log: [{ type: 'food', at: '12:30pm', summary: 'had lunch', calories: null }], bal: { activeCalories: 400 } }));
+  assert.ok(lunch.includes('| had lunch (12:30pm) | not counted yet | — | — | — |'), lunch);
+  assert.ok(lunch.includes('| **Total** | **not counted yet** |'), lunch);
+  assert.ok(!/\| Eaten \||Net/.test(lunch), `a meal with no calories drew a deficit:\n${lunch}`);
+  // A zero-calorie drink is counted, and is still not a deficit.
+  const coffee = dayCard(read({ log: [{ type: 'drink', at: '7:10am', summary: 'black coffee', calories: 0 }], bal: { activeCalories: 400 } }));
+  assert.ok(coffee.includes('| Eaten | 0 |'), coffee);
+  assert.ok(!/Net/.test(coffee), `a black coffee drew a deficit:\n${coffee}`);
+  // Nothing eaten yet is not a deficit.
+  const empty = dayCard(read({ bal: { activeCalories: 400 } }));
+  assert.match(empty, /Nothing eaten is logged yet today\./);
+  assert.ok(!/\| Eaten \||Net/.test(empty), empty);
+  // A past day with nothing logged is not a day of fasting.
+  const past = dayCard(read({ date: '2026-09-20', bal: { activeCalories: 0 } }));
+  assert.match(past, /Nothing eaten was logged this day\./);
+  assert.ok(!/\| Eaten \||Net|so far/.test(past), past);
+  // A closed day with food says Burn and Net, never "so far".
+  const closed = dayCard(read({ log, date: '2026-09-25', bal: { activeCalories: 953 } }));
+  assert.match(closed, /^\| \*\*Burn\*\* \|/m);
+  assert.match(closed, /^\| \*\*Net\*\* \| \*\*[\d,]+ (down|over)\*\* \|$/m);
+  assert.ok(!/so far|isn't over/.test(closed), closed);
+
+  // ── The burn says where it came from, and a half burn gets no net ───────
+  const waiting = read({ log, bal: { activeCalories: 0, deviceExpected: true } });
+  assert.equal(waiting.out.source, 'awaiting_device');
+  const waitingCard = dayCard(waiting);
+  assert.match(waitingCard, /\| \*\*Burn counted so far — resting only\*\* \|/);
+  assert.match(waitingCard, /\| Work and moving about \(the watch has not sent today — nothing counted yet\) \| 0 \|/);
+  assert.ok(!/\| \*\*Net/.test(waitingCard), `a resting-only burn drew a net:\n${waitingCard}`);
+  assert.match(waitingCard, /^- No net yet: the watch has not sent today/m);
+  const projected = read({ log, bal: { activeCalories: 0 } });
+  const projectedProfile = dayCard(dayReadout({ ...{}, day: { date: TODAY, logged: true, food: foodOf(log), log, training: { sessions: 0 }, activity: { count: 0 }, device: {} },
+    ...(() => { const balance = energyBalance({ profile: { ...profile, activity_level: 'active' }, weightKg: 150, caloriesIn: 2205, activeCalories: 0, foodEstimated: true, workouts: [], activities: [] });
+      return { balance, receipt: dayReceipt({ day: { date: TODAY, food: foodOf(log), log, device: {} }, balance, date: TODAY, today: TODAY }) }; })(),
+    date: TODAY, today: TODAY }));
+  assert.match(projectedProfile, /\| \*\*Burn for the whole day, projected\*\* \|/, projectedProfile);
+  assert.match(projectedProfile, /\(projected from your activity level — nothing measured it\)/);
+  assert.ok(projected.out, 'no burn at all with height, weight and age on file');
+  // Logged work that beat the watch names the work on its row.
+  const shift = read({ log, device: { steps: 5292, active_calories: 740 }, bal: { activeCalories: 740, activities: [{ event_type: 'activity', summary: 'animal care, 4h', detail: { kcal: 2075, hours: 4, label: 'animal care' } }] } });
+  assert.equal(shift.out.source, 'logged_over_device');
+  assert.match(dayCard(shift), /\| Work and moving about \(work: animal care, 4h on task\) \|/);
+
+  // ── Under a care flag ───────────────────────────────────────────────────
+  // An unprompted reply carries neither the net nor the held target; a read
+  // somebody asked for carries both, as the whole-day read does.
+  const held = { short: 'Target about 1,723 — no figure of what is left while the record review stands.', withheld: true };
+  const flagged = read({ log, bal: { activeCalories: 953 }, flags: [{ flag: 'very_low_intake' }], left: held });
+  assert.equal(flagged.flagged, true);
+  const unprompted = dayCard(flagged);
+  assert.ok(!/Net|Left:/.test(unprompted), `the net or the held target rode on an unprompted card:\n${unprompted}`);
+  const asked = dayCard(flagged, { explicit: true });
+  assert.match(asked, /\| \*\*Net so far\*\* \|/);
+  assert.match(asked, /^- Left: Target about 1,723 — no figure of what is left/m);
+  // Without a flag the left line rides every card.
+  assert.match(dayCard(read({ log, bal: { activeCalories: 953 }, left: { short: 'About 303 left of today\'s 1,723 target.', withheld: false } })), /^- Left: About 303 left/m);
+
+  // ── WIRED: every reply that answers the day carries it, a quiet capture never ──
+  assert.match(DAY_CARD_NOTE, /EXACTLY AS WRITTEN/);
+  assert.match(DAY_CARD_NOTE, /never rebuild it, reorder it, drop a row, add a row or a figure of your own, or turn any number into a range/);
+  assert.match(DAY_CARD_NOTE, /show only the LATEST one, once/);
+  const mcp = decomment(readFileSync(new URL('../netlify/functions/mcp.js', import.meta.url), 'utf8'));
+  const fnOf = name => mcp.slice(mcp.indexOf(`async function ${name}(`), mcp.indexOf('\nasync function ', mcp.indexOf(`async function ${name}(`) + 10));
+  for (const name of ['log', 'getDay', 'logActivity', 'amendLast', 'structureEntries', 'energyBalanceTool', 'brief']) {
+    const f = fnOf(name);
+    assert.match(f, /day_card: dayCard\(/, `${name} carries no card`);
+    assert.match(f, /DAY_CARD_NOTE/, `${name} never says how to show the card`);
+  }
+  // The card read never costs a write its confirmation: every write door's
+  // read is caught, and the log's runs beside the nudge rather than after it.
+  for (const name of ['log', 'logActivity', 'amendLast', 'structureEntries', 'energyBalanceTool']) {
+    assert.match(fnOf(name), /fullDayRead\((?:[^()]|\([^()]*\))*\)\.catch\(\(\) => null\)/, `${name}'s card read is not caught`);
+  }
+  assert.match(fnOf('log'), /Promise\.all\(\[\s*wantRead \? fullDayRead\(/);
+  // Reads somebody asked for are explicit; the log's card is explicit only
+  // when the sentence asked where the day stands.
+  assert.match(fnOf('getDay'), /dayCard\(full\.read, \{ explicit: true \}\)/);
+  assert.match(fnOf('log'), /dayCard\(cardRead\.read, \{ explicit: !!fullRead \}\)/);
+  assert.match(SERVER_INSTRUCTIONS, /THE DAY CARD IS THE LAYOUT — KEEP IT\./);
+  assert.match(SERVER_INSTRUCTIONS, /A quiet capture carries no card/);
 });
 
 // ── Report ──────────────────────────────────────────────────────────────────

@@ -2842,6 +2842,58 @@ refused once, the other clean, the phone-only person still in the audience —
 because the first guard pinned both reads and passed with the phone half
 dropped from the result.
 
+### The layout he asked to keep — the day card, composed on the server
+
+`dayCard()` in `lib/dayread.js` + `day_card` on `log`, `get_day`,
+`log_activity`, `amend_last`, `structure_entries`, `energy_balance` and
+`brief`. 26 September: ChatGPT drew the founder's day on its own — a table of
+what he ate, each item's calories, the total underneath, then an *"energy
+balance"* card — and he said *"Love the format."* The next reply was a
+paragraph again: *"what about the layout from before like I asked her to keep
+— why don't you ever do what I ask?"*
+
+**He was right, and the reason is this file's oldest rule.** A layout the
+model invents is a layout the model can drop, and the numbers in it were the
+model's own. Nothing on the server had ever asked for it, so nothing kept it.
+
+- **The card is composed from `dayReadout`'s figures and nothing else**: the
+  items and totals are `in`, the burn rows are the receipt's three counted
+  lines (which sum to the total), the net is the receipt's, what is left is
+  `leftFor`'s. Nothing is added up in the function. Each item carries its
+  time, calories, protein, carbs and fat; the day's sugar, fibre and
+  saturated fat sit under the table — *"every item with all its numbers"*,
+  which the first version dropped and the review caught.
+- **A missing figure is never a zero — and the first version printed one.**
+  `n()` read `Number(null)` as 0, so *"had lunch"* with no calories became a
+  zero row, *"Eaten 0"* and a 2,975 deficit. A missing macro is a dash said to
+  be one, an item with no calories says *not counted yet*, and a day with no
+  calories counted has no Eaten row and no net. The tests run the real chain
+  (`energyBalance` → `dayReceipt` → `dayReadout` → `dayCard`) on the shapes
+  the database actually stores, because the first tests left the field out
+  instead of setting it to null and passed on the bug.
+- **Every burn row says where it came from.** The work row names the shift
+  when the logged work counted, the watch *"as of 6:01pm"* when it did not, a
+  projection as a projection. **A resting-only burn gets no net**: with the
+  watch not yet sent the total reads *"Burn counted so far — resting only"* —
+  the 8pm-close lesson, which the first card had lost.
+- **Nothing eaten yet is not a deficit** — nor is a black coffee, nor an
+  unlogged day in the past. **Under a care flag an unprompted card carries
+  neither the net nor the held target**; a read somebody asked for carries
+  both, as the whole-day read does.
+- **On every write that is not a quiet capture**, read beside the nudge rather
+  than after it and caught, so a failure there never costs a write its
+  confirmation. `amend_last` and `structure_entries` carry the card too — the
+  model is sent to them in the same turn to fill in macros — and the note
+  says to show only the latest card, once.
+- **Tool results, not descriptions.** A description reaches ChatGPT only
+  after a Refresh; a result is read on the next call. So the rule rides every
+  reply's `note` (*show day_card EXACTLY AS WRITTEN — never rebuild it, drop
+  a row, add a figure or turn a number into a range*), with the sheet,
+  `get_day`'s description and the GPT sheet as the belt.
+- **Markdown, because every chat client renders a table.** A pipe in what
+  somebody said is escaped, and the notes under the tables are a list so a
+  strict renderer keeps each on its own line.
+
 ### The standing coach shapes the day — rhythm and register, never food, never more
 
 `STYLE_DAYS` in `lib/voices.js` + `coachDay()` / `coachRegister()` /
@@ -5573,7 +5625,7 @@ self-reporting scale removes the most-abandoned manual entry), then Strava.
 
 ## Conventions
 
-- `npm test` runs `test/harness.mjs` — 784 offline tests, no network, no database.
+- `npm test` runs `test/harness.mjs` — 785 offline tests, no network, no database.
   Run it before every push. It covers the JSON-RPC envelope (which fails as an
   uninformative "could not connect" inside ChatGPT) and all the arithmetic
   (which fails as a confidently wrong number in somebody's verdict).
