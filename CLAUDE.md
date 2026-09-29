@@ -2720,9 +2720,11 @@ a ChatGPT plugin can hold several *connected accounts*. With two or more, ChatGP
 adds a required account selector (`link_id`) to every tool of the app and ships
 it with the instruction *"if multiple listed accounts could satisfy a write
 request and the intended account is not clear… ask which account to use before
-calling this tool."* The founder's grants from 18 and 20 September, right after
-that rollout, and ChatGPT calling all three at once on the 25th, fit it exactly;
-his reply is that instruction, nearly word for word. The model was obeying the
+calling this tool."* The founder's three connections are the sign-ins of 19
+August, 21 August and 3 September — the rows dated 18 and 20 September, first
+read here as new grants right after that rollout, were ChatGPT RENEWING the
+first two — and ChatGPT calling all three at once on the 25th fits it; his
+reply is that instruction, nearly word for word. The model was obeying the
 host, not ignoring us — which is why no amount of tool-description wording
 stopped it. (Third-party observation of ChatGPT plus OpenAI's own docs via
 search excerpts; OpenAI's pages were unreachable from the session.)
@@ -2841,6 +2843,170 @@ re-sends straight away and says so in the log if the retry fails too.
 refused once, the other clean, the phone-only person still in the audience —
 because the first guard pinned both reads and passed with the phone half
 dropped from the result.
+
+### The picker asked a third time — the proof rides the reply, not the sheet
+
+`lib/connections.js` + `connected_accounts` on every tool reply + the profile
+tool's published contract + `rpcTrace()` in `mcp.js`. 27 September, 11:58pm
+Toronto: a McDouble (400) and 150g of Hickory Sticks (800), a table and a total
+back from ChatGPT, and then *"Wrought is showing three identically named
+connections, and I couldn't verify which is your active account. I haven't
+logged them yet because I don't want to create duplicates."* The founder:
+*"Fix this how many times must I ask."* The third time — 24, 26 and 27
+September.
+
+**This one came after a read that worked**, which the first two did not — they
+made no call at all. At 03:58:35Z ChatGPT called Wrought through grant
+`dNXaY…`: the token lookup, then a brief's reads — the day, thirty days,
+`voice_pending`, workouts, weight — and no write after it. The tools were
+there, the connection answered, and the reply the model held when it refused
+carried `account` and `log_first` and nothing that settled WHICH account. The
+same grant had written a sandwich at 20:45Z without a pause. Both items were
+filed by hand the next day (`detail.repaired`).
+
+Three things were ours:
+
+- **The profile tool from #153 had never been called once** — and it did not
+  meet the contract it was built for: no `outputSchema`. It publishes the
+  contract's schema now, exactly, and is tested against it. **No `$schema`
+  key**: validators that default to draft-07 fail to compile a 2020-12
+  reference, and every other MCP client validates every tool it lists.
+  `securitySchemes: [{ type: 'oauth2', scopes: [] }]` is the documentation's
+  own literal — a scope ChatGPT believed it lacked could set off a
+  re-authorization, and re-authorizing is how the extra connections got made.
+  **It never carries a nickname** — see the review below.
+- **Our own always-read text opened with the fear.** `SAME_SERVICE` began
+  *"MORE THAN ONE CONNECTOR NAMED WROUGHT is never a reason to hold back"* and
+  went on to `link_id`, different emails, forks and copies signed in under
+  another address — on `log`, the one description a model reads every time it
+  considers a write. **A negation names the fear.** The host asks only when the
+  intended account is *"not clear from the user's request or conversation"*,
+  and a paragraph about forks read just before a write is exactly what makes
+  it unclear.
+- **Nothing the model read was a fact.** "Pick any" is a claim; which record
+  the connections write to is two tables the server can read.
+
+The rule now:
+
+- **Every reply carries a computed `connected_accounts` block**, as its first
+  key, whenever ChatGPT sent a `link_id` or the connector holds two or more
+  connections in use. It is the server's own check, at most thirty seconds old — read
+  only, started before the tool runs, bounded at 1.2s, never able to fail the
+  call. It costs nothing on a tool with three serial hops of its own and at
+  most three on a fast one when the container is cold (two once the client's
+  registration is remembered); a client that is not ChatGPT's and sent no
+  picker stops after one cached read of its own registration. Only a proof is
+  cached (thirty seconds per connection); a check that could not finish never
+  is, so one blink costs one reply the strong form, not thirty seconds. **Results reach ChatGPT on the next call;
+  descriptions only after a Refresh** — which is why the proof lives in the
+  reply, and why a read carries it: ChatGPT fans reads out across every
+  connection.
+- **The unit is the connector**: every registered client sharing the calling
+  client's redirect URI, **read fresh on every proof**. The premise is that a
+  ChatGPT plugin's connections share one registration — on the 28th there was
+  one client, one redirect URI, and only one user had ever held a token on it.
+  The trace logs the client, so a split will show. A client's OWN registration
+  is remembered ten minutes (it is never edited); its peers never are, because
+  a proof that did not see a registration made five minutes ago would say
+  "nobody else" about a connector somebody else just joined.
+- **The claim weakens when the evidence does.** `one_record: true` — *"the
+  intended account is clear: a write still owed goes through the link_id this
+  reply came from, ONE time in total — never once per connection — without
+  asking which. A write this reply already confirms is done: never repeat
+  it"* — only when nobody else holds a live grant
+  on any client of the connector. A probe that failed is never "nobody else".
+  Anything short of proof reaches the model as `null`, with *"one showing a
+  different email is a different Wrought account"*. The model is only ever
+  sent `true` or `null`, and **never a count** — a count goes stale the moment
+  the extras are disconnected. The foreign probes select one `client_id` with
+  `limit(1)`: another person's id, email or number never enters the process.
+- **The descriptions carry one positive sentence** — `WHICH_ACCOUNT`, on `log`
+  (after the receipt rule, so the 300-character Action still says *"Logged in
+  Wrought"*), `log_activity`, `log_set`, `log_weight` and `get_day`: when there
+  is a choice, the `connected_accounts` line settles it; with no Wrought reply
+  in the chat yet, call `get_day` through any of them first. The sheet,
+  `get_profile`, the GPT sheet and the saved habit say the same, and a test
+  greps every one of them for the fear.
+- **The fork defence stays, as a receipt rather than as doubt.** The first
+  write of a conversation names the account, and what the latest reply says
+  outranks anything an earlier chat or a saved memory said about accounts.
+  Two Wrought accounts behind one connector still reach the model as two
+  records, never papered over — there is a test.
+
+**The trace is how the next incident gets read.** One line per `initialize`,
+`tools/list` and `tools/call`: `{"mcp","tool","grant","client","link"}` — the
+method, the tool (only a name that is one of ours; the rest read `unknown`,
+because it arrives before auth), five characters of the grant's hash (carried
+on the user non-enumerably, so it can never reach a reply or a row), the last
+eight characters of the client id and a hash of the `link_id` when one came.
+Never an argument value, never the bearer.
+
+- `tools/list` with a grant means he pressed Refresh;
+- `tool: "wrought_account"` means ChatGPT read the profile;
+- a non-null `link` means ChatGPT forwards `link_id`.
+
+**The Account panel counts connections in use — 3, not 9.** *"Signed in 9
+separate times"* counted every unrevoked refresh row ever issued, six of them
+dormant since mid-August, beside a ChatGPT holding three. A connection is a
+refresh chain whose access token was issued in the same instant — paired on
+the token endpoint's own lifetimes, never on `created_at`, which is the
+database's clock — and is live or lapsed inside the seven days ChatGPT's lazy
+renewal needs. The note names the one path he can actually see: **Settings →
+Plugins → Wrought → Connection.** His screenshot on the 28th showed ONE
+Wrought under Plugins; the three sit behind its single *Connection* row, so
+the earlier "Connected accounts, the ••• beside each" was not a place his
+ChatGPT shows, and nothing here may ever say "delete two Wroughts". **The
+count is what Wrought has SEEN, never what ChatGPT holds**: ChatGPT's
+disconnect never reaches this server, so a connection removed there keeps
+counting until its access token lapses plus the grace — up to about five
+weeks — and the note says so, with *"if that page already lists one account,
+you are done"*. Stated as ChatGPT's present fact, it would have told him for a
+month to do what he had just done.
+
+**The review found the nickname was the fork it was meant to prevent.**
+*Same Wrought record on every connection* was earned by a proof and was true
+the day ChatGPT read it — and ChatGPT keeps the profile it read, with no way
+for the server to make it read again. Every fork happens AFTER the first
+link: sign in once (nicknamed), then sign in through the same connector by
+mistake with Apple, and ChatGPT's picker shows the stale label beside the
+first account as the one sentence hiding the second. **A label on somebody
+else's list must stay true forever, or it must not exist**; the identical id
+is what matches the connections, and there is a test that no nickname comes
+back. The same review caught three more:
+
+- **"Once" meant once per reply.** ChatGPT fans a read out across every
+  connection, each reply said *"write through the link_id this reply came
+  from, once, now"*, and a model obeying each would write the McDouble three
+  times — with no dedupe on `log`, by doctrine. Now: ONE time in total, never
+  once per connection; and a reply that already confirms a write says it is
+  done, because an imperative to write "now" stamped on top of *"Logged in
+  Wrought"* invites the same meal twice. A third review found the same
+  invitation one key further down: `log_first`, on every read, said to log
+  *"through the same connection as this call"* — on the read ChatGPT fans out
+  three ways. It says one time in total now, and a test holds every surface of
+  a reply to it.
+- **A custom GPT's `log_weight` Action ended mid-sentence** on *"the
+  connected…"* — the account sentence cut at 300 characters, on a door with
+  no account picker at all. Actions strip it.
+- **The dashboard's proof was unbounded** (three serial queries at 1.2s each)
+  and a ChatGPT caller whose check blinked got no line at all, although
+  `WHICH_ACCOUNT` had promised one would settle it. Bounded now, and a
+  connector already known to be ChatGPT's gets the unproven line.
+
+**What still cannot be fixed from the server**: a brand-new chat whose first
+act is a write, with no Wrought read before it, meets ChatGPT's picker with
+nothing Wrought can say. **After it ships**, read-only: Claude still lists
+every tool (if it rejects the profile tool, keep `outputSchema` and move
+`securitySchemes` into `_meta`); the function logs show one trace line per
+request; around 3 October 00:38Z connection C renews — a new pair, the old
+refresh revoked — and nothing is to be done about it.
+
+**What only the founder can do**: in ChatGPT open Settings → Plugins →
+Wrought → Connection; if it lists more than one account, keep any one and
+disconnect the others (they are all his one record), never uninstall Wrought
+or tap *Connect another account*; then press Refresh on that Wrought page and
+start a new chat. The Account panel will go on counting the disconnected ones
+for up to about five weeks, and says so.
 
 ### The layout he asked to keep — the day card, composed on the server
 
@@ -5668,7 +5834,7 @@ self-reporting scale removes the most-abandoned manual entry), then Strava.
 
 ## Conventions
 
-- `npm test` runs `test/harness.mjs` — 785 offline tests, no network, no database.
+- `npm test` runs `test/harness.mjs` — 803 offline tests, no network, no database.
   Run it before every push. It covers the JSON-RPC envelope (which fails as an
   uninformative "could not connect" inside ChatGPT) and all the arithmetic
   (which fails as a confidently wrong number in somebody's verdict).

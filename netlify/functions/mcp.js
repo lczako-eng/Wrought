@@ -25,6 +25,7 @@ import {
   fastLength, fastingSummary, macroLine,
 } from './lib/wrought.js';
 import { createHash } from 'node:crypto';
+import { profileIdFor, connectionFacts, connectedAccountsBlock, stampConnected } from './lib/connections.js';
 import { allowed } from './lib/membership.js';
 import { pendingVoice } from './lib/voice.js';
 import { activityBurn, EFFORTS, shiftsIn } from './lib/activity.js';
@@ -85,15 +86,17 @@ const CORS = {
 // These ship to every client on connect and are what make a weak model behave
 // like a good coach instead of a chatbot with a database.
 
-// SEVERAL CONNECTORS NAMED WROUGHT. ChatGPT keeps every connector somebody
-// adds, and reconnecting after a hiccup adds another — the founder's account
-// held NINE separate sign-ins, every one to the same Wrought record. Shown
-// three identically-named connectors, ChatGPT asked "which is yours, so I
-// don't write your food into the wrong account" and logged nothing at all,
-// which is the one outcome worse than either guess. The copies are one
-// service; each writes to the account it was signed in with, the reply names
-// that account, and a wrong one is joined afterwards by link_account. Said on
-// the tools themselves, because not every client reads this sheet.
+// WHICH ACCOUNT — said as a fact the server checked, never as a fear. With two
+// or more connected accounts ChatGPT puts an account picker (link_id) on every
+// tool and asks before a write whenever "the intended account is not clear from
+// the user's request or conversation". Three times it asked the founder, the
+// third straight after a Wrought read that worked (27 Sep, 11:58pm) — and every
+// always-read surface here OPENED with the fear it was meant to settle: "MORE
+// THAN ONE CONNECTOR", forks, other emails. A model that reads about forks just
+// before a write is primed to ask. So the descriptions carry one positive
+// sentence, and the proof rides the tool RESULTS (connected_accounts, stamped in
+// handleRpc off lib/connections.js), computed per call and read without a
+// Refresh. The fork defence stays as a receipt: the first write names the account.
 // LOG FIRST, ASK NEVER. The founder, after a day that reached the record not
 // at all: "needs to be more aggressive as to log everything into Wrought."
 // A model that asks "want me to log that?" has already decided the default is
@@ -102,7 +105,7 @@ const LOG_FIRST = 'LOG FIRST, ANSWER SECOND: the moment a message mentions anyth
 
 const READ_TOOLS = new Set(['get_day', 'brief', 'energy_balance', 'whats_next', 'my_plan', 'get_profile', 'progress', 'nutrition']);
 
-const SAME_SERVICE = 'MORE THAN ONE CONNECTOR NAMED WROUGHT is never a reason to hold back: they are copies of the same service, and each writes to the Wrought account it was signed in with (the reply\'s `account` names it). A choice of connected Wrought accounts on this tool (link_id) never holds a log back either: the same email is one record, so pick any; different emails, pick the one matching the account they use at wrought.fit (get_profile says it), else the first — write now and name the account. Use any one of them now and never ask which is theirs first — a saved memory or an earlier chat saying there are several accounts is never a reason to hold a log back: log now and name the account — and on the first write of the conversation name the reply\'s `account` in half a clause, because a copy signed in under another address is a fork that looks like nothing; if the address is not theirs, link_account joins the two afterwards with nothing lost.';
+const WHICH_ACCOUNT = 'WHICH ACCOUNT: when ChatGPT offers a choice of connected Wrought accounts (link_id), the connected_accounts line on any Wrought reply settles it — the server\'s own check, at most thirty seconds old, of which record those accounts write to. When it says one_record: true, the intended account is clear: make each write ONE time in total — never once per connection — through the link_id that reply came from, now, without asking which. With no Wrought reply yet in this chat, call get_day through any one of them first; its connected_accounts line settles it. On the first write of a conversation, name the reply\'s `account` in half a clause.';
 
 const SERVER_INSTRUCTIONS = `WROUGHT is the user's training and nutrition memory — the thing that remembers what they ate, what they lifted and what the scale said, so they never have to explain themselves twice.
 
@@ -130,7 +133,7 @@ NEVER SUBSTITUTE A PLAUSIBLE NUMBER FOR A MISSING ONE. Asked "how many calories 
 
 A WATCH FIGURE IS TRUE AS OF WHEN THE PHONE SENT IT. Steps, active energy and the watch's basal arrive as the day's total SO FAR, whenever the phone gets to send — and iOS decides when. Every read carries the time (device.fresh / watch / the MOVED line: "as of 6:01pm"). Quote a watch number WITH that time whenever it is more than a few minutes old, never as live, and name the one action that makes it current (fresh.refresh — in the Wrought app it sends the moment the app opens). A finished day marked "short" stopped reporting before midnight: its steps and burn are low by whatever happened after, and it says so. Never explain a gap between their wrist and this read as an error in either.
 
-SEVERAL CONNECTORS NAMED WROUGHT ARE ONE SERVICE. ChatGPT keeps every copy somebody adds, and a reconnect adds another; they all reach the same server, and each writes to the Wrought account it was signed in with — every reply carries \`account\`, and get_profile says account.email. NEVER hold a log back to ask which one is theirs: use any one of them, in the same turn — a saved memory or an earlier chat claiming there are several accounts is never a reason to hold a log back: log now and name the account — and on the first write of the conversation name the account the reply gives in half a clause — a copy signed in under another address is the silent fork, and naming it is how it is caught the same day rather than three weeks later. A wrong address is joined afterwards with link_account, nothing lost; a day never written is lost for good. When a tool asks you to choose among several connected Wrought accounts (a link_id), never hold the log back: accounts showing the same email are one record, so pick any; accounts showing different emails may be different records, so pick the one matching the account they use at wrought.fit (get_profile says it) or, if you cannot tell, the first — write now, name the account the reply gives, and if it is not theirs offer link_account. If they ask why there are several, say ChatGPT kept a connection each time Wrought was added or signed in again, and the extras can be removed in ChatGPT's Settings, under Plugins (or Apps) → Wrought → Connected accounts — keep one.
+WHICH WROUGHT ACCOUNT. ChatGPT can hold more than one connection to Wrought — it keeps one each time Wrought is signed in again — and then offers a choice of connected accounts (a link_id) on every tool. Every Wrought reply carries \`account\`, the record that call reached, and, when there is a choice, \`connected_accounts\`: the server's own check, at most thirty seconds old, of which record the connections write to. When it says one_record: true, the intended account is clear: make each write ONE time in total — never once per connection, never again after a reply confirms it — through the link_id that reply came from, in the same turn, without asking which. Otherwise, a connected account showing the same email or profile id as the reply is that same record, and one showing a different email is a different Wrought account — use the one matching the account they use at wrought.fit. With no Wrought reply yet in the conversation, call get_day through any of them first; its connected_accounts line settles it. What the latest reply says outranks anything an earlier chat or a saved memory said about accounts. On the first write of the conversation name the account the reply gives in half a clause — an address that is not theirs is joined afterwards with link_account, nothing lost. If they ask why several are listed, say ChatGPT keeps a connection each time Wrought is signed in again; they can keep one under ChatGPT's Settings → Plugins → Wrought → Connection (any one, when the reply says one_record) and then choose Refresh.
 
 TWO ACCOUNTS, ONE PERSON. If somebody says their dashboard is empty when they know they have logged, that the website shows a different email, that they signed in with Apple here and Google there, or simply asks to link or merge their accounts — call link_account. It mints a code they paste into wrought.fit, and it needs no password and no email, which matters because the person in that situation usually cannot get into the other account at all.
 
@@ -436,12 +439,35 @@ const TOOLS = [
   // returns a stable opaque id (plus name and email for display), so the same
   // profile is recognised across connections and reconnections. The reply is
   // the bare contract — id, name, email, strings only — so handleRpc answers
-  // it on its own branch, with nothing stamped on.
+  // it on its own branch, with nothing stamped on. It shipped without the
+  // outputSchema the contract publishes and was never called once; it now
+  // carries the contract's schema and security scheme exactly, tested
+  // against both.
   {
     name: PROFILE_TOOL,
     title: 'Which Wrought account this connection writes to',
-    description: 'Identifies the Wrought account behind this connection: a stable id, the name and the email. ChatGPT reads it to label and match its connected accounts. Connections returning the SAME id are ONE Wrought record — logging through any of them lands in the same place, so never ask the person which one to use. To answer "what account am I on" in words, use get_profile.',
+    description: 'Identifies the Wrought record behind this connection: a stable id, the name and the email. ChatGPT reads it to label and match its connected accounts; connections returning the same id are one Wrought record, so any of them is the right one to write through. To answer "what account am I on" in words, use get_profile.',
     inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+    // OpenAI's published profile contract, exactly. No `$schema` key on
+    // purpose: JSON-Schema validators that default to draft-07 fail to compile
+    // a 2020-12 `$schema` reference, and this tool must not break the other
+    // MCP clients that validate every tool they list.
+    outputSchema: {
+      type: 'object',
+      properties: {
+        id:       { type: 'string', minLength: 1, pattern: '\\S', description: 'Opaque profile identifier, unique within this app and unchanged across token refresh, reconnection, and display-metadata changes. Never reassigned to another profile.' },
+        name:     { type: 'string', description: 'Display name for the authenticated profile.' },
+        email:    { type: 'string', description: 'Email address for display; not used as the profile identity.' },
+        nickname: { type: 'string', description: 'A useful label that helps users distinguish connected profiles.' },
+      },
+      required: ['id'],
+      additionalProperties: false,
+    },
+    // The documentation's own literal: profile access needs no scope of its
+    // own. A scope ChatGPT believed it lacked could set off a
+    // re-authorization, and re-authorizing is exactly how the extra
+    // connections were made.
+    securitySchemes: [{ type: 'oauth2', scopes: [] }],
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     _meta: { 'openai/profile': true },
   },
@@ -460,7 +486,7 @@ const TOOLS = [
   {
     name: 'log',
     title: 'Log anything, in plain words',
-    description: 'THE main tool, and the one that must fire the moment food is MENTIONED — not when they ask for it to be saved. CONFIRM WITH THE WORDS "Logged in Wrought" — the reply\'s `say` opens with them; repeat them exactly, then each item with its calories and time. ' + SAME_SERVICE + ' ' + LOG_FIRST + ' Never say "logged" or "saved" about food without "in Wrought", and never say "Logged in Wrought" without this tool\'s reply in front of you: the phrase is how the person tells a write that landed from food you only acknowledged. A meal acknowledged in conversation and never written is the commonest way a day ends up short: the record is right, the recital is wrong, and nobody finds out until the total looks small.IF YOU ESTIMATE A MEAL\'S CALORIES IN YOUR REPLY, OR WRITE A "TODAY SO FAR" TOTAL, YOU MUST HAVE CALLED THIS IN THE SAME TURN: the estimate you wrote in prose but did not log lives only in the chat and vanishes with the tab, and "Did you log it?" then answers "only when you asked" — the exact failure this tool exists to prevent. Never quote a meal figure or a running total without logging first; the running total comes only from this tool\'s day_total, never from arithmetic in your head. If you find yourself saying "you\'re right, I missed that", the next thing you do is call this, never arithmetic. Records whatever the user said about their day — food, training, weight, measurements, sleep, mood, supplements. Pass their words AND your structured reading of them; both are required. "Two eggs and black coffee, pushed 40 minutes upper body, 182 on the scale" becomes three separate entries with macros estimated and the weight converted. Pass their words VERBATIM; do not tidy, summarise or ask for detail first. Use this for every log unless the user is giving only a weight or only a measurement, which have their own tools. IF THIS CONNECTOR WAS UNAVAILABLE EARLIER IN THE CONVERSATION, everything discussed since is unlogged: flush it all in ONE call the moment you can, with a time_hint on each item so breakfast lands at breakfast rather than the whole day landing at the catch-up minute. "Recorded in this chat" is the opposite of logged.',
+    description: 'THE main tool, and the one that must fire the moment food is MENTIONED — not when they ask for it to be saved. CONFIRM WITH THE WORDS "Logged in Wrought" — the reply\'s `say` opens with them; repeat them exactly, then each item with its calories and time. ' + WHICH_ACCOUNT + ' ' + LOG_FIRST + ' Never say "logged" or "saved" about food without "in Wrought", and never say "Logged in Wrought" without this tool\'s reply in front of you: the phrase is how the person tells a write that landed from food you only acknowledged. A meal acknowledged in conversation and never written is the commonest way a day ends up short: the record is right, the recital is wrong, and nobody finds out until the total looks small.IF YOU ESTIMATE A MEAL\'S CALORIES IN YOUR REPLY, OR WRITE A "TODAY SO FAR" TOTAL, YOU MUST HAVE CALLED THIS IN THE SAME TURN: the estimate you wrote in prose but did not log lives only in the chat and vanishes with the tab, and "Did you log it?" then answers "only when you asked" — the exact failure this tool exists to prevent. Never quote a meal figure or a running total without logging first; the running total comes only from this tool\'s day_total, never from arithmetic in your head. If you find yourself saying "you\'re right, I missed that", the next thing you do is call this, never arithmetic. Records whatever the user said about their day — food, training, weight, measurements, sleep, mood, supplements. Pass their words AND your structured reading of them; both are required. "Two eggs and black coffee, pushed 40 minutes upper body, 182 on the scale" becomes three separate entries with macros estimated and the weight converted. Pass their words VERBATIM; do not tidy, summarise or ask for detail first. Use this for every log unless the user is giving only a weight or only a measurement, which have their own tools. IF THIS CONNECTOR WAS UNAVAILABLE EARLIER IN THE CONVERSATION, everything discussed since is unlogged: flush it all in ONE call the moment you can, with a time_hint on each item so breakfast lands at breakfast rather than the whole day landing at the catch-up minute. "Recorded in this chat" is the opposite of logged.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -592,7 +618,7 @@ const TOOLS = [
   {
     name: 'log_set',
     title: 'Record a set and get the next one',
-    description: 'Call this EVERY time the user reports a set — "done", "got 8", "8 at 80", "failed on 5". Records it, advances their place in the session, and returns what is next with the rest time and whether to change the load. This is the tool that makes the session conversational rather than a form. If they just say "done" with no numbers, pass what the plan prescribed.',
+    description: 'Call this EVERY time the user reports a set — "done", "got 8", "8 at 80", "failed on 5". Records it, advances their place in the session, and returns what is next with the rest time and whether to change the load. This is the tool that makes the session conversational rather than a form. If they just say "done" with no numbers, pass what the plan prescribed. ' + WHICH_ACCOUNT,
     inputSchema: {
       type: 'object',
       properties: {
@@ -757,7 +783,7 @@ const TOOLS = [
   {
     name: 'get_day',
     title: 'The whole day, read out',
-    description: 'THE WHOLE DAY in one read: every item eaten with its own calories and time, the session and what it was worth, the work and what it was worth, the steps and the watch\'s active energy, the burn added up, the net with its sign, each goal with its percentage, and where the training week stands. "Where am I at", "daily totals", "give me everything", "how am I doing today", "what did I do today", "where do I stand", "break it down", "are they logged", "what did I eat today", "what\'s my calories", "how much have I burned", "what did my work burn", "how much should I eat today" all land here — show day_card exactly as written (the food table, then the energy balance), then day_read.say LINE BY LINE for the rest, never just a food total. Watch figures carry the time the phone sent them; say it. Every line is ONE computed figure, never a range. If the user names something that is not among the items, it was never logged: call log for it and read this again rather than adding it up in prose. ' + SAME_SERVICE,
+    description: 'THE WHOLE DAY in one read: every item eaten with its own calories and time, the session and what it was worth, the work and what it was worth, the steps and the watch\'s active energy, the burn added up, the net with its sign, each goal with its percentage, and where the training week stands. "Where am I at", "daily totals", "give me everything", "how am I doing today", "what did I do today", "where do I stand", "break it down", "are they logged", "what did I eat today", "what\'s my calories", "how much have I burned", "what did my work burn", "how much should I eat today" all land here — show day_card exactly as written (the food table, then the energy balance), then day_read.say LINE BY LINE for the rest, never just a food total. Watch figures carry the time the phone sent them; say it. Every line is ONE computed figure, never a range. If the user names something that is not among the items, it was never logged: call log for it and read this again rather than adding it up in prose. ' + WHICH_ACCOUNT,
     inputSchema: {
       type: 'object',
       properties: { date: { type: 'string', description: 'YYYY-MM-DD. Defaults to today.' } },
@@ -783,7 +809,7 @@ const TOOLS = [
   {
     name: 'log_weight',
     title: 'Log a weigh-in',
-    description: 'Record bodyweight when that is all they are giving you ("182 this morning"). Pass the number and the unit they used — conversion is handled. Returns the new rolling trend, not a day-to-day comparison.',
+    description: 'Record bodyweight when that is all they are giving you ("182 this morning"). Pass the number and the unit they used — conversion is handled. Returns the new rolling trend, not a day-to-day comparison. ' + WHICH_ACCOUNT,
     inputSchema: {
       type: 'object',
       properties: {
@@ -952,7 +978,7 @@ const TOOLS = [
   {
     name: 'log_activity',
     title: 'Record work, or a day of graft that was not training',
-    description: 'A shift, a garden, a house move, eight hours on a building site — real physical work that is NOT a training session. Use this whenever somebody mentions having worked, especially a physical job: "I was at the petting zoo all day", "did a double shift", "spent the afternoon digging". It is usually the biggest number in their day and nothing else counts it. The server works out the calories from a standard effort table — never estimate them yourself. Do NOT use this for the gym: a workout is log or log_set, and filing work as training would count it toward their weekly sessions. ' + SAME_SERVICE,
+    description: 'A shift, a garden, a house move, eight hours on a building site — real physical work that is NOT a training session. Use this whenever somebody mentions having worked, especially a physical job: "I was at the petting zoo all day", "did a double shift", "spent the afternoon digging". It is usually the biggest number in their day and nothing else counts it. The server works out the calories from a standard effort table — never estimate them yourself. Do NOT use this for the gym: a workout is log or log_set, and filing work as training would count it toward their weekly sessions. ' + WHICH_ACCOUNT,
     inputSchema: {
       type: 'object',
       properties: {
@@ -1010,7 +1036,7 @@ const TOOLS = [
   {
     name: 'get_profile',
     title: 'Read everything WROUGHT knows about this user',
-    description: 'One read: profile (timezone, units, height, equipment, training days, dietary constraints, bluntness), active goals, eating window, connected devices, and how long they have been logging. Call this at the start of a conversation so you never ask for something already known. ALSO the only honest answer to "what account am I on", "which account is this", "who am I", "is this connected", "are you working": it returns account.email — the address this connector actually writes to. Answering those from your own context (e.g. naming their ChatGPT plan) has happened and is confidently, uselessly wrong: the question is about WROUGHT\'s record, and only this tool can see it. If more than one connector named Wrought is showing, this is also how to tell which record each writes to: the same account.email is the same record, so any of them is right to use — never stop logging to ask.',
+    description: 'One read: profile (timezone, units, height, equipment, training days, dietary constraints, bluntness), active goals, eating window, connected devices, and how long they have been logging. Call this at the start of a conversation so you never ask for something already known. ALSO the only honest answer to "what account am I on", "which account is this", "who am I", "is this connected", "are you working": it returns account.email — the address this connector actually writes to. Answering those from your own context (e.g. naming their ChatGPT plan) has happened and is confidently, uselessly wrong: the question is about WROUGHT\'s record, and only this tool can see it. When ChatGPT offers more than one connected Wrought account, this reply\'s connected_accounts line says which record they write to.',
     inputSchema: { type: 'object', properties: {} },
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   },
@@ -1318,8 +1344,16 @@ const rpcResult = (id, result) => ({ jsonrpc: '2.0', id, result });
 // the Wrought user id — stable across token refresh, reconnection and a merge
 // into the surviving account, never reassigned — and hashed, because it is a
 // label for somebody else's list rather than a key into this database.
+//
+// NEVER a nickname. ChatGPT keeps the profile it read, and the server cannot
+// make it read again, so a label is only honest if it stays true of that
+// connection forever. "Same Wrought record on every connection" was proven
+// the day it was read and false the day a second account signed in through
+// the same connector — the one sentence hiding a fork would have been ours.
+// The identical id is what lets ChatGPT match the connections; nothing else
+// here needs saying.
 export function profileFor(user, displayName = null) {
-  const out = { id: createHash('sha256').update(`wrought-profile:${user.id}`).digest('hex').slice(0, 32) };
+  const out = { id: profileIdFor(user.id) };
   const name = typeof displayName === 'string' ? displayName.trim() : '';
   if (name) out.name = name.slice(0, 80);
   if (user.email) out.email = String(user.email);
@@ -1327,18 +1361,16 @@ export function profileFor(user, displayName = null) {
 }
 
 async function accountProfile(user) {
-  let name = null;
-  if (supabase) {
-    // A missing column (010 never run) or a blink is a profile with no name,
-    // never a failed call — ChatGPT treats an error as no profile at all.
-    // Bounded: the client retries a failing GET with backoff (about 7s on a
-    // 503), and ChatGPT reads a slow profile as none. The name is optional;
-    // the id is not, and it needs no query.
-    const { data } = await supabase.from('wrought_profile').select('display_name')
-      .eq('user_id', user.id).abortSignal(AbortSignal.timeout(1500)).maybeSingle()
-      .then(r => r, () => ({ data: null }));
-    name = data?.display_name || null;
-  }
+  // A missing column (010 never run) or a blink is a profile with no name,
+  // never a failed call — ChatGPT treats an error as no profile at all.
+  // Bounded: the client retries a failing GET with backoff (about 7s on a
+  // 503), and ChatGPT reads a slow profile as none. The name is optional;
+  // the id is not, and it needs no query.
+  const name = supabase
+    ? await supabase.from('wrought_profile').select('display_name')
+        .eq('user_id', user.id).abortSignal(AbortSignal.timeout(1500)).maybeSingle()
+        .then(r => r?.data?.display_name || null, () => null)
+    : null;
   return profileFor(user, name);
 }
 const rpcError  = (id, code, message) => ({ jsonrpc: '2.0', id, error: { code, message } });
@@ -5557,9 +5589,10 @@ async function getProfileTool(_args, user) {
       email: user.email || null,
       ways_in: (user.identities || []).map(i => i.provider),
     },
-    // Several connectors named Wrought are copies of one service, not two
-    // accounts — said here, where "which is mine" gets answered.
-    same_service: SAME_SERVICE,
+    // Which record a choice of connected Wrought accounts writes to is
+    // settled by this reply's connected_accounts line — said here, where
+    // "which is mine" gets answered, as the one positive sentence.
+    which_account: WHICH_ACCOUNT,
     profile: {
       timezone: profile.timezone, units: profile.units,
       height_cm: profile.height_cm, birth_year: profile.birth_year, sex: profile.sex,
@@ -6604,7 +6637,7 @@ export async function handleRpc(msg, authUser) {
       // three different people. structuredContent is where it is read from.
       if (params.name === PROFILE_TOOL) {
         const profile = await accountProfile(authUser);
-        return rpcResult(id, { content: [{ type: 'text', text: JSON.stringify(profile) }], structuredContent: profile });
+        return rpcResult(id, { content: [{ type: 'text', text: JSON.stringify(profile) }], structuredContent: profile, isError: false });
       }
       if (!supabase) return rpcError(id, -32603, 'Server not configured');
 
@@ -6620,6 +6653,13 @@ export async function handleRpc(msg, authUser) {
         });
       }
 
+      // WHICH RECORD THE CONNECTIONS WRITE TO, checked on this call and in the
+      // same round trip as the tool itself — started before the tool runs,
+      // bounded, and never able to fail the call. `link_id` arriving is
+      // ChatGPT saying it put its account picker on this tool.
+      const linkId = !!params.arguments && typeof params.arguments === 'object' && Object.prototype.hasOwnProperty.call(params.arguments, 'link_id');
+      const connP = connectionFacts(supabase, authUser, { linkId }).catch(() => null);
+
       try {
         const out = await impl(params.arguments || {}, authUser);
         // WHICH RECORD, ON EVERY REPLY. With several connectors named Wrought
@@ -6634,10 +6674,15 @@ export async function handleRpc(msg, authUser) {
         // when a model answers "what did I eat" while the sandwich they just
         // mentioned sits unlogged in the conversation.
         if (out && typeof out === 'object' && !Array.isArray(out) && READ_TOOLS.has(params.name) && out.log_first === undefined) {
-          out.log_first = 'Anything they mentioned in this conversation — food, drink, a workout, a shift, a weight — that is not on the record above: call log / log_activity for it NOW, before answering, and never ask first.';
+          out.log_first = 'Anything they mentioned in this conversation — food, drink, a workout, a shift, a weight — that is not on the record above: call log / log_activity for it NOW, before answering — ONE time in total, never once per connection, and not again once a reply confirms it — and never ask first.';
         }
+        // …and when ChatGPT offers a choice of accounts, the server's own
+        // answer to "which is intended" rides FIRST on the reply — the one
+        // surface that reaches the model without a Refresh. A read is exactly
+        // where it is seen: ChatGPT fans reads out across every connection.
+        const body = stampConnected(out, connectedAccountsBlock(authUser, await connP, { linkId }));
         return rpcResult(id, {
-          content: [{ type: 'text', text: JSON.stringify(out, null, 2) }],
+          content: [{ type: 'text', text: JSON.stringify(body, null, 2) }],
           isError: Boolean(out && out.error),
         });
       } catch (err) {
@@ -6669,6 +6714,32 @@ export async function handleRpc(msg, authUser) {
     default:
       return rpcError(id, -32601, `Method not found: ${method}`);
   }
+}
+
+/**
+ * One line per request, so the next incident can be READ rather than guessed:
+ * which method, which tool, which grant (five characters of its hash), which
+ * registered client (its last eight characters — a second ChatGPT
+ * registration would split one person's connections across two clients, and
+ * this is where that would show) and whether ChatGPT's account picker sent a
+ * link_id — hashed, never the value. Never an argument value and never the
+ * bearer: what somebody ate does not belong in a function log. A tool name is
+ * logged only when it is one of ours: it arrives before auth is checked, and
+ * a caller-supplied string is not something to write into the logs.
+ *
+ *   tools/list with a grant   → he pressed Refresh
+ *   tool "wrought_account"    → ChatGPT read the profile
+ *   link non-null             → ChatGPT forwards link_id
+ */
+export function rpcTrace(msg, authUser) {
+  const args = msg?.params?.arguments;
+  const has = !!args && typeof args === 'object' && Object.prototype.hasOwnProperty.call(args, 'link_id');
+  const name = msg?.method === 'tools/call' ? String(msg?.params?.name || '') : '';
+  return { mcp: msg?.method || null,
+           tool: !name ? null : Object.prototype.hasOwnProperty.call(IMPL, name) ? name : 'unknown',
+           grant: authUser?.via?.grant || null,
+           client: authUser?.via?.client_id ? String(authUser.via.client_id).slice(-8) : null,
+           link: has ? createHash('sha256').update(String(args.link_id)).digest('hex').slice(0, 8) : null };
 }
 
 export const handler = async (event) => {
@@ -6707,10 +6778,11 @@ export const handler = async (event) => {
     if (e instanceof AuthUnavailable) return unavailable(msg.id);
     throw e;
   }
+  if (msg.method === 'initialize' || msg.method === 'tools/list' || msg.method === 'tools/call') console.log(JSON.stringify(rpcTrace(msg, authUser)));
   const response = await handleRpc(msg, authUser);
   if (response && response.__unauthorized) return unauthorized(response.id);
 
   return { statusCode: 200, headers: CORS, body: JSON.stringify(response) };
 };
 
-export { TOOLS, SERVER_INSTRUCTIONS };
+export { TOOLS, SERVER_INSTRUCTIONS, WHICH_ACCOUNT };
