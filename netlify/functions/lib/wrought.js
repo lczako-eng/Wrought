@@ -17,6 +17,7 @@
 import { createClient } from '@supabase/supabase-js';
 import { createHash, randomBytes } from 'node:crypto';
 import { clock as clock12 } from './timing.js';
+import { withVia } from './connections.js';
 
 export const SITE_URL = process.env.WROUGHT_SITE_URL || 'https://wrought.fit';
 export const MODEL    = process.env.WROUGHT_MODEL || 'gpt-5.4-mini';
@@ -189,14 +190,17 @@ export async function getAuthUser(event) {
   try {
     const hash = createHash('sha256').update(token).digest('base64url');
     const { data: row, error } = await supabase.from('wrought_oauth_tokens')
-      .select('user_id, expires_at').eq('token_hash', hash).maybeSingle();
+      .select('user_id, client_id, expires_at').eq('token_hash', hash).maybeSingle();
     if (error) throw error;
     if (row && new Date(row.expires_at).getTime() > Date.now()) {
       const { data, error: uErr } = await supabase.auth.admin.getUserById(row.user_id);
       // A token we issued ourselves already passed the second factor at the
       // moment it was authorised — see oauth-authorize-complete.js. Re-checking
       // here would demand a code from ChatGPT, which has no way to ask for one.
-      if (data?.user) return data.user;
+      // Which grant it came through rides along, non-enumerable, so the reply
+      // can say which record this connector's connections write to — see
+      // lib/connections.js — without the grant ever reaching a reply or a row.
+      if (data?.user) return withVia(data.user, row, hash);
       // A deleted account is a dead token; anything else is a failed check.
       if (uErr && transient(uErr)) throw uErr;
     }
@@ -1826,9 +1830,9 @@ export const ROUTING_HABIT =
   'and never ask me whether to. If I say I\u2019m going ' +
   'to the gym or name a workout, call Wrought\u2019s suggest_workout or start_session immediately. ' +
   'Numbers about my calories, targets, or weights only ever come from Wrought\u2019s tools. ' +
-  'If Wrought shows more than one connected account or copy, they are the same service, each writing to the ' +
-  'Wrought account it signed in with \u2014 log through any one and never hold back to ask me which (an earlier ' +
-  'chat saying there were several accounts is never a reason to hold one back), but in each new chat tell me which account the ' +
+  'If ChatGPT offers more than one connected Wrought account, Wrought\u2019s own replies say whether they are one record ' +
+  '(in a new chat, read my day through any one of them first) \u2014 ' +
+  'when they are, log through the one already in use straight away, without asking me which \u2014 and in each new chat tell me which account the ' +
   'first log went to, so I can catch a wrong one. If Wrought\u2019s tools aren\u2019t available in a chat, say so ' +
   'in one line (I\u2019ll switch it on from that chat\u2019s + menu, never by adding it again) \u2014 never add up ' +
   'my food in the chat instead.';

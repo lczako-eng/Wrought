@@ -13,6 +13,7 @@
 // "logged in", neither implies the other, and there was nowhere to see either.
 
 import { supabase, getAuthUser } from './lib/wrought.js';
+import { chainsInUse, connectorProof, copiesNote, within, FACTS_TIMEOUT_MS } from './lib/connections.js';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -44,26 +45,19 @@ export const handler = async (event) => {
 
   if (event.httpMethod === 'GET') {
     const now = Date.now();
-    // The sign-ins that are still live, one per time an assistant was
-    // connected (a refresh rotates within its own chain, so a chain is one
-    // sign-in). Counted, never shown: the hashes stay in the table.
+    // Every token row this account holds, and the refresh chains still live —
+    // one chain per time an assistant was signed in (a refresh rotates within
+    // its own chain). Counted, never shown: the hashes stay in the table.
     const [{ data: tokens }, { data: grants }] = await Promise.all([
       supabase.from('wrought_oauth_tokens')
         .select('client_id, scope, expires_at, created_at')
         .eq('user_id', user.id).order('created_at', { ascending: false }),
       supabase.from('wrought_oauth_refresh')
-        .select('client_id, created_at')
+        .select('client_id, created_at, expires_at')
         .eq('user_id', user.id).eq('revoked', false).gt('expires_at', new Date(now).toISOString()),
     ]);
-    const signIns = new Map();
-    for (const g of (grants || [])) signIns.set(g.client_id, (signIns.get(g.client_id) || 0) + 1);
 
     const ids = [...new Set((tokens || []).map(t => t.client_id).filter(Boolean))];
-    const { data: clients } = ids.length
-      ? await supabase.from('wrought_oauth_clients')
-          .select('client_id, client_name, redirect_uris').in('client_id', ids)
-      : { data: [] };
-    const byId = new Map((clients || []).map(c => [c.client_id, c]));
 
     // One row per client, not per token. A client that refreshed forty times is
     // one connection, and showing forty is how a security screen becomes noise
@@ -75,7 +69,6 @@ export const handler = async (event) => {
       if (!cur) {
         seen.set(t.client_id, {
           client_id: t.client_id,
-          name: nameFor(byId.get(t.client_id)),
           // Rows come back newest first, so the first one seen is the newest.
           // An access token is short-lived and only reissued when the assistant
           // actually calls, which makes this the closest thing to "last used"
@@ -91,45 +84,69 @@ export const handler = async (event) => {
       }
     }
 
+    // CONNECTIONS IN USE — the number ChatGPT actually holds. Every
+    // unrevoked refresh row is not a connection: on 28 September the
+    // founder's account held nine, six of them dormant since mid-August, and
+    // the panel said "signed in 9 separate times" beside a ChatGPT holding
+    // three. A chain counts while its paired access token is live or lapsed
+    // inside the grace ChatGPT's lazy renewal needs (lib/connections.js).
     const list = [...seen.values()];
     for (const c of list) {
       if (!c.connected_at) c.connected_at = c.last_token_at;
-      c.sign_ins = signIns.get(c.client_id) || 0;
+      c.in_use = chainsInUse({
+        tokens: (tokens || []).filter(t => t.client_id === c.client_id),
+        refresh: (grants || []).filter(g => g.client_id === c.client_id),
+        now,
+      }).length;
     }
     const active = list.filter(c => c.active);
+    const many = active.filter(c => c.in_use > 1);
 
-    // SEVERAL WROUGHTS IN CHATGPT. Every "add connector" or reconnect is a new
-    // sign-in, and ChatGPT keeps each as its own identically-named connector —
-    // the founder's account held nine, and ChatGPT refused to log a day
-    // because it could not tell "which one is yours". They are copies of THIS
-    // account, and the screen says so. "Signed in N times", never "N copies":
-    // a connector deleted inside ChatGPT leaves its sign-in here until it
-    // expires, so the count can only be an upper bound on what ChatGPT shows.
-    const many = active.filter(c => c.sign_ins > 1);
-    const copiesNote = many.length
-      ? `${many.map(c => `${c.name} has signed in to this account ${c.sign_ins} separate times`).join('; ')} — once each time Wrought was added or reconnected. Those copies all log to this record. Any other Wrought showing there is a separate sign-in this page cannot see — ask it "what account am I on" to check it logs here. To tidy up, remove the extras in ${many.length === 1 ? many[0].name : 'the assistant'}'s own settings and keep one${many.some(c => /chatgpt/i.test(c.name)) ? ' (in ChatGPT: Settings → Plugins → Wrought → Connected accounts, the ••• beside each extra) — while more than one is connected, ChatGPT stops before a log to ask which' : ''}. Disconnect below signs every copy out at once.`
-      : null;
+    // The names, the last write and — for a client holding more than one
+    // connection — the server's proof of which record they reach, in one
+    // batch: none of them needs anything another returns.
+    const [{ data: clients }, { data: lastWrite }, ...proofs] = await Promise.all([
+      ids.length
+        ? supabase.from('wrought_oauth_clients')
+            .select('client_id, client_name, redirect_uris').in('client_id', ids)
+        : { data: [] },
+      // HAS AN ASSISTANT EVER ACTUALLY WRITTEN TO THIS ACCOUNT.
+      //
+      // "Connected" and "doing anything" are different facts, and the gap
+      // between them is invisible: an assistant can hold a perfectly good
+      // token and never call a tool, which looks — from the dashboard —
+      // exactly like an assistant that is not connected at all, and exactly
+      // like a product that is broken. "Hey Jim bro, which account am I on?"
+      // answered with "your ChatGPT Plus account", from the model's own
+      // context, with no tool touched. Nothing on either screen could tell
+      // that apart from a fork. Every event the connector writes carries
+      // source 'agent'; the newest one is the last time this account heard
+      // from an assistant at all.
+      supabase.from('wrought_events')
+        .select('created_at, summary').eq('user_id', user.id).eq('source', 'agent')
+        .order('created_at', { ascending: false }).limit(1),
+      // Bounded as a whole, like the check on a tool reply: three serial
+      // queries at their own timeouts could otherwise hold the panel ~3.6s.
+      ...many.map(c => within(connectorProof(supabase, user.id, c.client_id, { now }), FACTS_TIMEOUT_MS)),
+    ]);
+    const byId = new Map((clients || []).map(c => [c.client_id, c]));
+    for (const c of list) c.name = nameFor(byId.get(c.client_id));
+    const proofOf = new Map(many.map((c, i) => [c.client_id, proofs[i] || null]));
 
-    // HAS AN ASSISTANT EVER ACTUALLY WRITTEN TO THIS ACCOUNT.
-    //
-    // "Connected" and "doing anything" are different facts, and the gap
-    // between them is invisible: an assistant can hold a perfectly good token
-    // and never call a tool, which looks — from the dashboard — exactly like
-    // an assistant that is not connected at all, and exactly like a product
-    // that is broken. "Hey Jim bro, which account am I on?" answered with
-    // "your ChatGPT Plus account", from the model's own context, with no tool
-    // touched. Nothing on either screen could tell that apart from a fork.
-    //
-    // Every event the connector writes carries source 'agent'. The newest one
-    // is the last time this account heard from an assistant at all.
-    const { data: lastWrite } = await supabase.from('wrought_events')
-      .select('created_at, summary').eq('user_id', user.id).eq('source', 'agent')
-      .order('created_at', { ascending: false }).limit(1);
+    // SEVERAL CONNECTIONS IN ONE ASSISTANT. Said off the connections in use,
+    // naming the one path he can see (Settings → Plugins → Wrought →
+    // Connection). "Every one signs in to this record" only when the server
+    // just proved it; otherwise the page says only what it knows.
+    let copiesNoteText = null;
+    for (const c of many) {
+      copiesNoteText = copiesNote({ name: c.name, inUse: c.in_use, oneRecord: proofOf.get(c.client_id)?.one_record, email: user.email });
+      if (copiesNoteText) break;
+    }
 
     return json(200, {
       connections: list,
       active: active.length,
-      copies_note: copiesNote,
+      copies_note: copiesNoteText,
       last_write: lastWrite?.[0]?.created_at || null,
       last_write_was: lastWrite?.[0]?.summary || null,
       // The three states, named, because they need completely different fixes
@@ -141,7 +158,7 @@ export const handler = async (event) => {
       // reasonable: the connector's token IS a login, just not this browser's.
       note: 'An assistant holds its own token. That is a separate login from this browser — signing out here does not disconnect it, and connecting it does not sign you in here.',
       say: active.length
-        ? `${active.length} assistant${active.length === 1 ? '' : 's'} connected: ${active.map(c => c.name).join(', ')}.`
+        ? `${active.length} assistant${active.length === 1 ? '' : 's'} connected: ${active.map(c => c.name + (proofOf.get(c.client_id)?.one_record === true ? ` (${c.in_use} connections seen recently, all this record)` : '')).join(', ')}.`
         : 'No assistant is connected to this account right now.',
     });
   }

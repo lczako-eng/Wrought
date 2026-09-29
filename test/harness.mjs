@@ -3059,7 +3059,9 @@ await test('ChatGPT can tell its connected accounts apart: one profile tool, the
   assert.ok(contract(sc), `the profile reply breaks the contract: ${JSON.stringify(sc)}`);
   assert.ok(contract(JSON.parse(res.result.content[0].text)), 'the text copy breaks the contract');
   assert.equal(sc.email, me.email);
-  assert.equal(res.result.isError, undefined);
+  // Repinned: the contract's own example answers isError: false, and the old
+  // pin held the reply to a shape the published contract does not show.
+  assert.equal(res.result.isError, false);
   // Nothing stamped on — `account` and `log_first` ride every other reply and
   // would make this one fail validation, which reads as "no profile".
   assert.equal(sc.account, undefined);
@@ -3080,10 +3082,13 @@ await test('ChatGPT can tell its connected accounts apart: one profile tool, the
   const src = readFileSync(new URL('../netlify/functions/mcp.js', import.meta.url), 'utf8');
   const ap = src.slice(src.indexOf('async function accountProfile('), src.indexOf('async function accountProfile(') + 900);
   assert.match(ap, /\.abortSignal\(AbortSignal\.timeout\(\d{3,4}\)\)/);
-  // And when ChatGPT does offer a choice of accounts, the tools say to pick one and write.
-  // …and never claims different emails are one record: the same email is, a different one may not be.
-  assert.match(TOOLS.find(t => t.name === 'log').description, /\(link_id\) never holds a log back either: the same email is one record, so pick any; different emails, pick the one matching/);
-  assert.match(SERVER_INSTRUCTIONS, /\(a link_id\), never hold the log back: accounts showing the same email are one record[^.]*different emails may be different records/);
+  // And when ChatGPT does offer a choice of accounts, the tools say what
+  // settles it. Repinned: the old pins held the "never holds a log back"
+  // wording in place — the negation that named the fear before every write.
+  // The guarantee is the same: the server's check makes the account clear,
+  // and a different email is never called the same record.
+  assert.match(TOOLS.find(t => t.name === 'log').description, /When it says one_record: true, the intended account is clear: make each write ONE time in total — never once per connection — through the link_id that reply came from, now, without asking which/);
+  assert.match(SERVER_INSTRUCTIONS, /a connected account showing the same email or profile id as the reply is that same record, and one showing a different email is a different Wrought account/);
   assert.ok(!/link_id\)?,? that is the same thing/.test(SERVER_INSTRUCTIONS));
   // And a stranger still gets the sign-in challenge, not a profile.
   const anon = await handleRpc({ jsonrpc: '2.0', id: 10, method: 'tools/call', params: { name: tool.name, arguments: {} } }, null);
@@ -15216,8 +15221,11 @@ await test('the phone closes the days it has finished, syncs when opened, and se
 
 await test('several connectors named Wrought never stop a log, and every write names its account', async () => {
   const cut = t => String(t).replace(/\s+/g, ' ');
+  // Repinned: "MORE THAN ONE CONNECTOR…" was the fear, named before every
+  // write. The same tools, in the same order, now carry the one positive
+  // sentence that points at the server's own check.
   for (const name of ['log', 'log_activity', 'get_day']) {
-    assert.match(cut(TOOLS.find(t => t.name === name).description), /MORE THAN ONE CONNECTOR NAMED WROUGHT is never a reason to hold back/, `${name} never hears that copies are one service`);
+    assert.match(cut(TOOLS.find(t => t.name === name).description), /WHICH ACCOUNT: when ChatGPT offers a choice of connected Wrought accounts/, `${name} never hears what settles a choice of accounts`);
   }
   // On log it rides right AFTER the receipt rule — never in front of it: the
   // custom GPT's Action keeps 300 characters, and those must still carry
@@ -15227,23 +15235,22 @@ await test('several connectors named Wrought never stop a log, and every write n
   assert.ok(logOp, 'the Action for log moved and this test can no longer see it');
   assert.match(logOp.description, /CONFIRM WITH THE WORDS "Logged in Wrought"/, 'the duplicates rule pushed the receipt out of the Action');
   const logDesc = cut(TOOLS.find(t => t.name === 'log').description);
-  assert.ok(logDesc.indexOf('MORE THAN ONE CONNECTOR') > logDesc.indexOf('then each item with its calories and time'));
-  assert.match(TOOLS.find(t => t.name === 'get_profile').description, /the same account\.email is the same record/);
-  assert.match(SERVER_INSTRUCTIONS, /SEVERAL CONNECTORS NAMED WROUGHT ARE ONE SERVICE/);
-  assert.match(SERVER_INSTRUCTIONS, /NEVER hold a log back to ask which one is theirs/);
+  assert.ok(logDesc.indexOf('WHICH ACCOUNT') > logDesc.indexOf('then each item with its calories and time'));
+  assert.match(TOOLS.find(t => t.name === 'get_profile').description, /this reply's connected_accounts line says which record they write to/);
+  assert.match(SERVER_INSTRUCTIONS, /WHICH WROUGHT ACCOUNT\./);
+  assert.match(SERVER_INSTRUCTIONS, /the intended account is clear/);
   const { GPT_INSTRUCTIONS } = await import('../netlify/functions/lib/gpt_instructions.js');
-  assert.match(GPT_INSTRUCTIONS, /copies of ONE service/);
+  assert.match(GPT_INSTRUCTIONS, /the reply's connected_accounts line is the server's own check of which record each writes to/);
   assert.ok(GPT_INSTRUCTIONS.length <= 8000, `the GPT sheet is ${GPT_INSTRUCTIONS.length} characters`);
   const { ROUTING_HABIT } = await import('../netlify/functions/lib/wrought.js');
-  // The saved habit says what the server can stand behind: the copies are one
-  // service, each writing to the account IT signed in with — never that they
-  // are all one account, which the server cannot see and a real fork would
-  // make false. A stale "several accounts" from an earlier chat changes
-  // nothing, and a chat without the tools says so rather than totting food up.
-  assert.match(ROUTING_HABIT, /more than one connected account or copy, they are the same service, each writing to the Wrought account it signed in with/);
+  // The saved habit says what the server can stand behind: one record only
+  // when Wrought's own reply says so — never that every account is one,
+  // which a real fork would make false. Repinned off the copies-and-forks
+  // wording, which named the fear in the person's own voice. A chat without
+  // the tools still says so rather than totting food up.
+  assert.match(ROUTING_HABIT, /Wrought\u2019s own replies say whether they are one record/);
   assert.ok(!/my one Wrought account|all (?:write|log) to (?:one|my) account/.test(ROUTING_HABIT), 'the habit promises every copy is one account');
-  assert.match(ROUTING_HABIT, /log through any one and never hold back to ask me which/);
-  assert.match(ROUTING_HABIT, /an earlier chat saying there were several accounts is never a reason to hold one back/);
+  assert.match(ROUTING_HABIT, /log through the one already in use straight away, without asking me which/);
   // Switched on in the chat, never added again — adding is what bred three.
   assert.match(ROUTING_HABIT, /switch it on from that chat\u2019s \+ menu, never by adding it again/);
   assert.match(ROUTING_HABIT, /If Wrought\u2019s tools aren\u2019t available in a chat, say so in one line/);
@@ -15260,13 +15267,14 @@ await test('several connectors named Wrought never stop a log, and every write n
   // …and every other tool, stamped once where both doors dispatch, without
   // overwriting a tool's own account block.
   assert.match(mcp, /const out = await impl\(params\.arguments \|\| \{\}, authUser\);\s*if \(out && typeof out === 'object' && !Array\.isArray\(out\) && out\.account === undefined\) \{\s*out\.account = authUser\?\.email \|\| null;/);
-  assert.match(fnOf('getProfileTool'), /same_service: SAME_SERVICE,/);
-  // The dashboard says the same thing, off a COUNT of live sign-ins — never
-  // the hashes themselves.
+  assert.match(fnOf('getProfileTool'), /which_account: WHICH_ACCOUNT,/);
+  // The dashboard says the same thing, off a COUNT of connections in use —
+  // never the hashes themselves. (Repinned: the chains need their expiry to
+  // be paired; "signed in N separate times" is replaced by the test that
+  // counts what ChatGPT actually holds.)
   const conn = readFileSync(new URL('../netlify/functions/api-connections.js', import.meta.url), 'utf8');
-  assert.match(conn, /from\('wrought_oauth_refresh'\)\s*\.select\('client_id, created_at'\)/);
+  assert.match(conn, /from\('wrought_oauth_refresh'\)\s*\.select\('client_id, created_at, expires_at'\)/);
   assert.ok(!/select\([^)]*token_hash/.test(conn), 'the connections screen reads token hashes');
-  assert.match(conn, /signed in to this account \$\{c\.sign_ins\} separate times/);
   // Drawn only when the server sent it, and escaped — the shape, not the markup.
   assert.match(decomment(page('app.html')), /d\.copies_note \? `<p class="sub">\$\{esc\(d\.copies_note\)\}<\/p>/);
   // And the advice that bred the copies no longer does.
@@ -15599,17 +15607,18 @@ await test('a silent watch at the 8pm close is a resting-only burn, said as one 
 await test('several connectors never hold a log back, and the account is named on the first write — never assumed to be one', async () => {
   const cut = t => String(t).replace(/\s+/g, ' ');
   const logDesc = cut(TOOLS.find(t => t.name === 'log').description);
-  assert.match(logDesc, /never ask which is theirs first — [^—]*— and on the first write of the conversation name the reply's `account`/);
-  // A remembered "several accounts" is named as changing nothing, on the tool
-  // and the sheet alike.
-  assert.match(logDesc, /a saved memory or an earlier chat saying there are several accounts is never a reason to hold a log back: log now and name the account/);
-  const para = SERVER_INSTRUCTIONS.slice(SERVER_INSTRUCTIONS.indexOf('SEVERAL CONNECTORS NAMED WROUGHT'), SERVER_INSTRUCTIONS.indexOf('\n\n', SERVER_INSTRUCTIONS.indexOf('SEVERAL CONNECTORS NAMED WROUGHT')));
-  assert.match(para, /on the first write of the conversation name the account the reply gives/);
+  // Repinned onto WHICH_ACCOUNT's first-write sentence; the saved-memory rule
+  // lives on the sheet now, where it outranks rather than negates.
+  assert.match(logDesc, /On the first write of a conversation, name the reply's `account` in half a clause/);
+  const para = SERVER_INSTRUCTIONS.slice(SERVER_INSTRUCTIONS.indexOf('WHICH WROUGHT ACCOUNT.'), SERVER_INSTRUCTIONS.indexOf('\n\n', SERVER_INSTRUCTIONS.indexOf('WHICH WROUGHT ACCOUNT.')));
+  assert.match(para, /On the first write of the conversation name the account the reply gives/);
   assert.ok(!/if they asked/.test(para), 'naming the account is conditional on being asked again');
-  assert.match(para, /a saved memory or an earlier chat claiming there are several accounts is never a reason to hold a log back: log now and name the account/);
+  assert.match(para, /outranks anything an earlier chat or a saved memory said about accounts/);
   // The dashboard says what the server knows: its own sign-ins, never that
-  // every copy ChatGPT shows is this account.
-  const conn = readFileSync(new URL('../netlify/functions/api-connections.js', import.meta.url), 'utf8');
+  // every copy ChatGPT shows is this account. (The note's words are composed
+  // in lib/connections.js now, so both files are read.)
+  const conn = readFileSync(new URL('../netlify/functions/api-connections.js', import.meta.url), 'utf8') +
+    readFileSync(new URL('../netlify/functions/lib/connections.js', import.meta.url), 'utf8');
   assert.ok(!/every one of them is this same account/.test(conn));
   assert.match(conn, /Any other Wrought showing there is a separate sign-in this page cannot see/);
   const { ROUTING_HABIT } = await import('../netlify/functions/lib/wrought.js');
@@ -15671,10 +15680,11 @@ await test('under a care flag no structured gap of what is left to eat rides on 
 });
 
 await test('the watch clock reaches every reader: sign-ins, the receipt in both counting cases, the nightly device check', async () => {
-  // Sign-ins counted from LIVE grants only: a rotated refresh row lives about
-  // a year, and counting it inflated "signed in N times" once per rotation.
+  // Connections counted from LIVE grants only: a rotated refresh row lives
+  // about a year, and counting it inflated the count once per rotation.
+  // (Repinned: the select carries expires_at, which pairing needs.)
   const conn = readFileSync(new URL('../netlify/functions/api-connections.js', import.meta.url), 'utf8');
-  assert.match(conn, /from\('wrought_oauth_refresh'\)\s*\.select\('client_id, created_at'\)\s*\.eq\('user_id', user\.id\)\.eq\('revoked', false\)\.gt\('expires_at',/);
+  assert.match(conn, /from\('wrought_oauth_refresh'\)\s*\.select\('client_id, created_at, expires_at'\)\s*\.eq\('user_id', user\.id\)\.eq\('revoked', false\)\.gt\('expires_at',/);
   // The receipt says the watch's figure is AS OF its send, whichever side won.
   const { dayReceipt } = await import('../netlify/functions/lib/receipt.js');
   const { energyBalance } = await import('../netlify/functions/lib/training.js');
@@ -16015,6 +16025,619 @@ await test('the day card is the layout the founder asked to keep — the food ta
   assert.match(SERVER_INSTRUCTIONS, /THE DAY CARD IS THE LAYOUT — KEEP IT\./);
   assert.match(SERVER_INSTRUCTIONS, /amend_last, structure_entries \(when it fills in today\), energy_balance and brief/);
   assert.match(SERVER_INSTRUCTIONS, /A quiet capture carries no card/);
+});
+
+group('Which account — the proof rides the reply, not the sheet');
+
+// 27 September, 11:58pm Toronto. A McDouble and 150g of Hickory Sticks, a Wrought
+// read through grant dNXaY that WORKED (03:58:35Z), and then: "Wrought is showing
+// three identically named connections, and I couldn't verify which is your
+// active account. I haven't logged them yet." The third time. ChatGPT's own
+// picker asks whenever the intended account is "not clear from the user's
+// request or conversation" — so every reply now carries the server's check of
+// which record those connections write to, computed on the call.
+
+const {
+  chainsInUse, connectorProof, connectionFacts, connectedAccountsBlock, stampConnected, copiesNote,
+  withVia, profileIdFor, ACCESS_TTL_MS, REFRESH_TTL_MS, FACTS_TIMEOUT_MS, _resetConnectionFacts,
+} = await import('../netlify/functions/lib/connections.js');
+const connectionsModule = await import('../netlify/functions/lib/connections.js');
+const { profileFor: profileOf, rpcTrace, WHICH_ACCOUNT } = await import('../netlify/functions/mcp.js');
+
+// The founder's rows as read on 28 September — eleven access tokens, eleven
+// refresh rows (two revoked by renewal). Every created_at is one misleading
+// value, because the database's clock is not the token endpoint's and pairing
+// on it would pair everything with everything.
+const LIE = '2026-09-01T00:00:00.000Z';
+const CGPT = 'wrought_aaab79bd50f917f0ef914454a3d3be5c';
+const CGPT_URI = 'https://chatgpt.com/connector/oauth/qqpAnGI7qqfx';
+const ACCESS_28SEP = [
+  '2026-09-08T14:33:07.987Z', '2026-09-08T21:52:06.528Z', '2026-09-09T03:22:26.600Z', '2026-09-09T03:27:59.479Z',
+  '2026-09-12T18:47:16.411Z', '2026-09-13T20:01:47.503Z', '2026-09-18T14:31:34.360Z', '2026-09-20T18:04:54.884Z',
+  '2026-10-03T00:37:59.963Z', '2026-10-18T16:05:57.280Z', '2026-10-20T21:22:24.134Z',
+].map(expires_at => ({ client_id: CGPT, expires_at, created_at: LIE }));
+const REFRESH_28SEP = [
+  ['2027-08-09T14:33:07.987Z', false], ['2027-08-09T21:52:06.528Z', false], ['2027-08-10T03:22:26.600Z', false],
+  ['2027-08-10T03:27:59.479Z', false], ['2027-08-13T18:47:16.411Z', false], ['2027-08-14T20:01:47.503Z', false],
+  ['2027-08-19T14:31:34.360Z', true], ['2027-08-21T18:04:54.884Z', true],
+  ['2027-09-03T00:37:59.963Z', false], ['2027-09-18T16:05:57.280Z', false], ['2027-09-20T21:22:24.134Z', false],
+].map(([expires_at, revoked]) => ({ client_id: CGPT, expires_at, revoked, created_at: LIE }));
+const AT_28SEP = Date.parse('2026-09-28T04:00:00Z');
+const ME = 'user-me-0001', STRANGER = 'user-stranger-9999';
+
+// A table held in memory, answering the query-builder shape the proof uses and
+// nothing else. `fail(q)` answers a query with an error; `hang` never answers;
+// `log` records every query that ran.
+function oauthDb(tables, { fail = () => false, hang = false, log = null } = {}) {
+  return {
+    from(table) {
+      const q = { table, cols: '*', filters: [], lim: null, single: false, neq: false };
+      const b = {
+        select(c) { q.cols = c; return b; },
+        eq(c, v) { q.filters.push(r => r[c] === v); return b; },
+        neq(c, v) { q.neq = true; q.filters.push(r => r[c] !== v); return b; },
+        in(c, arr) { q.filters.push(r => arr.includes(r[c])); return b; },
+        gt(c, v) { q.filters.push(r => Date.parse(r[c]) > Date.parse(v)); return b; },
+        overlaps(c, arr) { q.filters.push(r => (r[c] || []).some(x => arr.includes(x))); return b; },
+        limit(n) { q.lim = n; return b; },
+        abortSignal() { return b; },
+        maybeSingle() { q.single = true; return b; },
+        then(res, rej) {
+          if (log) log.push(q);
+          if (hang) return new Promise(() => {}).then(res, rej);
+          let out;
+          if (fail(q)) out = { data: null, error: { message: 'refused' } };
+          else {
+            let rows = (tables[table] || []).filter(r => q.filters.every(f => f(r)));
+            if (q.lim != null) rows = rows.slice(0, q.lim);
+            const cols = q.cols === '*' ? null : q.cols.split(',').map(x => x.trim());
+            rows = rows.map(r => cols ? Object.fromEntries(cols.map(k => [k, r[k]])) : { ...r });
+            out = q.single ? { data: rows[0] || null, error: null } : { data: rows, error: null };
+          }
+          return Promise.resolve(out).then(res, rej);
+        },
+      };
+      return b;
+    },
+  };
+}
+const founderTables = () => ({
+  wrought_oauth_clients: [{ client_id: CGPT, client_name: 'ChatGPT', redirect_uris: [CGPT_URI] }],
+  wrought_oauth_tokens: ACCESS_28SEP.map(r => ({ ...r, user_id: ME })),
+  wrought_oauth_refresh: REFRESH_28SEP.map(r => ({ ...r, user_id: ME })),
+});
+// One sign-in: an access token and a refresh row issued in the same instant.
+const signIn = (userId, clientId, issuedIso, extra = {}) => ({
+  token: { client_id: clientId, user_id: userId, created_at: LIE, expires_at: new Date(Date.parse(issuedIso) + ACCESS_TTL_MS).toISOString(), ...extra },
+  refresh: { client_id: clientId, user_id: userId, created_at: LIE, revoked: false, expires_at: new Date(Date.parse(issuedIso) + REFRESH_TTL_MS).toISOString(), ...extra },
+});
+
+await test('the dashboard counts the connections ChatGPT holds, not every sign-in ever', () => {
+  // "Signed in 9 separate times" beside a ChatGPT holding three: nine
+  // unrevoked refresh rows, six of them dormant since mid-August.
+  const at = iso => chainsInUse({ tokens: ACCESS_28SEP, refresh: REFRESH_28SEP, now: Date.parse(iso) });
+  const now = at('2026-09-28T04:00:00Z');
+  assert.equal(now.length, 3, `counted ${now.length}, not the three ChatGPT holds`);
+  assert.deepEqual(now.map(c => c.issued_at).sort(),
+    ['2026-09-03T00:37:59.963Z', '2026-09-18T16:05:57.280Z', '2026-09-20T21:22:24.134Z']);
+  assert.ok(now.every(c => c.access_live === true));
+  // C's access token lapses on 3 October; ChatGPT renews lazily, so two days
+  // later it is still a connection it holds…
+  const oct5 = at('2026-10-05T04:00:00Z');
+  assert.equal(oct5.length, 3, 'a connection two days past its access expiry dropped out of the count');
+  assert.equal(oct5.filter(c => !c.access_live).length, 1);
+  // …and past the grace it is not.
+  assert.equal(at('2026-10-11T04:00:00Z').length, 2);
+  // A revoked chain never counts, whatever its access token says.
+  const revoked = REFRESH_28SEP.map(r => r.expires_at === '2027-09-03T00:37:59.963Z' ? { ...r, revoked: true } : r);
+  assert.equal(chainsInUse({ tokens: ACCESS_28SEP, refresh: revoked, now: AT_28SEP }).length, 2);
+});
+
+await test('the chains are paired on the token endpoint\'s own lifetimes', () => {
+  const src = readFileSync(new URL('../netlify/functions/oauth-token.js', import.meta.url), 'utf8');
+  const ttl = name => {
+    const m = src.match(new RegExp(`const ${name}\\s*=\\s*([0-9\\s*]+);`));
+    assert.ok(m, `oauth-token.js no longer states ${name} as plain arithmetic`);
+    return m[1].split('*').map(Number).reduce((a, b) => a * b, 1);
+  };
+  assert.equal(ttl('ACCESS_TTL_SECONDS') * 1000, ACCESS_TTL_MS, 'the access lifetime moved on one side only');
+  assert.equal(ttl('REFRESH_TTL_SECONDS') * 1000, REFRESH_TTL_MS, 'the refresh lifetime moved on one side only');
+});
+
+await test('one record is proven only by empty probes across the whole connector', async () => {
+  const opts = { now: AT_28SEP };
+  const alone = await connectorProof(oauthDb(founderTables()), ME, CGPT, opts);
+  assert.equal(alone.one_record, true);
+  assert.equal(alone.in_use, 3);
+  assert.equal(alone.chatgpt, true);
+
+  // Somebody else holds a live sign-in on the same client.
+  const shared = founderTables();
+  shared.wrought_oauth_refresh.push(signIn(STRANGER, CGPT, '2026-09-25T00:00:00Z').refresh);
+  assert.equal((await connectorProof(oauthDb(shared), ME, CGPT, opts)).one_record, false);
+
+  // Only dead rows from somebody else — revoked, expired — prove nothing against.
+  const dead = founderTables();
+  dead.wrought_oauth_refresh.push({ ...signIn(STRANGER, CGPT, '2026-09-25T00:00:00Z').refresh, revoked: true });
+  dead.wrought_oauth_tokens.push(signIn(STRANGER, CGPT, '2026-08-01T00:00:00Z').token);
+  assert.equal((await connectorProof(oauthDb(dead), ME, CGPT, opts)).one_record, true);
+
+  // Somebody else live on a SECOND registration of the same connector.
+  const twin = founderTables();
+  twin.wrought_oauth_clients.push({ client_id: 'wrought_twin', client_name: 'ChatGPT', redirect_uris: [CGPT_URI] });
+  twin.wrought_oauth_tokens.push(signIn(STRANGER, 'wrought_twin', '2026-09-25T00:00:00Z').token);
+  const t = await connectorProof(oauthDb(twin), ME, CGPT, opts);
+  assert.equal(t.one_record, false, 'a stranger on a client sharing the redirect URI was not seen');
+  assert.deepEqual([...t.client_ids].sort(), [CGPT, 'wrought_twin'].sort());
+
+  // A foreign probe that failed is not "nobody else".
+  const blind = await connectorProof(oauthDb(founderTables(), { fail: q => q.neq }), ME, CGPT, opts);
+  assert.equal(blind.one_record, null, 'a failed probe was read as proof');
+  assert.equal(blind.in_use, 3);
+  // The caller's own rows could not be read: no answer at all.
+  assert.equal(await connectorProof(oauthDb(founderTables(), { fail: q => q.table === 'wrought_oauth_tokens' && !q.neq }), ME, CGPT, opts), null);
+  assert.equal(await connectorProof(oauthDb(founderTables(), { fail: q => q.table === 'wrought_oauth_clients' }), ME, CGPT, opts), null);
+});
+
+await test('a slow or broken check never delays or fails a call', async () => {
+  // The harness has no socket open, so a hung query would otherwise let the
+  // process exit mid-await; the interval stands in for the request.
+  const keep = setInterval(() => {}, 25);
+  try {
+    _resetConnectionFacts();
+    const via = (id, email) => withVia({ id, ...(email ? { email } : {}) }, { client_id: CGPT }, 'dNXaYq7w');
+    const t0 = Date.now();
+    const slow = await Promise.race([
+      connectionFacts(oauthDb(founderTables(), { hang: true }), via('u-slow', 'slow@example.com')),
+      new Promise(r => setTimeout(() => r('hung'), FACTS_TIMEOUT_MS + 600)),
+    ]);
+    const took = Date.now() - t0;
+    assert.equal(slow, null, 'a hung check held the call');
+    assert.ok(took <= FACTS_TIMEOUT_MS + 100, `the check took ${took}ms`);
+    assert.equal(await connectionFacts({ from() { throw new Error('boom'); } }, via('u-throw')), null);
+    // No grant, no check — the website's session JWT carries no connector.
+    assert.equal(await connectionFacts(oauthDb(founderTables()), { id: ME, email: 'me@example.com' }), null);
+    assert.equal(await connectionFacts(null, via(ME)), null);
+    // Thirty seconds of one answer per connection…
+    const log = [];
+    const me = via(ME, 'me@example.com');
+    const a = await connectionFacts(oauthDb(founderTables(), { log }), me, { now: AT_28SEP });
+    const ran = log.length;
+    assert.ok(ran > 0 && a && a.one_record === true);
+    // A check that hangs on a connector already known to be ChatGPT's still
+    // names this record, count unknown — never silence, never the strong form.
+    const hungKnown = await connectionFacts(oauthDb(founderTables(), { hang: true }), via('u-hung', 'h@example.com'), { now: AT_28SEP });
+    assert.ok(hungKnown, 'a hung check on a known ChatGPT connector left the reply with no line');
+    assert.equal(hungKnown.chatgpt, true);
+    assert.equal(hungKnown.one_record, null);
+    const b = await connectionFacts(oauthDb(founderTables(), { log }), me, { now: AT_28SEP });
+    assert.equal(log.length, ran, 'a second call inside thirty seconds queried again');
+    assert.deepEqual(b, a);
+    // …but a failure is never remembered. The client is already known to be
+    // ChatGPT's, so the reply still names this record — count unknown, never
+    // the strong form — and the next call checks again.
+    const log2 = [];
+    const down = oauthDb(founderTables(), { log: log2, fail: q => q.table === 'wrought_oauth_clients' });
+    const other = via('u-null', 'n@example.com');
+    const f1 = await connectionFacts(down, other);
+    assert.equal(f1.one_record, null);
+    assert.equal(f1.in_use, null);
+    assert.equal(f1.chatgpt, true);
+    assert.equal(connectedAccountsBlock(other, f1).one_record, null, 'a ChatGPT caller whose check failed got no line at all');
+    const once = log2.length;
+    await connectionFacts(down, other);
+    assert.ok(log2.length > once, 'a failed check was cached');
+    // A foreign probe that blinked is not cached either: one blink must not
+    // cost the next thirty seconds of replies the strong form.
+    _resetConnectionFacts();
+    const log3 = [];
+    const blinkDb = oauthDb(founderTables(), { log: log3, fail: q => q.neq });
+    const f2 = await connectionFacts(blinkDb, me, { now: AT_28SEP });
+    assert.equal(f2.one_record, null);
+    const ran3 = log3.length;
+    const f3 = await connectionFacts(oauthDb(founderTables(), { log: log3 }), me, { now: AT_28SEP });
+    assert.ok(log3.length > ran3, 'an unproven answer was cached');
+    assert.equal(f3.one_record, true);
+    // Nothing known about the client and nothing readable: no answer at all.
+    _resetConnectionFacts();
+    assert.equal(await connectionFacts(down, other), null);
+  } finally {
+    clearInterval(keep);
+    _resetConnectionFacts();
+  }
+});
+
+await test('a client that is not ChatGPT\'s pays one query, once, and never gets the line', async () => {
+  _resetConnectionFacts();
+  const CL = 'wrought_claude_client';
+  const tables = {
+    wrought_oauth_clients: [{ client_id: CL, redirect_uris: ['https://claude.ai/api/mcp/auth_callback'] }],
+    wrought_oauth_tokens: [], wrought_oauth_refresh: [],
+  };
+  const u = withVia({ id: ME, email: 'me@example.com' }, { client_id: CL }, 'ccccccc');
+  const log = [];
+  const f = await connectionFacts(oauthDb(tables, { log }), u, { now: AT_28SEP });
+  assert.equal(f.chatgpt, false);
+  assert.equal(log.length, 1, `a non-ChatGPT client ran ${log.length} queries for a line it can never be shown`);
+  await connectionFacts(oauthDb(tables, { log }), u, { now: AT_28SEP });
+  assert.equal(log.length, 1, 'the client\'s own registration was read again inside ten minutes');
+  assert.equal(connectedAccountsBlock(u, f), null);
+  // An account picker on the call is the one reason to check anyway.
+  const withPicker = await connectionFacts(oauthDb(tables, { log }), u, { now: AT_28SEP, linkId: true });
+  assert.ok(log.length > 1, 'a call carrying link_id skipped the proof');
+  assert.equal(connectedAccountsBlock(u, withPicker, { linkId: true }).one_record, true);
+  _resetConnectionFacts();
+});
+
+await test('a peer registered after the client was first read is still seen', async () => {
+  _resetConnectionFacts();
+  const opts = { now: AT_28SEP };
+  const tables = founderTables();
+  assert.equal((await connectorProof(oauthDb(tables), ME, CGPT, opts)).one_record, true);
+  // Minutes later ChatGPT registers again on the same address and somebody
+  // else signs in through it. The client's own registration is remembered;
+  // its peers never are.
+  tables.wrought_oauth_clients.push({ client_id: 'wrought_late', redirect_uris: [CGPT_URI] });
+  tables.wrought_oauth_refresh.push(signIn(STRANGER, 'wrought_late', '2026-09-27T00:00:00Z').refresh);
+  assert.equal((await connectorProof(oauthDb(tables), ME, CGPT, opts)).one_record, false, 'a remembered connector hid a new sign-in');
+  // …and by the road a reply actually takes: the remembered registration
+  // handed in, as connectionFacts hands it.
+  const known = connectionsModule.knownTopology(CGPT);
+  assert.ok(known, 'the client\'s own registration was not remembered');
+  assert.equal((await connectorProof(oauthDb(tables), ME, CGPT, { ...opts, topology: known })).one_record, false, 'the remembered registration stood in for its peers');
+  _resetConnectionFacts();
+});
+
+await test('the check never carries another person\'s anything', async () => {
+  const tables = founderTables();
+  const s = signIn(STRANGER, CGPT, '2026-09-25T00:00:00Z', { email: 'stranger@example.com' });
+  tables.wrought_oauth_tokens.push(s.token);
+  tables.wrought_oauth_refresh.push(s.refresh);
+  _resetConnectionFacts();
+  const me = withVia({ id: ME, email: 'me@example.com' }, { client_id: CGPT }, 'dNXaYq7w');
+  const facts = await connectionFacts(oauthDb(tables), me, { now: AT_28SEP });
+  assert.equal(facts.one_record, false);
+  const block = connectedAccountsBlock(me, facts, { linkId: true });
+  const note = copiesNote({ name: 'ChatGPT', inUse: facts.in_use, oneRecord: facts.one_record, email: me.email });
+  for (const x of [facts, block, note]) {
+    const j = JSON.stringify(x);
+    assert.ok(!j.includes(STRANGER) && !j.includes('stranger@example.com'), `another person reached a reply: ${j}`);
+  }
+  _resetConnectionFacts();
+  // And the probes cannot fetch one: a single client_id, nothing else.
+  const src = decomment(readFileSync(new URL('../netlify/functions/lib/connections.js', import.meta.url), 'utf8'));
+  const fn = src.slice(src.indexOf('export async function connectorProof('), src.indexOf('].map(settle)'));
+  const probes = fn.split('db.from(').filter(c => c.includes('.neq('));
+  assert.equal(probes.length, 2, 'the foreign probes changed shape');
+  for (const p of probes) {
+    assert.match(p, /^'wrought_oauth_(?:tokens|refresh)'\)\.select\('client_id'\)/, `a foreign probe selects more than a client id: ${p.slice(0, 80)}`);
+    assert.match(p, /\.neq\('user_id', userId\)/);
+    assert.match(p, /\.limit\(1\)/);
+    assert.ok(!/count/.test(p), 'a foreign probe counts other people');
+  }
+});
+
+await test('the reply says only what the tables prove', () => {
+  const u = { id: ME, email: 'me@example.com' };
+  const proven = connectedAccountsBlock(u, { chatgpt: true, in_use: 3, one_record: true });
+  assert.equal(proven.one_record, true);
+  assert.match(proven.note, /the intended account is clear/);
+  // ChatGPT fans a read out across every connection: "once" must mean once
+  // in total, and a reply that already confirms a write must never invite a
+  // second one of it.
+  assert.match(proven.note, /ONE time in total — never once per connection/);
+  assert.match(proven.note, /A write this reply already confirms is done: never repeat it/);
+  // …and nothing further down the same reply undoes it: log_first rides every
+  // read, and a read is exactly what ChatGPT fans out across the connections.
+  const mcpSrc = readFileSync(new URL('../netlify/functions/mcp.js', import.meta.url), 'utf8');
+  const lf = (mcpSrc.match(/out\.log_first = '([^']*)'/) || [])[1] || '';
+  assert.ok(lf, 'log_first moved');
+  assert.ok(!/same connection as this call|through this connection/.test(lf), `log_first sends a write down each connection: ${lf}`);
+  assert.match(lf, /ONE time in total, never once per connection/);
+  assert.equal(proven.profile_id, profileOf(u).id);
+  assert.equal(proven.record, u.email);
+  const weak = [
+    connectedAccountsBlock(u, { chatgpt: true, in_use: 3, one_record: null }),
+    connectedAccountsBlock(u, { chatgpt: true, in_use: 3, one_record: false }),
+    connectedAccountsBlock(u, null, { linkId: true }),
+    connectedAccountsBlock(u, { chatgpt: true, in_use: null, one_record: null }),
+  ];
+  for (const b of weak) {
+    assert.ok(b, 'a ChatGPT caller whose count is unknown got no line');
+    assert.match(b.note, /one time in total, never once per connection/);
+    assert.match(b.note, /A write this reply already confirms is done: never repeat it/);
+    assert.equal(b.one_record, null);
+    const text = `${b.fact} ${b.note}`;
+    assert.ok(!/clear/.test(text), `an unproven reply claims clarity: ${text}`);
+    assert.ok(!/\bevery\b/.test(text), `an unproven reply claims every connection: ${text}`);
+    assert.match(b.note, /One showing a different email is a different Wrought account/);
+    assert.equal(b.profile_id, profileOf(u).id);
+  }
+  // Nothing to settle: no block at all.
+  assert.equal(connectedAccountsBlock(u, null), null);
+  assert.equal(connectedAccountsBlock(u, { chatgpt: true, in_use: 1, one_record: true }), null, 'a single connection got a block');
+  assert.equal(connectedAccountsBlock(u, { chatgpt: false, in_use: 3, one_record: true }), null, 'a non-ChatGPT client got a block');
+  // A count goes stale the moment the extras are disconnected: never one.
+  for (const b of [proven, ...weak]) {
+    assert.ok(!Object.values(b).some(v => typeof v === 'number'), `a count reached the model: ${JSON.stringify(b)}`);
+    assert.ok(!Object.keys(b).some(k => /count|in_use|connections|number/.test(k)));
+  }
+  // With no email on file, the id is the label.
+  assert.match(connectedAccountsBlock({ id: 'x' }, null, { linkId: true }).fact, /profile id [0-9a-f]{32}/);
+});
+
+await test('two Wrought accounts behind one ChatGPT connector: the fork is named, never papered over', async () => {
+  const X = 'user-x-1', Y = 'user-y-2';
+  const sx = signIn(X, CGPT, '2026-09-20T00:00:00Z'), sy = signIn(Y, CGPT, '2026-09-21T00:00:00Z');
+  const tables = {
+    wrought_oauth_clients: [{ client_id: CGPT, redirect_uris: [CGPT_URI] }],
+    wrought_oauth_tokens: [sx.token, sy.token],
+    wrought_oauth_refresh: [sx.refresh, sy.refresh],
+  };
+  _resetConnectionFacts();
+  const ux = withVia({ id: X, email: 'x@example.com' }, { client_id: CGPT }, 'xxxxxxx');
+  const uy = withVia({ id: Y, email: 'y@example.com' }, { client_id: CGPT }, 'yyyyyyy');
+  const fx = await connectionFacts(oauthDb(tables), ux, { now: AT_28SEP });
+  const fy = await connectionFacts(oauthDb(tables), uy, { now: AT_28SEP });
+  _resetConnectionFacts();
+  assert.equal(fx.one_record, false);
+  assert.equal(fy.one_record, false);
+  const bx = connectedAccountsBlock(ux, fx, { linkId: true }), by = connectedAccountsBlock(uy, fy, { linkId: true });
+  assert.equal(bx.one_record, null);
+  assert.equal(by.one_record, null);
+  assert.notEqual(bx.record, by.record);
+  assert.notEqual(bx.profile_id, by.profile_id);
+  assert.ok(!('nickname' in profileOf(ux)), 'a forked connector was nicknamed one record');
+});
+
+await test('the proof rides every tool reply, first, in the same round trip', () => {
+  const blk = { one_record: true, record: 'me@example.com' };
+  const out = stampConnected({ say: 'Logged in Wrought', account: 'me@example.com' }, blk);
+  assert.equal(Object.keys(out)[0], 'connected_accounts');
+  assert.equal(out.say, 'Logged in Wrought');
+  assert.equal(stampConnected({ connected_accounts: 'its own' }, blk).connected_accounts, 'its own');
+  assert.deepEqual(stampConnected([1, 2], blk), [1, 2]);
+  assert.equal(stampConnected(null, blk), null);
+  assert.deepEqual(stampConnected({ a: 1 }, null), { a: 1 });
+
+  const mcp = decomment(readFileSync(new URL('../netlify/functions/mcp.js', import.meta.url), 'utf8'));
+  const from = mcp.indexOf("case 'tools/call'");
+  const call = mcp.slice(from, mcp.indexOf('} catch (err) {', from));
+  const gateAt = call.indexOf("allowed(authUser.id, 'mcp')");
+  const factsAt = call.indexOf('connectionFacts(');
+  const implAt = call.indexOf('const out = await impl(');
+  assert.ok(gateAt > -1 && factsAt > gateAt && implAt > factsAt, 'the check is not started between the membership gate and the tool');
+  assert.match(call.slice(factsAt, implAt), /^connectionFacts\(supabase, authUser, \{ linkId \}\)\.catch\(\(\) => null\)/);
+  assert.ok(call.indexOf('const linkId =') > -1 && call.indexOf('const linkId =') < factsAt, 'the check starts before it knows whether an account picker came with the call');
+  assert.ok(!/await\s+connectionFacts\(/.test(call.slice(0, implAt)), 'the check is awaited before the tool runs — a serial round trip');
+  const firstAt = call.indexOf('out.log_first =');
+  const stampAt = call.indexOf('stampConnected(');
+  assert.ok(firstAt > -1 && stampAt > firstAt, 'the proof is not stamped after the capture rule');
+  assert.match(call.slice(stampAt), /^stampConnected\(out, connectedAccountsBlock\(authUser, await connP, \{ linkId \}\)\)/);
+  assert.match(call, /text: JSON\.stringify\(body, null, 2\)/, 'the stamped body is not what goes out');
+  assert.match(mcp, /const out = await impl\(params\.arguments \|\| \{\}, authUser\);\s*if \(out && typeof out === 'object' && !Array\.isArray\(out\) && out\.account === undefined\) \{\s*out\.account = authUser\?\.email \|\| null;/);
+  const prof = call.slice(call.indexOf('if (params.name === PROFILE_TOOL)'), call.indexOf('if (!supabase) return rpcError'));
+  assert.ok(prof.length > 0 && !/stampConnected/.test(prof), 'the profile contract is stamped');
+});
+
+await test('the account tool meets OpenAI\'s published profile contract', async () => {
+  const tool = TOOLS.find(t => t._meta?.['openai/profile'] === true);
+  assert.deepEqual(tool.outputSchema, {
+    type: 'object',
+    properties: {
+      id:       { type: 'string', minLength: 1, pattern: '\\S', description: 'Opaque profile identifier, unique within this app and unchanged across token refresh, reconnection, and display-metadata changes. Never reassigned to another profile.' },
+      name:     { type: 'string', description: 'Display name for the authenticated profile.' },
+      email:    { type: 'string', description: 'Email address for display; not used as the profile identity.' },
+      nickname: { type: 'string', description: 'A useful label that helps users distinguish connected profiles.' },
+    },
+    required: ['id'],
+    additionalProperties: false,
+  });
+  assert.ok(!('$schema' in tool.outputSchema), 'a draft-07 validator cannot compile a 2020-12 $schema reference');
+  assert.deepEqual(tool.securitySchemes, [{ type: 'oauth2', scopes: [] }]);
+  assert.equal(tool._meta['openai/profile'], true);
+  // Validated against the PUBLISHED schema, not a copy of it.
+  const valid = (schema, v) => {
+    if (!v || typeof v !== 'object' || Array.isArray(v)) return false;
+    for (const k of schema.required || []) if (!(k in v)) return false;
+    for (const [k, val] of Object.entries(v)) {
+      const p = schema.properties?.[k];
+      if (!p) { if (schema.additionalProperties === false) return false; continue; }
+      if (p.type === 'string' && typeof val !== 'string') return false;
+      if (p.minLength != null && String(val).length < p.minLength) return false;
+      if (p.pattern && !new RegExp(p.pattern).test(val)) return false;
+    }
+    return true;
+  };
+  assert.ok(!valid(tool.outputSchema, { id: 'x', account: 'a' }), 'the validator lets an extra key through');
+  for (const [who, args] of [[{ id: 'u-mail', email: 'm@example.com' }, {}], [{ id: 'u-none' }, {}], [{ id: 'u-link', email: 'l@example.com' }, { link_id: 'lnk_1' }]]) {
+    const res = await handleRpc({ jsonrpc: '2.0', id: 3, method: 'tools/call', params: { name: tool.name, arguments: args } }, who);
+    assert.ok(valid(tool.outputSchema, res.result.structuredContent), `structuredContent breaks the published schema: ${JSON.stringify(res.result.structuredContent)}`);
+    assert.ok(valid(tool.outputSchema, JSON.parse(res.result.content[0].text)), 'the text copy breaks the published schema');
+    assert.equal(res.result.isError, false);
+    for (const k of ['account', 'log_first', 'connected_accounts']) assert.ok(!(k in res.result.structuredContent), `${k} was stamped on the profile`);
+  }
+  assert.ok(valid(tool.outputSchema, profileOf({ id: 'u', email: 'u@example.com' }, 'Laszlo')));
+});
+
+await test('the profile never carries a nickname — ChatGPT keeps what it read, and the server cannot take it back', async () => {
+  // A nickname earned by a proof was true the day it was read and false the
+  // day a second account signed in through the same connector — and ChatGPT
+  // shows the stale label beside the connected account, as the one sentence
+  // hiding the fork. The identical id is what matches the connections.
+  const u = { id: ME, email: 'me@example.com' };
+  for (const p of [profileOf(u), profileOf(u, 'Laszlo'), profileOf(u, null, { oneRecord: true })]) {
+    assert.ok(!('nickname' in p), `the profile carries a nickname: ${JSON.stringify(p)}`);
+  }
+  assert.ok(!('PROVEN_NICKNAME' in connectionsModule), 'the earned nickname came back');
+  const mcp = decomment(readFileSync(new URL('../netlify/functions/mcp.js', import.meta.url), 'utf8'));
+  const at = mcp.indexOf('async function accountProfile(');
+  const ap = mcp.slice(at, mcp.indexOf('\n}\n', at));
+  assert.match(ap, /\.abortSignal\(AbortSignal\.timeout\(\d{3,4}\)\)/);
+  assert.ok(!/connectionFacts|oneRecord|nickname/.test(ap), 'the profile reads the connection check again');
+  const pf = mcp.slice(mcp.indexOf('export function profileFor('), mcp.indexOf('async function accountProfile('));
+  assert.ok(!/nickname/.test(pf), 'profileFor can still write a nickname');
+});
+
+await test('nothing the model reads before a write names the fear', async () => {
+  const cut = t => String(t).replace(/\s+/g, ' ');
+  const FEAR = /MORE THAN ONE CONNECTOR|never a reason to hold|hold (?:a|the) log back|\bfork|duplicat|wrong account|copies? of (?:the same|ONE) service|signed in under another address/i;
+  const at = SERVER_INSTRUCTIONS.indexOf('WHICH WROUGHT ACCOUNT.');
+  assert.ok(at > -1, 'the sheet lost its account paragraph');
+  const para = SERVER_INSTRUCTIONS.slice(at, SERVER_INSTRUCTIONS.indexOf('\n\n', at));
+  const { GPT_INSTRUCTIONS } = await import('../netlify/functions/lib/gpt_instructions.js');
+  const gptAccount = GPT_INSTRUCTIONS.split(/(?<=\.)\s+/).filter(x => /connected_accounts/.test(x));
+  assert.ok(gptAccount.length, 'the GPT sheet lost its account sentence');
+  const { ROUTING_HABIT } = await import('../netlify/functions/lib/wrought.js');
+  const surfaces = {
+    WHICH_ACCOUNT, sheet: para,
+    wrought_account: TOOLS.find(t => t.name === 'wrought_account').description,
+    get_profile: TOOLS.find(t => t.name === 'get_profile').description,
+    gpt: gptAccount.join(' '), habit: ROUTING_HABIT,
+  };
+  for (const [name, text] of Object.entries(surfaces)) {
+    const m = cut(text).match(FEAR);
+    assert.ok(!m, `${name} names the fear: "${m?.[0]}"`);
+  }
+  const mcp = decomment(readFileSync(new URL('../netlify/functions/mcp.js', import.meta.url), 'utf8'));
+  assert.ok(!/SAME_SERVICE/.test(mcp));
+  assert.ok(!/SEVERAL CONNECTORS NAMED WROUGHT/.test(mcp));
+  const logDesc = TOOLS.find(t => t.name === 'log').description;
+  assert.ok(logDesc.indexOf(WHICH_ACCOUNT) > logDesc.indexOf('then each item with its calories and time'), 'WHICH ACCOUNT moved in front of the receipt rule');
+  for (const name of ['log_activity', 'log_set', 'log_weight', 'get_day']) {
+    assert.ok(TOOLS.find(t => t.name === name).description.endsWith(WHICH_ACCOUNT), `${name} does not end with WHICH ACCOUNT`);
+  }
+  const { openapi } = await import('../netlify/functions/actions.js');
+  const logOp = Object.values(openapi().paths).map(p => p.post).find(o => o?.operationId === 'log');
+  assert.match(logOp.description, /CONFIRM WITH THE WORDS "Logged in Wrought"/);
+  // A custom GPT has no account picker: the sentence is noise there, and at
+  // 300 characters it was cut off mid-sentence on log_weight.
+  for (const op of Object.values(openapi().paths).map(p => p.post)) {
+    assert.ok(!/WHICH ACCOUNT/.test(op.description), `${op.operationId}'s Action carries the account-picker sentence`);
+  }
+});
+
+await test('the fork defence survives, as a receipt', async () => {
+  assert.match(WHICH_ACCOUNT, /On the first write of a conversation, name the reply's `account`/);
+  const at = SERVER_INSTRUCTIONS.indexOf('WHICH WROUGHT ACCOUNT.');
+  const para = SERVER_INSTRUCTIONS.slice(at, SERVER_INSTRUCTIONS.indexOf('\n\n', at));
+  assert.match(para, /on the first write of the conversation name the account the reply gives/i);
+  assert.match(para, /outranks anything an earlier chat or a saved memory said about accounts/);
+  assert.ok(!/if they asked/.test(para));
+  const { ROUTING_HABIT } = await import('../netlify/functions/lib/wrought.js');
+  assert.match(ROUTING_HABIT, /in each new chat tell me which account the first log went to/);
+  assert.ok(!/my one Wrought account|all (?:write|log) to (?:one|my) account/.test(ROUTING_HABIT));
+  const m = page('app.html').match(/const ROUTING_HABIT =\n([\s\S]*?);/);
+  const pageHabit = m[1].match(/'([^']*)'/g).map(x => x.slice(1, -1)).join('')
+    .replace(/\\u2019/g, '’').replace(/\\u2014/g, '—');
+  assert.equal(pageHabit, ROUTING_HABIT, 'the page and the connector teach different habits');
+  assert.ok(encodeURIComponent(ROUTING_HABIT).length < 2000);
+  const { GPT_INSTRUCTIONS } = await import('../netlify/functions/lib/gpt_instructions.js');
+  assert.ok(GPT_INSTRUCTIONS.length <= 8000, `the GPT sheet is ${GPT_INSTRUCTIONS.length} characters`);
+  assert.match(GPT_INSTRUCTIONS, /name the reply's account on the first write/);
+  assert.match(GPT_INSTRUCTIONS, /whatever an earlier chat said/);
+});
+
+await test('the Account panel counts what ChatGPT holds and names the path he can see', () => {
+  const proven = copiesNote({ name: 'ChatGPT', inUse: 3, oneRecord: true, email: 'me@example.com' });
+  // Said as what WROUGHT has seen: ChatGPT's disconnect never reaches this
+  // server, so a count stated as ChatGPT's present fact would tell him for a
+  // month to do what he had just done.
+  assert.match(proven, /Wrought has seen 3 ChatGPT connections in use recently/);
+  assert.ok(!/ChatGPT has \d/.test(proven), 'the count is stated as what ChatGPT holds');
+  assert.match(proven, /keeps counting here until it lapses — up to about five weeks — so if that page already lists one account, you are done/);
+  assert.match(proven, /Settings → Plugins → Wrought → Connection/);
+  assert.match(proven, /keep one account and disconnect the others/);
+  assert.match(proven, /Refresh/);
+  assert.match(proven, /Never uninstall Wrought/);
+  const unproven = [
+    copiesNote({ name: 'ChatGPT', inUse: 3, oneRecord: null, email: 'me@example.com' }),
+    copiesNote({ name: 'ChatGPT', inUse: 3, oneRecord: false, email: 'me@example.com' }),
+    copiesNote({ name: 'Claude', inUse: 2, oneRecord: true, email: 'me@example.com' }),
+  ];
+  for (const n of unproven) {
+    assert.match(n, /Any other Wrought showing there is a separate sign-in this page cannot see/);
+    assert.ok(!/every one signs in to this record/.test(n), `an unproven note claims every connection: ${n}`);
+  }
+  assert.match(unproven[0], /Settings → Plugins → Wrought → Connection/);
+  for (const n of [proven, ...unproven]) {
+    assert.ok(!/delete (?:two|the other) Wroughts?|remove Wrought\b/.test(n), `the note tells him to remove Wrought: ${n}`);
+  }
+  assert.equal(copiesNote({ name: 'ChatGPT', inUse: 1, oneRecord: true, email: 'me@example.com' }), null);
+  assert.ok(!/An assistant connections/.test(copiesNote({ inUse: 2, oneRecord: null, email: 'me@example.com' })), 'the panel reads "3 An assistant connections"');
+  for (const oneRecord of [true, null]) {
+    const n = copiesNote({ name: 'ChatGPT', inUse: 2, oneRecord });
+    assert.ok(!/\bnull\b|undefined/.test(n), `an account with no email reads "null": ${n}`);
+  }
+  assert.match(unproven[0], /keeps counting here until it lapses/);
+  const conn = readFileSync(new URL('../netlify/functions/api-connections.js', import.meta.url), 'utf8');
+  assert.match(conn, /within\(connectorProof\(supabase, user\.id, c\.client_id, \{ now \}\), FACTS_TIMEOUT_MS\)/, 'the panel\'s proof is not bounded as a whole');
+  assert.ok(!/connections, all this record/.test(conn), 'the panel\'s one-line summary states the count as present fact');
+  assert.match(conn, /import \{[^}]*\bchainsInUse\b[^}]*\bconnectorProof\b[^}]*\} from '\.\/lib\/connections\.js'/);
+  assert.ok(!/sign_ins/.test(conn), 'the panel still counts every sign-in ever');
+});
+
+await test('getAuthUser says which grant a call came through, and never leaks it', () => {
+  const hash = 'dNXaYk2mZ0-some-long-base64url-hash';
+  const user = withVia({ id: ME, email: 'me@example.com' }, { client_id: CGPT, user_id: ME }, hash);
+  assert.equal(user.via.client_id, CGPT);
+  assert.equal(user.via.kind, 'oauth');
+  assert.equal(user.via.grant.length, 5);
+  assert.ok(Object.isFrozen(user.via));
+  // Attached twice to one object: redefined, never a throw — inside
+  // getAuthUser a throw would be a 503 on every call.
+  assert.doesNotThrow(() => withVia(user, { client_id: 'other' }, 'zzzzzzz'));
+  assert.equal(user.via.client_id, 'other');
+  withVia(user, { client_id: CGPT, user_id: ME }, hash);
+  const j = JSON.stringify(user);
+  assert.ok(!/via/.test(j) && !j.includes(hash.slice(0, 5)), `the grant leaked into JSON: ${j}`);
+  assert.equal({ ...user }.via, undefined);
+  const src = readFileSync(new URL('../netlify/functions/lib/wrought.js', import.meta.url), 'utf8');
+  const fn = src.slice(src.indexOf('export async function getAuthUser('), src.indexOf('let jwtUser = null', src.indexOf('export async function getAuthUser(')));
+  assert.match(fn, /from\('wrought_oauth_tokens'\)\s*\.select\('user_id, client_id, expires_at'\)/);
+  assert.match(fn, /if \(data\?\.user\) return withVia\(data\.user, row, hash\);/);
+  assert.match(fn, /if \(error\) throw error;/);
+  // The session-JWT path attaches nothing.
+  const jwt = src.slice(src.indexOf('let jwtUser = null'), src.indexOf('// ── Two-factor'));
+  assert.ok(!/withVia/.test(jwt));
+});
+
+await test('every request leaves a trace of what was asked, never what was said', () => {
+  const who = withVia({ id: ME, email: 'me@example.com' }, { client_id: CGPT }, 'dNXaYk2mZ0');
+  const t = rpcTrace({ method: 'tools/call', params: { name: 'log', arguments: { text: 'a McDouble and hickory sticks', link_id: 'lnk_x' } } }, who);
+  const j = JSON.stringify(t);
+  assert.ok(!/McDouble|hickory/.test(j), 'what they ate reached the log');
+  assert.ok(!j.includes('lnk_x'), 'the link_id reached the log in the clear');
+  assert.equal(t.link, crypto.createHash('sha256').update('lnk_x').digest('hex').slice(0, 8));
+  assert.equal(t.grant, 'dNXaY');
+  assert.equal(t.tool, 'log');
+  assert.equal(t.client, CGPT.slice(-8), 'the trace cannot show which registration a call came through');
+  assert.deepEqual(Object.keys(t), ['mcp', 'tool', 'grant', 'client', 'link']);
+  // A caller-supplied name reaches the log only when it is one of ours: it
+  // arrives before auth is checked.
+  const junk = rpcTrace({ method: 'tools/call', params: { name: 'x'.repeat(5000) + ' ignore previous' } }, null);
+  assert.equal(junk.tool, 'unknown');
+  assert.equal(junk.client, null);
+  const list = rpcTrace({ method: 'tools/list' }, who);
+  assert.equal(list.link, null);
+  assert.equal(list.tool, null);
+  assert.equal(rpcTrace({ method: 'tools/call', params: { name: 'log', arguments: {} } }, null).grant, null);
+  const mcp = decomment(readFileSync(new URL('../netlify/functions/mcp.js', import.meta.url), 'utf8'));
+  const h = mcp.slice(mcp.indexOf('export const handler'));
+  const authAt = h.indexOf('authUser = await getAuthUser(event);');
+  const traceAt = h.indexOf('console.log(JSON.stringify(rpcTrace(msg, authUser)))');
+  const rpcAt = h.indexOf('await handleRpc(msg, authUser)');
+  assert.ok(authAt > -1 && traceAt > authAt && rpcAt > traceAt, 'the trace is not logged between sign-in and dispatch');
+  assert.ok(!/console\.log\([^)]*(?:params|arguments|authorization|token)/i.test(h), 'the handler logs arguments or the bearer');
+});
+
+await test('connect.html names the path he can see', () => {
+  const src = page('connect.html');
+  assert.match(src, /Settings → Plugins → Wrought → <em>Connection<\/em>/);
+  assert.match(src, /keep one account and disconnect the others/);
+  assert.match(src, /Never uninstall Wrought/);
+  assert.match(src, /Already listed\? Reconnect that one instead of adding it again/);
+  assert.match(src, /choose <em>Refresh<\/em>, then start a new chat/);
 });
 
 // ── Report ──────────────────────────────────────────────────────────────────

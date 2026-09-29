@@ -24,7 +24,7 @@
 // and its description lists what it reaches. Descriptions are cut at the cap
 // with the full text left on the MCP side untouched.
 
-import { TOOLS, handleRpc } from './mcp.js';
+import { TOOLS, handleRpc, WHICH_ACCOUNT } from './mcp.js';
 import { getAuthUser, AuthUnavailable, SITE_URL } from './lib/wrought.js';
 import { GPT_INSTRUCTIONS } from './lib/gpt_instructions.js';
 
@@ -64,7 +64,10 @@ export function openapi(base = SITE_URL) {
       post: {
         operationId: name,
         summary: cut(t.title || name, 120),
-        description: cut(t.description),
+        // A custom GPT has no account picker, so the MCP's WHICH ACCOUNT
+        // sentence is noise here — and at 300 characters it was cut off
+        // mid-sentence on the end of log_weight's operation.
+        description: cut(String(t.description || '').replace(WHICH_ACCOUNT, '')),
         requestBody: {
           required: false,
           content: { 'application/json': { schema: t.inputSchema || { type: 'object', properties: {} } } },

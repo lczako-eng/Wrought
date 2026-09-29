@@ -6,8 +6,9 @@
 > plugins. (From third-party summaries of OpenAI's retirement FAQ — the FAQ
 > itself could not be read from the build session.) An existing GPT keeps
 > working and this door stays up for it, but this is no longer the durable fix
-> for a new account. For ChatGPT, use the connector (a *plugin* now), keep ONE
-> connected account, and choose *Refresh* after Wrought updates.
+> for a new account. For ChatGPT, use the connector (a *plugin* now), keep one
+> account under Settings → Plugins → Wrought → *Connection*, and choose
+> *Refresh* after Wrought updates.
 
 The pasted-in connector (`https://wrought.fit/mcp`) works, and it has one
 structural weakness: ChatGPT does not reliably show the MCP instruction sheet
