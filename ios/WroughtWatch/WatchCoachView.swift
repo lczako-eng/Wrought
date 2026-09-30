@@ -36,12 +36,17 @@ struct WatchCoachView: View {
                         Text("Strength").tag("strength")
                         Text("Indoor run").tag("running")
                     }.disabled(coach.busy)
-                    Stepper("\(coach.plan.rounds) rounds", value: $coach.plan.rounds, in: 1...30)
-                    Stepper("Work: \(coach.plan.workSeconds / 60)m \(coach.plan.workSeconds % 60)s", value: $coach.plan.workSeconds, in: 30...600, step: 30)
-                    Stepper("Rest: \(coach.plan.restSeconds)s", value: $coach.plan.restSeconds, in: 0...300, step: 15)
+                    // The same limits a plan is checked against, so a plan sent
+                    // from the phone is never cut down by the next tap.
+                    Stepper("\(coach.plan.rounds) rounds", value: $coach.plan.rounds, in: WorkoutPlan.roundsRange)
+                    Stepper("Work: \(coach.plan.workSeconds / 60)m \(coach.plan.workSeconds % 60)s", value: $coach.plan.workSeconds, in: WorkoutPlan.workRange, step: 30)
+                    Stepper("Rest: \(coach.plan.restSeconds)s", value: $coach.plan.restSeconds, in: WorkoutPlan.restRange, step: 15)
                     Button(coach.busy ? "Please wait…" : "Start workout") { Task { await coach.start() } }
                         .tint(heat).disabled(coach.busy || !coach.plan.valid)
-                    Text("1 tap · 30 seconds left\n3 taps · round done\n2 taps · start round")
+                    if !coach.plan.valid {
+                        Text(whyNotValid(coach.plan)).font(.caption2).foregroundStyle(heat)
+                    }
+                    Text(legend(coach.plan))
                         .font(.caption2).foregroundStyle(.secondary)
                 }
                 Text(coach.message).font(.caption2).foregroundStyle(.secondary)
@@ -50,5 +55,31 @@ struct WatchCoachView: View {
         .confirmationDialog("End and save this workout?", isPresented: $confirmEnd) {
             Button("End and save") { Task { await coach.finish() } }
         }
+    }
+
+    /// Why Start is greyed out, rather than a button that does nothing.
+    private func whyNotValid(_ plan: WorkoutPlan) -> String {
+        if plan.totalSeconds > WorkoutPlan.maxTotalSeconds {
+            return "Over \(WorkoutPlan.maxTotalSeconds / 3600) hours in total, the longest the timer runs. Use fewer or shorter rounds."
+        }
+        return "This plan can't be started. Change the rounds, work or rest."
+    }
+
+    /// What the taps mean for THIS plan, by the rules the clock plays them:
+    /// the warning only when the plan has one, and with no rest a round runs
+    /// straight into the next on two taps, so three come once, at the end.
+    private func legend(_ plan: WorkoutPlan) -> String {
+        var lines: [String] = []
+        if plan.warningSeconds > 0 && plan.workSeconds > plan.warningSeconds {
+            lines.append("1 tap · \(plan.warningSeconds) seconds left")
+        }
+        if plan.restSeconds > 0 {
+            lines.append("3 taps · round done")
+            lines.append("2 taps · start round")
+        } else {
+            lines.append("2 taps · start round, no rest")
+            lines.append("3 taps · workout done")
+        }
+        return lines.joined(separator: "\n")
     }
 }

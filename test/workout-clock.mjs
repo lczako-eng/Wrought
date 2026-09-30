@@ -39,6 +39,19 @@ for(let round=1;round<=30;round++) {
   }
   assert.equal(one,round);assert.equal(two,round);assert.equal(three,round);
 }
+// With no rest a round runs straight into the next on two taps, and three taps
+// come exactly once, at the end — what the Watch's legend promises for rest 0.
+for(let round=1;round<=30;round++) {
+  const plan=validatePlan({rounds:round,workSeconds:60,restSeconds:0});
+  let previous=null,one=0,two=0,three=0;
+  for(let second=0;second<=totalSeconds(plan);second++) {
+    const next=position(plan,second), count=cue(plan,previous,next);
+    if(count===1)one++;if(count===2)two++;
+    if(count===3){three++;assert.equal(next.phase,'complete','three taps mid-workout with no rest');}
+    previous=next;
+  }
+  assert.equal(one,round);assert.equal(two,round);assert.equal(three,1);
+}
 const watchInfo=readFileSync(new URL('../ios/WatchInfo.plist',import.meta.url),'utf8');
 const coach=readFileSync(new URL('../ios/WroughtWatch/WatchCoach.swift',import.meta.url),'utf8');
 assert.match(coach,/await pulseTask\?\.value; await finish\(\)/, 'finish cannot revoke background haptics before all final taps');
@@ -55,4 +68,4 @@ assert.match(web,/watchState.heartTimestamp < 15000/);
 assert.match(web,/No heart-rate or calorie readings were recorded/);
 const sw=readFileSync(new URL('../public/sw.js',import.meta.url),'utf8');
 for(const file of ['workout.html','workout.js','workout.css','workout-clock.js','performance.css']) assert.ok(sw.includes(`'/${file}'`));
-console.log('Round coach: boundaries, all 30 round counts, cue counts, no trailing rest, limits, origin checks and offline assets passed.');
+console.log('Round coach: boundaries, all 30 round counts, cue counts, no-rest rounds, no trailing rest, limits, origin checks and offline assets passed.');

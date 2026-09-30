@@ -20,8 +20,23 @@ import Foundation
             }
             precondition(counts[1] == count && counts[2] == count && counts[3] == count)
         }
+        // With no rest a round runs straight into the next on two taps, and
+        // three taps come exactly once — at the end. The Watch's legend says so.
+        for count in 1...30 {
+            let plan = WorkoutPlan(name: "Boxing", rounds: count, workSeconds: 60, restSeconds: 0, warningSeconds: 30)
+            let clock = RoundClock(plan: plan)
+            var last: RoundClock.Position?, counts = [0,0,0,0]
+            for second in 0...plan.totalSeconds {
+                let next = clock.position(elapsed: Double(second))
+                let cue = clock.cue(from: last, to: next)
+                counts[cue] += 1
+                if cue == 3 { precondition(next.phase == "complete") }
+                last = next
+            }
+            precondition(counts[1] == count && counts[2] == count && counts[3] == 1)
+        }
         let data = try! JSONEncoder().encode(plan)
         precondition(try! JSONDecoder().decode(WorkoutPlan.self, from: data) == plan)
-        print("Swift RoundClock: exact 1/3/2 sequences, all 30 round counts, final completion and wire format passed.")
+        print("Swift RoundClock: exact 1/3/2 sequences, all 30 round counts, no-rest rounds, final completion and wire format passed.")
     }
 }

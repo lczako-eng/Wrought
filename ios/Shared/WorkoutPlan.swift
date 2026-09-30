@@ -9,12 +9,20 @@ struct WorkoutPlan: Codable, Equatable {
     var warningSeconds: Int
     var activity: String = "boxing"
     static let boxing = WorkoutPlan(name: "Boxing", rounds: 8, workSeconds: 180, restSeconds: 60, warningSeconds: 30)
+    // The limits every surface holds a plan to, the same as validatePlan in
+    // public/workout-clock.js. The Watch's steppers use them too, so a plan
+    // sent from the phone is never cut down by the next tap.
+    static let roundsRange = 1...30
+    static let workRange = 10...1800
+    static let restRange = 0...600
+    static let warningRange = 0...60
+    static let maxTotalSeconds = 14400
     var valid: Bool {
-        !name.isEmpty && name.count <= 80 && (1...30).contains(rounds)
-        && (10...1800).contains(workSeconds) && (0...600).contains(restSeconds)
-        && (0...60).contains(warningSeconds)
+        !name.isEmpty && name.count <= 80 && Self.roundsRange.contains(rounds)
+        && Self.workRange.contains(workSeconds) && Self.restRange.contains(restSeconds)
+        && Self.warningRange.contains(warningSeconds)
         && ["boxing", "hiit", "strength", "running"].contains(activity)
-        && rounds * workSeconds + (rounds - 1) * restSeconds <= 14400
+        && totalSeconds <= Self.maxTotalSeconds
     }
     var totalSeconds: Int { rounds * workSeconds + (rounds - 1) * restSeconds }
 }

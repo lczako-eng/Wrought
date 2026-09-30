@@ -38,6 +38,7 @@ const INTAKE_ALL = INTAKE;
 import { weeklyVolume, SET_BAND } from '../netlify/functions/lib/volume.js';
 import { dueAlerts, describeAlert, suggestAlerts, ALERT_KINDS, QUIET_BEFORE, QUIET_AFTER, CARRY_HOURS } from '../netlify/functions/lib/alerts.js';
 import { parseQuickAdd } from '../netlify/functions/lib/quickadd.js';
+import { position as clockPosition, cue as clockCue, totalSeconds as clockTotal } from '../public/workout-clock.js';
 const { goalCall, PACES, PUSH } = await import('../netlify/functions/lib/training.js');
 import {
   localDateFor, addDays, daysBetween, clockString, humanDuration,
@@ -16290,6 +16291,360 @@ await test('the background task ends inside its expiration handler, not after a 
   const expiry = swiftBody(swiftBody(courier, 'private final class BackgroundTime'), 'beginBackgroundTask(withName: name)');
   assert.match(expiry, /self\?\.end\(\)/);
   assert.doesNotMatch(expiry, /Task\s*\{/, 'the background task is ended after a hop');
+});
+
+// ── Build 13: the Apple Watch app — its privacy manifest, a failed session,
+// the closing state, and the plan on the wrist
+//
+// No Swift compiler here either: these read the sources as text and pin what
+// each function does, found by brace-matching its own body.
+
+group('The Apple Watch app, build 13');
+
+const iosFile = f => readFileSync(new URL(`../ios/${f}`, import.meta.url), 'utf8');
+// Code only: comments and string literals out, so an API named in a comment or
+// a sentence is not mistaken for a call.
+const swiftCallsOnly = s => swiftCode(String(s).replace(/\/\*[\s\S]*?\*\//g, ''))
+  .replace(/"""[\s\S]*?"""/g, '""').replace(/"(?:[^"\\\n]|\\.)*"/g, '""').replace(/\/\/.*$/gm, '');
+
+// A strict reader for the XML property-list format Xcode and App Store Connect
+// accept: an unclosed tag, a dict entry without a key, a duplicated key or
+// anything after the root is an error, as it is to them.
+function parsePlist(xml) {
+  const src = String(xml);
+  assert.match(src, /^<\?xml version="1\.0" encoding="UTF-8"\?>\s*<!DOCTYPE plist PUBLIC "-\/\/Apple\/\/DTD PLIST 1\.0\/\/EN" "http:\/\/www\.apple\.com\/DTDs\/PropertyList-1\.0\.dtd">\s*<plist version="1\.0">/,
+    'not an XML property list');
+  const open = '<plist version="1.0">';
+  const inner = src.slice(src.indexOf(open) + open.length);
+  const end = inner.lastIndexOf('</plist>');
+  assert.ok(end >= 0 && !inner.slice(end + '</plist>'.length).trim(), 'the property list is never closed, or something follows it');
+  const tokens = (inner.slice(0, end).replace(/<!--[\s\S]*?-->/g, '').match(/<[^>]*>|[^<]+/g) || []).filter(t => t.trim());
+  let i = 0;
+  const text = tag => {
+    let body = '';
+    if (tokens[i] !== undefined && !tokens[i].startsWith('<')) body = tokens[i++];
+    assert.equal(tokens[i++], `</${tag}>`, `<${tag}> is not closed`);
+    return body.replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&amp;/g, '&');
+  };
+  const value = () => {
+    const t = tokens[i++];
+    switch (t) {
+      case '<true/>': return true;
+      case '<false/>': return false;
+      case '<array/>': return [];
+      case '<dict/>': return {};
+      case '<string/>': return '';
+      case '<string>': return text('string');
+      case '<integer>': { const v = text('integer'); assert.match(v, /^-?\d+$/); return Number(v); }
+      case '<array>': {
+        const out = [];
+        while (tokens[i] !== '</array>') { assert.ok(i < tokens.length, 'an <array> is never closed'); out.push(value()); }
+        i++; return out;
+      }
+      case '<dict>': {
+        const out = {};
+        while (tokens[i] !== '</dict>') {
+          assert.equal(tokens[i++], '<key>', 'a <dict> entry has no <key>');
+          const key = text('key');
+          assert.ok(!(key in out), `the key ${key} appears twice`);
+          out[key] = value();
+        }
+        i++; return out;
+      }
+      default: throw new Error(`not a property-list value: ${t}`);
+    }
+  };
+  const root = value();
+  assert.equal(i, tokens.length, 'something follows the property list\'s root value');
+  return root;
+}
+
+// Apple's required-reason APIs by the category a privacy manifest declares
+// them under, with the reasons Apple accepts for each. An app that calls one
+// without a declaration is refused at upload (ITMS-91053).
+const REQUIRED_REASON = {
+  NSPrivacyAccessedAPICategoryUserDefaults: {
+    api: /\b(?:NS)?UserDefaults\b|@AppStorage\b/, reasons: ['CA92.1', '1C8F.1', 'C56D.1', 'AC6B.1'] },
+  NSPrivacyAccessedAPICategorySystemBootTime: {
+    api: /\bsystemUptime\b|\bmach_absolute_time\s*\(/, reasons: ['35F9.1', '8FFB.1', '3D61.1'] },
+  NSPrivacyAccessedAPICategoryFileTimestamp: {
+    api: /\b(?:creationDate|modificationDate|fileModificationDate|contentModificationDate(?:Key)?|creationDateKey|NSFileCreationDate|NSFileModificationDate|NSURLCreationDateKey|NSURLContentModificationDateKey)\b|\b(?:getattrlist|getattrlistbulk|fgetattrlist|getattrlistat|stat|fstat|fstatat|lstat)\s*\(/,
+    reasons: ['DDA9.1', 'C617.1', '3B52.1', '0A2A.1'] },
+  NSPrivacyAccessedAPICategoryDiskSpace: {
+    api: /\b(?:volumeAvailableCapacity\w*|volumeTotalCapacity\w*|systemFreeSize|systemSize|NSFileSystemFreeSize|NSFileSystemSize)\b|\b(?:statfs|statvfs|fstatfs|fstatvfs)\s*\(/,
+    reasons: ['85F4.1', 'E174.1', '7D9E.1', 'B728.1'] },
+  NSPrivacyAccessedAPICategoryActiveKeyboards: {
+    api: /\bactiveInputModes\b/, reasons: ['3EC4.1', '54BD.1'] },
+};
+
+// Each native target and the folders Xcode builds it from, read out of the
+// project: a synchronized folder's files — a privacy manifest included — are
+// what the target compiles and bundles.
+function projectTargets() {
+  const proj = iosFile('Wrought.xcodeproj/project.pbxproj');
+  const objects = {};
+  const head = /\b([0-9A-F]{24})(?:\s*\/\*[^*]*\*\/)?\s*=\s*\{/g;
+  for (let m; (m = head.exec(proj));) {
+    let depth = 0, at = m.index + m[0].length - 1;
+    for (; at < proj.length; at++) { if (proj[at] === '{') depth++; else if (proj[at] === '}' && --depth === 0) break; }
+    // An id is also a key elsewhere (TargetAttributes); only the object itself has an isa.
+    const body = proj.slice(m.index + m[0].length, at);
+    if (/\bisa = /.test(body) && !objects[m[1]]) objects[m[1]] = body;
+  }
+  const targets = [];
+  for (const body of Object.values(objects)) {
+    if (!/\bisa = PBXNativeTarget;/.test(body)) continue;
+    const name = body.match(/(?:^|[\s;{])name = ([^;]+);/)[1].trim();
+    const ids = ((body.match(/fileSystemSynchronizedGroups = \(([^)]*)\)/) || [])[1] || '').match(/[0-9A-F]{24}/g) || [];
+    const folders = ids.map(id => {
+      assert.match(objects[id] || '', /\bisa = PBXFileSystemSynchronizedRootGroup;/, `${name} lists ${id}, which is not a synchronized folder`);
+      return objects[id].match(/\bpath = ([^;]+);/)[1].trim();
+    });
+    targets.push({ name, folders });
+  }
+  return { proj, targets };
+}
+
+function filesUnder(dir) {
+  const out = [];
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    const full = path.join(dir, entry.name);
+    if (entry.isDirectory()) { if (!entry.name.endsWith('.xcassets')) out.push(...filesUnder(full)); }
+    else out.push(full);
+  }
+  return out;
+}
+
+await test('every target that calls a required-reason API bundles one privacy manifest declaring exactly those, with a reason Apple accepts', () => {
+  // The Watch app is the first build to call UserDefaults and systemUptime,
+  // and App Store Connect refuses an upload calling either undeclared. Which
+  // APIs each target calls is read from its own sources, so a new call
+  // without a declaration fails here rather than at upload.
+  const { proj, targets } = projectTargets();
+  const iosDir = new URL('../ios/', import.meta.url).pathname;
+  assert.deepEqual(targets.map(t => t.name).sort(), ['Wrought', 'WroughtWatch', 'WroughtWidgets'], 'a target was added or lost and this test can no longer see it');
+  // An exception set could quietly leave a manifest out of its target.
+  assert.doesNotMatch(proj, /membershipExceptions = \([^)]*PrivacyInfo\.xcprivacy/, 'a privacy manifest is excluded from its target');
+  let declaredSomewhere = 0;
+  for (const { name, folders } of targets) {
+    const files = folders.flatMap(folder => filesUnder(path.join(iosDir, folder)));
+    const swift = files.filter(f => f.endsWith('.swift'));
+    assert.ok(swift.length > 0, `${name} compiles no Swift this test can find`);
+    const used = new Set();
+    for (const f of swift) {
+      const code = swiftCallsOnly(fs.readFileSync(f, 'utf8'));
+      for (const [category, { api }] of Object.entries(REQUIRED_REASON)) if (api.test(code)) used.add(category);
+    }
+    const manifests = files.filter(f => path.basename(f) === 'PrivacyInfo.xcprivacy');
+    assert.ok(manifests.length <= 1, `${name} would bundle ${manifests.length} privacy manifests`);
+    if (used.size) assert.equal(manifests.length, 1, `${name} calls ${[...used].join(', ')} and bundles no privacy manifest`);
+    if (!manifests.length) continue;
+    declaredSomewhere++;
+    const manifest = parsePlist(fs.readFileSync(manifests[0], 'utf8'));
+    assert.equal(manifest.NSPrivacyTracking, false, `${name}: tracking is declared as something other than false`);
+    assert.deepEqual(manifest.NSPrivacyTrackingDomains, [], `${name}: tracking domains listed on an app that does not track`);
+    assert.ok(Array.isArray(manifest.NSPrivacyCollectedDataTypes), `${name}: no collected-data list`);
+    assert.ok(Array.isArray(manifest.NSPrivacyAccessedAPITypes), `${name}: no accessed-API list`);
+    const declared = [];
+    for (const entry of manifest.NSPrivacyAccessedAPITypes) {
+      const category = entry.NSPrivacyAccessedAPIType;
+      assert.ok(REQUIRED_REASON[category], `${name} declares ${category}, which is not a required-reason category`);
+      assert.ok(!declared.includes(category), `${name} declares ${category} twice`);
+      const reasons = entry.NSPrivacyAccessedAPITypeReasons;
+      assert.ok(Array.isArray(reasons) && reasons.length > 0, `${name} declares ${category} with no reason`);
+      for (const reason of reasons) assert.ok(REQUIRED_REASON[category].reasons.includes(reason), `${reason} is not a reason Apple accepts for ${category}`);
+      declared.push(category);
+    }
+    assert.deepEqual(declared.sort(), [...used].sort(), `${name} declares ${declared.join(', ') || 'nothing'} but calls ${[...used].join(', ') || 'nothing'}`);
+  }
+  assert.ok(declaredSomewhere > 0, 'no target bundles a privacy manifest at all');
+});
+
+await test('a Watch workout HealthKit fails is finished and saved, never abandoned', () => {
+  // The old handler set running and busy false and said "Check Apple Health
+  // for your record" — no workout had been written, and the session was left
+  // open with Start enabled beneath it.
+  const coach = swiftCode(iosFile('WroughtWatch/WatchCoach.swift'));
+  const fail = swiftBody(coach, 'didFailWithError error: Error)');
+  assert.doesNotMatch(fail, /running = false|busy = false/, 'the failure handler drops the workout rather than finishing it');
+  const handler = (fail.match(/self\.(\w+)\(/) || [])[1];
+  assert.ok(handler, 'the failure is handed to nothing');
+  const body = swiftBody(coach, `func ${handler}(`);
+  assert.doesNotMatch(body, /running = false|busy = false/);
+  assert.match(body, /guard \w+ === workout else \{ return \}/, 'a failure of a session already let go could end the current one');
+  // Still inside start(): held for start() to throw, never saved as a workout.
+  const held = body.search(/if starting \{ startFailure = error; return \}/);
+  const saved = body.indexOf('await finish(interruptedBy: error)');
+  assert.ok(held >= 0, 'a failure landing inside start() is handled as a running workout\'s');
+  assert.ok(saved > held, 'a running workout HealthKit fails is not finished and saved');
+  // start() throws a held failure before the clock can run against it.
+  const start = swiftBody(coach, 'func start() async');
+  const flagged = start.indexOf('starting = true');
+  const began = start.indexOf('startActivity(with:');
+  const collected = start.indexOf('beginCollection(at:');
+  const thrown = start.search(/if let (\w+) = startFailure \{ throw \1 \}/);
+  const runs = start.indexOf('running = true');
+  assert.ok(flagged >= 0 && flagged < began, 'a failure between startActivity and beginCollection is not held');
+  assert.ok(thrown > collected && runs > thrown, 'the clock can start against a session HealthKit has already failed');
+  assert.match(start.slice(start.indexOf('} catch {')), /starting = false/, 'a start that threw leaves the next failure held for a start that is over');
+  // finish(): an interruption keeps the part done; one that barely began is
+  // discarded; only a confirmed save points at Apple Health.
+  const raw = swiftCode(iosFile('WroughtWatch/WatchCoach.swift'));
+  const finish = swiftBody(raw, 'func finish(interruptedBy');
+  assert.match(finish, /if let (\w+) = \1, \w+ < Self\.\w+ \{\s*\w+\?\.discardWorkout\(\)/, 'a workout stopped seconds in is saved as a workout');
+  assert.match(finish, /finishWorkout\(\)/);
+  assert.doesNotMatch(raw, /check (?:your )?Apple Health/i, 'a message sends somebody to look for a workout that may not exist');
+  const confirmed = finish.indexOf('guard saved != nil');
+  const failed = finish.indexOf('} catch {');
+  const claims = [...finish.matchAll(/saved to Apple Health/g)].map(m => m.index);
+  assert.ok(claims.length > 0 && confirmed > 0, 'the save messages moved and this test can no longer see them');
+  for (const at of claims) assert.ok(at > confirmed && at < failed, 'a message says the workout is in Apple Health before HealthKit confirmed it');
+  assert.doesNotMatch(raw.replace(finish, ''), /saved to Apple Health/, 'somewhere outside the save says a workout was saved');
+  // The save finishes the builder it began: nothing reads the live references
+  // again after the first wait, when a Start could have replaced them.
+  const afterWait = swiftCallsOnly(finish.slice(finish.indexOf('await ')))
+    .replace(/if (workout|builder) === \w+ \{ \1 = nil \}/g, '');
+  assert.doesNotMatch(afterWait, /\b(?:workout|builder)\s*(?:\?|!|\.|=(?!=))/, 'the save reads the builder again after waiting, and a Start in between would finish the wrong one');
+  // Nothing clears busy early: only the end of a finish, and start()'s own exit.
+  assert.deepEqual(new Set(enclosingFuncs(coach, '(?<!var )\\bbusy = false')), new Set(['start', 'finish']));
+});
+
+await test('the Watch queues a workout\'s closing state, so the phone hears it even out of reach', () => {
+  // A live message is lost while the phone is out of reach, and the last one
+  // is what ends the lock-screen Live Activity. transferUserInfo is kept and
+  // delivered later; the phone handles both the same way.
+  const coach = swiftCode(iosFile('WroughtWatch/WatchCoach.swift'));
+  const flag = (coach.match(/private func publish\((\w+): Bool = false\)/) || [])[1];
+  assert.ok(flag, 'publish() has no way to mark the closing state');
+  const publish = swiftBody(coach, 'private func publish(');
+  const queued = publish.match(new RegExp(`if ${flag} \\{ (\\w+)\\.transferUserInfo\\((\\w+)\\) \\}`));
+  assert.ok(queued, 'the closing state is never queued with transferUserInfo');
+  const live = publish.match(/(\w+)\.sendMessage\((\w+), replyHandler:/);
+  assert.ok(live, 'the live message moved');
+  assert.equal(queued[2], live[2], 'the queued state is not the dictionary the live message carries');
+  assert.equal(queued[1], live[1]);
+  assert.doesNotMatch(publish, /guard [^\n]*isReachable/, 'nothing at all is sent while the phone is out of reach — the queue included');
+  assert.doesNotMatch(publish, /isReachable[^\n]*transferUserInfo/, 'the queued state waits for the phone to be reachable');
+  assert.match(publish, /"type": "workoutState"/, 'the phone only takes workoutState');
+  // Wherever the workout stops running, the closing state is queued after it.
+  const fns = new Set(enclosingFuncs(coach, '(?<!var )\\brunning = false'));
+  assert.ok(fns.size > 0, 'nothing ever stops the workout and this test can no longer see it');
+  for (const fn of fns) {
+    const body = swiftBody(coach, `func ${fn}(`);
+    const last = body.lastIndexOf('running = false');
+    assert.ok(body.indexOf(`publish(${flag}: true)`, last) > last, `${fn} stops the workout and never queues its closing state`);
+  }
+});
+
+await test('the Watch asks for permission to save before it starts, and says where to allow it', () => {
+  // requestAuthorization reports that the question was asked, not the answer;
+  // a denied write used to carry on into a session that could not be saved.
+  const start = swiftBody(swiftCode(iosFile('WroughtWatch/WatchCoach.swift')), 'func start() async');
+  const asked = start.indexOf('requestAuthorization(');
+  const status = start.match(/authorizationStatus\(for: (\w+)\)/);
+  assert.ok(status, 'the answer to the permission request is never read');
+  const checked = start.indexOf(status[0]);
+  const created = start.indexOf('HKWorkoutSession(healthStore:');
+  assert.ok(asked >= 0 && checked > asked && created > checked, 'a session is created before the answer is read');
+  assert.match(start, new RegExp(`let ${status[1]} = HKObjectType\\.workoutType\\(\\)`), 'the permission checked is not the one to save workouts');
+  const answers = start.slice(checked, created);
+  assert.match(answers, /case \.sharingAuthorized:\s*break/);
+  const refusals = [...answers.matchAll(/message = "([^"]+)"\s*return/g)].map(m => m[1]);
+  assert.ok(refusals.length >= 1, 'a refusal carries on into the workout');
+  assert.ok(refusals.some(r => /Settings › [^"]*Health[^"]*Wrought/.test(r)), 'a refusal never says where to allow it');
+});
+
+await test('a plan from the phone waits its turn, adds to a save message rather than replacing it, and a replay is not news', () => {
+  const coach = swiftCode(iosFile('WroughtWatch/WatchCoach.swift'));
+  // Wherever busy goes back to false, a plan held while busy is taken then.
+  for (const fn of new Set(enclosingFuncs(coach, '(?<!var )\\bbusy = false'))) {
+    const body = swiftBody(coach, `func ${fn}(`);
+    assert.ok(body.indexOf('applyPendingPlan()', body.lastIndexOf('busy = false')) > 0, `${fn} frees the Watch and leaves the phone's plan waiting`);
+  }
+  const drain = swiftBody(coach, 'private func applyPendingPlan()');
+  assert.match(drain, /guard !running, !busy, let (\w+) = pendingPlan else \{ return \}\s*pendingPlan = nil\s*apply\(\1, appending: true\)/);
+  const apply = swiftBody(coach, 'private func apply(');
+  assert.match(apply, /message = appending \? "\\\(message\) \\\((\w+)\)" : \1/, 'a plan taken after a save writes over the save\'s result');
+  assert.doesNotMatch(swiftBody(coach, 'func finish(interruptedBy'), /accept\(|message = "Plan received/, 'the save message is replaced by the plan line');
+  // A plan the Watch already shows, or the context replayed on every launch,
+  // is not announced — and a replay never undoes an edit made on the Watch.
+  const quiet = apply.match(/if (\w+) == plan \|\| \1 == Self\.stored\(forKey: Self\.(\w+)\) \{[\s\S]*?return\s*\}/);
+  assert.ok(quiet, 'every launch announces the phone\'s last plan as new, and puts it back over an edit');
+  assert.ok(apply.indexOf(quiet[0]) < apply.indexOf('message ='), 'the plan is announced before it is checked');
+  assert.match(apply, new RegExp(`Self\\.store\\(\\w+, forKey: Self\\.${quiet[2]}\\)`), 'the plan taken is never remembered as taken');
+  const key = k => (coach.match(new RegExp(`static let ${k} = "([^"]+)"`)) || [])[1];
+  assert.ok(key(quiet[2]) && key('planKey') && key(quiet[2]) !== key('planKey'), 'an edit on the Watch would count as a plan received from the phone');
+});
+
+await test('the plan on the wrist keeps its edits, holds the limits it is checked against, and says why Start is off', () => {
+  const coach = swiftCode(iosFile('WroughtWatch/WatchCoach.swift'));
+  const view = swiftCode(iosFile('WroughtWatch/WatchCoachView.swift'));
+  const shared = swiftCode(iosFile('Shared/WorkoutPlan.swift'));
+  // An edit on the Watch is kept under the key the next launch reads.
+  const kept = coach.match(/@Published var plan = WorkoutPlan\.\w+ \{\s*didSet \{[^}]*Self\.store\(plan, forKey: Self\.(\w+)\)/);
+  assert.ok(kept, 'an edit made on the Watch is lost at the next launch');
+  assert.match(swiftBody(coach, 'override init()'), new RegExp(`Self\\.stored\\(forKey: Self\\.${kept[1]}\\)`), 'the edit is kept where the next launch never looks');
+  // The steppers use the limits `valid` checks — never a narrower range that
+  // cuts a plan from the phone down on the next tap.
+  const steppers = [...view.matchAll(/Stepper\([^\n]*?value: \$coach\.plan\.(\w+), in: ([^,)]+)/g)];
+  assert.equal(steppers.length, 3, 'a stepper moved and this test can no longer see it');
+  const ranges = Object.fromEntries([...shared.matchAll(/static let (\w+)Range = (\d+)\.\.\.(\d+)/g)].map(m => [m[1], [Number(m[2]), Number(m[3])]]));
+  const valid = swiftBody(shared, 'var valid: Bool');
+  for (const [, field, bound] of steppers) {
+    const named = bound.match(/^WorkoutPlan\.(\w+)Range$/);
+    assert.ok(named, `the ${field} stepper has limits of its own: ${bound}`);
+    assert.match(valid, new RegExp(`Self\\.${named[1]}Range\\.contains\\(${field}\\)`), `${field} is stepped within one range and checked against another`);
+  }
+  // And those limits are the website's.
+  const clock = readFileSync(new URL('../public/workout-clock.js', import.meta.url), 'utf8');
+  const web = Object.fromEntries([...clock.matchAll(/\['(\w+)', (\d+), (\d+)\]/g)].map(m => [m[1], [Number(m[2]), Number(m[3])]]));
+  const swiftField = { rounds: 'rounds', work: 'workSeconds', rest: 'restSeconds', warning: 'warningSeconds' };
+  for (const [name, field] of Object.entries(swiftField)) {
+    assert.ok(ranges[name] && web[field], `the ${field} limit moved and this test can no longer see it`);
+    assert.deepEqual(ranges[name], web[field], `the Watch and the website disagree about ${field}`);
+  }
+  const most = Number((shared.match(/static let maxTotalSeconds = (\d+)/) || [])[1]);
+  assert.match(valid, /totalSeconds <= Self\.maxTotalSeconds/);
+  assert.ok(most > 0 && new RegExp(`totalSeconds\\(plan\\) > ${most}\\)`).test(clock), 'the Watch and the website disagree about the longest workout');
+  // A Start that is off says why.
+  assert.match(view, /\.disabled\(coach\.busy \|\| !coach\.plan\.valid\)/);
+  assert.match(view, /if !coach\.plan\.valid \{\s*Text\(/, 'Start is greyed out with no reason given');
+  assert.match(swiftBody(view, 'private func whyNotValid('), /WorkoutPlan\.maxTotalSeconds/);
+  // The clock's position is published only when it changes: it is computed
+  // four times a second and every assignment redraws the screen.
+  const tick = swiftBody(coach, 'private func tick()');
+  assert.match(tick, /if next != position \{ position = next \}/);
+  assert.equal((tick.match(/position = next/g) || []).length, 1, 'the position is reassigned on every tick');
+});
+
+await test('the Watch\'s tap legend says what the clock plays for this plan — three taps come once when there is no rest', () => {
+  // The clock is the website's; what it plays decides what the legend may promise.
+  const clock = readFileSync(new URL('../public/workout-clock.js', import.meta.url), 'utf8');
+  assert.match(clock, /export function cue\(/);
+  const threeMidWorkout = restSeconds => {
+    const plan = { name: 'x', rounds: 3, workSeconds: 60, restSeconds, warningSeconds: 30, activity: 'boxing' };
+    let previous = null, mid = false;
+    for (let second = 0; second <= clockTotal(plan); second++) {
+      const next = clockPosition(plan, second);
+      if (clockCue(plan, previous, next) === 3 && next.phase !== 'complete') mid = true;
+      previous = next;
+    }
+    return mid;
+  };
+  const legend = swiftBody(swiftCode(iosFile('WroughtWatch/WatchCoachView.swift')), 'private func legend(');
+  const threes = [...legend.matchAll(/"3 taps · ([^"]+)"/g)].map(m => m[1]);
+  assert.ok(threes.length > 0, 'the legend moved and this test can no longer see it');
+  if (threeMidWorkout(60)) assert.ok(threes.some(t => /round/i.test(t)), 'with rest, three taps end each round and the legend never says so');
+  if (!threeMidWorkout(0)) assert.ok(threes.some(t => !/round/i.test(t)), 'with no rest the legend promises three taps at a round end the clock never plays');
+  if (new Set(threes).size > 1) assert.match(legend, /plan\.restSeconds/, 'the legend picks its three-tap line without looking at the rest');
+  // The warning is the plan's, played by the clock's own rule.
+  const cueRule = swiftBody(swiftCode(iosFile('Shared/WorkoutPlan.swift')), 'func cue(');
+  assert.match(cueRule, /plan\.workSeconds > plan\.warningSeconds/);
+  assert.match(cueRule, /plan\.warningSeconds > 0/);
+  const warn = legend.match(/if ([^{]*)\{\s*lines\.append\("1 tap · \\\(plan\.warningSeconds\)/);
+  assert.ok(warn, 'the one-tap line is not the plan\'s own warning');
+  assert.match(warn[1], /plan\.warningSeconds > 0/);
+  assert.match(warn[1], /plan\.workSeconds > plan\.warningSeconds/);
 });
 
 group('Which account — the proof rides the reply, not the sheet');
