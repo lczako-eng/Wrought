@@ -29,11 +29,17 @@ import UIKit
 /// exists for that wake, the update goes unanswered, and after three of those
 /// HealthKit stops waking the app until it is opened again. The day stayed
 /// short until morning.
+///
+/// The Watch session is activated here for the same reason: a message from the
+/// Watch can wake the app in the background, and what the Watch queued is
+/// handed over once a session is active — a session only the web view created
+/// would not exist then.
 @MainActor
 final class AppDelegate: NSObject, UIApplicationDelegate {
     func application(_ application: UIApplication,
                      didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
         HealthCourier.shared.armAtLaunch()
+        WatchBridge.shared.activate()
         return true
     }
 }

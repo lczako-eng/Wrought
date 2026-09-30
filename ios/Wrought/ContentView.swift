@@ -41,9 +41,15 @@ struct ContentView: View {
         // Opening the app is the one moment somebody is certainly looking, so
         // it is the moment the numbers have to be current — background delivery
         // is iOS's schedule, not theirs. The courier skips a send that finished
-        // under a minute ago, so flicking in and out costs nothing.
+        // under a minute ago, so flicking in and out costs nothing. It is also
+        // the only moment Apple Health can be asked for anything new, and the
+        // moment a Live Activity left by an earlier launch is picked up or
+        // cleared.
         .onChange(of: scenePhase) { phase in
-            if phase == .active { Task { await courier.sync() } }
+            if phase == .active {
+                WatchBridge.shared.cameToForeground()
+                Task { await courier.cameToForeground() }
+            }
         }
     }
 

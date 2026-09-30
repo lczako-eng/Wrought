@@ -42,11 +42,17 @@ final class HealthCourier: ObservableObject {
     /// A request that arrived while a send was running: that send read
     /// HealthKit before these samples were saved, so one more goes after it.
     private var rerun = false
-    /// A wake inside the minute after a send is deferred to the end of that
-    /// minute, never dropped.
+    /// A foreground request inside the minute after a send is deferred to the
+    /// end of that minute, never dropped. A background wake does not use this:
+    /// the deferred task would still be asleep when the wake's background time
+    /// ended, so the observer forces its send instead.
     private var trailing: Task<Void, Never>?
     /// Observer queries executed once per process, whoever arms them first.
     private var armed = false
+    /// One Health permission check and one key-owner check at a time: the
+    /// page loading, the app opening and a tap can all arrive together.
+    private var asking = false
+    private var checkingOwner = false
 
     var statusLine: String {
         switch state {
@@ -149,12 +155,90 @@ final class HealthCourier: ObservableObject {
     func attach(webView: WebViewStore) {
         web = webView
         // The dashboard can ask for the latest: "as of 6:01pm" beside a number
-        // is only useful if the next tap makes it "as of now".
-        webView.onSyncRequest = { [weak self] in await self?.sync(force: true) }
+        // is only useful if the next tap makes it "as of now". The key is
+        // checked against the page's account first, so the send goes where
+        // the screen says it does.
+        webView.onSyncRequest = { [weak self] in
+            await self?.confirmKeyOwner()
+            await self?.sync(force: true)
+        }
+        // The page's session can only be read once a page has loaded.
+        webView.onPageLoaded = { [weak self] in await self?.confirmKeyOwner() }
         if IngestClient.storedKey() != nil {
             state = .connected
             registerBackgroundDelivery()
-            Task { await sync(force: true) }
+            Task {
+                await askForUnaskedTypes()
+                await sync(force: true)
+            }
+        }
+    }
+
+    /// The app came to the foreground — the one moment somebody is certainly
+    /// looking. Anything Apple Health has never been asked for is asked now,
+    /// the key is checked against the account on the page, and the numbers
+    /// are sent. Never called from a background wake.
+    func cameToForeground() async {
+        await askForUnaskedTypes()
+        await confirmKeyOwner()
+        await sync()
+    }
+
+    /// Health permission was only ever asked for inside connect(), which is
+    /// unreachable once a key exists — so a type added in a later build, or
+    /// grants reset by a reinstall that kept the Keychain, stayed unasked
+    /// forever and sent nothing while the app said Connected. Apple shows the
+    /// sheet only for types never put to the person; one they turned off
+    /// stays off, and is changed in Settings. FOREGROUND ONLY: a background
+    /// wake cannot show a sheet.
+    private func askForUnaskedTypes() async {
+        guard !asking, IngestClient.storedKey() != nil, HKHealthStore.isHealthDataAvailable(),
+              UIApplication.shared.applicationState != .background else { return }
+        asking = true
+        defer { asking = false }
+        let status: HKAuthorizationRequestStatus = await withCheckedContinuation { cont in
+            store.getRequestStatusForAuthorization(toShare: [], read: readTypes) { answer, _ in
+                cont.resume(returning: answer)
+            }
+        }
+        guard status == .shouldRequest else { return }
+        do { try await store.requestAuthorization(toShare: [], read: readTypes) }
+        catch { lastError = "Health access was not granted. Settings → Health → Data Access & Devices → Wrought." }
+    }
+
+    /// The key must belong to the account signed in on the page: the app may
+    /// never feed a different account than the one on screen. A key is minted
+    /// only when the two differ — never on every check, which would leave the
+    /// old keys active on the account.
+    func confirmKeyOwner() async {
+        guard !checkingOwner, IngestClient.storedKey() != nil else { return }
+        checkingOwner = true
+        defer { checkingOwner = false }
+        // Signed out, or a page with no session yet: nothing to compare with,
+        // and the key keeps feeding the account it was minted for.
+        guard let token = await web?.sessionToken(),
+              let signedIn = IngestClient.subject(ofSessionToken: token),
+              IngestClient.storedKey() != nil else { return }
+        guard let owner = IngestClient.storedOwner() else {
+            // Minted by build 12 or earlier, before the owner was kept. Taken
+            // to belong to the account signed in now: minting again to find
+            // out would leave the old key active on that account.
+            IngestClient.recordOwner(signedIn)
+            return
+        }
+        guard owner != signedIn else { return }
+        // Another account is signed in on the page. The old key stops here,
+        // before this phone sends anything more to an account nobody is
+        // looking at, and a key is minted for the one on screen.
+        IngestClient.forgetKey()
+        lastSync = nil
+        do {
+            try await IngestClient.mintKey(sessionToken: token)
+            lastError = nil
+            state = .connected
+        } catch {
+            state = .idle
+            lastError = "You're signed in to a different account now. Tap Connect Apple Health to send this phone's data to it."
         }
     }
 
@@ -170,6 +254,9 @@ final class HealthCourier: ObservableObject {
     /// is guaranteed to be looking, so that is the moment it has to be current.
     func sync(force: Bool = false) async {
         guard IngestClient.storedKey() != nil else {
+            // Forgotten elsewhere — Siri was told the key is refused — so the
+            // connect card comes back rather than the app claiming Connected.
+            if state == .connected { state = .idle }
             // The page asked and there is nothing to send with: say so, or the
             // button it disabled waits forever.
             if force { web?.announceSync(line: nil, error: "Connect Apple Health in this app first — then this sends the latest.") }
@@ -500,6 +587,14 @@ final class HealthCourier: ObservableObject {
             lastError = receipt.error == nil ? nil
                       : "Workouts were rejected by the server. Run schema/015 in Supabase."
             return true
+        } catch IngestError.keyRefused {
+            // Revoked from the dashboard, or unknown to the server. The key is
+            // gone from the Keychain already; the card comes back so a new one
+            // can be minted with one tap.
+            state = .idle
+            lastSync = nil
+            lastError = "Wrought no longer accepts this phone's key — it was revoked or removed. Tap Connect Apple Health to connect again."
+            return false
         } catch {
             lastError = "Send failed: \(error.localizedDescription)"
             return false
@@ -613,11 +708,21 @@ final class HealthCourier: ObservableObject {
             // The update is acknowledged when the send has FINISHED, inside a
             // background task — acknowledging first told HealthKit the data was
             // handled while iOS was free to suspend the app mid-send.
+            //
+            // In the background the send is FORCED. A wake inside the minute
+            // after a send used to be deferred to a task that was still asleep
+            // when this background time ended, so it waited for the next wake
+            // or for somebody to open the app. Sends still never overlap
+            // (sync() joins one already running), and in the background
+            // HealthKit's own hourly cadence is the rate limit. In the
+            // foreground the app stays awake, so the minute's deferral runs
+            // and a burst of new samples costs one send, not one each.
             let query = HKObserverQuery(sampleType: type, predicate: nil) { [weak self] _, done, error in
                 if error != nil { done(); return }
                 Task { @MainActor in
                     let bg = BackgroundTime("wrought-sync")
-                    await self?.sync()
+                    let background = UIApplication.shared.applicationState == .background
+                    await self?.sync(force: background)
                     bg.end()
                     done()
                 }
@@ -636,8 +741,12 @@ final class HealthCourier: ObservableObject {
 private final class BackgroundTime {
     private var id: UIBackgroundTaskIdentifier = .invalid
     init(_ name: String) {
+        // iOS calls this on the main thread and may suspend the app as soon
+        // as it returns, so the task is ended right here — a hop through a
+        // Task could run after the suspension it was meant to beat, and an
+        // unended task gets the app killed.
         id = UIApplication.shared.beginBackgroundTask(withName: name) { [weak self] in
-            Task { @MainActor in self?.end() }
+            self?.end()
         }
     }
     func end() {

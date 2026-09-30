@@ -10,11 +10,15 @@ import Foundation
 enum IngestError: LocalizedError {
     case badResponse(Int, String)
     case noKey
+    /// The server refused the key itself — revoked, or unknown to it. The key
+    /// has already been forgotten when this is thrown.
+    case keyRefused
 
     var errorDescription: String? {
         switch self {
         case .badResponse(let code, let body): return "Server said \(code): \(body)"
         case .noKey: return "No device key yet — connect first."
+        case .keyRefused: return "Wrought no longer accepts this phone's key."
         }
     }
 }
@@ -22,9 +26,56 @@ enum IngestError: LocalizedError {
 enum IngestClient {
     private static let base = URL(string: "https://wrought.fit")!
     private static let keychainAccount = "fit.wrought.ingest-key"
+    /// The account the key was minted for: the user id (`sub`) of the page
+    /// session that minted it. Kept beside the key so a different account
+    /// signing in on the page can be noticed.
+    private static let ownerAccount = "fit.wrought.ingest-key.owner"
 
     static func storedKey() -> String? {
         Keychain.read(account: keychainAccount)
+    }
+
+    static func storedOwner() -> String? {
+        Keychain.read(account: ownerAccount)
+    }
+
+    /// For a key minted before the owner was kept (build 12 and earlier).
+    static func recordOwner(_ owner: String) {
+        Keychain.write(account: ownerAccount, value: owner)
+    }
+
+    /// Drops the key and its owner. The courier, Siri and the connect card all
+    /// read the Keychain, so from here the app is simply not connected.
+    static func forgetKey() {
+        Keychain.remove(account: keychainAccount)
+        Keychain.remove(account: ownerAccount)
+    }
+
+    /// True when the server refused the KEY — the only case where it is
+    /// forgotten. Both doors answer an unknown or revoked key with
+    /// `invalid_key`. A 403 for a suspended account (`membership_revoked`),
+    /// or a 401 from a captive portal or proxy, says nothing about the key,
+    /// and dropping a good key there would disconnect somebody for nothing.
+    static func refusesKey(status: Int, body: Data) -> Bool {
+        guard status == 401 || status == 403 else { return false }
+        let out = (try? JSONSerialization.jsonObject(with: body)) as? [String: Any]
+        let error = out?["error"] as? String
+        return error == "invalid_key" || error == "missing_key"
+    }
+
+    /// The user id inside a Supabase session token. Only compared, never
+    /// trusted for anything: the server checks the token itself when it mints.
+    static func subject(ofSessionToken token: String) -> String? {
+        let parts = token.split(separator: ".")
+        guard parts.count == 3 else { return nil }
+        var payload = String(parts[1])
+            .replacingOccurrences(of: "-", with: "+")
+            .replacingOccurrences(of: "_", with: "/")
+        while payload.count % 4 != 0 { payload += "=" }
+        guard let data = Data(base64Encoded: payload),
+              let claims = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+              let sub = claims["sub"] as? String, !sub.isEmpty else { return nil }
+        return sub
     }
 
     /// One POST to the same endpoint the connect page uses, authorized by the
@@ -46,6 +97,11 @@ enum IngestClient {
             throw IngestError.badResponse(code, String(data: data, encoding: .utf8) ?? "")
         }
         Keychain.write(account: keychainAccount, value: key)
+        if let owner = subject(ofSessionToken: sessionToken) {
+            Keychain.write(account: ownerAccount, value: owner)
+        } else {
+            Keychain.remove(account: ownerAccount)
+        }
     }
 
     /// Metrics AND workouts in one call — the endpoint takes both, and a run
@@ -88,6 +144,12 @@ enum IngestClient {
         let (data, resp) = try await URLSession.shared.data(for: req)
         let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
         guard code == 200 else {
+            // A revoked key used to be kept forever: every send failed, the
+            // connect card never came back, and nothing could mint a new one.
+            if refusesKey(status: code, body: data) {
+                forgetKey()
+                throw IngestError.keyRefused
+            }
             throw IngestError.badResponse(code, String(data: data, encoding: .utf8) ?? "")
         }
 
