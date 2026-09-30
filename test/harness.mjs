@@ -11914,10 +11914,27 @@ await test('the app facts on the website match the native project', () => {
   const pbx = readFileSync(new URL('../ios/Wrought.xcodeproj/project.pbxproj', import.meta.url), 'utf8');
   const versions = [...pbx.matchAll(/MARKETING_VERSION = ([^;]+);/g)].map(m => m[1]);
   const builds = [...pbx.matchAll(/CURRENT_PROJECT_VERSION = ([^;]+);/g)].map(m => m[1]);
-  assert.ok(versions.length && versions.every(v => v === info.version),
-    'the website advertises a different iPhone version');
-  assert.ok(builds.length && builds.every(v => v === String(info.build)),
-    'the website advertises a different iPhone build');
+  // ONE VERSION AND ONE BUILD FOR THE WHOLE BUNDLE. The iPhone app, the Watch
+  // app and the widget each carry their own pair, in every configuration, and
+  // Xcode's General tab edits one target at a time — so a bump made there
+  // leaves the Watch and the widget behind. The repo carries the numbers and
+  // moves every entry in one edit.
+  assert.ok(versions.length && builds.length === versions.length,
+    'a configuration sets a version without a build, or a build without a version');
+  assert.equal(new Set(versions).size, 1, `the targets disagree about the version: ${versions.join(', ')}`);
+  assert.equal(new Set(builds).size, 1, `the targets disagree about the build: ${builds.join(', ')}`);
+  assert.equal(versions[0], info.version, 'the website advertises a different iPhone version');
+  // app-info.json describes what is RELEASED — what TestFlight shows — and the
+  // project describes what is being built. Between an upload being prepared
+  // and TestFlight showing it, the project is exactly one build ahead; any
+  // other gap is two files drifting, which is how the repo once said 1.1 (8)
+  // while TestFlight had 1.0 (12). When TestFlight shows the new build,
+  // app-info.json moves to it.
+  assert.match(builds[0], /^\d+$/, 'the build number is not a whole number');
+  assert.match(String(info.build), /^\d+$/, 'the website\'s build is not a whole number');
+  const ahead = Number(builds[0]) - Number(info.build);
+  assert.ok(ahead === 0 || ahead === 1,
+    `the project is build ${builds[0]} and the website says ${info.build}: it may be the released build or the one upload after it, nothing else`);
   assert.match(page('sw.js'), /'\/app-info\.json'/,
     'the installed app cannot read its own release facts offline');
 });
@@ -15094,11 +15111,14 @@ await test('the page shows the watch time beside the burn, asks the phone to sen
   assert.match(app, /const fr = d\.today\?\.device\?\.fresh;/);
   // RUN it, as each place it is shown: a browser, today's installed build
   // (the Watch bridge, no send button) and the build with the button.
-  const helpers = app.slice(app.indexOf('function watchSendHow('), app.indexOf('function tickAges('));
+  // Where the page is comes from /in-app.js, the one copy app.html and
+  // connect.html share — so it is run here as the page runs it.
+  const inAppJs = page('in-app.js');
+  const helpers = app.slice(app.indexOf('function inAppView('), app.indexOf('function tickAges('));
   const SAFARI = 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1';
   const SHELL = 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148';
   const make = (win, nav = { userAgent: SAFARI }, demo = false, fn = 'freshLine') =>
-    new Function('window', 'navigator', 'DEMO', 'esc', `${helpers}; return ${fn};`)(win, nav, demo, x => String(x));
+    new Function('window', 'navigator', 'DEMO', 'esc', `${inAppJs}; ${helpers}; return ${fn};`)(win, nav, demo, x => String(x));
   const f = { at: '6:01pm', as_of: new Date(Date.now() - 61 * 60000).toISOString(), final: false, source: 'wrought_ios',
     refresh: 'open the Wrought app on your phone to send the latest' };
   const browser = make({})(f);
@@ -16392,7 +16412,7 @@ function projectTargets() {
     if (/\bisa = /.test(body) && !objects[m[1]]) objects[m[1]] = body;
   }
   const targets = [];
-  for (const body of Object.values(objects)) {
+  for (const [id, body] of Object.entries(objects)) {
     if (!/\bisa = PBXNativeTarget;/.test(body)) continue;
     const name = body.match(/(?:^|[\s;{])name = ([^;]+);/)[1].trim();
     const ids = ((body.match(/fileSystemSynchronizedGroups = \(([^)]*)\)/) || [])[1] || '').match(/[0-9A-F]{24}/g) || [];
@@ -16400,9 +16420,9 @@ function projectTargets() {
       assert.match(objects[id] || '', /\bisa = PBXFileSystemSynchronizedRootGroup;/, `${name} lists ${id}, which is not a synchronized folder`);
       return objects[id].match(/\bpath = ([^;]+);/)[1].trim();
     });
-    targets.push({ name, folders });
+    targets.push({ id, name, folders, body });
   }
-  return { proj, targets };
+  return { proj, targets, objects };
 }
 
 function filesUnder(dir) {
@@ -16645,6 +16665,262 @@ await test('the Watch\'s tap legend says what the clock plays for this plan — 
   assert.ok(warn, 'the one-tap line is not the plan\'s own warning');
   assert.match(warn[1], /plan\.warningSeconds > 0/);
   assert.match(warn[1], /plan\.workSeconds > plan\.warningSeconds/);
+});
+
+await test('the Watch app and the widget are packaged as parts of the iPhone app, the way App Store Connect checks them', () => {
+  // Build 13 is the first upload with a Watch app in it, and none of this can
+  // be built here. What App Store Connect checks about a companion is a set of
+  // RELATIONSHIPS between files — the Watch names the iPhone app, the ids nest,
+  // the Watch is copied into the iPhone app once — so each is read off the
+  // project and the plists rather than typed into this test. Renaming the
+  // bundle keeps passing; breaking one of the links does not.
+  const { objects, targets } = projectTargets();
+  const unquote = v => v == null ? v : v.trim().replace(/^"(.*)"$/, '$1');
+  const setting = (target, key) => {
+    const list = objects[target.body.match(/buildConfigurationList = ([0-9A-F]{24})/)[1]];
+    const configs = list.match(/buildConfigurations = \(([^)]*)\)/)[1].match(/[0-9A-F]{24}/g);
+    const values = [...new Set(configs.map(id =>
+      unquote((objects[id].match(new RegExp(`(?:^|[\\s;{])${key} = ("[^"]*"|[^;]+);`)) || [])[1])))];
+    assert.equal(values.length, 1, `${target.name}'s configurations disagree about ${key}: ${values.join(', ')}`);
+    return values[0];
+  };
+  const productType = t => unquote((t.body.match(/productType = ("[^"]+"|[^;]+);/) || [])[1]);
+  const apps = targets.filter(t => productType(t) === 'com.apple.product-type.application');
+  const phones = apps.filter(t => setting(t, 'SDKROOT') !== 'watchos');
+  const watches = apps.filter(t => setting(t, 'SDKROOT') === 'watchos');
+  const extensions = targets.filter(t => productType(t) === 'com.apple.product-type.app-extension');
+  assert.equal(phones.length, 1, 'there is not exactly one iPhone app to embed the others in');
+  assert.equal(watches.length, 1, 'there is not exactly one Watch app');
+  assert.ok(extensions.length >= 1, 'the widget extension is gone and this test can no longer see it');
+  const [phone] = phones, [watch] = watches;
+  const plistOf = t => parsePlist(iosFile(setting(t, 'INFOPLIST_FILE')).replace(/<!--[\s\S]*?-->/g, ''));
+
+  // The ids nest under the iPhone app's, and the Watch names it as its companion.
+  const phoneId = setting(phone, 'PRODUCT_BUNDLE_IDENTIFIER');
+  assert.ok(phoneId && !phoneId.includes('$('), 'the iPhone app\'s bundle id could not be read');
+  for (const t of [watch, ...extensions]) {
+    assert.ok(setting(t, 'PRODUCT_BUNDLE_IDENTIFIER').startsWith(`${phoneId}.`),
+      `${t.name}'s bundle id does not start with the iPhone app's (${phoneId}.) — App Store Connect refuses it`);
+  }
+  const watchPlist = plistOf(watch);
+  assert.equal(watchPlist.WKCompanionAppBundleIdentifier, phoneId,
+    'the Watch app names a different iPhone app as its companion — change the bundle id and this is what breaks');
+  assert.equal(watchPlist.WKApplication, true, 'the Watch app is not marked as a watchOS app');
+  assert.ok((watchPlist.WKBackgroundModes || []).includes('workout-processing'),
+    'the Watch app cannot keep a workout running with the screen down');
+  // Every bundle takes its numbers from the project, so the one edit that
+  // bumps the project bumps all three.
+  for (const t of [phone, watch, ...extensions]) {
+    const pl = plistOf(t);
+    assert.equal(pl.CFBundleVersion, '$(CURRENT_PROJECT_VERSION)', `${t.name}'s build number is typed into its plist`);
+    assert.equal(pl.CFBundleShortVersionString, '$(MARKETING_VERSION)', `${t.name}'s version is typed into its plist`);
+  }
+  // Heart rate and saving the workout both need HealthKit on the Watch's own signature.
+  const ent = parsePlist(iosFile(setting(watch, 'CODE_SIGN_ENTITLEMENTS')));
+  assert.equal(ent['com.apple.developer.healthkit'], true, 'the Watch app is not signed for HealthKit');
+  // The widget is a WidgetKit extension.
+  for (const t of extensions) {
+    assert.equal(plistOf(t).NSExtension?.NSExtensionPointIdentifier, 'com.apple.widgetkit-extension',
+      `${t.name} is not a WidgetKit extension`);
+  }
+
+  // The Watch app is built with the iPhone app and copied into it ONCE, at
+  // Wrought.app/Watch — the Watch's own product, by the iPhone target.
+  const phaseIds = phone.body.match(/buildPhases = \(([^)]*)\)/)[1].match(/[0-9A-F]{24}/g);
+  const intoWatch = Object.entries(objects).filter(([, b]) => /\bisa = PBXCopyFilesBuildPhase;/.test(b)
+    && unquote((b.match(/dstPath = ("[^"]*"|[^;]+);/) || [])[1]) === '$(CONTENTS_FOLDER_PATH)/Watch');
+  assert.equal(intoWatch.length, 1, `${intoWatch.length} phases copy into the Watch folder — it must be exactly one`);
+  const [embedId, embed] = intoWatch[0];
+  assert.ok(phaseIds.includes(embedId), 'the phase that copies the Watch app in is not one of the iPhone app\'s');
+  const copied = embed.match(/files = \(([^)]*)\)/)[1].match(/[0-9A-F]{24}/g) || [];
+  const watchProduct = watch.body.match(/productReference = ([0-9A-F]{24})/)[1];
+  assert.deepEqual(copied.map(id => (objects[id].match(/fileRef = ([0-9A-F]{24})/) || [])[1]), [watchProduct],
+    'the Watch folder does not receive exactly the Watch app');
+  const deps = (phone.body.match(/dependencies = \(([^)]*)\)/)[1].match(/[0-9A-F]{24}/g) || [])
+    .map(id => (objects[id].match(/\btarget = ([0-9A-F]{24})/) || [])[1]);
+  assert.ok(deps.includes(watch.id), 'archiving the iPhone app does not build the Watch app first');
+
+  // THREE SIRI NAMES AT MOST, counted in the plist the iPhone app actually
+  // ships. A fourth compiles and archives, then App Store Connect refuses the
+  // upload with ITMS-90626 — twice already, a build number each time.
+  const names = plistOf(phone).INAlternativeAppNames || [];
+  assert.ok(names.length >= 1 && names.length <= 3, `${names.length} Siri names — Apple allows three`);
+});
+
+group('The website inside the app, build 13');
+
+// The page code that decides what an app's web view is shown, run as the page
+// runs it: /in-app.js first, then the page's own functions, against a made-up
+// window, user agent and just enough of a document.
+const IN_APP_JS = page('in-app.js');
+const UA_SAFARI = 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1';
+const UA_WEBVIEW = 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148';
+const APP_13 = () => ({ webkit: { messageHandlers: { wroughtSync: {}, wroughtWatch: {} } } });
+// A top-level function of a page, from its name to the closing brace in column one.
+const pageFn = (src, start) => {
+  const at = src.indexOf(start);
+  assert.ok(at >= 0, `${start} is gone from the page`);
+  return src.slice(at, src.indexOf('\n}\n', at) + 2);
+};
+// Where each of the three kinds of phone page is.
+const PLACES = [
+  { name: 'Safari', win: () => ({}), nav: { userAgent: UA_SAFARI }, inApp: false },
+  { name: 'a Home Screen install', win: () => ({}), nav: { userAgent: UA_WEBVIEW, standalone: true }, inApp: false },
+  { name: 'the app, build 13', win: APP_13, nav: { userAgent: UA_WEBVIEW }, inApp: true },
+  { name: 'the app, build 12 (no bridges)', win: () => ({}), nav: { userAgent: UA_WEBVIEW }, inApp: true },
+];
+
+await test('one file answers "is this inside an app", and every page that asks reads it', () => {
+  const ask = (win, nav) => { new Function('window', 'navigator', IN_APP_JS)(win, nav); return win.wroughtInApp(); };
+  for (const p of PLACES) assert.equal(ask(p.win(), p.nav), p.inApp, `${p.name} is misread`);
+  assert.equal(ask({ webkit: { messageHandlers: { wroughtWatch: {} } } }, { userAgent: UA_WEBVIEW }), true,
+    'a build with only the Watch bridge is not recognised as the app');
+  assert.equal(ask({}, { userAgent: 'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0 Mobile Safari/537.36' }), false);
+  assert.equal(ask({}, { userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 14_6) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.1.15' }), false);
+  // No second copy of the test: the user-agent tell lives in in-app.js alone.
+  const copies = readdirSync(new URL('../public/', import.meta.url))
+    .filter(f => /\.(html|js)$/.test(f) && f !== 'in-app.js')
+    .filter(f => /Safari\\\//.test(decomment(page(f))));
+  assert.deepEqual(copies, [], `a page works out "inside an app" for itself: ${copies.join(', ')}`);
+  // A page that reads the answer loads the file, before the code that asks.
+  for (const f of ['app.html', 'connect.html']) {
+    const src = page(f);
+    assert.match(src, /wroughtInApp/, `${f} no longer reads the shared answer`);
+    const tag = src.search(/<script src="\/in-app\.js"><\/script>/);
+    assert.ok(tag >= 0 && tag < src.indexOf('<script type="module">'), `${f} asks before /in-app.js has loaded`);
+  }
+  // A page the offline shell keeps must find its scripts in the shell too.
+  const worker = page('sw.js');
+  const shell = [...worker.slice(worker.indexOf('const SHELL_FILES'), worker.indexOf("self.addEventListener('install'"))
+    .matchAll(/'\/([^']+)'/g)].map(m => m[1]);
+  for (const f of shell.filter(f => f.endsWith('.html'))) {
+    for (const [, src] of page(f).matchAll(/<script[^>]*\ssrc="\/([^"]+)"/g)) {
+      if (fs.existsSync(new URL(`../public/${src}`, import.meta.url)))
+        assert.ok(shell.includes(src), `${f} loads /${src}, which the offline shell does not keep`);
+    }
+  }
+});
+
+await test('inside an app, sign-in offers no Google door and says in one line which doors work — the website keeps Google', async () => {
+  // Google refuses to sign in inside an app's web view and leaves a page with
+  // no way back. The app cancels the attempt natively; the page stops offering
+  // a button whose only outcome is that cancellation.
+  const run = async (file, place, external) => {
+    const src = page(file);
+    const el = {
+      apple: { hidden: false, dataset: { provider: 'apple' } }, google: { hidden: false, dataset: { provider: 'google' } },
+      note: { hidden: true, textContent: '', setAttribute(k) { if (k === 'hidden') this.hidden = true; } },
+      or: { hidden: false, setAttribute(k) { if (k === 'hidden') this.hidden = true; } },
+    };
+    const pick = sel => /data-provider="(\w+)"/.test(sel) ? [el[sel.match(/data-provider="(\w+)"/)[1]]]
+      : /\.oauth/.test(sel) ? [el.apple, el.google] : /\.or\b/.test(sel) ? [el.or] : [];
+    const document = { querySelectorAll: pick, querySelector: sel => pick(sel)[0] || null };
+    const noteId = src.match(/<p class="[^"]*" id="([^"]+)" hidden><\/p>\s*<p class="or">/)[1];
+    const $ = id => (id === noteId ? el.note : null);
+    const fetch = async () => ({ ok: true, json: async () => ({ external }) });
+    await new Function('window', 'navigator', 'document', '$', 'sb', 'SUPABASE_URL', 'SUPABASE_ANON', 'fetch',
+      `${IN_APP_JS}; ${pageFn(src, 'function inAppView(')} ${pageFn(src, 'function closeGoogleInApp(')}
+       ${pageFn(src, 'async function hideDeadProviders(')} closeGoogleInApp(); return hideDeadProviders();`)(
+      place.win(), place.nav, document, $, {}, 'https://x.supabase.co', 'anon', fetch);
+    return el;
+  };
+  const sentences = {};
+  for (const file of ['app.html', 'connect.html']) {
+    for (const place of PLACES) {
+      const both = await run(file, place, { apple: true, google: true });
+      if (!place.inApp) {
+        assert.equal(both.google.hidden, false, `${file} in ${place.name} lost its Google button`);
+        assert.equal(both.note.hidden, true, `${file} in ${place.name} says Google does not work`);
+        continue;
+      }
+      assert.equal(both.google.hidden, true, `${file} in ${place.name} offers Google, which cannot sign in there`);
+      assert.equal(both.note.hidden, false, `${file} in ${place.name} hides Google without saying why`);
+      assert.match(both.note.textContent, /email and password/);
+      assert.match(both.note.textContent, /Safari/);
+      // Only the door known to work inside an app is promised: whether Apple's
+      // own sign-in page completes in there has not been checked on a device.
+      assert.doesNotMatch(both.note.textContent, /Apple/, `${file} promises Apple sign-in inside an app, which nothing has verified`);
+      assert.equal(both.or.hidden, false, 'the divider went while Apple is still above it');
+      // Apple off in Supabase as well: with every button gone the divider goes too.
+      assert.equal((await run(file, place, { apple: false, google: true })).or.hidden, true,
+        `${file} divides nothing from the email form`);
+      // Google off everywhere: nothing to explain.
+      assert.equal((await run(file, place, { apple: true, google: false })).note.hidden, true,
+        `${file} explains a Google door that is switched off anyway`);
+      sentences[file] = both.note.textContent;
+    }
+  }
+  assert.deepEqual(sentences['connect.html'], sentences['app.html'], 'the two sign-in pages explain Google differently');
+
+  // Mid-reset or mid-code, a late provider check must not bring the line back,
+  // and both of those screens put it away with the doors.
+  const app = page('app.html');
+  const noteId = app.match(/<p class="gate-note" id="([^"]+)" hidden><\/p>/)[1];
+  for (const fn of ['function askForNewPassword(', 'function askForCode(']) {
+    assert.ok(pageFn(app, fn).includes(`#${noteId}`), `${fn}) leaves the Google line showing`);
+  }
+  const midReset = { hidden: true, textContent: '' };
+  new Function('window', 'navigator', 'document', '$',
+    `${IN_APP_JS}; ${pageFn(app, 'function inAppView(')} ${pageFn(app, 'function closeGoogleInApp(')} closeGoogleInApp();`)(
+    APP_13(), { userAgent: UA_WEBVIEW }, { querySelectorAll: () => [], querySelector: () => null },
+    id => (id === noteId ? midReset : id === 'reset' ? { hidden: false } : null));
+  assert.equal(midReset.hidden, true, 'the Google line comes back over the new-password screen');
+
+  // The Account tab's Google doors — link, and prove-it for a merge — go too.
+  const acct = pageFn(app, 'function renderAccount(');
+  assert.match(acct, /p === 'google' && inApp/, 'Link Google is still offered inside an app');
+  assert.match(acct, /\$\{inApp \? '' : '<button class="ghost" data-mergeprov="google">/, 'Prove it with Google is still offered inside an app');
+});
+
+await test('inside an app, notifications point at the Home Screen copy of wrought.fit — never at a Share button the app does not have', async () => {
+  const app = page('app.html');
+  const start = app.indexOf('const PUSH_IN_APP');
+  const push = app.slice(start, app.indexOf('\n}\n', app.indexOf('async function loadPush(', start)) + 2);
+  const run = async (win, nav) => {
+    const el = { innerHTML: '' };
+    const load = new Function('window', 'navigator', '$', 'esc',
+      `${IN_APP_JS}; ${pageFn(app, 'function inAppView(')} ${push}; return loadPush;`)(win, nav, id => (id === 'push-body' ? el : null), x => String(x));
+    await load();
+    return el.innerHTML;
+  };
+  for (const place of PLACES.filter(p => p.inApp)) {
+    // Even a web view that did expose the push APIs: the answer is the same.
+    for (const extra of [{}, { PushManager: {} }]) {
+      const said = await run({ ...place.win(), ...extra }, { ...place.nav, serviceWorker: {} });
+      assert.doesNotMatch(said, /\bShare\b/, `${place.name} is told to tap a Share button it does not have`);
+      assert.match(said, /wrought\.fit/);
+      assert.match(said, /Home Screen/);
+      assert.match(said, /Safari/);
+    }
+  }
+  // The website is untouched: a browser with no push still gets its own instructions.
+  const safari = await run({}, { userAgent: UA_SAFARI });
+  assert.match(safari, /Share, then Add to Home Screen/, 'the website lost its instructions');
+  // The coach checklist names the same place, off the same sentence.
+  assert.match(pageFn(app, 'function coachSetupPanel('), /inAppView\(\)\s*\?\s*PUSH_IN_APP/,
+    'the setup checklist tells somebody in the app to put WROUGHT on the Home Screen they are already on');
+});
+
+await test('inside an app, export says to use wrought.fit in Safari; the website\'s download is untouched', () => {
+  const connect = page('connect.html');
+  const block = connect.slice(connect.indexOf("if (inAppView() && $('dl'))"), connect.indexOf("$('dl')?.addEventListener('click'"));
+  assert.ok(block.length > 40, 'the in-app export line is gone');
+  for (const place of PLACES) {
+    const dl = { hidden: false, after: '', insertAdjacentHTML(where, html) { assert.equal(where, 'afterend'); this.after += html; } };
+    new Function('window', 'navigator', '$', `${IN_APP_JS}; ${pageFn(connect, 'function inAppView(')} ${block}`)(
+      place.win(), place.nav, id => (id === 'dl' ? dl : null));
+    if (place.inApp) {
+      assert.equal(dl.hidden, true, `${place.name} still offers a download that has nowhere to go`);
+      assert.match(dl.after, /Safari/);
+      assert.match(dl.after, /wrought\.fit/);
+    } else {
+      assert.equal(dl.hidden, false, `${place.name} lost the export`);
+      assert.equal(dl.after, '', `${place.name} is told to go to Safari`);
+    }
+  }
+  const handler = connect.slice(connect.indexOf("$('dl')?.addEventListener('click'"));
+  assert.match(handler.slice(0, handler.indexOf('\n});')), /URL\.createObjectURL[\s\S]*a\.download = /,
+    'the website\'s own download was changed');
 });
 
 group('Which account — the proof rides the reply, not the sheet');

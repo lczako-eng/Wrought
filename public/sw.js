@@ -11,7 +11,7 @@
 // yesterday's numbers with confidence, so anything carrying data is network
 // first and only falls back to cache when the network genuinely fails.
 
-const SHELL = 'wrought-shell-v22';
+const SHELL = 'wrought-shell-v23';
 
 // Only the frame: markup, icons, manifest. No API responses ever.
 const SHELL_FILES = [
@@ -22,6 +22,9 @@ const SHELL_FILES = [
   '/workout.js',
   '/workout-clock.js',
   '/connect.html',
+  // Whether a page is inside an app's web view — read by app.html and
+  // connect.html, so both need it offline.
+  '/in-app.js',
   '/shell.css',
   '/app-info.json',
   // The morning notification opens this launcher — it carries no data, so it is
