@@ -9,6 +9,12 @@ struct ContentView: View {
     @EnvironmentObject var courier: HealthCourier
     @StateObject private var webView = WebViewStore.shared
     @Environment(\.scenePhase) private var scenePhase
+    /// "Not now" on the connect card. The app is optional, Apple Health
+    /// included: the card sits over the bottom of every page — Sign out and
+    /// Switch account among it — and somebody who does not want Health
+    /// connected must still be able to reach all of it. Until the next launch,
+    /// or until the courier has something new to say.
+    @State private var cardSetAside = false
 
     var body: some View {
         ZStack(alignment: .bottom) {
@@ -29,7 +35,7 @@ struct ContentView: View {
             // The connect card. Shown until Health is feeding, then never
             // again — a settings screen that follows people around is how a
             // one-job app starts pretending to be a second product.
-            if courier.state != .connected {
+            if courier.state != .connected && !cardSetAside {
                 connectCard
                     .padding(.horizontal, 16)
                     .padding(.bottom, 12)
@@ -37,13 +43,25 @@ struct ContentView: View {
             }
         }
         .animation(.easeOut(duration: 0.25), value: courier.state)
+        .animation(.easeOut(duration: 0.25), value: cardSetAside)
         .onAppear { courier.attach(webView: webView) }
+        // A refused key, an account switch or a send asked for with nothing to
+        // send with: the card comes back to say so, even if it was set aside.
+        .onChange(of: courier.lastError) { error in
+            if error != nil { cardSetAside = false }
+        }
         // Opening the app is the one moment somebody is certainly looking, so
         // it is the moment the numbers have to be current — background delivery
         // is iOS's schedule, not theirs. The courier skips a send that finished
-        // under a minute ago, so flicking in and out costs nothing.
+        // under a minute ago, so flicking in and out costs nothing. It is also
+        // the only moment Apple Health can be asked for anything new, and the
+        // moment a Live Activity left by an earlier launch is picked up or
+        // cleared.
         .onChange(of: scenePhase) { phase in
-            if phase == .active { Task { await courier.sync() } }
+            if phase == .active {
+                WatchBridge.shared.cameToForeground()
+                Task { await courier.cameToForeground() }
+            }
         }
     }
 
@@ -80,14 +98,21 @@ struct ContentView: View {
 
                 Spacer(minLength: 8)
 
-                Text("1 TAP")
-                    .font(.system(size: 9, weight: .bold, design: .monospaced))
-                    .kerning(0.8)
-                    .foregroundColor(Color(red: 0.96, green: 0.65, blue: 0.14))
-                    .padding(.horizontal, 9)
-                    .padding(.vertical, 7)
-                    .background(Color(red: 0.95, green: 0.39, blue: 0.10).opacity(0.10))
-                    .clipShape(Capsule())
+                Button {
+                    cardSetAside = true
+                } label: {
+                    Text("NOT NOW")
+                        .font(.system(size: 9, weight: .bold, design: .monospaced))
+                        .kerning(0.8)
+                        .foregroundColor(Color(red: 0.96, green: 0.65, blue: 0.14))
+                        .padding(.horizontal, 9)
+                        .padding(.vertical, 7)
+                        .background(Color(red: 0.95, green: 0.39, blue: 0.10).opacity(0.10))
+                        .clipShape(Capsule())
+                        .frame(minWidth: 44, minHeight: 44)
+                        .contentShape(Rectangle())
+                }
+                .accessibilityLabel("Not now")
             }
 
             Text(courier.state == .working ? "Connecting…" : courier.statusLine)

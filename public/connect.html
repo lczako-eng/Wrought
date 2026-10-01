@@ -197,6 +197,9 @@
         </svg>
         Continue with Google
       </button>
+      <!-- Filled and shown in place of the Google button inside an app's web
+           view, by closeGoogleInApp(). -->
+      <p class="msg" id="google-inapp" hidden></p>
       <p class="or"><span>or with an email</span></p>
       <input id="email" type="email" placeholder="you@example.com" autocomplete="email">
       <input id="pass" type="password" placeholder="Password" autocomplete="current-password">
@@ -233,7 +236,7 @@
     <p class="muted">The native app opens the same dashboard as the website, then adds the two
     jobs a web page cannot own: Apple Health background delivery and locked-phone Siri shortcuts.
     A dashboard update reaches the app from wrought.fit without waiting for another native release.</p>
-    <p class="msg" style="margin:12px 0 0"><b id="native-version" style="color:var(--text)">Version 1.0 · build 7</b>
+    <p class="msg" style="margin:12px 0 0"><b id="native-version" style="color:var(--text)">Wrought for iPhone</b>
     <span id="native-note"> · The dashboard updates from wrought.fit.</span></p>
   </div>
 
@@ -393,6 +396,9 @@ Show Notification    →  Wrought           (body: Dictionary Value)</pre>
 <!-- The two public Supabase values, from the deploy environment.
      Must load before the module below, which reads them off window. -->
 <script src="/config.js"></script>
+<!-- Whether this page is inside an app's web view: the same answer app.html
+     reads. A missing file reads as "the website". -->
+<script src="/in-app.js"></script>
 <script type="module">
 import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm';
 
@@ -545,14 +551,37 @@ async function hideDeadProviders() {
   } catch { /* leave them showing */ }
   if (!external) return;
 
-  let hidden = 0;
   for (const b of document.querySelectorAll('.oauth')) {
-    if (external[b.dataset.provider] === false) { b.hidden = true; hidden++; }
+    if (external[b.dataset.provider] === false) b.hidden = true;
   }
-  // With no providers left, the "or with an email" divider is dividing nothing.
-  const all = document.querySelectorAll('.oauth').length;
-  if (hidden === all) document.querySelector('.or')?.setAttribute('hidden', '');
+  // With no providers left, the "or with an email" divider is dividing nothing
+  // — counting the Google button an app's web view already took away.
+  if ([...document.querySelectorAll('.oauth')].every(b => b.hidden))
+    document.querySelector('.or')?.setAttribute('hidden', '');
+  // Google switched off everywhere: nothing about it to explain.
+  if (external.google === false) $('google-inapp')?.setAttribute('hidden', '');
 }
+
+// Inside an app's web view — the same answer app.html reads, from /in-app.js.
+function inAppView() {
+  try { return !!window.wroughtInApp?.(); } catch { return false; }
+}
+
+// INSIDE AN APP, GOOGLE IS NOT A DOOR — the dashboard's rule, on this page's
+// copy of the sign-in. Google refuses to sign in inside an app's web view, so
+// the button goes and one line says which doors work here.
+function closeGoogleInApp() {
+  const note = $('google-inapp');
+  if (!note || !inAppView()) return;
+  for (const b of document.querySelectorAll('.oauth[data-provider="google"]')) b.hidden = true;
+  // Email and password is the door known to work in there. Apple's own
+  // sign-in page is not promised: whether it completes inside an app has not
+  // been checked on a device, and this line must stay true either way.
+  note.textContent = 'Google won\u2019t sign in inside an app \u2014 use your email and password here. ' +
+    'Google still works at wrought.fit in Safari.';
+  note.hidden = false;
+}
+closeGoogleInApp();
 hideDeadProviders();
 
 document.querySelectorAll('.oauth').forEach(b => b.addEventListener('click', async () => {
@@ -587,6 +616,17 @@ $('mint').addEventListener('click', async () => {
   showKey(out.key);
   $('msg').textContent = '';
 });
+
+// INSIDE AN APP, A DOWNLOAD HAS NOWHERE TO GO. The export is a file handed to
+// the browser, and an app's web view has no downloads list to put it in — the
+// Wrought app does not handle one — so the file most likely went nowhere while
+// this page still said "Downloaded." In there the button goes and one line
+// says where the export works. The website's export is untouched.
+if (inAppView() && $('dl')) {
+  $('dl').hidden = true;
+  $('dl').insertAdjacentHTML('afterend', '<span class="dl-inapp"> Export can\u2019t download inside an app \u2014 ' +
+    'open wrought.fit/connect.html in Safari and use Download everything there.</span>');
+}
 
 $('dl')?.addEventListener('click', async () => {
   if (!token) { $('msg').textContent = 'Sign in first.'; return; }
@@ -688,7 +728,9 @@ fetch('/app-info.json', { cache: 'no-store' }).then(r => r.ok ? r.json() : null)
   if (!info) return;
   const version = document.getElementById('native-version');
   const note = document.getElementById('native-note');
-  if (version) version.textContent = `Version ${info.version || '1.0'} · build ${info.build || '7'}`;
+  // Only what the file says: a number typed here as a fallback is one more
+  // place for the release facts to drift from what TestFlight shows.
+  if (version && info.version && info.build) version.textContent = `Version ${info.version} · build ${info.build}`;
   if (note && info.release_note) note.textContent = ` · ${info.release_note}`;
 }).catch(() => {});
 </script>

@@ -2533,6 +2533,9 @@ body::after {
       </svg>
       Continue with Google
     </button>
+    <!-- Filled and shown in place of the Google button inside an app's web
+         view, by closeGoogleInApp(). -->
+    <p class="gate-note" id="google-inapp" hidden></p>
     <p class="or"><span>or with an email</span></p>
 
     <input id="name" type="text" placeholder="Your name" autocomplete="name" hidden>
@@ -2658,6 +2661,10 @@ body::after {
 <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
 <link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm">
 <script src="/config.js"></script>
+<!-- Whether this page is inside an app's web view: one answer, shared with
+     connect.html. Read through inAppView(), which treats a missing file as
+     "the website". -->
+<script src="/in-app.js"></script>
 <script type="module">
 // THE SUPABASE CLIENT IS IMPORTED LATE, ON PURPOSE.
 //
@@ -3029,7 +3036,7 @@ function askForNewPassword() {
   ['name', 'email', 'pass', 'send', 'swap-line', 'forgot'].forEach(id => {
     const el = $(id); if (el) el.hidden = true;
   });
-  document.querySelectorAll('#gate .oauth, #gate .or').forEach(el => { el.hidden = true; });
+  document.querySelectorAll('#gate .oauth, #gate .or, #google-inapp').forEach(el => { el.hidden = true; });
   $('mfa').hidden = true;
   $('reset').hidden = false;
   $('msg').textContent = '';
@@ -3073,7 +3080,7 @@ function askForCode() {
   ['name', 'email', 'pass', 'send', 'swap-line', 'forgot'].forEach(id => {
     const el = $(id); if (el) el.hidden = true;
   });
-  document.querySelectorAll('#gate .oauth, #gate .or').forEach(el => { el.hidden = true; });
+  document.querySelectorAll('#gate .oauth, #gate .or, #google-inapp').forEach(el => { el.hidden = true; });
   $('mfa').hidden = false;
   $('msg').textContent = '';
   $('mfacode').focus();
@@ -3146,14 +3153,36 @@ async function hideDeadProviders() {
   } catch { /* leave them showing */ }
   if (!external) return;
 
-  let hidden = 0;
   for (const b of document.querySelectorAll('.oauth')) {
-    if (external[b.dataset.provider] === false) { b.hidden = true; hidden++; }
+    if (external[b.dataset.provider] === false) b.hidden = true;
   }
-  // With no providers left, the "or with an email" divider is dividing nothing.
-  const all = document.querySelectorAll('.oauth').length;
-  if (hidden === all) document.querySelector('.or')?.setAttribute('hidden', '');
+  // With no providers left, the "or with an email" divider is dividing nothing
+  // — counting the Google button an app's web view already took away.
+  if ([...document.querySelectorAll('.oauth')].every(b => b.hidden))
+    document.querySelector('.or')?.setAttribute('hidden', '');
+  // Google switched off everywhere: nothing about it to explain.
+  if (external.google === false) $('google-inapp')?.setAttribute('hidden', '');
 }
+
+// INSIDE AN APP, GOOGLE IS NOT A DOOR. Google refuses to sign anybody in inside
+// an app's web view (403 disallowed_useragent, and no way back from its page).
+// The Wrought app cancels the attempt and explains, but a button whose only
+// outcome is that explanation should not be offered: it goes, and one line
+// says which doors do work here. The website keeps it. Run once, as the page
+// loads, before any screen shows; the new-password and code screens put the
+// line away with the doors (askForNewPassword, askForCode).
+function closeGoogleInApp() {
+  const note = $('google-inapp');
+  if (!note || !inAppView()) return;
+  for (const b of document.querySelectorAll('#gate .oauth[data-provider="google"]')) b.hidden = true;
+  // Email and password is the door known to work in there. Apple's own
+  // sign-in page is not promised: whether it completes inside an app has not
+  // been checked on a device, and this line must stay true either way.
+  note.textContent = 'Google won\u2019t sign in inside an app \u2014 use your email and password here. ' +
+    'Google still works at wrought.fit in Safari.';
+  note.hidden = false;
+}
+closeGoogleInApp();
 hideDeadProviders();
 
 document.querySelectorAll('#gate .oauth').forEach(b => b.addEventListener('click', async () => {
@@ -3284,7 +3313,12 @@ function renderAccount(user, ids, factors, linkNote) {
         : `<button class="ghost small" data-unlink="${esc(i.identity_id || i.id || '')}" data-prov="${esc(i.provider)}">Unlink</button>`}
     </div>`).join('');
 
-  const offer = ['apple', 'google'].filter(p => !have.has(p)).map(p =>
+  // Inside an app's web view Google is no door (see closeGoogleInApp), so its
+  // link and merge buttons go too, and the line says where they still work.
+  const inApp = inAppView();
+  const googleElsewhere = inApp
+    ? '<p class="sub dim">Google won\u2019t sign in inside an app \u2014 do this part at wrought.fit in Safari.</p>' : '';
+  const offer = ['apple', 'google'].filter(p => !have.has(p) && !(p === 'google' && inApp)).map(p =>
     `<button class="ghost" data-link="${p}">Link ${PROVIDER_NAME[p]}</button>`).join('');
 
   // EVERY STANDING CHOICE, RE-POPPABLE. The founder: "we should have a
@@ -3343,6 +3377,7 @@ function renderAccount(user, ids, factors, linkNote) {
       ${offer ? `<div class="btnrow">${offer}</div>
       <p class="sub dim">Linking adds a way in. It never makes a second account, and it
       never moves your history anywhere.</p>` : ''}
+      ${have.has('google') ? '' : googleElsewhere}
       <p class="msg" id="acctmsg"></p>
     </section>
 
@@ -3435,8 +3470,9 @@ function renderAccount(user, ids, factors, linkNote) {
         <p class="sub dim">Signed into that one with Apple or Google instead?</p>
         <div class="btnrow">
           <button class="ghost" data-mergeprov="apple">Prove it with Apple</button>
-          <button class="ghost" data-mergeprov="google">Prove it with Google</button>
+          ${inApp ? '' : '<button class="ghost" data-mergeprov="google">Prove it with Google</button>'}
         </div>
+        ${googleElsewhere}
         <p class="sub dim">Either way you have to prove you control both. An email address on
         its own would be a way to read a stranger's health record.</p>
       </div>
@@ -3893,9 +3929,20 @@ function checkinRows(checkins, on) {
   }).join('')}</div>`;
 }
 
+// INSIDE AN APP, NOTIFICATIONS ARE NOT THIS PAGE'S TO GIVE. An app's web view
+// has no web push, and the Wrought app has no Share button to follow an
+// "add to Home Screen" instruction with — so it says where they do come from.
+const PUSH_IN_APP = 'Notifications come from wrought.fit installed to your Home Screen, not from this app. ' +
+  'Open wrought.fit in Safari, add it to your Home Screen, then turn them on under Account there.';
+
 async function loadPush() {
   const el = $('push-body');
   if (!el) return;
+
+  if (inAppView()) {
+    el.innerHTML = `<p class="sub">${esc(PUSH_IN_APP)}</p>`;
+    return;
+  }
 
   if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
     el.innerHTML = `<p class="sub">This browser cannot do notifications.
@@ -6341,6 +6388,13 @@ function wireFacts(known = {}) {
   $('ff-go')?.addEventListener('click', () => saveFacts(known));
 }
 
+// INSIDE AN APP'S WEB VIEW, read from /in-app.js — the one place that works
+// it out, shared with connect.html. The file missing reads as the website.
+// Hoisted, so the sign-in gate can ask before this line is reached.
+function inAppView() {
+  try { return !!window.wroughtInApp?.(); } catch { return false; }
+}
+
 // WHEN THE WATCH'S PART OF THE BURN WAS SENT, beside the burn itself. The
 // founder at 7pm read 8,020 steps the phone had sent at 6:01 and called the
 // count wrong; the time lived only on the watch panel, five panels down. The
@@ -6351,17 +6405,14 @@ function wireFacts(known = {}) {
 // WHERE THE SEND CAN BE FORCED FROM, worked out once for the burn's line and
 // the watch panel alike. The button only where this app sent the figures and
 // can send again. Inside the app's own web view with no send bridge — build 12
-// registers no bridges at all, so the bridges cannot say it is the app; the
-// tell is an iOS page with no "Safari/" token that is not a Home Screen
-// install — "open the Wrought app" would be said to somebody already in it,
+// registers no bridges at all, which is why inAppView() also reads the user
+// agent — "open the Wrought app" would be said to somebody already in it,
 // and that build only sends as it launches.
 function watchSendHow(f) {
   const bridges = window.webkit?.messageHandlers || {};
-  const ua = navigator?.userAgent || '';
   const ours = !f?.source || f.source === 'wrought_ios';
   const canSend = !DEMO && !!bridges.wroughtSync && ours;
-  const inShell = !DEMO && (!!bridges.wroughtSync || !!bridges.wroughtWatch
-    || (/iPhone|iPad|iPod/.test(ua) && !/Safari\//.test(ua) && !navigator?.standalone));
+  const inShell = !DEMO && inAppView();
   const how = canSend ? null
     : inShell && !bridges.wroughtSync && ours ? 'close the Wrought app fully and open it again to send the latest'
     : (f?.refresh || 'open the Wrought app on your phone to send the latest');
@@ -6725,7 +6776,7 @@ function guideView() {
       Apple Health background delivery and locked-phone Siri shortcuts.</p>
       <div class="doors">
         <div class="door"><div><b>Web + Home Screen</b><span class="sub">The complete product, including all three daily briefs.</span></div></div>
-        <div class="door"><div><b>iPhone companion · <span id="guide-app-version">version 1.0 · build 7</span></b><span class="sub" id="guide-app-note">The dashboard updates without another native release.</span></div></div>
+        <div class="door"><div><b>iPhone companion<span id="guide-app-version"></span></b><span class="sub" id="guide-app-note">The dashboard updates without another native release.</span></div></div>
       </div>
       <p class="caveat"><a class="linky" href="/#app">App details and installation →</a></p>
     </section>
@@ -6823,7 +6874,8 @@ async function loadGuideAppInfo() {
     if (!res.ok) return;
     const info = await res.json();
     const version = $('guide-app-version'), note = $('guide-app-note');
-    if (version) version.textContent = `version ${info.version || '1.0'} · build ${info.build || '7'}`;
+    // Only what the file says — no typed fallback number to drift.
+    if (version && info.version && info.build) version.textContent = ` · version ${info.version} · build ${info.build}`;
     if (note && info.release_note) note.textContent = info.release_note;
   } catch {}
 }
@@ -7436,7 +7488,8 @@ function coachSetupPanel(d) {
     <p class="sub dim">${gptLink(ROUTING_HABIT, 'Teach your GPT the habit')} — one tap, say yes once,
     and it remembers to route food and training here in every chat.</p>
     <p class="sub dim">Check-ins: ${esc(checkins)}${c.midday ? '' : ' — no midday yet; say \u201cmidday check-in at 12:30\u201d to your assistant'}.
-    ${pushOn ? '' : 'Notifications need WROUGHT on your Home Screen, opened from the icon, then Account \u2192 Turn on notifications.'}</p>
+    ${pushOn ? '' : inAppView() ? PUSH_IN_APP
+      : 'Notifications need WROUGHT on your Home Screen, opened from the icon, then Account \u2192 Turn on notifications.'}</p>
   </section>`;
 }
 

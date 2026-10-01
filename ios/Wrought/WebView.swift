@@ -4,9 +4,11 @@
 // so the app and the site can never tell two stories about the same Tuesday.
 //
 // The store exists so native code can ask the page for one thing: the signed-in
-// session token, used once to mint the device key for the Health courier. The
-// page is never scripted beyond that read — the app frames the website, it
-// does not puppet it.
+// session token, used to mint the device key for the Health courier and to
+// check that the key still belongs to the account on screen. The page is never
+// scripted beyond that read — the app frames the website, it does not puppet
+// it. Its alert(), confirm() and prompt() are shown natively, as a browser
+// would show them.
 
 import SwiftUI
 import WebKit
@@ -15,12 +17,14 @@ import WebKit
 final class WebViewStore: NSObject, ObservableObject {
     static let shared = WebViewStore()
     let webView: WKWebView
-    private let watchBridge = WatchBridge()
     private let syncBridge = SyncBridge()
     /// Set by the Health courier. The page asks for the latest numbers and
     /// this sends them — nothing else crosses: no token, no record, just
     /// "send what the phone has now".
     var onSyncRequest: (@MainActor () async -> Void)?
+    /// Set by the Health courier: a wrought.fit page finished loading, so the
+    /// signed-in session can be read and checked against the device key.
+    var onPageLoaded: (@MainActor () async -> Void)?
 
     func openWorkout(_ url: URL) {
         guard url.scheme == "wrought", url.host == "workout" else { return }
@@ -39,11 +43,17 @@ final class WebViewStore: NSObject, ObservableObject {
         webView.backgroundColor = UIColor(red: 0.078, green: 0.067, blue: 0.059, alpha: 1)
         webView.scrollView.backgroundColor = webView.backgroundColor
         super.init()
-        watchBridge.webView = webView
-        config.userContentController.add(watchBridge, name: "wroughtWatch")
+        // The Watch hub is the process's, activated at launch by the app
+        // delegate; the page only attaches to it here.
+        WatchBridge.shared.webView = webView
+        config.userContentController.add(WatchBridge.shared, name: "wroughtWatch")
         syncBridge.store = self
         config.userContentController.add(syncBridge, name: "wroughtSync")
         webView.navigationDelegate = self
+        // Without a UI delegate WebKit answers every alert() as OK without
+        // showing it and every confirm() and prompt() as Cancel — so Sign out,
+        // Remove, Delete and every other "are you sure?" was a dead button.
+        webView.uiDelegate = self
         // The native shell persists cookies and localStorage, but the HTML is
         // deliberately fetched fresh. Otherwise relaunching the app can revive
         // an old interface from WebKit's protocol cache after the site shipped.
@@ -111,11 +121,17 @@ final class SyncBridge: NSObject, WKScriptMessageHandler {
 }
 
 extension WebViewStore: WKNavigationDelegate {
-    // Stay inside the product. Anything leaving wrought.fit — the privacy page
-    // links out, exports, OAuth providers — opens in the real browser, which is
-    // also the honest place for Google and Apple sign-in: both refuse embedded
-    // web views, and pretending otherwise fails with an error page nobody can
-    // act on. Email + password works fully in-app.
+    // Stay inside the product. A link the person TAPS that leaves wrought.fit
+    // — the privacy page's links out, a provider's own site — opens in the
+    // real browser. A navigation the page starts by script, or a server
+    // redirect, loads here: that is how Supabase's sign-in round trip runs.
+    //
+    // Google is the exception. It refuses to sign anybody in inside an app's
+    // web view (403 disallowed_useragent) and leaves a page with no way back,
+    // and a session made in Safari would stay in Safari rather than reach
+    // this app. So its sign-in page is never loaded here: the navigation is
+    // cancelled and the person is told why. Email and password work fully
+    // in-app.
     func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction,
                  decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
         guard let url = navigationAction.request.url else { return decisionHandler(.allow) }
@@ -124,10 +140,105 @@ extension WebViewStore: WKNavigationDelegate {
         } else if navigationAction.navigationType == .linkActivated {
             UIApplication.shared.open(url)
             decisionHandler(.cancel)
+        } else if url.host == "accounts.google.com" {
+            decisionHandler(.cancel)
+            if navigationAction.targetFrame?.isMainFrame != false { explainGoogleBlocked() }
         } else {
             decisionHandler(.allow)
         }
     }
+
+    /// A wrought.fit page finished loading: the moment its session can be read.
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        guard webView.url?.host == "wrought.fit", let loaded = onPageLoaded else { return }
+        Task { await loaded() }
+    }
+
+    private func explainGoogleBlocked() {
+        guard let top = presenter() else { return }
+        let alert = UIAlertController(
+            title: "Google won't sign in here",
+            message: "Google blocks its sign-in inside apps. Sign in here with your email and password instead — Google still works at wrought.fit in Safari.",
+            preferredStyle: .alert)
+        alert.addAction(UIAlertAction(title: "OK", style: .default))
+        top.present(alert, animated: true)
+    }
+}
+
+// MARK: - alert(), confirm() and prompt()
+
+extension WebViewStore: WKUIDelegate {
+    func webView(_ webView: WKWebView, runJavaScriptAlertPanelWithMessage message: String,
+                 initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping () -> Void) {
+        let reply = PanelReply(fallback: { completionHandler() })
+        let alert = UIAlertController(title: nil, message: message, preferredStyle: .alert)
+        alert.addAction(UIAlertAction(title: "OK", style: .default) { _ in reply.send { completionHandler() } })
+        show(alert, reply)
+    }
+
+    func webView(_ webView: WKWebView, runJavaScriptConfirmPanelWithMessage message: String,
+                 initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping (Bool) -> Void) {
+        let reply = PanelReply(fallback: { completionHandler(false) })
+        let alert = UIAlertController(title: nil, message: message, preferredStyle: .alert)
+        alert.addAction(UIAlertAction(title: "Cancel", style: .cancel) { _ in reply.send { completionHandler(false) } })
+        alert.addAction(UIAlertAction(title: "OK", style: .default) { _ in reply.send { completionHandler(true) } })
+        show(alert, reply)
+    }
+
+    func webView(_ webView: WKWebView, runJavaScriptTextInputPanelWithPrompt prompt: String,
+                 defaultText: String?, initiatedByFrame frame: WKFrameInfo,
+                 completionHandler: @escaping (String?) -> Void) {
+        let reply = PanelReply(fallback: { completionHandler(nil) })
+        let alert = UIAlertController(title: nil, message: prompt, preferredStyle: .alert)
+        alert.addTextField { field in field.text = defaultText }
+        alert.addAction(UIAlertAction(title: "Cancel", style: .cancel) { _ in reply.send { completionHandler(nil) } })
+        alert.addAction(UIAlertAction(title: "OK", style: .default) { [weak alert] _ in
+            let text = alert?.textFields?.first?.text ?? ""
+            reply.send { completionHandler(text) }
+        })
+        show(alert, reply)
+    }
+
+    /// Shows a panel, or answers it with the browser's default when there is
+    /// nothing to show it from.
+    private func show(_ alert: UIAlertController, _ reply: PanelReply) {
+        guard let top = presenter() else { return reply.sendFallback() }
+        top.present(alert, animated: true)
+    }
+
+    /// The key window's topmost presented view controller.
+    fileprivate func presenter() -> UIViewController? {
+        let windows = UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .flatMap { $0.windows }
+        var top = (windows.first(where: { $0.isKeyWindow }) ?? webView.window)?.rootViewController
+        while let next = top?.presentedViewController, !next.isBeingDismissed { top = next }
+        return top
+    }
+}
+
+/// A JavaScript panel's answer, given exactly once. WebKit raises an exception
+/// when a panel's completion handler is released without being called, so
+/// every way a panel can end comes through here: a button sends its answer; a
+/// panel that could not be shown, or that went away without a tap, gets the
+/// browser's default — OK for an alert, Cancel for a confirm, nothing for a
+/// prompt. Whichever comes first wins and the rest do nothing.
+private final class PanelReply {
+    private var fallback: (() -> Void)?
+    init(fallback: @escaping () -> Void) { self.fallback = fallback }
+    func send(_ answer: () -> Void) {
+        guard fallback != nil else { return }
+        fallback = nil
+        answer()
+    }
+    func sendFallback() {
+        guard let answer = fallback else { return }
+        fallback = nil
+        answer()
+    }
+    // The buttons hold the only references, so this runs when the panel is
+    // gone. Answered already: nothing. Never answered: the default, now.
+    deinit { fallback?() }
 }
 
 struct WebView: UIViewRepresentable {

@@ -165,6 +165,21 @@ export class AuthUnavailable extends Error {
 // A 401/403/404 from the auth API is a verdict about the credential and stands.
 const transient = e => !e || e.status == null || e.status >= 500 || e.status === 429 || e.status === 408;
 
+// THE DEVICE KEY, CHECKED — the same rule for the phone's key. The iPhone app
+// forgets a key the server refuses (`invalid_key`) and shows its connect card
+// again, which is right for a revoked key and wrong for a lookup that never
+// ran: a schema reload or a gateway blip answered as `invalid_key` would
+// disconnect a good phone for good and leave its old key active on the
+// account. A lookup that failed is a 503 the phone retries, never a refusal.
+// /ingest and /api/voice both decide here, so the two doors cannot disagree.
+//
+// @returns null when the key is good, else { status, error } to answer with.
+export function deviceKeyVerdict(key, lookupError) {
+  if (lookupError) return { status: 503, error: 'key_check_failed' };
+  if (!key || key.revoked) return { status: 401, error: 'invalid_key' };
+  return null;
+}
+
 /**
  * The pure decision: given what each lookup said, is this a user, nobody, or
  * a question that could not be answered right now.

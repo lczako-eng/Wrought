@@ -498,9 +498,9 @@ suspended, the orange indicator burns all day, the battery dies and review
 rejects it. So the wake word is Siri's. What follows it is ours, and
 `INAlternativeAppNames` is the lever: every `AppShortcut` phrase must contain
 the application name, so the app is taught to answer to **Gym Bro**, **Jim
-Bro** (what dictation makes of it half the time, same as the phrasebook),
-Broski and Coach. Then the sentence somebody actually says is the sentence that
-works.
+Bro** (what dictation makes of it half the time, same as the phrasebook) and
+**Broski** — three, Apple's cap (see the ITMS-90626 entry above). Then the
+sentence somebody actually says is the sentence that works.
 
 Two intents, and the list is short on purpose because **they run with the phone
 locked** — `openAppWhenRun = false` so nothing opens and no Face ID is demanded,
@@ -1212,16 +1212,17 @@ and locked-phone Siri, never a second dashboard.
 
 **The release facts live in `public/app-info.json`.** Version, build, update
 label, release note and an optional download URL are read by the homepage, the
-dashboard manual and the connect page. The version and build are tested against
-the Xcode project. When a native build changes, update that file in the same
-commit; when an App Store or TestFlight URL exists, put it there instead of
-copying a link into three pages.
+dashboard manual and the connect page. It describes what is RELEASED — what
+TestFlight shows — so the Xcode project may run exactly one build ahead of it
+while an upload is pending, and the harness pins that relationship. When
+TestFlight shows the new build, the file moves to it; when an App Store or
+TestFlight URL exists, put it there instead of copying a link into three pages.
 
 The smaller public doors use `public/shell.css`. It deliberately owns only the
 room — atmosphere, surface depth, safe areas and touch finish — while each page
 keeps its own layout and behaviour. `shell.css` and `app-info.json` are part of
-the service-worker shell, currently `wrought-shell-v13`. A public redesign that
-does not bump that name has not reached the installed product.
+the service-worker shell, whose name lives only in `sw.js`. A public redesign
+that does not bump that name has not reached the installed product.
 
 **The cover page is the one from BEFORE the Forge 03 redesign.** Codex
 redesigned `index.html` on 5 September (*"Your day. Already understood."*,
@@ -3305,14 +3306,86 @@ version is in question, read TestFlight, not the repo.**
 - **The version could not be bumped forward to make room for the next
   upload.** App Store Connect refuses a duplicate build number, so the next
   archive must be 13+ — but `app-info.json` describes what is RELEASED, and
-  advertising 13 would name a build nobody can install. Both sit at 12 and
-  move together at the next upload, which is what the file was for.
+  advertising 13 would name a build nobody can install. Since build 13 the
+  project moves first and `app-info.json` follows when TestFlight shows the
+  new build — see *Build 13* below.
 
 **The part that needed no fix at all**: `ios/Wrought/WebView.swift:43` loads
 `wrought.fit/app.html` with `cachePolicy: .reloadIgnoringLocalCacheData`, so
 the TestFlight build already showed the new shelf without a rebuild. The
 architecture paid out exactly as written — the only thing wrong was the file
 describing it.
+
+### Build 13 — the Watch, readied for the wrist (30 September 2026)
+
+TestFlight holds 1.0 (12), with no Watch app. Build 13 is the upload that puts
+the round coach on the founder's wrist, and an adversarial audit of the source
+went first. What it found, and what the build does about it:
+
+- **The phone had sent three metrics in 54 days** — steps, active calories and
+  resting heart rate. Health read permission was asked ONCE, inside the
+  connect button, and that button disappears once a key exists; a HealthKit
+  read without permission returns no data rather than an error, so any type
+  not granted at that one ask read as nothing while the card said Connected.
+  `HealthCourier` now asks again, in the foreground only, whenever iOS says
+  something was NEVER asked — a type added later, or grants reset by a
+  reinstall. **That does not fix a type turned off at the original ask**: iOS
+  shows no sheet for it again and never tells an app what it was refused, so
+  only Settings › Health › Data Access & Devices › Wrought turns it on. If the
+  founder's three metrics are that, build 13 changes nothing for them until he
+  does.
+- **Every confirm in the app was a dead button.** The web view had no
+  `WKUIDelegate`, and without one WebKit answers `confirm()` as Cancel without
+  showing it — Sign out, Remove, Delete, Log as work, revoke, two-factor off.
+  Native alerts now, each answered exactly once.
+- **A privacy manifest for the Watch** (`PrivacyInfo.xcprivacy`: UserDefaults
+  CA92.1, system uptime 35F9.1, tracking false). The Watch app is the first
+  code in the bundle calling either, and App Store Connect refuses them
+  undeclared (ITMS-91053). The harness reads each target's own sources, so a
+  new call without a declaration fails `npm test` rather than the upload.
+- The device key follows the account on screen — compared as pages load, as
+  the app comes forward and before foreground sends (a background wake cannot
+  ask the page) — and a build-12 key with no account on file is replaced once
+  rather than adopted by whoever is signed in. **A key the server could not
+  check is not a key it refused**: `/ingest` and `/api/voice` answered a failed
+  lookup as `invalid_key`, which build 13 forgets, so a schema reload would
+  have disconnected the phone; `deviceKeyVerdict()` answers it 503, and this
+  server half has to be deployed before build 13 is installed. The connect
+  card has *Not now* (it covered Sign out on every page). The Watch session
+  starts at launch; a failed Watch workout is saved rather than dropped; the
+  closing state is queued so the Live Activity ends out of range, a paused one
+  is kept and a swiped-away one is not put back; a plan resent on purpose is
+  taken (each send is stamped); Google's page is never loaded in the web
+  view. On the page, inside an app, the Google button
+  goes with one line saying to use email and password, notifications point at
+  wrought.fit on the Home Screen instead of a Share button the app lacks, and
+  export points at Safari. "Inside an app" is answered once, in
+  `public/in-app.js`, for every page.
+- **The numbers.** Every `CURRENT_PROJECT_VERSION`, six configurations across
+  three targets, is 13 in one edit; `MARKETING_VERSION` stays 1.0.
+  `app-info.json` stays at 12 because it describes what is RELEASED, and the
+  harness now pins the relationship instead of equality: the six agree, the
+  version matches, and the project is the released build or exactly one ahead.
+  A second test pins the packaging relationships App Store Connect checks —
+  companion id, nested ids, the Watch copied in once, HealthKit on the Watch,
+  WidgetKit, at most three Siri names — none of them as literals.
+
+**What the founder does on the Mac** (`ios/README.md`, *Archive and upload
+build 13*): pull `main`, confirm build 13 on all three targets without touching
+Xcode's numbers, archive the **Wrought** scheme to Any iOS Device, upload, and
+read TestFlight for **13** and **Apple Watch: Yes**, and move `app-info.json`
+to 13 then, with a note that the Watch is not yet wrist-tested; install on the
+phone and the Watch, run the 8-step wrist test in `docs/WATCH_COACH.md`, and
+update the note when it passes.
+
+**Nothing here was compiled.** There is no Xcode in the container. The Swift
+was written against the watchOS 10 and iOS 16.4 SDKs it targets and re-read
+line by line, and the harness checks relationships in the source — it cannot
+say the project builds. A compile error on the Mac is the expected worst case,
+and the audit is why it should be a small one.
+
+Still open for the App Store, not for TestFlight: Apple Watch screenshots, and
+**in-app account deletion (guideline 5.1.1(v))**, which build 13 does not do.
 
 ### The shelf — the twenty-one listed, taken from in a tap, and in the morning
 
@@ -5834,7 +5907,7 @@ self-reporting scale removes the most-abandoned manual entry), then Strava.
 
 ## Conventions
 
-- `npm test` runs `test/harness.mjs` — 803 offline tests, no network, no database.
+- `npm test` runs `test/harness.mjs` — 826 offline tests, no network, no database.
   Run it before every push. It covers the JSON-RPC envelope (which fails as an
   uninformative "could not connect" inside ChatGPT) and all the arithmetic
   (which fails as a confidently wrong number in somebody's verdict).

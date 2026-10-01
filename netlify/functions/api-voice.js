@@ -28,7 +28,7 @@
 
 import {
   supabase, hashToken, getProfile, localDateFor, addDays,
-  dayFacts, rangeFacts, careFlags, parseLog, insertEvents,
+  dayFacts, rangeFacts, careFlags, parseLog, insertEvents, deviceKeyVerdict,
 } from './lib/wrought.js';
 import { energyBalance, weekSoFar, weekTargets } from './lib/training.js';
 import { spokenBrief, spokenLog } from './lib/voice.js';
@@ -55,9 +55,19 @@ export const handler = async (event) => {
   const auth = event.headers?.authorization || event.headers?.Authorization || '';
   if (!auth.startsWith('Bearer ')) return reply(401, { error: 'missing_key', spoken: 'Open Wrought once to connect it.' });
 
-  const { data: key } = await supabase.from('wrought_ingest_keys')
+  const { data: key, error: keyLookupError } = await supabase.from('wrought_ingest_keys')
     .select('id, user_id, revoked').eq('token_hash', hashToken(auth.slice(7).trim())).maybeSingle();
-  if (!key || key.revoked) return reply(401, { error: 'invalid_key', spoken: 'Open Wrought once to reconnect it.' });
+  // A key that could not be checked is not a key that was refused: the phone
+  // forgets a refused one. See deviceKeyVerdict.
+  const refused = deviceKeyVerdict(key, keyLookupError);
+  if (refused) {
+    return reply(refused.status, {
+      error: refused.error,
+      spoken: refused.status === 503
+        ? 'Wrought could not check this phone just now, so that did not go through. Try again in a moment.'
+        : 'Open Wrought once to reconnect it.',
+    });
+  }
 
   const gate = await allowed(key.user_id, 'api-voice');
   if (!gate.ok) return reply(403, { error: gate.error, spoken: gate.message });

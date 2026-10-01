@@ -81,13 +81,22 @@
 		<string>UIInterfaceOrientationPortrait</string>
 	</array>
 
-	<!-- Both are required. Apple rejects an upload that reads HealthKit
-	     without declaring the write string too, even though this app never
-	     writes. The read string has to describe what is ACTUALLY read. -->
+	<!-- Both are required: Apple rejects an upload that reads HealthKit
+	     without declaring the write string too. The read string has to
+	     describe what is ACTUALLY read. The write string has to describe the
+	     whole bundle: the iPhone app itself still asks to write nothing
+	     (HealthCourier requests toShare: []), but the Watch app shipped inside
+	     it saves each workout recorded on the Watch, with its active energy. -->
 	<key>NSHealthShareUsageDescription</key>
 	<string>Wrought reads your activity and body data — steps, distance, stand and exercise time, flights, energy burned, workouts, heart rate, HRV, VO2 max, respiratory rate, blood oxygen, walking measurements, weight, body composition, water and sleep — so your training record fills in without you typing it. Readings are recorded and shown back to you, never interpreted as medical findings. Nothing is read beyond what you approve, and everything can be exported or deleted from wrought.fit.</string>
 	<key>NSHealthUpdateUsageDescription</key>
-	<string>Wrought does not write to Apple Health. This permission exists only because Apple requires declaring it alongside read access.</string>
+	<string>Wrought on Apple Watch saves the workouts you record on your Watch, with the energy they burned, to Apple Health. The iPhone app itself never writes to Apple Health.</string>
+
+	<!-- The website's progress-photo and profile-picture inputs can offer
+	     Take Photo inside the app, and iOS ends any app that opens the camera
+	     without this string. -->
+	<key>NSCameraUsageDescription</key>
+	<string>Wrought uses the camera only when you choose to take a progress photo or a profile picture. The picture is kept privately in your record, and nothing analyses it.</string>
 
 	<key>INAlternativeAppNames</key>
 	<array>

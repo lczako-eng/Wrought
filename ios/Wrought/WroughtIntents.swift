@@ -153,7 +153,14 @@ enum VoiceClient {
         req.httpBody = try? JSONSerialization.data(withJSONObject: body)
 
         do {
-            let (data, _) = try await URLSession.shared.data(for: req)
+            let (data, resp) = try await URLSession.shared.data(for: req)
+            // A key the server refuses — revoked, or unknown to it — is
+            // dropped from this phone, so the app shows its connect card again
+            // instead of every sentence failing against it. Only the phone's
+            // own credential goes; nothing in the record is touched.
+            if IngestClient.refusesKey(status: (resp as? HTTPURLResponse)?.statusCode ?? 0, body: data) {
+                IngestClient.forgetKey(ifStill: key)
+            }
             let out = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
             // The server words its own failures too, including a suspended
             // account — so a spoken field is trusted whatever the status code.
