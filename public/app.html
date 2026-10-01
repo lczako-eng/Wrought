@@ -3168,13 +3168,12 @@ async function hideDeadProviders() {
 // an app's web view (403 disallowed_useragent, and no way back from its page).
 // The Wrought app cancels the attempt and explains, but a button whose only
 // outcome is that explanation should not be offered: it goes, and one line
-// says which doors do work here. The website keeps it.
+// says which doors do work here. The website keeps it. Run once, as the page
+// loads, before any screen shows; the new-password and code screens put the
+// line away with the doors (askForNewPassword, askForCode).
 function closeGoogleInApp() {
   const note = $('google-inapp');
   if (!note || !inAppView()) return;
-  // Mid-reset or mid-code the doors are all put away; this must not bring
-  // a line about them back when the provider check lands late.
-  if ($('reset')?.hidden === false || $('mfa')?.hidden === false) return;
   for (const b of document.querySelectorAll('#gate .oauth[data-provider="google"]')) b.hidden = true;
   // Email and password is the door known to work in there. Apple's own
   // sign-in page is not promised: whether it completes inside an app has not
@@ -6777,7 +6776,7 @@ function guideView() {
       Apple Health background delivery and locked-phone Siri shortcuts.</p>
       <div class="doors">
         <div class="door"><div><b>Web + Home Screen</b><span class="sub">The complete product, including all three daily briefs.</span></div></div>
-        <div class="door"><div><b>iPhone companion · <span id="guide-app-version">version 1.0 · build 7</span></b><span class="sub" id="guide-app-note">The dashboard updates without another native release.</span></div></div>
+        <div class="door"><div><b>iPhone companion<span id="guide-app-version"></span></b><span class="sub" id="guide-app-note">The dashboard updates without another native release.</span></div></div>
       </div>
       <p class="caveat"><a class="linky" href="/#app">App details and installation →</a></p>
     </section>
@@ -6875,7 +6874,8 @@ async function loadGuideAppInfo() {
     if (!res.ok) return;
     const info = await res.json();
     const version = $('guide-app-version'), note = $('guide-app-note');
-    if (version) version.textContent = `version ${info.version || '1.0'} · build ${info.build || '7'}`;
+    // Only what the file says — no typed fallback number to drift.
+    if (version && info.version && info.build) version.textContent = ` · version ${info.version} · build ${info.build}`;
     if (note && info.release_note) note.textContent = info.release_note;
   } catch {}
 }

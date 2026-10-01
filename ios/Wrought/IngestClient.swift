@@ -39,16 +39,22 @@ enum IngestClient {
         Keychain.read(account: ownerAccount)
     }
 
-    /// For a key minted before the owner was kept (build 12 and earlier).
-    static func recordOwner(_ owner: String) {
-        Keychain.write(account: ownerAccount, value: owner)
-    }
-
     /// Drops the key and its owner. The courier, Siri and the connect card all
     /// read the Keychain, so from here the app is simply not connected.
     static func forgetKey() {
         Keychain.remove(account: keychainAccount)
         Keychain.remove(account: ownerAccount)
+    }
+
+    /// Drops the key only if it is still the one a refused request carried.
+    /// A key minted while that request was in flight — another account
+    /// signed in on the page — is not the key that was refused. True when it
+    /// was dropped.
+    @discardableResult
+    static func forgetKey(ifStill sent: String) -> Bool {
+        guard storedKey() == sent else { return false }
+        forgetKey()
+        return true
     }
 
     /// True when the server refused the KEY — the only case where it is
@@ -146,8 +152,7 @@ enum IngestClient {
         guard code == 200 else {
             // A revoked key used to be kept forever: every send failed, the
             // connect card never came back, and nothing could mint a new one.
-            if refusesKey(status: code, body: data) {
-                forgetKey()
+            if refusesKey(status: code, body: data), forgetKey(ifStill: key) {
                 throw IngestError.keyRefused
             }
             throw IngestError.badResponse(code, String(data: data, encoding: .utf8) ?? "")

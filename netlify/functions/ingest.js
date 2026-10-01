@@ -18,7 +18,7 @@
 // times; the unique index plus ignoreDuplicates is what stops that becoming
 // four nights of sleep.
 
-import { supabase, hashToken, localDateFor, getProfile } from './lib/wrought.js';
+import { supabase, hashToken, localDateFor, getProfile, deviceKeyVerdict } from './lib/wrought.js';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -572,11 +572,15 @@ export const handler = async (event) => {
     return { statusCode: 401, headers: CORS, body: JSON.stringify({ error: 'missing_key' }) };
   }
 
-  const { data: key } = await supabase.from('wrought_ingest_keys')
+  const { data: key, error: keyLookupError } = await supabase.from('wrought_ingest_keys')
     .select('id, user_id, revoked').eq('token_hash', hashToken(auth.slice(7).trim())).maybeSingle();
 
-  if (!key || key.revoked) {
-    return { statusCode: 401, headers: CORS, body: JSON.stringify({ error: 'invalid_key' }) };
+  // A key that could not be checked is not a key that was refused: the phone
+  // forgets a refused one. See deviceKeyVerdict.
+  const refused = deviceKeyVerdict(key, keyLookupError);
+  if (refused) {
+    const headers = refused.status === 503 ? { ...CORS, 'Retry-After': '30' } : CORS;
+    return { statusCode: refused.status, headers, body: JSON.stringify({ error: refused.error }) };
   }
 
   let body;

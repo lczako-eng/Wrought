@@ -4,13 +4,21 @@ import WatchKit
 import WatchConnectivity
 import Combine
 
+/// A plan as the phone sent it, with the phone's stamp on the send.
+private struct PlanDelivery {
+    let plan: WorkoutPlan
+    let sentAt: Double?
+}
+
 @MainActor
 final class WatchCoach: NSObject, ObservableObject {
     private static let planKey = "workoutPlan"
-    /// The last plan taken from the phone. WatchConnectivity hands its last
-    /// application context back on every launch, and a plan already taken —
-    /// perhaps changed on the Watch since — is not news.
+    /// The last plan taken from the phone, and the phone's stamp on that send.
+    /// WatchConnectivity hands its last application context back on every
+    /// launch, and a send already taken — perhaps changed on the Watch since —
+    /// is not news. The same plan sent again is a new send with a new stamp.
     private static let receivedKey = "receivedPlan"
+    private static let receivedAtKey = "receivedPlanSentAt"
     /// A workout HealthKit stops sooner than this is discarded, not saved.
     private static let tooShortToKeep: TimeInterval = 30
 
@@ -37,7 +45,7 @@ final class WatchCoach: NSObject, ObservableObject {
     private var lastPosition: RoundClock.Position?
     private var finishing = false
     private var finishedAt: Date?
-    private var pendingPlan: WorkoutPlan?
+    private var pendingPlan: PlanDelivery?
     /// True from startActivity until beginCollection returns. A failure
     /// HealthKit reports in that window is held for start() to throw.
     private var starting = false
@@ -212,8 +220,8 @@ final class WatchCoach: NSObject, ObservableObject {
         applyPendingPlan()
     }
 
-    private func accept(_ next: WorkoutPlan) {
-        guard next.valid else { return }
+    private func accept(_ next: PlanDelivery) {
+        guard next.plan.valid else { return }
         if running || busy { pendingPlan = next; return }
         apply(next, appending: false)
     }
@@ -227,17 +235,24 @@ final class WatchCoach: NSObject, ObservableObject {
         apply(next, appending: true)
     }
 
-    private func apply(_ next: WorkoutPlan, appending: Bool) {
-        // Already what the Watch shows, or the context WatchConnectivity
-        // replays on every launch — taken once, perhaps changed here since.
-        // Neither is announced, and a replay never undoes an edit.
-        if next == plan || next == Self.stored(forKey: Self.receivedKey) {
-            Self.store(next, forKey: Self.receivedKey)
-            return
+    private func apply(_ next: PlanDelivery, appending: Bool) {
+        // The context WatchConnectivity replays on every launch is a send
+        // already taken, perhaps changed here since: it is not announced and
+        // never undoes an edit. A send is known by the phone's stamp, so the
+        // same plan sent again on purpose is taken; without a stamp the plan
+        // itself is compared.
+        let replay: Bool
+        if let sentAt = next.sentAt {
+            replay = sentAt == UserDefaults.standard.double(forKey: Self.receivedAtKey)
+            UserDefaults.standard.set(sentAt, forKey: Self.receivedAtKey)
+        } else {
+            replay = next.plan == Self.stored(forKey: Self.receivedKey)
         }
-        Self.store(next, forKey: Self.receivedKey)
-        plan = next
-        position = RoundClock(plan: next).position(elapsed: 0)
+        Self.store(next.plan, forKey: Self.receivedKey)
+        // A replay, or already what the Watch shows: nothing to change.
+        if replay || next.plan == plan { return }
+        plan = next.plan
+        position = RoundClock(plan: next.plan).position(elapsed: 0)
         let line = "Plan received. Start when you are ready."
         message = appending ? "\(message) \(line)" : line
     }
@@ -308,13 +323,15 @@ extension WatchCoach: HKWorkoutSessionDelegate, HKLiveWorkoutBuilderDelegate {
 
 extension WatchCoach: WCSessionDelegate {
     nonisolated func session(_ session: WCSession, activationDidCompleteWith activationState: WCSessionActivationState, error: Error?) {
-        if let data = session.receivedApplicationContext["plan"] as? Data { receive(data) }
+        receive(session.receivedApplicationContext)
     }
     nonisolated func session(_ session: WCSession, didReceiveApplicationContext applicationContext: [String: Any]) {
-        if let data = applicationContext["plan"] as? Data { receive(data) }
+        receive(applicationContext)
     }
-    nonisolated private func receive(_ data: Data) {
-        guard let plan = try? JSONDecoder().decode(WorkoutPlan.self, from: data), plan.valid else { return }
-        Task { @MainActor in self.accept(plan) }
+    nonisolated private func receive(_ context: [String: Any]) {
+        guard let data = context["plan"] as? Data,
+              let plan = try? JSONDecoder().decode(WorkoutPlan.self, from: data), plan.valid else { return }
+        let sentAt = context["sentAt"] as? Double
+        Task { @MainActor in self.accept(PlanDelivery(plan: plan, sentAt: sentAt)) }
     }
 }

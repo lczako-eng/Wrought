@@ -12,17 +12,26 @@ final class WorkoutLiveActivity {
     private var activity: Activity<WorkoutActivity>?
     private var lastUpdate = Date.distantPast
     private var lastPhase = ""
+    /// The person swiped this workout's activity away, or the system ended it.
+    /// It is not asked for again until the workout ends: putting it back
+    /// would overrule them.
+    private var setAside = false
 
     /// At launch and on every return to the foreground. A relaunched process
     /// holds no handle, so it adopts the activity already on the lock screen
     /// instead of requesting a second one; anything abandoned, or a duplicate,
     /// is ended at once.
     func adoptExisting() {
+        letGoIfGone()
         let now = Date()
         var kept: Activity<WorkoutActivity>?
         for existing in Activity<WorkoutActivity>.activities {
             if existing.activityState == .ended || existing.activityState == .dismissed { continue }
-            let abandoned = now > existing.content.state.endsAt.addingTimeInterval(Self.grace)
+            // A paused workout is not counting down — the Watch sends nothing
+            // while paused — so its endsAt says nothing about whether it is
+            // still going. ActivityKit's own time limit ends one left paused.
+            let shown = existing.content.state
+            let abandoned = !shown.paused && now > shown.endsAt.addingTimeInterval(Self.grace)
             if abandoned || kept != nil {
                 Task { await existing.end(nil, dismissalPolicy: .immediate) }
             } else {
@@ -40,7 +49,7 @@ final class WorkoutLiveActivity {
             for existing in Activity<WorkoutActivity>.activities {
                 Task { await existing.end(nil, dismissalPolicy: .immediate) }
             }
-            activity = nil; lastPhase = ""; return
+            activity = nil; lastPhase = ""; setAside = false; return
         }
         guard let round = data["round"] as? Int, let rounds = data["rounds"] as? Int,
               let remaining = data["remaining"] as? Int, let phase = data["phase"] as? String else { return }
@@ -51,15 +60,20 @@ final class WorkoutLiveActivity {
         let state = WorkoutActivity.ContentState(round: round, rounds: rounds, phase: phase, paused: paused,
                                                   remaining: remaining, endsAt: Date().addingTimeInterval(Double(remaining)))
         let content = ActivityContent(state: state, staleDate: Date().addingTimeInterval(12))
-        // Swiped away or ended by the system: updating it does nothing, so it
-        // is let go and, in the foreground, a fresh one is asked for below.
-        if let current = activity, current.activityState == .ended || current.activityState == .dismissed {
-            activity = nil
-        }
+        letGoIfGone()
         if let current = activity { Task { await current.update(content) } }
-        else if UIApplication.shared.applicationState == .active && ActivityAuthorizationInfo().areActivitiesEnabled {
+        else if !setAside && UIApplication.shared.applicationState == .active && ActivityAuthorizationInfo().areActivitiesEnabled {
             // Never enable activities for the user or claim a background request succeeded.
             activity = try? Activity.request(attributes: WorkoutActivity(name: data["name"] as? String ?? "WROUGHT"), content: content)
         }
+    }
+
+    /// Swiped away or ended by the system: updating it does nothing, so it is
+    /// let go — and set aside for the rest of this workout.
+    private func letGoIfGone() {
+        guard let current = activity,
+              current.activityState == .ended || current.activityState == .dismissed else { return }
+        activity = nil
+        setAside = true
     }
 }

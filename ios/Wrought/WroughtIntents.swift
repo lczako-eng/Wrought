@@ -159,7 +159,7 @@ enum VoiceClient {
             // instead of every sentence failing against it. Only the phone's
             // own credential goes; nothing in the record is touched.
             if IngestClient.refusesKey(status: (resp as? HTTPURLResponse)?.statusCode ?? 0, body: data) {
-                IngestClient.forgetKey()
+                IngestClient.forgetKey(ifStill: key)
             }
             let out = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
             // The server words its own failures too, including a suspended

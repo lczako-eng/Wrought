@@ -15205,8 +15205,9 @@ await test('the phone closes the days it has finished, syncs when opened, and se
   const code = courier.split('\n').filter(l => !/^\s*\/\//.test(l)).join('\n').replace(/func sendToday\(\)/, '');
   assert.equal((code.match(/sendToday\(\)/g) || []).length, 1, 'sendToday is called from somewhere other than sync()');
   assert.match(sync, /self\.web\?\.announceSync\(line: self\.lastSync, error: self\.lastError\)/);
-  // A page-asked send with nothing to send with says so, both ends.
-  assert.match(sync, /if force \{ web\?\.announceSync\(line: nil, error: "Connect Apple Health in this app first/);
+  // A page-asked send with nothing to send with says so, both ends — and on
+  // the connect card, which a new error brings back if it was set aside.
+  assert.match(sync, /if force \{\s*lastError = "Connect Apple Health in this app first[^"]*"\s*web\?\.announceSync\(line: nil, error: lastError\)/);
   // The observer acknowledges HealthKit only once the send has finished,
   // inside a background task; and it is armed at LAUNCH, once. In the
   // background the send is forced: the minute's deferral is a sleeping task,
@@ -16060,9 +16061,11 @@ await test('the day card is the layout the founder asked to keep — the food ta
 // ── Build 13: the iPhone shell answers the page, the key, Health and the Watch
 //
 // There is no Swift compiler here, so these read the files as text. Each one
-// pins what a function DOES — which door calls which, what answers what —
-// found by brace-matching the function's own body, so a reformatted line or a
-// reordered file does not break them and a behaviour put back does.
+// aims at what a function DOES — which door calls which, what answers what —
+// found by brace-matching the function's own body, so a reordered file does
+// not break them. Many still match a statement's exact spelling: with no
+// compiler, a reformatted line can fail one, and the fix is to repin it to
+// what the line does — never to delete the assertion.
 
 group('The iPhone shell, build 13');
 
@@ -16175,18 +16178,33 @@ await test('Apple Health is asked again for what it was never asked — only eve
   assert.doesNotMatch(swiftBody(swiftCode(iosRead('WroughtApp.swift')), 'didFinishLaunchingWithOptions'), /cameToForeground|askForUnaskedTypes|connect\(\)/);
 });
 
-await test('a key the server refuses is forgotten on this phone, so the connect card comes back', () => {
+await test('a key the server refuses is forgotten on this phone, so the connect card comes back', async () => {
   const client = swiftCode(iosRead('IngestClient.swift'));
   const refuses = swiftBody(client, 'static func refusesKey(');
   assert.match(refuses, /status == 401 \|\| status == 403/);
   const refusals = [...refuses.matchAll(/error == "([a-z_]+)"/g)].map(m => m[1]);
-  // What the phone listens for is what both doors say for a revoked or unknown key…
+  const statuses = [...refuses.matchAll(/status == (\d{3})/g)].map(m => Number(m[1]));
+  const phoneForgets = v => !!v && statuses.includes(v.status) && refusals.includes(v.error);
+  // Both doors decide in one place, and use what it decides.
+  const { deviceKeyVerdict } = await import('../netlify/functions/lib/wrought.js');
   for (const f of ['ingest.js', 'api-voice.js']) {
     const src = readFileSync(new URL(`../netlify/functions/${f}`, import.meta.url), 'utf8');
-    const revoked = src.match(/if \(!key \|\| key\.revoked\)[\s\S]{0,120}?(\d{3})[\s\S]{0,80}?error: '([a-z_]+)'/);
-    assert.ok(revoked, `${f} no longer refuses a revoked key where this test can see it`);
-    assert.ok(['401', '403'].includes(revoked[1]) && refusals.includes(revoked[2]),
-      `${f} refuses a revoked key with ${revoked[1]} ${revoked[2]}, which the phone would not recognise`);
+    const lookup = src.match(/const \{ data: key, error: (\w+) \} = await supabase\.from\('wrought_ingest_keys'\)/);
+    assert.ok(lookup, `${f} throws away the error from the key lookup, so a failed lookup reads as no key`);
+    assert.match(src, new RegExp(`(\\w+) = deviceKeyVerdict\\(key, ${lookup[1]}\\);\\s*if \\(\\1\\)`),
+      `${f} does not answer from deviceKeyVerdict`);
+  }
+  // What the phone listens for is what the doors say for a revoked or unknown key…
+  for (const key of [null, { id: 'k', user_id: 'u', revoked: true }]) {
+    assert.ok(phoneForgets(deviceKeyVerdict(key, null)), 'a revoked or unknown key is refused with something the phone would not recognise');
+  }
+  assert.equal(deviceKeyVerdict({ id: 'k', user_id: 'u', revoked: false }, null), null, 'a good key is refused');
+  // …and never what they say when the lookup itself failed — a schema reload
+  // or a gateway blip — which says nothing about the key.
+  for (const key of [null, { id: 'k', user_id: 'u', revoked: false }]) {
+    const failed = deviceKeyVerdict(key, { code: 'PGRST303', message: 'JWT expired' });
+    assert.ok(failed && failed.status >= 500, 'a lookup that failed is answered as a verdict about the key');
+    assert.ok(!phoneForgets(failed), 'a database blip would make the phone forget a good key');
   }
   // …and never what they say for a suspended account, whose key is good:
   // dropping it would only swap the honest suspension sentence for "connect".
@@ -16194,14 +16212,24 @@ await test('a key the server refuses is forgotten on this phone, so the connect 
   const suspended = membership.match(/ok: false,[\s\S]*?error: '([a-z_]+)'/);
   assert.ok(suspended, 'the suspension error moved and this test can no longer see it');
   assert.ok(!refusals.includes(suspended[1]), 'a suspended account would lose a good key');
-  // Forgotten the moment it is refused, on both doors that use it.
-  assert.match(swiftBody(client, 'static func post('), /if refusesKey\(status: code, body: data\) \{\s*forgetKey\(\)\s*throw IngestError\.keyRefused/);
+  // Forgotten the moment it is refused, on both doors that use it — and only
+  // the key that request carried: one minted for another account while it was
+  // in flight is not the key that was refused.
+  const bearer = body => (body.match(/setValue\("Bearer \\\(([a-z]\w*)\)"/) || [])[1];
+  const post = swiftBody(client, 'static func post(');
+  assert.ok(bearer(post), 'the key a send carries moved and this test can no longer see it');
+  assert.match(post, new RegExp(`if refusesKey\\(status: code, body: data\\), forgetKey\\(ifStill: ${bearer(post)}\\) \\{\\s*throw IngestError\\.keyRefused`));
+  assert.match(swiftBody(client, 'static func forgetKey(ifStill'), /guard storedKey\(\) == \w+ else \{ return false \}\s*forgetKey\(\)/);
   const forget = swiftBody(client, 'static func forgetKey()');
   assert.match(forget, /Keychain\.remove\(account: keychainAccount\)/);
   assert.match(forget, /Keychain\.remove\(account: ownerAccount\)/);
   assert.match(swiftBody(iosRead('Keychain.swift'), 'static func remove(account: String)'), /SecItemDelete/);
-  assert.match(swiftBody(swiftCode(iosRead('WroughtIntents.swift')), 'static func speak('),
-    /if IngestClient\.refusesKey\([\s\S]*?\) \{\s*IngestClient\.forgetKey\(\)/);
+  const speak = swiftBody(swiftCode(iosRead('WroughtIntents.swift')), 'static func speak(');
+  assert.ok(bearer(speak), 'the key Siri sends moved and this test can no longer see it');
+  assert.match(speak, new RegExp(`if IngestClient\\.refusesKey\\([\\s\\S]*?\\) \\{\\s*IngestClient\\.forgetKey\\(ifStill: ${bearer(speak)}\\)`));
+  for (const body of [post, speak]) {
+    assert.doesNotMatch(body, /forgetKey\(\)/, 'a refusal forgets whatever key is stored when it lands, not the one it refused');
+  }
   // The courier stops claiming Connected and says why, where the card shows it.
   const courier = swiftCode(iosRead('HealthCourier.swift'));
   assert.match(swiftBody(courier, 'func sendToday() async -> Bool'), /catch IngestError\.keyRefused \{[\s\S]*?state = \.idle[\s\S]*?lastError = "/);
@@ -16217,16 +16245,30 @@ await test('the key belongs to the account on screen, and a new one is minted on
   assert.match(swiftBody(client, 'static func mintKey('),
     /Keychain\.write\(account: keychainAccount, value: key\)[\s\S]*?subject\(ofSessionToken: sessionToken\)[\s\S]*?Keychain\.write\(account: ownerAccount/);
   const courier = swiftCode(iosRead('HealthCourier.swift'));
-  const confirm = swiftBody(courier, 'func confirmKeyOwner() async');
+  const confirm = swiftBody(courier, 'private func checkKeyOwner() async');
   const differs = confirm.indexOf('owner != signedIn');
   const forget = confirm.indexOf('IngestClient.forgetKey()');
   const mint = confirm.indexOf('mintKey(');
   assert.ok(differs > 0 && forget > differs && mint > forget,
     'a key is minted before the accounts are compared, or the old key survives the switch');
   assert.equal((confirm.match(/mintKey\(/g) || []).length, 1, 'the owner check mints on more than the one path');
+  // A key from build 12 or earlier has no owner on file, and nothing on the
+  // phone says which account it feeds: one is minted for the account on
+  // screen rather than the old key being adopted as that account's. The old
+  // key keeps sending until the new one lands — a failed mint must not
+  // disconnect the phone — so it is forgotten only when an owner WAS on file.
+  assert.match(confirm, /let (\w+) = IngestClient\.storedOwner\(\)\s*guard \1 != signedIn else \{ return \}\s*if \1 != nil \{\s*IngestClient\.forgetKey\(\)/,
+    'a key with no owner is adopted by whoever is signed in, or forgotten before its replacement exists');
+  assert.match(confirm, /catch \{\s*guard \w+ != nil else \{ return \}\s*state = \.idle/, 'a failed mint for an ownerless key disconnects the phone');
+  assert.doesNotMatch(courier, /recordOwner\(/, 'an ownerless key is still recorded as the signed-in account\'s');
+  // One check at a time, and a second caller WAITS for it: skipping let a
+  // send through mid-switch, with the old key gone and the new one not minted.
+  const join = swiftBody(courier, 'func confirmKeyOwner() async');
+  assert.match(join, /if let (\w+) = ownerCheck \{ await \1\.value; return \}/, 'a second owner check skips the running one instead of waiting');
+  assert.match(join, /Task \{[^}]*checkKeyOwner\(\)[^}]*ownerCheck = nil/);
   // Minted anywhere else only by the Connect tap, and only with no key stored —
   // never on every connect, which would leave old keys active.
-  assert.deepEqual(new Set(enclosingFuncs(courier, 'mintKey\\(')), new Set(['connect', 'confirmKeyOwner']));
+  assert.deepEqual(new Set(enclosingFuncs(courier, 'mintKey\\(')), new Set(['connect', 'checkKeyOwner']));
   assert.match(swiftBody(courier, 'func connect() async'), /if IngestClient\.storedKey\(\) == nil \{[\s\S]*?mintKey\(/);
   // Checked when a page has loaded, when the app comes forward, and before a
   // send the page asked for.
@@ -16235,6 +16277,14 @@ await test('the key belongs to the account on screen, and a new one is minted on
   assert.match(attach, /onSyncRequest = \{[\s\S]*?confirmKeyOwner\(\)[\s\S]*?sync\(force: true\)/);
   assert.match(swiftBody(courier, 'func cameToForeground()'), /confirmKeyOwner\(\)[\s\S]*?sync\(\)/);
   assert.match(swiftBody(swiftCode(iosRead('WebView.swift')), 'didFinish navigation'), /onPageLoaded/);
+  // And before a send Health wakes while the app is in front: a sign-in inside
+  // the page does not reload it, so nothing else would notice — but never in
+  // the background, where the page cannot be asked.
+  const wake = swiftBody(courier, 'private func registerBackgroundDelivery()');
+  const bg = wake.match(/let (\w+) = UIApplication\.shared\.applicationState == \.background/);
+  assert.ok(bg, 'the observer no longer knows whether it woke in the background');
+  assert.match(wake, new RegExp(`if !${bg[1]} \\{ await self\\?\\.confirmKeyOwner\\(\\) \\}\\s*await self\\?\\.sync\\(`),
+    'a foreground send Health woke goes to whichever account the key was minted for, not the one on screen');
 });
 
 await test('the Watch session belongs to the process: activated at launch, one hub, queued state heard', () => {
@@ -16313,11 +16363,51 @@ await test('the background task ends inside its expiration handler, not after a 
   assert.doesNotMatch(expiry, /Task\s*\{/, 'the background task is ended after a hop');
 });
 
+await test('the connect card can be set aside — the app is optional — and comes back when the courier has something to say', () => {
+  // The card sits over the bottom of every page, Sign out and Switch account
+  // included, and nothing moved it short of connecting Apple Health — which
+  // somebody using the app for the dashboard or Siri alone never has to do.
+  const view = swiftCode(iosRead('ContentView.swift'));
+  const flag = (view.match(/@State private var (\w+) = false/) || [])[1];
+  assert.ok(flag, 'the connect card cannot be set aside');
+  assert.match(view, new RegExp(`if courier\\.state != \\.connected && !${flag} \\{\\s*connectCard`), 'setting the card aside does not hide it');
+  assert.match(swiftBody(view, 'private var connectCard: some View'), new RegExp(`Button \\{\\s*${flag} = true\\s*\\}`), 'nothing on the card sets it aside');
+  // A refused key, an account switch, a send asked for with no key: each sets
+  // lastError, and a new one brings the card back to say it.
+  assert.match(view, new RegExp(`\\.onChange\\(of: courier\\.lastError\\) \\{ (\\w+) in\\s*if \\1 != nil \\{ ${flag} = false \\}`),
+    'a refused key or an account switch stays hidden under a card set aside');
+  // Never kept past the launch, so a phone is never left with no way to connect.
+  assert.doesNotMatch(view, /@AppStorage|@SceneStorage|UserDefaults/, 'setting the card aside outlives the launch');
+});
+
+await test('a paused workout keeps its Live Activity, and one the person swiped away is not put back', () => {
+  const la = swiftCode(iosRead('WorkoutLiveActivity.swift'));
+  // The Watch sends nothing while paused, so the time a paused round would
+  // have ended passes while the workout is still going.
+  const adopt = swiftBody(la, 'func adoptExisting()');
+  const abandoned = adopt.match(/let abandoned = ([^\n]+)/);
+  assert.ok(abandoned && /^!\s*\w+\.paused\s*&&/.test(abandoned[1].trim()), 'a long pause ends the Live Activity of a workout still running');
+  // Swiped away, or ended by the system: let go, and set aside until the
+  // workout ends — asking for it again would overrule the person.
+  const gone = swiftBody(la, 'private func letGoIfGone()');
+  const aside = (gone.match(/(\w+) = true/) || [])[1];
+  assert.ok(aside && /activity = nil/.test(gone) && /\.dismissed/.test(gone), 'a swiped-away activity is not set aside');
+  const receive = swiftBody(la, 'func receive(');
+  assert.match(receive, new RegExp(`else if !${aside} && UIApplication\\.shared\\.applicationState == \\.active`),
+    'a Live Activity the person swiped away is requested again at the next update');
+  assert.ok(receive.indexOf('letGoIfGone()') >= 0 && receive.indexOf('letGoIfGone()') < receive.indexOf('Activity.request('));
+  // Adopting at the next foreground must not forget that it was swiped away.
+  assert.match(adopt, /^\{\s*letGoIfGone\(\)/, 'coming forward forgets the activity was swiped away and asks for it again');
+  // Set aside for THIS workout only.
+  assert.match(receive, new RegExp(`if !running \\{[\\s\\S]*?${aside} = false; return`), 'one swipe sets aside every later workout\'s Live Activity');
+});
+
 // ── Build 13: the Apple Watch app — its privacy manifest, a failed session,
 // the closing state, and the plan on the wrist
 //
-// No Swift compiler here either: these read the sources as text and pin what
-// each function does, found by brace-matching its own body.
+// No Swift compiler here either: these read the sources as text and aim at
+// what each function does, found by brace-matching its own body — and, like
+// the iPhone tests, some match a statement's spelling.
 
 group('The Apple Watch app, build 13');
 
@@ -16586,14 +16676,33 @@ await test('a plan from the phone waits its turn, adds to a save message rather 
   const apply = swiftBody(coach, 'private func apply(');
   assert.match(apply, /message = appending \? "\\\(message\) \\\((\w+)\)" : \1/, 'a plan taken after a save writes over the save\'s result');
   assert.doesNotMatch(swiftBody(coach, 'func finish(interruptedBy'), /accept\(|message = "Plan received/, 'the save message is replaced by the plan line');
-  // A plan the Watch already shows, or the context replayed on every launch,
-  // is not announced — and a replay never undoes an edit made on the Watch.
-  const quiet = apply.match(/if (\w+) == plan \|\| \1 == Self\.stored\(forKey: Self\.(\w+)\) \{[\s\S]*?return\s*\}/);
-  assert.ok(quiet, 'every launch announces the phone\'s last plan as new, and puts it back over an edit');
-  assert.ok(apply.indexOf(quiet[0]) < apply.indexOf('message ='), 'the plan is announced before it is checked');
-  assert.match(apply, new RegExp(`Self\\.store\\(\\w+, forKey: Self\\.${quiet[2]}\\)`), 'the plan taken is never remembered as taken');
+  // The context replayed on every launch is a send already taken: it is not
+  // announced, and never undoes an edit made on the Watch. A send is known by
+  // the phone's stamp, so the same plan sent again ON PURPOSE — after an edit
+  // on the Watch — is taken; comparing plans dropped it while the phone said
+  // it was queued.
+  const bridge = swiftCode(iosRead('WatchBridge.swift'));
+  const sent = bridge.match(/updateApplicationContext\(\["plan": \w+, "(\w+)": Date\(\)\.timeIntervalSince1970\]\)/);
+  assert.ok(sent, 'the phone sends a plan with no stamp, so a deliberate resend looks like a replay');
+  const heard = swiftBody(coach, 'nonisolated private func receive(');
+  assert.match(heard, new RegExp(`\\["${sent[1]}"\\] as\\? Double`), 'the Watch never reads the stamp the phone puts on a send');
+  const stamped = apply.match(/if let (\w+) = (\w+)\.sentAt \{([\s\S]*?)\} else \{([\s\S]*?)\}/);
+  assert.ok(stamped, 'a stamped send is judged by its plan, so a deliberate resend is dropped');
+  const [, at, , known, unstamped] = stamped;
+  const atKey = known.match(new RegExp(`(\\w+) = ${at} == UserDefaults\\.standard\\.double\\(forKey: Self\\.(\\w+)\\)`));
+  assert.ok(atKey, 'a send is not compared with the stamp of the last one taken');
+  assert.match(known, new RegExp(`UserDefaults\\.standard\\.set\\(${at}, forKey: Self\\.${atKey[2]}\\)`), 'the stamp taken is never remembered as taken');
+  // With no stamp — nothing the phone sends now — the plan itself is compared.
+  const fallback = unstamped.match(new RegExp(`${atKey[1]} = \\w+\\.plan == Self\\.stored\\(forKey: Self\\.(\\w+)\\)`));
+  assert.ok(fallback, 'an unstamped replay would be announced as new and put back over an edit');
+  assert.match(apply, new RegExp(`Self\\.store\\(\\w+\\.plan, forKey: Self\\.${fallback[1]}\\)`), 'the plan taken is never remembered as taken');
+  const quiet = apply.match(new RegExp(`if ${atKey[1]} \\|\\| \\w+\\.plan == plan \\{ return \\}`));
+  assert.ok(quiet, 'a replay, or the plan already shown, is announced as new');
+  assert.ok(apply.indexOf(quiet[0]) < apply.indexOf('message =') && apply.indexOf(quiet[0]) < apply.indexOf('plan = '),
+    'the plan is changed or announced before it is checked');
   const key = k => (coach.match(new RegExp(`static let ${k} = "([^"]+)"`)) || [])[1];
-  assert.ok(key(quiet[2]) && key('planKey') && key(quiet[2]) !== key('planKey'), 'an edit on the Watch would count as a plan received from the phone');
+  const keys = [fallback[1], atKey[2], 'planKey'].map(key);
+  assert.ok(keys.every(Boolean) && new Set(keys).size === 3, 'an edit on the Watch would count as a plan received from the phone');
 });
 
 await test('the plan on the wrist keeps its edits, holds the limits it is checked against, and says why Start is off', () => {
@@ -16739,6 +16848,22 @@ await test('the Watch app and the widget are packaged as parts of the iPhone app
   const deps = (phone.body.match(/dependencies = \(([^)]*)\)/)[1].match(/[0-9A-F]{24}/g) || [])
     .map(id => (objects[id].match(/\btarget = ([0-9A-F]{24})/) || [])[1]);
   assert.ok(deps.includes(watch.id), 'archiving the iPhone app does not build the Watch app first');
+  // Relative to the products directory (16): a Watch folder path under any
+  // other base lands somewhere App Store Connect does not look.
+  const subfolder = b => Number((b.match(/dstSubfolderSpec = (\d+);/) || [])[1]);
+  assert.equal(subfolder(embed), 16, 'the Watch folder path is not taken from the products directory');
+  // Each extension — the widget, which draws the Live Activity — is built
+  // with the iPhone app and copied into its PlugIns folder (13), once.
+  const copiedBy = b => ((b.match(/files = \(([^)]*)\)/) || [])[1]?.match(/[0-9A-F]{24}/g) || [])
+    .map(id => (objects[id].match(/fileRef = ([0-9A-F]{24})/) || [])[1]);
+  const phoneCopies = phaseIds.map(id => objects[id]).filter(b => /\bisa = PBXCopyFilesBuildPhase;/.test(b));
+  for (const t of extensions) {
+    const product = t.body.match(/productReference = ([0-9A-F]{24})/)[1];
+    const into = phoneCopies.filter(b => copiedBy(b).includes(product));
+    assert.equal(into.length, 1, `${t.name} is copied into the iPhone app ${into.length} times — it must be exactly once`);
+    assert.equal(subfolder(into[0]), 13, `${t.name} is not copied into the iPhone app's PlugIns folder`);
+    assert.ok(deps.includes(t.id), `archiving the iPhone app does not build ${t.name} first`);
+  }
 
   // THREE SIRI NAMES AT MOST, counted in the plist the iPhone app actually
   // ships. A fourth compiles and archives, then App Store Connect refuses the
@@ -16818,10 +16943,18 @@ await test('inside an app, sign-in offers no Google door and says in one line wh
     const noteId = src.match(/<p class="[^"]*" id="([^"]+)" hidden><\/p>\s*<p class="or">/)[1];
     const $ = id => (id === noteId ? el.note : null);
     const fetch = async () => ({ ok: true, json: async () => ({ external }) });
-    await new Function('window', 'navigator', 'document', '$', 'sb', 'SUPABASE_URL', 'SUPABASE_ANON', 'fetch',
-      `${IN_APP_JS}; ${pageFn(src, 'function inAppView(')} ${pageFn(src, 'function closeGoogleInApp(')}
-       ${pageFn(src, 'async function hideDeadProviders(')} closeGoogleInApp(); return hideDeadProviders();`)(
+    // The page's OWN calls — the block of statements straight after
+    // closeGoogleInApp — never calls this test makes for it: a page that
+    // stopped calling it would otherwise still pass.
+    const fn = pageFn(src, 'function closeGoogleInApp(');
+    const after = src.indexOf(fn) + fn.length;
+    const calls = src.slice(after, src.indexOf('\n\n', after));
+    assert.match(calls, /^(\s*\w+\(\);)+\s*$/, `${file}: the statements after closeGoogleInApp are not the plain calls this test runs`);
+    new Function('window', 'navigator', 'document', '$', 'sb', 'SUPABASE_URL', 'SUPABASE_ANON', 'fetch',
+      `${IN_APP_JS}; ${pageFn(src, 'function inAppView(')} ${pageFn(src, 'async function hideDeadProviders(')} ${fn} ${calls}`)(
       place.win(), place.nav, document, $, {}, 'https://x.supabase.co', 'anon', fetch);
+    // hideDeadProviders is not awaited by the page; let its reads settle.
+    await new Promise(resolve => setTimeout(resolve, 0));
     return el;
   };
   const sentences = {};
@@ -16852,24 +16985,42 @@ await test('inside an app, sign-in offers no Google door and says in one line wh
   }
   assert.deepEqual(sentences['connect.html'], sentences['app.html'], 'the two sign-in pages explain Google differently');
 
-  // Mid-reset or mid-code, a late provider check must not bring the line back,
-  // and both of those screens put it away with the doors.
+  // The new-password and code screens put the line away with the doors.
   const app = page('app.html');
   const noteId = app.match(/<p class="gate-note" id="([^"]+)" hidden><\/p>/)[1];
   for (const fn of ['function askForNewPassword(', 'function askForCode(']) {
     assert.ok(pageFn(app, fn).includes(`#${noteId}`), `${fn}) leaves the Google line showing`);
   }
-  const midReset = { hidden: true, textContent: '' };
-  new Function('window', 'navigator', 'document', '$',
-    `${IN_APP_JS}; ${pageFn(app, 'function inAppView(')} ${pageFn(app, 'function closeGoogleInApp(')} closeGoogleInApp();`)(
-    APP_13(), { userAgent: UA_WEBVIEW }, { querySelectorAll: () => [], querySelector: () => null },
-    id => (id === noteId ? midReset : id === 'reset' ? { hidden: false } : null));
-  assert.equal(midReset.hidden, true, 'the Google line comes back over the new-password screen');
 
   // The Account tab's Google doors — link, and prove-it for a merge — go too.
-  const acct = pageFn(app, 'function renderAccount(');
-  assert.match(acct, /p === 'google' && inApp/, 'Link Google is still offered inside an app');
-  assert.match(acct, /\$\{inApp \? '' : '<button class="ghost" data-mergeprov="google">/, 'Prove it with Google is still offered inside an app');
+  // The panel is rendered as the page renders it and read for what it
+  // offers; anything it calls that this test does not provide is a no-op.
+  const renderAccountIn = inApp => {
+    const content = { innerHTML: '' };
+    const quiet = { addEventListener() {} };
+    const known = {
+      inAppView: () => inApp, PROVIDER_NAME: { apple: 'Apple', google: 'Google', email: 'Email' },
+      esc: v => String(v ?? ''), lastPayload: null,
+      $: id => (id === 'content' ? content : quiet), document: { querySelectorAll: () => [] },
+    };
+    const scope = new Proxy(known, {
+      has: (t, k) => typeof k === 'string',
+      get: (t, k) => (typeof k !== 'string' ? undefined : k in t ? t[k] : k in globalThis ? globalThis[k] : () => ''),
+    });
+    new Function('scope', `with (scope) { const render = (${pageFn(app, 'function renderAccount(')});
+      render({ email: 'a@b.c' }, [{ provider: 'email' }], [], ''); }`)(scope);
+    return content.innerHTML;
+  };
+  for (const inApp of [false, true]) {
+    const html = renderAccountIn(inApp);
+    const where = inApp ? 'inside an app' : 'on the website';
+    assert.match(html, /data-link="apple"/, 'Link Apple is gone and this test can no longer see the panel');
+    assert.match(html, /data-mergeprov="apple"/, 'Prove it with Apple is gone and this test can no longer see the panel');
+    assert.equal(/data-link="google"/.test(html), !inApp, `Link Google is ${inApp ? 'still offered' : 'missing'} ${where}`);
+    assert.equal(/data-mergeprov="google"/.test(html), !inApp, `Prove it with Google is ${inApp ? 'still offered' : 'missing'} ${where}`);
+    assert.equal(/do this part at wrought\.fit in Safari/.test(html), inApp,
+      inApp ? 'the Google doors go inside an app without saying where they still work' : 'the website is told to go to Safari');
+  }
 });
 
 await test('inside an app, notifications point at the Home Screen copy of wrought.fit — never at a Share button the app does not have', async () => {

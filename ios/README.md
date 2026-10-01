@@ -106,7 +106,10 @@ gym anyway:
 The repo carries the version and build for all three targets — 1.0 (13) —
 and `npm test` fails if they disagree, so nothing is typed into Xcode.
 
-1. `git pull` on `main`, then open `ios/Wrought.xcodeproj`.
+1. `git pull` on `main`, then open `ios/Wrought.xcodeproj`. If the pull
+   refuses because of local changes to `project.pbxproj` (Xcode writes build
+   numbers there), discard them — `git checkout -- ios/Wrought.xcodeproj` — and
+   pull again: the repo's numbers are the ones to build.
 2. Confirm all three targets show **Version 1.0, Build 13** (each target →
    General → Identity). **Do not change build numbers in Xcode's UI** — it
    edits one target at a time and leaves the Watch and the widget behind. If
@@ -115,32 +118,53 @@ and `npm test` fails if they disagree, so nothing is typed into Xcode.
    **Product › Archive**. Archive only the **Wrought** scheme — it builds the
    Watch app and the widget and embeds them. Xcode also creates `WroughtWatch`
    and `WroughtWidgets` schemes; never archive or upload those on their own.
+   Before uploading, check the Watch's privacy manifest made it into the
+   archive: in the Organizer, right-click the archive › **Show in Finder** ›
+   right-click the `.xcarchive` › **Show Package Contents**, and look for
+   `Products/Applications/Wrought.app/Watch/WroughtWatch.app/PrivacyInfo.xcprivacy`.
+   If it is missing, do not upload — App Store Connect would refuse it
+   (ITMS-91053) and the build number would be spent. Select
+   `WroughtWatch/PrivacyInfo.xcprivacy` in Xcode, tick **WroughtWatch** under
+   *Target Membership* in the File inspector, and archive again.
 4. In the Organizer: **Distribute App › App Store Connect › Upload** (in
    Xcode 16 the Upload choice can sit under **Custom**). If a step offers to
    **manage the version and build number**, keep the repo's — untick it — so
    what uploads is 13. Step 5 checks it either way.
 5. When processing finishes, open the build in **TestFlight** and read two
    things off it: the build number (**13**) and **Apple Watch: Yes**. That
-   page, not the repo and not the archive, is what shipped. If TestFlight
-   shows another number, set the project and `public/app-info.json` to what it
-   shows.
-6. Install it from TestFlight on the iPhone. The Watch app comes with it; if
-   it does not appear on the Watch, open the iPhone's **Watch** app ›
-   Available Apps › Wrought › **Install**.
+   page, not the repo and not the archive, is what shipped. Now move
+   `public/app-info.json` to what TestFlight shows — build 13 and its date —
+   with a release note saying the Watch app is in the build and not yet tested
+   on a wrist. It describes what is **released**; the harness accepts the
+   project being exactly one build ahead of it while an upload is pending, and
+   nothing else. If TestFlight shows another number, set the project to it too.
+6. Install it from TestFlight on the iPhone — once Netlify's published
+   deploy is the `main` you built from. Build 13 forgets a device key the
+   server refuses, and it is the server's half of this change that answers a
+   key it could not check (a database blip) with 503 rather than a refusal.
+   The Watch app comes with it; if it does not appear on the Watch, open the
+   iPhone's **Watch** app › Available Apps › Wrought › **Install**.
 7. Run the **8-step wrist test** in `docs/WATCH_COACH.md` on the phone and the
    Watch.
-8. Only then move `public/app-info.json` to build 13 (and its release note to
-   what TestFlight shows). It describes what is **released**; the harness
-   accepts the project being exactly one build ahead of it while an upload is
-   pending, and nothing else. The next upload moves every
-   `CURRENT_PROJECT_VERSION` to 14, in one edit.
+8. When it passes, change the release note in `public/app-info.json` to say
+   so. The next upload moves every `CURRENT_PROJECT_VERSION` to 14, in one
+   edit.
 
 ## How the key handshake works
 
 The app never asks for a password. It reads the signed-in session from the
-page it is framing, mints a device key from `/api-key` with that session —
-so the courier can only ever feed the account on screen — and keeps the key in
-the Keychain. The silent-fork lesson, applied to a new surface.
+page it is framing, mints a device key from `/api-key` with that session, and
+keeps the key in the Keychain beside the account it was minted for. As pages
+load, as the app comes forward, before a send the page asks for and before a
+send Health wakes in the foreground, that account is compared with the one on
+screen, and a different one gets a key of its own. A background wake cannot
+ask the page, so a switch made just before one is caught at the next check. A
+key from build 12 or earlier has no account on file and is replaced once. The
+silent-fork lesson, applied to a new surface.
+
+A key the server refuses (`invalid_key`) is forgotten and the connect card
+comes back; a key the server could not check — a database blip — is kept, and
+the send is tried again later.
 
 ## Deliberately not here (yet)
 

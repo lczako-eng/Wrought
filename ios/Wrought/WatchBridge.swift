@@ -53,7 +53,10 @@ final class WatchBridge: NSObject, WCSessionDelegate, WKScriptMessageHandler {
             emit(["type": "watchStatus", "message": problem]); return
         }
         do {
-            try WCSession.default.updateApplicationContext(["plan": data])
+            // Stamped, so the Watch can tell a send from the replay of the last
+            // one: the same plan sent again on purpose — after an edit on the
+            // Watch — is taken, and a relaunch's replay is not.
+            try WCSession.default.updateApplicationContext(["plan": data, "sentAt": Date().timeIntervalSince1970])
             emit(["type": "watchStatus", "message": "Plan queued for your Watch. Open WROUGHT there and check the rounds before starting."])
         } catch { emit(["type": "watchStatus", "message": "Plan could not be sent: \(error.localizedDescription)"]) }
     }

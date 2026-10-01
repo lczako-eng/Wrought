@@ -49,10 +49,14 @@ final class HealthCourier: ObservableObject {
     private var trailing: Task<Void, Never>?
     /// Observer queries executed once per process, whoever arms them first.
     private var armed = false
-    /// One Health permission check and one key-owner check at a time: the
-    /// page loading, the app opening and a tap can all arrive together.
+    /// One Health permission check at a time: the page loading, the app
+    /// opening and a tap can all arrive together.
     private var asking = false
-    private var checkingOwner = false
+    /// The key-owner check running now. Anything else that asks for one waits
+    /// for it rather than skipping it: mid-switch the old key is already gone
+    /// and the new one not yet minted, and a send let through in that gap found
+    /// no key and told the page to connect Apple Health.
+    private var ownerCheck: Task<Void, Never>?
 
     var statusLine: String {
         switch state {
@@ -207,36 +211,52 @@ final class HealthCourier: ObservableObject {
     }
 
     /// The key must belong to the account signed in on the page: the app may
-    /// never feed a different account than the one on screen. A key is minted
-    /// only when the two differ — never on every check, which would leave the
-    /// old keys active on the account.
+    /// never feed a different account than the one on screen. Checked when a
+    /// page loads, when the app comes forward, before a send the page asks
+    /// for, and before a send Health wakes in the foreground — a sign-in
+    /// inside the page does not reload it, so nothing else would notice. A
+    /// background wake cannot ask the page; the next check catches it.
     func confirmKeyOwner() async {
-        guard !checkingOwner, IngestClient.storedKey() != nil else { return }
-        checkingOwner = true
-        defer { checkingOwner = false }
+        if let running = ownerCheck { await running.value; return }
+        guard IngestClient.storedKey() != nil else { return }
+        let check = Task { [weak self] in
+            await self?.checkKeyOwner()
+            self?.ownerCheck = nil
+        }
+        ownerCheck = check
+        await check.value
+    }
+
+    /// A key is minted only when the account on the page is not the key's —
+    /// never on every check, which would leave old keys active on the account.
+    private func checkKeyOwner() async {
         // Signed out, or a page with no session yet: nothing to compare with,
         // and the key keeps feeding the account it was minted for.
         guard let token = await web?.sessionToken(),
               let signedIn = IngestClient.subject(ofSessionToken: token),
               IngestClient.storedKey() != nil else { return }
-        guard let owner = IngestClient.storedOwner() else {
-            // Minted by build 12 or earlier, before the owner was kept. Taken
-            // to belong to the account signed in now: minting again to find
-            // out would leave the old key active on that account.
-            IngestClient.recordOwner(signedIn)
-            return
-        }
+        let owner = IngestClient.storedOwner()
         guard owner != signedIn else { return }
-        // Another account is signed in on the page. The old key stops here,
-        // before this phone sends anything more to an account nobody is
-        // looking at, and a key is minted for the one on screen.
-        IngestClient.forgetKey()
-        lastSync = nil
+        if owner != nil {
+            // Another account is signed in on the page. The old key stops
+            // here, before this phone sends anything more to an account nobody
+            // is looking at, and a key is minted for the one on screen.
+            IngestClient.forgetKey()
+            lastSync = nil
+        }
+        // With no owner, the key was minted by build 12 or earlier, before the
+        // owner was kept, and nothing on the phone says which account it feeds
+        // — so one is minted for the account on screen, once. Until that
+        // lands the old key keeps sending: a failed mint must not disconnect
+        // the phone. The old key stays on its account, unused, listed and
+        // revocable on the connect page.
         do {
             try await IngestClient.mintKey(sessionToken: token)
-            lastError = nil
             state = .connected
+            // A switch that landed leaves nothing stale on the card.
+            if owner != nil { lastError = nil }
         } catch {
+            guard owner != nil else { return }
             state = .idle
             lastError = "You're signed in to a different account now. Tap Connect Apple Health to send this phone's data to it."
         }
@@ -258,8 +278,12 @@ final class HealthCourier: ObservableObject {
             // connect card comes back rather than the app claiming Connected.
             if state == .connected { state = .idle }
             // The page asked and there is nothing to send with: say so, or the
-            // button it disabled waits forever.
-            if force { web?.announceSync(line: nil, error: "Connect Apple Health in this app first — then this sends the latest.") }
+            // button it disabled waits forever — and on the connect card,
+            // which comes back if it was set aside.
+            if force {
+                lastError = "Connect Apple Health in this app first — then this sends the latest."
+                web?.announceSync(line: nil, error: lastError)
+            }
             return
         }
         // Coalesced on the trailing edge: a request during a send is owed one
@@ -722,6 +746,11 @@ final class HealthCourier: ObservableObject {
                 Task { @MainActor in
                     let bg = BackgroundTime("wrought-sync")
                     let background = UIApplication.shared.applicationState == .background
+                    // In the foreground the key is checked against the page
+                    // first: somebody may have signed in as another account
+                    // there. Never in the background — the page cannot be
+                    // asked then.
+                    if !background { await self?.confirmKeyOwner() }
                     await self?.sync(force: background)
                     bg.end()
                     done()

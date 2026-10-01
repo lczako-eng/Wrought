@@ -236,7 +236,7 @@
     <p class="muted">The native app opens the same dashboard as the website, then adds the two
     jobs a web page cannot own: Apple Health background delivery and locked-phone Siri shortcuts.
     A dashboard update reaches the app from wrought.fit without waiting for another native release.</p>
-    <p class="msg" style="margin:12px 0 0"><b id="native-version" style="color:var(--text)">Version 1.0 · build 7</b>
+    <p class="msg" style="margin:12px 0 0"><b id="native-version" style="color:var(--text)">Wrought for iPhone</b>
     <span id="native-note"> · The dashboard updates from wrought.fit.</span></p>
   </div>
 
@@ -728,7 +728,9 @@ fetch('/app-info.json', { cache: 'no-store' }).then(r => r.ok ? r.json() : null)
   if (!info) return;
   const version = document.getElementById('native-version');
   const note = document.getElementById('native-note');
-  if (version) version.textContent = `Version ${info.version || '1.0'} · build ${info.build || '7'}`;
+  // Only what the file says: a number typed here as a fallback is one more
+  // place for the release facts to drift from what TestFlight shows.
+  if (version && info.version && info.build) version.textContent = `Version ${info.version} · build ${info.build}`;
   if (note && info.release_note) note.textContent = ` · ${info.release_note}`;
 }).catch(() => {});
 </script>
