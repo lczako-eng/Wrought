@@ -273,6 +273,10 @@ final class HealthCourier: ObservableObject {
     /// wake-up happened to catch. Opening the app is the one moment somebody
     /// is guaranteed to be looking, so that is the moment it has to be current.
     func sync(force: Bool = false) async {
+        // Mid-switch the old key is already gone and the new one not yet
+        // minted: wait for the owner check rather than reading that gap as
+        // "not connected". checkKeyOwner never sends, so this cannot deadlock.
+        if let check = ownerCheck { await check.value }
         guard IngestClient.storedKey() != nil else {
             // Forgotten elsewhere — Siri was told the key is refused — so the
             // connect card comes back rather than the app claiming Connected.
@@ -774,8 +778,11 @@ private final class BackgroundTime {
         // as it returns, so the task is ended right here — a hop through a
         // Task could run after the suspension it was meant to beat, and an
         // unended task gets the app killed.
+        // assumeIsolated, because whether the SDK types this handler as
+        // main-actor or as a plain Sendable block varies; iOS calls it on the
+        // main thread either way, and the call stays synchronous.
         id = UIApplication.shared.beginBackgroundTask(withName: name) { [weak self] in
-            self?.end()
+            MainActor.assumeIsolated { self?.end() }
         }
     }
     func end() {

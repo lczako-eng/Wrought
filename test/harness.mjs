@@ -16266,6 +16266,14 @@ await test('the key belongs to the account on screen, and a new one is minted on
   const join = swiftBody(courier, 'func confirmKeyOwner() async');
   assert.match(join, /if let (\w+) = ownerCheck \{ await \1\.value; return \}/, 'a second owner check skips the running one instead of waiting');
   assert.match(join, /Task \{[^}]*checkKeyOwner\(\)[^}]*ownerCheck = nil/);
+  // …and so does every send: a send that does not come through
+  // confirmKeyOwner (the attach send, Connect, the deferred send, the
+  // background observer) read the gap as "not connected", flashed the
+  // connect card back and dropped itself.
+  const send = swiftBody(courier, 'func sync(force: Bool = false) async');
+  const waits = send.search(/if let (\w+) = ownerCheck \{ await \1\.value \}/);
+  const keyless = send.indexOf('guard IngestClient.storedKey() != nil');
+  assert.ok(waits > -1 && keyless > waits, 'a send reads the switch gap as "not connected" instead of waiting for the owner check');
   // Minted anywhere else only by the Connect tap, and only with no key stored —
   // never on every connect, which would leave old keys active.
   assert.deepEqual(new Set(enclosingFuncs(courier, 'mintKey\\(')), new Set(['connect', 'checkKeyOwner']));
