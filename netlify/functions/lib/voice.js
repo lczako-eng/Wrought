@@ -210,6 +210,20 @@ const dailyScoredGoals = facts => {
     g.scored && g.metric !== 'workout_days' && g.cadence !== 'weekly' && hasTodayEvidence(g));
 };
 
+// A watch figure the phone stopped updating is a FLOOR, never the day. The
+// founder's close on 2 October read "STEPS 5,075/10k@3:26P" while his wrist
+// said 10,529: the phone's last send was 3:26pm and nothing came after it, so
+// the close scored half a day as though it were the whole one. "@3:26P" was
+// true and read as nothing. Steps, distance and active energy only ever go UP
+// through a day, so a stale figure is "at least", said in words that put the
+// gap where it is — on the phone's last send, never on the arithmetic.
+const DEVICE_GOALS = new Set(['steps', 'distance_km', 'active_minutes', 'active_calories']);
+const lagging = device => !!(device?.fresh?.stale && !device.fresh.final && device.fresh.at);
+const lockClock = at => String(at).replace(/m$/, '').toUpperCase();
+// The burn leans on the watch's active energy only through these two sources;
+// a stale watch makes it a floor too. Resting is carried to midnight already.
+const burnLeansOnWatch = balance => balance?.active_source === 'device' || balance?.active_source === 'logged_over_device';
+
 // The deterministic close of the day: what actually went on the record, then
 // where those facts put the goals. This leads the evening brief whether or not
 // an OpenAI key exists, so the lock screen can never be an AI's impression of
@@ -229,9 +243,12 @@ export function eveningReceipt({ facts = {}, balance = null } = {}) {
     actions.push(`${activity.count} work/activity entr${activity.count === 1 ? 'y' : 'ies'}` +
       (activity.minutes ? ` (${Math.round(activity.minutes)} min on task)` : ''));
   }
+  const lag = lagging(device);
   if (device.steps != null) {
-    const at = device.fresh?.stale && device.fresh.at ? ` (as of ${device.fresh.at})` : '';
-    actions.push(`${Math.round(device.steps).toLocaleString('en-US')} steps${at}`);
+    const steps = Math.round(device.steps).toLocaleString('en-US');
+    actions.push(lag
+      ? `at least ${steps} steps — that is the phone's last send, at ${device.fresh.at}, and it has not sent since, so the rest of the day is not in yet${device.fresh.refresh ? ` (${device.fresh.refresh})` : ''}`
+      : `${steps} steps`);
   }
   if (food.meals) {
     actions.push(food.meals_uncounted === food.meals
@@ -241,7 +258,11 @@ export function eveningReceipt({ facts = {}, balance = null } = {}) {
   if (balance?.known && (facts.logged || actions.length)) {
     actions.push(balance.active_source === 'awaiting_device'
       ? `about ${Math.round(balance.calories_out).toLocaleString('en-US')} kcal burned at rest — the watch hasn't sent today, so movement isn't in it`
-      : `about ${Math.round(balance.calories_out).toLocaleString('en-US')} kcal burned`);
+      : lag && balance.active_source === 'device'
+        ? `about ${Math.round(balance.calories_out).toLocaleString('en-US')} kcal burned — resting for the whole day, movement only up to the watch's ${device.fresh.at} send`
+        : lag && balance.active_source === 'logged_over_device'
+          ? `about ${Math.round(balance.calories_out).toLocaleString('en-US')} kcal burned — resting for the whole day and your logged work; the watch had only sent up to ${device.fresh.at}, so it may have counted more since`
+          : `about ${Math.round(balance.calories_out).toLocaleString('en-US')} kcal burned`);
   }
 
   // workout_days is read from weekSoFar below. Weekly scores in scoreGoals use
@@ -252,6 +273,10 @@ export function eveningReceipt({ facts = {}, balance = null } = {}) {
     const target = compactNumber(g.target);
     if (actual == null || target == null) return null;
     const unit = g.unit ? ` ${g.unit}` : '';
+    // A stale device figure under its target is a floor, not a miss.
+    if (lag && DEVICE_GOALS.has(g.metric) && Number(g.actual) < Number(g.target)) {
+      return `${GOAL_LABELS[g.metric] || g.goal || g.metric}: at least ${actual}/${target}${unit} (the phone last sent at ${device.fresh.at})`;
+    }
     return `${GOAL_LABELS[g.metric] || g.goal || g.metric}: ${actual}/${target}${unit}`;
   }).filter(Boolean);
 
@@ -288,8 +313,13 @@ export function eveningNotification({ facts = {}, balance = null } = {}) {
     clauses.push(`WORK ${activity.count}\u00d7${activity.minutes ? `${Math.round(activity.minutes)}m` : ''}`);
   }
 
-  // A stale count carries its send time, clipped for the lock screen: "@6:01P".
-  const stepsAt = device.fresh?.stale && device.fresh.at ? `@${String(device.fresh.at).replace(/m$/, '').toUpperCase()}` : '';
+  // A stale count is a floor, and the lock screen says whose clock it is on:
+  // "STEPS 5,075+/10k (PHONE LAST SENT 3:26P)". The bare "@3:26P" it replaces
+  // was true and read as Wrought getting the sum wrong. Said once, on the first
+  // device clause; the burn beside it carries only the "+".
+  const lag = lagging(device);
+  const floor = lag ? '+' : '';
+  let sentNote = lag ? ` (PHONE LAST SENT ${lockClock(device.fresh.at)})` : '';
   const steps = goal('steps');
   if (steps) {
     const actual = compactNumber(steps.actual);
@@ -297,9 +327,10 @@ export function eveningNotification({ facts = {}, balance = null } = {}) {
     const target = Number.isFinite(targetNumber) && targetNumber >= 10000 && targetNumber % 1000 === 0
       ? `${targetNumber / 1000}k`
       : compactNumber(steps.target);
-    if (actual != null && target != null) clauses.push(`STEPS ${actual}/${target}${stepsAt}`);
+    if (actual != null && target != null) { clauses.push(`STEPS ${actual}${floor}/${target}${sentNote}`); sentNote = ''; }
   } else if (device.steps != null) {
-    clauses.push(`STEPS ${Math.round(device.steps).toLocaleString('en-US')}${stepsAt}`);
+    clauses.push(`STEPS ${Math.round(device.steps).toLocaleString('en-US')}${floor}${sentNote}`);
+    sentNote = '';
   }
 
   const partial = (food.meals_uncounted || 0) > 0;
@@ -322,7 +353,9 @@ export function eveningNotification({ facts = {}, balance = null } = {}) {
   }
 
   if (balance?.known && (facts.logged || clauses.length)) {
-    clauses.push(`BURN ~${Math.round(balance.calories_out).toLocaleString('en-US')}${balance.active_source === 'awaiting_device' ? ' REST ONLY' : ''}`);
+    const burnFloor = lag && burnLeansOnWatch(balance);
+    clauses.push(`BURN ~${Math.round(balance.calories_out).toLocaleString('en-US')}${balance.active_source === 'awaiting_device' ? ' REST ONLY' : burnFloor ? `+${sentNote}` : ''}`);
+    if (burnFloor) sentNote = '';
   }
   if (facts.training_week?.target != null) {
     clauses.push(`WEEK ${facts.training_week.done || 0}/${facts.training_week.target}`);

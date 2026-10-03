@@ -15323,9 +15323,11 @@ await test('every surface that quotes a stale watch figure says when it is from'
   assert.match(spokenBrief({ day: { device: { steps: 8020, fresh: stale }, food: {} } }), /8,020 steps as of 6:01pm\./);
   assert.match(spokenBrief({ day: { device: { steps: 8020, fresh }, food: {} } }), /8,020 steps\./);
   // The 8pm close, long and on the lock screen.
-  assert.match(eveningReceipt({ facts: { device: { steps: 8020, fresh: stale } } }) || '', /8,020 steps \(as of 6:01pm\)/);
-  assert.match(String(eveningNotification({ facts: { device: { steps: 8020, fresh: stale } } })), /STEPS 8,020@6:01P/);
-  assert.ok(!/@/.test(String(eveningNotification({ facts: { device: { steps: 8020, fresh } } }))), 'a current count was stamped');
+  // (The close's form changed on 2 October: "@6:01P" was true and read as
+  // Wrought getting the sum wrong — the next test pins what replaced it.)
+  assert.match(eveningReceipt({ facts: { device: { steps: 8020, fresh: stale } } }) || '', /at least 8,020 steps — that is the phone's last send, at 6:01pm/);
+  assert.match(String(eveningNotification({ facts: { device: { steps: 8020, fresh: stale } } })), /STEPS 8,020\+ \(PHONE LAST SENT 6:01P\)/);
+  assert.ok(!/LAST SENT|\+/.test(String(eveningNotification({ facts: { device: { steps: 8020, fresh } } }))), 'a current count was stamped');
   // The morning: a yesterday the phone stopped reporting at 6pm is short.
   const out = morningBrief({ facts: {}, flags: [], yesterday: { logged: true, device: { fresh: { short: true, final: false, at: '6:01pm' } } },
     yesterdayBalance: { known: true, calories_out: 3100 } });
@@ -15335,6 +15337,156 @@ await test('every surface that quotes a stale watch figure says when it is from'
   const scored = [{ scored: true, metric: 'steps', goal: '10k steps', target: 10000, actual: 4120, unit: '', percent: 41, direction: 'at_least' }];
   const al = dueAlerts({ rules: [rule], day: { device: { fresh: { stale: true, at: '9:12am' } } }, scored, hour: 16 });
   assert.match(al[0]?.body || '', /4,120 of 10,000 \(as of 9:12am\) — 41% of 10k steps/);
+});
+
+await test('a close built on a phone that went quiet reads as a floor, and the morning puts it right', async () => {
+  // 2 October, 8:04pm: the lock screen said "STEPS 5,075/10k@3:26P" while the
+  // founder's wrist said 10,529. The phone's last send was 3:26pm; the close
+  // scored half a day as the day, and nothing ever said the rest arrived.
+  const { eveningReceipt, eveningNotification } = await import('../netlify/functions/lib/voice.js');
+  const { closeCorrection, closeQuote, closeQuoted, lastCloseFor, morningCorrection, morningBrief, morningNotification } =
+    await import('../netlify/functions/lib/morning.js');
+  const { deviceFreshness } = await import('../netlify/functions/lib/wrought.js');
+  const tz = 'America/Toronto';
+  // The real stamp, from the real function: a 3:26pm send read at the 8pm close.
+  const stale = deviceFreshness({ asOf: '2026-10-02T19:26:49Z', timezone: tz, now: new Date('2026-10-03T00:00:52Z'), open: true, source: 'wrought_ios' });
+  assert.equal(stale.at, '3:26pm'); assert.ok(stale.stale && stale.minutes_old >= 90);
+  const facts = {
+    logged: true, device: { steps: 5075, fresh: stale },
+    goals: [{ metric: 'steps', scored: true, actual: 5075, target: 10000 }],
+    training_week: { done: 0, target: 3, say: '0 of 3 this week.' },
+  };
+  const watch = { known: true, calories_out: 2950, active_source: 'device' };
+
+  // ── The close. A floor, the goal kept, and whose clock it is on — said once.
+  const lock = eveningNotification({ facts, balance: watch });
+  assert.equal(lock, 'STEPS 5,075+/10k (PHONE LAST SENT 3:26P) · BURN ~2,950+ · WEEK 0/3');
+  // No steps goal: the count clause carries the send time, the burn only the "+".
+  const noGoal = eveningNotification({ facts: { ...facts, goals: [] }, balance: watch });
+  assert.equal((noGoal.match(/LAST SENT/g) || []).length, 1, noGoal);
+  // No steps at all: the burn carries the send time instead.
+  assert.match(eveningNotification({ facts: { logged: true, device: { fresh: stale } }, balance: watch }), /BURN ~2,950\+ \(PHONE LAST SENT 3:26P\)/);
+  // A logged shift over a stale watch is a floor too — the watch may pass it.
+  assert.match(eveningNotification({ facts, balance: { ...watch, active_source: 'logged_over_device' } }), /BURN ~2,950\+/);
+  // A burn that does not lean on the watch is not a floor.
+  assert.match(eveningNotification({ facts, balance: { known: true, calories_out: 2950, active_source: 'activity_level' } }), /BURN ~2,950(?!\+)/);
+  // A current close is the plain scoreboard, exactly as before, long and short.
+  const now = { stale: false, final: false, at: '7:52pm', minutes_old: 8 };
+  const current = { ...facts, device: { steps: 9945, fresh: now }, goals: [{ metric: 'steps', scored: true, actual: 9945, target: 10000 }] };
+  assert.equal(eveningNotification({ facts: current, balance: watch }), 'STEPS 9,945/10k · BURN ~2,950 · WEEK 0/3');
+  assert.doesNotMatch(eveningReceipt({ facts: current, balance: watch }), /at least|only up to|so far/);
+  // The long form: the steps, the goal and the burn all say so, and what sends the rest.
+  const long = eveningReceipt({ facts, balance: watch });
+  assert.match(long, /at least 5,075 steps — that is the phone's last send, at 3:26pm, and it has not sent since, so the rest of the day is not in yet \(open the Wrought app on your phone to send the latest\)/);
+  assert.match(long, /steps: at least 5,075\/10,000 \(the phone last sent at 3:26pm\)/);
+  assert.match(long, /about 2,950 kcal burned — resting for the whole day, movement only up to the watch's 3:26pm send/);
+  assert.match(eveningReceipt({ facts, balance: { ...watch, active_source: 'logged_over_device' } }), /resting for the whole day and your logged work; the watch had only sent up to 3:26pm/);
+  // A stale figure already over the target is a met goal, not "at least".
+  assert.match(eveningReceipt({ facts: { ...facts, device: { steps: 10240, fresh: stale }, goals: [{ metric: 'steps', scored: true, actual: 10240, target: 10000 }] }, balance: watch }), /steps: 10,240\/10,000\./);
+
+  // ── The receipt the cron stamps, read back the way the morning reads it.
+  const quote = closeQuote(facts.device);
+  assert.deepEqual(quote, { steps: 5075, fresh: { stale: true, final: false, at: '3:26pm', minutes_old: stale.minutes_old } });
+  assert.deepEqual(closeQuote({}), { steps: null, fresh: null });
+  // The row the morning reads: the query names yesterday's evening receipt.
+  const calls = [];
+  const fakeDb = { from(t) { calls.push(['from', t]); const q = {
+    select(c) { calls.push(['select', c]); return q; }, eq(k, v) { calls.push(['eq', k, v]); return q; },
+    maybeSingle() { return Promise.resolve({ data: { delivery: { push: { sent_on: '2026-10-02', body: lock, quoted: quote } } }, error: null }); } }; return q; } };
+  const delivery = await lastCloseFor(fakeDb, 'u1', '2026-10-02');
+  assert.deepEqual(calls.filter(c => c[0] === 'from'), [['from', 'wrought_briefs']]);
+  assert.match(calls.find(c => c[0] === 'select')[1], /facts->_delivery/);
+  for (const [k, v] of [['user_id', 'u1'], ['local_date', '2026-10-02'], ['kind', 'evening']]) {
+    assert.ok(calls.some(c => c[0] === 'eq' && c[1] === k && c[2] === v), `the receipt read is not filtered on ${k}=${v}`);
+  }
+  // A failed read costs the correction, never the morning.
+  assert.equal(await lastCloseFor({ from() { throw new Error('down'); } }, 'u1', 'd'), null);
+  assert.equal(await lastCloseFor({ from: () => ({ select() { return this; }, eq() { return this; }, maybeSingle: () => Promise.resolve({ error: { message: 'x' } }) }) }, 'u1', 'd'), null);
+
+  const goals = [{ metric: 'steps', target_value: 10000, cadence: 'daily', direction: 'at_least' }];
+  // The phone closes the day after midnight (build 13's day_final).
+  const closedDay = { logged: true, device: { steps: 10529, fresh: deviceFreshness({ final: true, open: false, timezone: tz }) } };
+  const c = morningCorrection({ delivery, yesterday: closedDay, goals });
+  assert.deepEqual(c, { metric: 'steps', close: 5075, close_at: '3:26pm', now: 10529, final: true, now_at: null, target: 10000, met: true });
+  const out = morningBrief({ facts: {}, flags: [], yesterday: closedDay, yesterdayBalance: { known: true, calories_out: 3300 }, correction: c });
+  assert.match(out.text, /^Yesterday: about 3,300 kcal burned\. Yesterday's close had 5,075 steps — the phone's 3:26pm send, all it had then; the full day came to 10,529, which meets your 10,000-step goal\./);
+  assert.match(morningNotification({ yesterdayBalance: { known: true, calories_out: 3300 }, goals, week: { target: 3, done: 0 }, correction: c }).body,
+    /^YDAY BURN ~3,300 · YDAY STEPS 10,529 \(CLOSE HAD 5,075\) · STEPS 10k · WEEK 0\/3 · TAP/);
+  // The correction never displaces the training offer.
+  const offered = morningNotification({ yesterdayBalance: { known: true, calories_out: 3300 }, goals, week: { target: 3, done: 0 }, correction: c, planned: { name: 'S-Tier Training List', est_minutes: 50 } }).body;
+  assert.match(offered, /NEXT S-Tier Training List/);
+  // Exact counts, never "10k" for a count.
+  assert.match(morningNotification({ yesterdayBalance: { known: true, calories_out: 3300 }, correction: { ...c, now: 10000, close: 5000 } }).body, /YDAY STEPS 10,000 \(CLOSE HAD 5,000\)/);
+  // A late send that has not closed the day is a floor on the lock screen and dated in the long form.
+  const lateDay = { logged: true, device: { steps: 9800, fresh: { short: true, stale: true, final: false, at: '11:02pm' } } };
+  const late = morningCorrection({ delivery, yesterday: lateDay, goals });
+  assert.equal(late.now_at, '11:02pm');
+  assert.match(morningBrief({ facts: {}, yesterday: lateDay, yesterdayBalance: { known: true, calories_out: 3000 }, correction: late }).text,
+    /the phone has since sent 9,800 \(as of 11:02pm\)\./);
+  assert.match(morningNotification({ yesterdayBalance: { known: true, calories_out: 3000 }, correction: late }).body, /YDAY STEPS 9,800\+ \(CLOSE HAD 5,075\)/);
+  // A close delivered before receipts existed is read off the body it sent.
+  const legacy = { push: { sent_on: '2026-10-02', body: 'STEPS 5,075/10k@3:26P · WEEK 0/3' } };
+  assert.deepEqual(closeQuoted({ delivery: legacy }), { steps: 5075, fresh: { stale: true, final: false, at: '3:26pm', minutes_old: null } });
+  assert.equal(morningCorrection({ delivery: legacy, yesterday: closedDay, goals })?.close_at, '3:26pm');
+  assert.deepEqual(closeQuoted({ delivery: { push: { body: 'TRAIN 1×44m · STEPS 9,945/10k · BURN ~3,213' } } }), { steps: 9945, fresh: null });
+  assert.equal(closeQuoted({ delivery: { push: { body: 'BURN ~2,950 · WEEK 0/3' } } }), null);
+
+  // ── Nothing to correct is silence.
+  assert.equal(morningCorrection({ delivery: null, yesterday: closedDay, goals }), null, 'corrected a close nobody received');
+  assert.equal(closeCorrection({ closed: quote, delivered: false, yesterday: closedDay, goals }), null, 'corrected an undelivered close');
+  // An email under a care flag is the flag alone: it quoted nothing.
+  assert.equal(morningCorrection({ delivery: { email: { sent_on: 'x', quoted: { steps: null } } }, yesterday: closedDay, goals }), null, 'credited a flag email with steps');
+  // An email-only close that did quote steps is corrected like a push.
+  assert.equal(morningCorrection({ delivery: { email: { sent_on: 'x', quoted: quote } }, yesterday: closedDay, goals })?.close, 5075);
+  // An old email-only close has nothing to read back — never the rebuilt facts.
+  assert.equal(morningCorrection({ delivery: { email: { sent_on: 'x' } }, yesterday: closedDay, goals }), null);
+  // An hourly courier between wakes is not a phone gone quiet: a 7:35pm send
+  // at an 8pm close, a few hundred steps more by midnight, is an ordinary evening.
+  const hourly = { steps: 9820, fresh: { stale: true, final: false, at: '7:35pm', minutes_old: 25 } };
+  assert.equal(closeCorrection({ closed: hourly, delivered: true, yesterday: { device: { steps: 11400, fresh: { final: true } } }, goals: [] }), null, 'an hourly gap was corrected');
+  // A quiet phone and a few steps after it is a wobble, not a correction.
+  assert.equal(closeCorrection({ closed: quote, delivered: true, yesterday: { device: { steps: 5320, fresh: { final: true } } }, goals }), null, 'a wobble was corrected');
+  // ...but a verdict that flipped to met is worth the line, however the close stood.
+  const flipped = closeCorrection({ closed: { steps: 9950, fresh: { stale: false, at: '7:58pm', minutes_old: 2 } }, delivered: true, yesterday: { device: { steps: 10020, fresh: { final: true } } }, goals });
+  assert.equal(flipped.met, true);
+  assert.match(morningBrief({ facts: {}, yesterday: { logged: true }, correction: flipped }).text, /Yesterday's close had 9,950 steps; the full day came to 10,020, which meets your 10,000-step goal\./);
+  // A goal with no number is not a 0-step goal; a weekly or ceiling goal is never "met" here.
+  for (const g of [{ metric: 'steps', target_value: null, cadence: 'daily' }, { metric: 'steps', target_value: 10000, cadence: 'weekly' }, { metric: 'steps', target_value: 10000, direction: 'at_most' }]) {
+    const r = closeCorrection({ closed: quote, delivered: true, yesterday: closedDay, goals: [g] });
+    assert.equal(r.met, false, JSON.stringify(g)); assert.equal(r.target, null);
+  }
+  assert.doesNotMatch(morningNotification({ goals: [{ metric: 'steps', target_value: null }], week: { target: 3 } }).body, /STEPS 0/);
+
+  // ── The correction never costs the body's veto or the athlete's one thing.
+  const full = { facts: {}, flags: [], yesterday: closedDay, yesterdayBalance: { known: true, calories_out: 3300 }, goals,
+    week: { say: '0 of 3 this week.', target: 3, done: 0 }, athlete: { top: { say: 'Work on: engine.' } },
+    readiness: { known: true, state: 'strained', say: 'Resting HR is up — train lighter today.' }, planned: { name: 'Leg day' } };
+  assert.match(morningBrief({ ...full, correction: c }).text, /train lighter today/);
+  assert.match(morningBrief({ ...full, correction: c }).text, /Yesterday's close had 5,075/);
+
+  // ── Yesterday's burn on the morning lock screen: a floor when the phone stopped early.
+  assert.match(morningNotification({ yesterdayBalance: { known: true, calories_out: 2963, active_source: 'device' }, yesterdayShort: true }).body, /^YDAY BURN ~2,963\+ /);
+  assert.match(morningNotification({ yesterdayBalance: { known: true, calories_out: 2963, active_source: 'device' } }).body, /^YDAY BURN ~2,963 /);
+  assert.match(morningNotification({ yesterdayBalance: { known: true, calories_out: 2963, active_source: 'activity_level' }, yesterdayShort: true }).body, /^YDAY BURN ~2,963 /);
+
+  // ── The wiring, as relationships: the cron stamps closeQuote's receipt on
+  // both channels (the flag email quoting nothing), the morning reads
+  // yesterday's receipt and hands the correction to both mouths.
+  const nightly = decomment(readFileSync(new URL('../netlify/functions/brief-nightly.js', import.meta.url), 'utf8'));
+  assert.match(nightly, /const quoted = closeQuote\(out\.facts\?\.device\)/);
+  const marks = [...nightly.matchAll(/markDelivered\(userId, date, 'evening', '(push|email)'([^;]*)\);/g)];
+  assert.deepEqual(marks.map(m => m[1]).sort(), ['email', 'push']);
+  for (const m of marks) assert.match(m[2], /\bquoted\b/, `${m[1]} receipt does not carry the quote`);
+  assert.match(marks.find(m => m[1] === 'email')[2], /out\.flags\?\.length \? \{ steps: null \}/);
+  assert.match(nightly, /\.\.\.\(quoted \? \{ quoted \} : \{\}\)/);
+  assert.match(nightly, /lastCloseFor\(supabase, userId, yesterdayDate\),\s*\]\);/, 'the receipt read is not the last element of the morning batch');
+  assert.match(nightly, /, lastClose\] = await Promise\.all\(\[/, 'lastClose is not the last name the morning batch is destructured into');
+  assert.match(nightly, /morningCorrection\(\{[^}]*\byesterday\b[^}]*\}\)/);
+  for (const fn of ['morningBrief', 'morningNotification']) {
+    const call = nightly.match(new RegExp(`${fn}\\(\\{([^}]*)\\}\\)`));
+    assert.ok(call && /\bcorrection\b/.test(call[1]), `${fn} is not handed the correction`);
+  }
+  assert.match(nightly.match(/morningNotification\(\{([^}]*)\}\)/)[1], /yesterdayShort: !!yesterday\.device\?\.fresh\?\.short/);
 });
 
 await test('the connector hands over the watch time and is told to say it', async () => {
