@@ -258,9 +258,11 @@ export function eveningReceipt({ facts = {}, balance = null } = {}) {
   if (balance?.known && (facts.logged || actions.length)) {
     actions.push(balance.active_source === 'awaiting_device'
       ? `about ${Math.round(balance.calories_out).toLocaleString('en-US')} kcal burned at rest — the watch hasn't sent today, so movement isn't in it`
-      : lag && burnLeansOnWatch(balance)
-        ? `about ${Math.round(balance.calories_out).toLocaleString('en-US')} kcal burned so far — the watch's part only as far as its ${device.fresh.at} send`
-        : `about ${Math.round(balance.calories_out).toLocaleString('en-US')} kcal burned`);
+      : lag && balance.active_source === 'device'
+        ? `about ${Math.round(balance.calories_out).toLocaleString('en-US')} kcal burned — resting for the whole day, movement only up to the watch's ${device.fresh.at} send`
+        : lag && balance.active_source === 'logged_over_device'
+          ? `about ${Math.round(balance.calories_out).toLocaleString('en-US')} kcal burned — resting for the whole day and your logged work; the watch had only sent up to ${device.fresh.at}, so it may have counted more since`
+          : `about ${Math.round(balance.calories_out).toLocaleString('en-US')} kcal burned`);
   }
 
   // workout_days is read from weekSoFar below. Weekly scores in scoreGoals use

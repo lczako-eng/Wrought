@@ -3416,20 +3416,35 @@ as the day. *"@3:26P"* was true and read as Wrought getting the sum wrong.
   clause. The long receipt says *"at least 5,075 steps — that is the phone's
   last send, at 3:26pm…"* and scores a short goal as *"at least 5,075/10,000"*.
   A stale figure already over its target is a met goal and reads as one.
-- **The morning puts last night's close right** once the rest arrives:
-  *"Last night's close had 5,075 steps — the phone's 3:26pm send, all it had
-  then; the full day came to 10,529, which meets your 10,000-step goal"*, and
-  `YDAY STEPS 10,529 (CLOSE HAD 5,075)` on the lock screen, ahead of a second
-  goal. `closeCorrection()` speaks only when there is something to correct — a
-  close that was stale, or a steps verdict that flipped to met — never for an
-  ordinary evening's few hundred steps after a current close, because a close
-  is "so far" by nature and a correction every morning is noise. Only a close
-  that was actually delivered.
-- **What the close quoted is kept on the delivery receipt** (`_delivery.push.quoted`).
-  The evening row's facts are rebuilt by every later read of that day — the
-  brief tool, a preview send — so they cannot say what went out. A close
-  delivered before the receipt existed is read back off the body it sent
-  (`closeQuoted()`, our own format); facts are the last resort, email-only.
+- **The morning puts yesterday's close right** once the rest arrives:
+  *"Yesterday's close had 5,075 steps — the phone's 3:26pm send, all it had
+  then; the full day came to 10,529, which meets your 10,000-step goal"*,
+  folded into the Yesterday line so it never takes a slot from the week, the
+  athlete's one thing or the body's veto, and `YDAY STEPS 10,529 (CLOSE HAD
+  5,075)` on the lock screen — after NEXT, never instead of it, exact counts,
+  and a `+` while the day is not closed. *Yesterday's*, not *last night's*:
+  the close can be set to any hour.
+- **Only when there is something to correct.** `closeCorrection()` speaks when
+  the phone had gone QUIET — its last send 90 minutes or more before the close
+  (`QUIET_BEFORE_CLOSE_MINUTES`) and the day gained at least 500 steps or 5%
+  after it — or when a daily steps goal the close showed short ended met. The
+  first version keyed on "stale" (twenty minutes), and the review proved what
+  that costs: an hourly courier is twenty to sixty minutes stale at every
+  close, so the correction would have fired most mornings and pushed the
+  readiness line out of the brief. A goal with no number is not a 0-step goal
+  (`Number(null)` is 0 — *"meets your 0-step goal"* was one run away). Only a
+  close that was actually delivered.
+- **What the close quoted is kept on the delivery receipt**
+  (`_delivery.push.quoted`, built by `closeQuote()`, stamped on every
+  delivery). The evening row's facts are rebuilt by every later read of that
+  day — the brief tool, a preview send — so they cannot say what went out, and
+  nothing reads them for this. Under a care flag the email is the flag alone
+  and its receipt quotes nothing. A close delivered before receipts existed is
+  read back off the body it sent (`closeQuoted()`, our own format); an old
+  email-only close gets no correction rather than a guess. `lastCloseFor()` /
+  `morningCorrection()` are run by the harness against a fake query builder,
+  because the first guard grepped the call sites and seven realistic wiring
+  bugs passed it.
 - **Yesterday's burn on the morning lock screen gets the same floor** when the
   phone stopped early: `YDAY BURN ~2,963+`. The long form already said
   *"short"*; the lock screen, which is what he reads, did not.
@@ -5959,7 +5974,7 @@ self-reporting scale removes the most-abandoned manual entry), then Strava.
 
 ## Conventions
 
-- `npm test` runs `test/harness.mjs` — 826 offline tests, no network, no database.
+- `npm test` runs `test/harness.mjs` — 827 offline tests, no network, no database.
   Run it before every push. It covers the JSON-RPC envelope (which fails as an
   uninformative "could not connect" inside ChatGPT) and all the arithmetic
   (which fails as a confidently wrong number in somebody's verdict).

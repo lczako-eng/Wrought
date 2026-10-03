@@ -32,7 +32,7 @@ import { eveningNotification, eveningReceipt, plainBrief } from './lib/voice.js'
 import { energyBalance, weekSoFar, weekTargets, goalsToSet, readiness } from './lib/training.js';
 import { coachDay } from './lib/plan.js';
 import { dueAlerts } from './lib/alerts.js';
-import { morningBrief, morningNotification, middayBrief, morningDue, morningLink, pickDue, closeCorrection, closeQuoted } from './lib/morning.js';
+import { morningBrief, morningNotification, middayBrief, morningDue, morningLink, pickDue, closeQuote, lastCloseFor, morningCorrection } from './lib/morning.js';
 import { athleteRows, athleteRead } from './lib/athlete.js';
 
 const SEND_HOUR = 20;
@@ -406,14 +406,10 @@ export async function buildMorningFor(userId, profile, now = new Date()) {
       .select('name, est_minutes, times_used, last_used_on, created_at')
       .eq('user_id', userId).eq('active', true)
       .then(r => pickDue(r.data || [])),
-    // What last night's close quoted, and whether it went out — so the
-    // morning can put it right when the rest of the day arrived after it.
-    // Two keys of the stored facts, never the whole row; a failure costs the
+    // Yesterday's close as it was delivered — so the morning can put it right
+    // when the rest of the day arrived after it. A failure costs the
     // correction, never the morning.
-    supabase.from('wrought_briefs')
-      .select('device:facts->device, delivery:facts->_delivery')
-      .eq('user_id', userId).eq('local_date', yesterdayDate).eq('kind', 'evening').maybeSingle()
-      .then(r => (r.error ? null : r.data), () => null),
+    lastCloseFor(supabase, userId, yesterdayDate),
   ]);
   const flags = careFlags(recent, profile, { openDate: date });
   const week = weekSoFar(recent.days, { today: date, ...weekTargets(profile) });
@@ -455,11 +451,7 @@ export async function buildMorningFor(userId, profile, now = new Date()) {
   // here must never cost somebody their morning briefing.
   let coach = null;
   try { coach = coachDay({ profile, flags, days: recent.days, today: date, week, readiness: ready }); } catch { coach = null; }
-  const correction = closeCorrection({
-    closed: closeQuoted({ delivery: lastClose?.delivery, device: lastClose?.device }),
-    delivered: !!(lastClose?.delivery?.push || lastClose?.delivery?.email),
-    day: yesterday, goals,
-  });
+  const correction = morningCorrection({ delivery: lastClose, yesterday, goals });
   const out = morningBrief({
     facts: day, flags, yesterdayBalance, week, goals, yesterday, planned: dueRoutine, correction,
     goalsToSet: goalsToSet({ goals, targets: null, stepsAvg: null }),
@@ -469,7 +461,8 @@ export async function buildMorningFor(userId, profile, now = new Date()) {
   // muted permanently, and muted never comes back on.
   if (!out) return null;
 
-  const notice = morningNotification({ yesterdayBalance, goals, week, planned: dueRoutine, flags, coach, readiness: ready, correction });
+  const notice = morningNotification({ yesterdayBalance, goals, week, planned: dueRoutine, flags, coach, readiness: ready, correction,
+    yesterdayShort: !!yesterday.device?.fresh?.short });
   const message = {
     title: notice.title,
     body: notice.body,
@@ -654,18 +647,16 @@ export const handler = async () => {
 
       // The watch figure this close quotes, kept on the delivery receipt so
       // tomorrow's morning can say what the close had once the rest arrives.
-      const dev = out.facts?.device || {};
-      const quoted = dev.steps != null ? {
-        steps: dev.steps,
-        fresh: dev.fresh ? { stale: !!dev.fresh.stale, final: !!dev.fresh.final, at: dev.fresh.at || null } : null,
-      } : null;
+      // Stamped on every delivery, steps or none. Under a care flag the email
+      // is the flag alone and quotes nothing; the push is always the scorecard.
+      const quoted = closeQuote(out.facts?.device);
 
       if (delivered.email?.sent_on !== date) {
         const { data: auth } = await supabase.auth.admin.getUserById(userId);
         const mailedThis = await email(auth?.user?.email, `Wrought — ${out.date}`, out.verdict);
         if (mailedThis) {
           mailed++;
-          await markDelivered(userId, date, 'evening', 'email', null, quoted);
+          await markDelivered(userId, date, 'evening', 'email', null, out.flags?.length ? { steps: null } : quoted);
         }
       }
       if (delivered.push?.sent_on !== date) {
