@@ -32,7 +32,7 @@ import { eveningNotification, eveningReceipt, plainBrief } from './lib/voice.js'
 import { energyBalance, weekSoFar, weekTargets, goalsToSet, readiness } from './lib/training.js';
 import { coachDay } from './lib/plan.js';
 import { dueAlerts } from './lib/alerts.js';
-import { morningBrief, morningNotification, middayBrief, morningDue, morningLink, pickDue } from './lib/morning.js';
+import { morningBrief, morningNotification, middayBrief, morningDue, morningLink, pickDue, closeCorrection, closeQuoted } from './lib/morning.js';
 import { athleteRows, athleteRead } from './lib/athlete.js';
 
 const SEND_HOUR = 20;
@@ -72,7 +72,7 @@ async function deliveryFor(userId, date, kind) {
   return data?.facts?._delivery || {};
 }
 
-async function markDelivered(userId, date, kind, channel, message = null) {
+async function markDelivered(userId, date, kind, channel, message = null, quoted = null) {
   const { data } = await supabase.from('wrought_briefs')
     .select('facts, verdict').eq('user_id', userId).eq('local_date', date).eq('kind', kind).maybeSingle();
   const at = new Date().toISOString();
@@ -84,6 +84,9 @@ async function markDelivered(userId, date, kind, channel, message = null) {
         sent_on: date,
         sent_at: at,
         ...(message ? { title: message.title, body: message.body, url: message.url } : {}),
+        // What the delivered message quoted from the watch. The row's facts
+        // are rebuilt by every later read of the day; this is what went out.
+        ...(quoted ? { quoted } : {}),
       },
     },
   };
@@ -384,7 +387,7 @@ export async function buildMorningFor(userId, profile, now = new Date()) {
   // Everything here comes from the same computed facts the dashboard and the
   // connector read. Nothing in this file does arithmetic — a third mouth
   // relaying numbers computed once, which is the doctrine everywhere else.
-  const [day, yesterday, recent, goals, dueRoutine] = await Promise.all([
+  const [day, yesterday, recent, goals, dueRoutine, lastClose] = await Promise.all([
     dayFacts(userId, profile, date),
     dayFacts(userId, profile, yesterdayDate),
     rangeFacts(userId, profile, addDays(date, -29), date),
@@ -403,6 +406,14 @@ export async function buildMorningFor(userId, profile, now = new Date()) {
       .select('name, est_minutes, times_used, last_used_on, created_at')
       .eq('user_id', userId).eq('active', true)
       .then(r => pickDue(r.data || [])),
+    // What last night's close quoted, and whether it went out — so the
+    // morning can put it right when the rest of the day arrived after it.
+    // Two keys of the stored facts, never the whole row; a failure costs the
+    // correction, never the morning.
+    supabase.from('wrought_briefs')
+      .select('device:facts->device, delivery:facts->_delivery')
+      .eq('user_id', userId).eq('local_date', yesterdayDate).eq('kind', 'evening').maybeSingle()
+      .then(r => (r.error ? null : r.data), () => null),
   ]);
   const flags = careFlags(recent, profile, { openDate: date });
   const week = weekSoFar(recent.days, { today: date, ...weekTargets(profile) });
@@ -444,8 +455,13 @@ export async function buildMorningFor(userId, profile, now = new Date()) {
   // here must never cost somebody their morning briefing.
   let coach = null;
   try { coach = coachDay({ profile, flags, days: recent.days, today: date, week, readiness: ready }); } catch { coach = null; }
+  const correction = closeCorrection({
+    closed: closeQuoted({ delivery: lastClose?.delivery, device: lastClose?.device }),
+    delivered: !!(lastClose?.delivery?.push || lastClose?.delivery?.email),
+    day: yesterday, goals,
+  });
   const out = morningBrief({
-    facts: day, flags, yesterdayBalance, week, goals, yesterday, planned: dueRoutine,
+    facts: day, flags, yesterdayBalance, week, goals, yesterday, planned: dueRoutine, correction,
     goalsToSet: goalsToSet({ goals, targets: null, stepsAvg: null }),
     athlete, readiness: ready, coach,
   });
@@ -453,7 +469,7 @@ export async function buildMorningFor(userId, profile, now = new Date()) {
   // muted permanently, and muted never comes back on.
   if (!out) return null;
 
-  const notice = morningNotification({ yesterdayBalance, goals, week, planned: dueRoutine, flags, coach, readiness: ready });
+  const notice = morningNotification({ yesterdayBalance, goals, week, planned: dueRoutine, flags, coach, readiness: ready, correction });
   const message = {
     title: notice.title,
     body: notice.body,
@@ -636,19 +652,27 @@ export const handler = async () => {
       // a nag, and a nightly nag is how a product gets muted forever.
       if (!out.logged) continue;
 
+      // The watch figure this close quotes, kept on the delivery receipt so
+      // tomorrow's morning can say what the close had once the rest arrives.
+      const dev = out.facts?.device || {};
+      const quoted = dev.steps != null ? {
+        steps: dev.steps,
+        fresh: dev.fresh ? { stale: !!dev.fresh.stale, final: !!dev.fresh.final, at: dev.fresh.at || null } : null,
+      } : null;
+
       if (delivered.email?.sent_on !== date) {
         const { data: auth } = await supabase.auth.admin.getUserById(userId);
         const mailedThis = await email(auth?.user?.email, `Wrought — ${out.date}`, out.verdict);
         if (mailedThis) {
           mailed++;
-          await markDelivered(userId, date, 'evening', 'email');
+          await markDelivered(userId, date, 'evening', 'email', null, quoted);
         }
       }
       if (delivered.push?.sent_on !== date) {
         const pushedThis = await push(userId, profile, out);
         pushed += pushedThis.sent;
         if (pushedThis.sent) {
-          await markDelivered(userId, date, 'evening', 'push', pushedThis.message);
+          await markDelivered(userId, date, 'evening', 'push', pushedThis.message, quoted);
         }
       }
     } catch {

@@ -3387,6 +3387,58 @@ and the audit is why it should be a small one.
 Still open for the App Store, not for TestFlight: Apple Watch screenshots, and
 **in-app account deletion (guideline 5.1.1(v))**, which build 13 does not do.
 
+### 5,075 at eight, 10,529 on the wrist — a stale figure is a floor, and the morning puts it right
+
+2 October, 8:04pm. The lock screen: *"WROUGHT · DAY CLOSED · REVIEW — STEPS
+5,075/10k@3:26P · WEEK 0/3"*. His watch, the same minute: **10,529**. The
+founder, twice: *"Still not adding up."*
+
+**The arithmetic was right and the record was not.** The phone sent at 10:26am,
+12:15pm, 2:10pm and 3:26pm, then nothing until 6:57 the next morning. It was
+still build 12, whose observer queries live in `ContentView.onAppear`: once iOS
+evicts the app in the afternoon, HealthKit's wakes find nothing to answer them
+and stop. Build 12 also only ever sends TODAY, so 2 October stays at 5,075 for
+good — October 1 likewise stuck at 7,020 from 5pm. **Build 13 is the fix** —
+observers armed at launch, a send whenever the app opens, the last two finished
+days closed after midnight — and it needs the founder's Mac upload. Nothing on
+the server can reach into a phone, and HealthKit cannot be read while the phone
+is locked, so not even a silent push could guarantee a figure current to the
+minute at 8pm.
+
+What the server COULD fix was a figure four and a half hours old being scored
+as the day. *"@3:26P"* was true and read as Wrought getting the sum wrong.
+
+- **A stale device figure is a floor, said in words that put the gap on the
+  phone.** Steps, distance and active energy only go up through a day, so
+  `eveningNotification` says `STEPS 5,075+/10k (PHONE LAST SENT 3:26P)` and
+  `BURN ~2,950+` when the burn leans on the watch (`device` /
+  `logged_over_device`). The send time is said once, on the first device
+  clause. The long receipt says *"at least 5,075 steps — that is the phone's
+  last send, at 3:26pm…"* and scores a short goal as *"at least 5,075/10,000"*.
+  A stale figure already over its target is a met goal and reads as one.
+- **The morning puts last night's close right** once the rest arrives:
+  *"Last night's close had 5,075 steps — the phone's 3:26pm send, all it had
+  then; the full day came to 10,529, which meets your 10,000-step goal"*, and
+  `YDAY STEPS 10,529 (CLOSE HAD 5,075)` on the lock screen, ahead of a second
+  goal. `closeCorrection()` speaks only when there is something to correct — a
+  close that was stale, or a steps verdict that flipped to met — never for an
+  ordinary evening's few hundred steps after a current close, because a close
+  is "so far" by nature and a correction every morning is noise. Only a close
+  that was actually delivered.
+- **What the close quoted is kept on the delivery receipt** (`_delivery.push.quoted`).
+  The evening row's facts are rebuilt by every later read of that day — the
+  brief tool, a preview send — so they cannot say what went out. A close
+  delivered before the receipt existed is read back off the body it sent
+  (`closeQuoted()`, our own format); facts are the last resort, email-only.
+- **Yesterday's burn on the morning lock screen gets the same floor** when the
+  phone stopped early: `YDAY BURN ~2,963+`. The long form already said
+  *"short"*; the lock screen, which is what he reads, did not.
+
+**A test had pinned the confusing form** — `STEPS 8,020@6:01P` — as the guard
+for "every surface says when it is from". Repinned to the relationship (a
+stale figure carries a floor and the phone's send time), and every new guard
+was broken on purpose and failed.
+
 ### The shelf — the twenty-one listed, taken from in a tap, and in the morning
 
 The founder: *"this should go in your morning brief, and this should be added

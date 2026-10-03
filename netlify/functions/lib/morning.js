@@ -85,6 +85,79 @@ function compactGoal(goal) {
 }
 
 /**
+ * Last night's close against the day as it finally stood — pure.
+ *
+ * The 8pm close can only quote what the phone had sent by then. On 2 October
+ * that was 5,075 steps from a 3:26pm send while the founder's wrist said
+ * 10,529, and the close was the last word on the day: nothing ever said the
+ * rest arrived. Once the full day lands — the phone closing it after midnight,
+ * or a late send — the morning says what the close had and what the day came
+ * to, so the two numbers he saw finally add up on the record.
+ *
+ * Only when there is something to correct: the close quoted a stale figure
+ * (the phone had gone quiet), or the goal verdict flipped from short to met.
+ * Never for an ordinary evening's few hundred steps after a current close —
+ * a close is "so far" by nature, and a correction every morning is noise.
+ * Only a close that was actually delivered, or it corrects a message nobody
+ * received.
+ *
+ * @param closed     the device facts the delivered close was built from
+ * @param day        yesterday's dayFacts as it stands this morning
+ * @param goals      active goal rows
+ */
+export function closeCorrection({ closed = null, delivered = false, day = null, goals = [] } = {}) {
+  if (!delivered || !closed || closed.steps == null || day?.device?.steps == null) return null;
+  const was = Math.round(Number(closed.steps)), now = Math.round(Number(day.device.steps));
+  if (!Number.isFinite(was) || !Number.isFinite(now) || now - was < 100) return null;
+  const goal = (goals || []).find(g => g.metric === 'steps' && (g.cadence || 'daily') === 'daily'
+    && (g.direction || 'at_least') !== 'at_most' && Number.isFinite(Number(g.target_value)));
+  const target = goal ? Number(goal.target_value) : null;
+  const flipped = target != null && was < target && now >= target;
+  const lagged = !!(closed.fresh?.stale && !closed.fresh.final && closed.fresh.at);
+  if (!lagged && !flipped) return null;
+  const fresh = day.device.fresh || null;
+  return {
+    metric: 'steps', close: was, close_at: lagged ? closed.fresh.at : null,
+    now, final: !!fresh?.final, now_at: fresh && !fresh.final ? fresh.at || null : null,
+    target, met: target != null && now >= target,
+  };
+}
+
+/**
+ * What a delivered close quoted from the watch — pure. The delivery receipt
+ * carries it from now on; a close delivered before that is read back off the
+ * lock-screen body it sent ("STEPS 5,075/10k@3:26P"), our own format, because
+ * the row's facts are rebuilt by every later read of that day and would claim
+ * the close said something it never did. Facts are the last resort, for an
+ * email-only close with neither.
+ */
+export function closeQuoted({ delivery = null, device = null } = {}) {
+  for (const ch of ['push', 'email']) if (delivery?.[ch]?.quoted?.steps != null) return delivery[ch].quoted;
+  const body = delivery?.push?.body;
+  if (typeof body === 'string') {
+    const steps = body.match(/STEPS ([\d,]+)/);
+    if (!steps) return null;
+    const at = body.match(/STEPS [^·]*?(?:@|LAST SENT )(\d{1,2}:\d{2})([AP])/);
+    return {
+      steps: Number(steps[1].replace(/,/g, '')),
+      fresh: at ? { stale: true, final: false, at: `${at[1]}${at[2].toLowerCase()}m` } : null,
+    };
+  }
+  return delivery?.email && device?.steps != null ? { steps: device.steps, fresh: device.fresh || null } : null;
+}
+
+function correctionLine(c) {
+  if (!c) return null;
+  const n = v => Math.round(v).toLocaleString('en-US');
+  const had = `Last night's close had ${n(c.close)} steps${c.close_at ? ` — the phone's ${c.close_at} send, all it had then` : ''}`;
+  const came = c.final || !c.now_at
+    ? `the full day came to ${n(c.now)}`
+    : `the phone has since sent ${n(c.now)} (as of ${c.now_at})`;
+  const met = c.met && c.target != null ? `, which meets your ${n(c.target)}-step goal` : '';
+  return `${had}; ${came}${met}.`;
+}
+
+/**
  * The actual lock-screen shape for the morning appointment.
  *
  * The long `morningBrief` remains useful in email and a conversation. The
@@ -93,7 +166,7 @@ function compactGoal(goal) {
  * training choice. A care flag changes the title to REVIEW; it never replaces
  * those answers again.
  */
-export function morningNotification({ yesterdayBalance = null, goals = [], week = null, planned = null, flags = [], coach = null, readiness = null } = {}) {
+export function morningNotification({ yesterdayBalance = null, goals = [], week = null, planned = null, flags = [], coach = null, readiness = null, correction = null } = {}) {
   // Under a care flag the coach is ignored entirely — coaching stops, and the
   // flagged title stays byte-for-byte what it was.
   const c = flags.length ? null : coach;
@@ -113,8 +186,10 @@ export function morningNotification({ yesterdayBalance = null, goals = [], week 
   let next = offersNext ? `NEXT ${planned.name}` : null;
   let nextMin = offersNext && planned.est_minutes ? ` ${planned.est_minutes}m` : '';
   const action = 'TAP: WHAT ARE WE TRAINING?';
+  // Last night's close, put right: "YDAY STEPS 10,529 (CLOSE HAD 5,075)".
+  let fix = null;
   const build = () => {
-    const parts = [burn, deal.length ? deal.join(' / ') : null, weekPart, tag, next ? `${next}${nextMin}` : null].filter(Boolean);
+    const parts = [burn, fix, deal.length ? deal.join(' / ') : null, weekPart, tag, next ? `${next}${nextMin}` : null].filter(Boolean);
     const detail = parts.join(' · ');
     return detail ? `${detail} · ${action}` : action;
   };
@@ -128,6 +203,12 @@ export function morningNotification({ yesterdayBalance = null, goals = [], week 
   const want = { next, nextMin, tag };
   deal = fullDeal.slice(0, 1); next = null; nextMin = ''; tag = null;
   const fits = () => build().length <= 160;
+  // The correction is added first among the optional clauses: it answers a
+  // number the person already saw and doubted, which outranks a second goal.
+  if (correction) {
+    fix = `YDAY STEPS ${compactNumber(correction.now)} (CLOSE HAD ${compactNumber(correction.close)})`;
+    if (!fits()) fix = null;
+  }
   for (let i = 2; i <= fullDeal.length; i++) {
     const before = deal; deal = fullDeal.slice(0, i);
     if (!fits()) { deal = before; break; }
@@ -161,7 +242,7 @@ export function morningNotification({ yesterdayBalance = null, goals = [], week 
 export function morningBrief({
   facts = {}, flags = [], yesterdayBalance = null, week = null,
   goals = [], goalsToSet = null, yesterday = null, readiness = null, planned = null,
-  athlete = null, coach = null,
+  athlete = null, coach = null, correction = null,
 } = {}) {
   const lines = [];
 
@@ -178,6 +259,9 @@ export function morningBrief({
       ? ` — short: the phone's last send was ${yesterday.device.fresh.at}` : '';
     lines.push(`Yesterday: about ${Math.round(yesterdayBalance.calories_out).toLocaleString()} kcal burned${cut}.`);
   }
+  // 1b. LAST NIGHT'S CLOSE, put right when the rest of the day arrived after it.
+  const corrected = correctionLine(correction);
+  if (corrected) lines.push(corrected);
 
   // 2. TODAY'S EXPECTATIONS, read from goals the person actually set. These
   //    are targets, never an allowance and never a number invented on the lock
