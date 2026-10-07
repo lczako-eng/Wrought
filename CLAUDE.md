@@ -3266,6 +3266,41 @@ available on mobile), whether actions a Refresh finds arrive switched off
 shows Refresh after the Developer-Mode toggle was removed. On the phone he
 keeps the table either way.
 
+### The green box was ChatGPT's, not ours — and nothing a server sends can switch it on
+
+The founder, asked what "the fancy background" was, sent a 25 September
+screenshot: a table of foods, then a rounded box with a thin green border — a
+grey *"Estimated calories consumed"*, a large green *"1,165 kcal"*, a grey
+caveat underneath. *"Looks like this."* That is what he means by the look he
+wants on every reply.
+
+**It is ChatGPT's own rich-reply component, not markdown and not Wrought.**
+Wrought had no card on 25 September. ChatGPT's "genui" widgets are written by
+the MODEL into its own answer (a private-use-character reference, shown in
+leaked prompts as `【genui|…】`) and drawn natively by the client — most
+likely the calculator / "at-a-glance" visual that ships for quick arithmetic
+(GA on iOS since January 2026), possibly an `app_block` card. Which one is
+unconfirmed; that it is the model's choice, offered per account and rollout,
+is not. **No markdown reproduces it** — not a blockquote, not `> [!NOTE]`, not
+HTML — and a genui marker inside a tool result is not rendered. Asking the
+model to draw one would be intermittent at best and would have it retype
+Wrought's figures inside its own HTML, which is the rebuild-the-card failure.
+So nothing changed in `day_card`, and nothing should: the table stays the
+default, and Wrought's own card (after a Refresh on chatgpt.com in a browser)
+is the only branded frame Wrought controls.
+
+**The 1,165 was Wrought's own total.** The record holds exactly two rows for
+25 September, both written by the connector at 18:42Z — half a large poutine
+(850) and a slice of toast (315). ChatGPT drew its box around a figure the
+server had already summed; whether it relayed or re-added it is unknown.
+
+**After a Refresh, the iPhone is still not proven.** Reported iOS gaps for app
+cards: a card tool called after another tool in the same turn is not drawn,
+several cards in one turn fail at random, an `isError` result is not drawn,
+Voice hangs. The trace cannot settle it either — it carries no platform, the
+card's page is fetched without auth, and a cached template is drawn with no
+fetch at all. The only proof is a screenshot from his phone.
+
 ### A food confirmed with no figure — estimated before the reply, never confirmed as complete
 
 6 October: *"Logged in Wrought — Costco restaurant sausage at 3:17 PM"* with
