@@ -3180,13 +3180,15 @@ word in the slab, a forge rule, iron in a light host and a dark one alike.
   `initialize` and `tools/list` answer through one; `resources/*` never look —
   the page is a template, and an auth blink must not take the frame down. A
   `resources/read` trace line is the first proof a host fetched the card.
-- **The text still works without a card.** `DAY_CARD_NOTE` now opens: when
-  the card is drawn it IS the layout, do not paste the table under it; when it
-  is not, show `day_card` exactly as before. The risk is a model that pastes it
-  anyway — the default in doubt is the table, because losing the layout in a
-  text-only host is worse.
-- **A Refresh is needed.** Descriptor `_meta` reaches ChatGPT only after
-  Settings → Plugins → Wrought → Refresh and a new chat. The address carries
+- **The text still works without a card.** `DAY_CARD_NOTE` first opened with
+  the drawn card; since the "can't refresh" entry below it opens with *SHOW
+  day_card*, and the drawn panel is ONE EXCEPTION, only when the host has said
+  it drew it. The risk is a model that pastes the table under a drawn panel —
+  the default in doubt is the table, because losing the layout in a text-only
+  host (or a ChatGPT still holding the old tool list) is worse.
+- **A Refresh is needed.** Descriptor `_meta` reaches ChatGPT only after a
+  Refresh — on chatgpt.com in a web browser, Plugins → Wrought; the iPhone app
+  has none (see the next entry) — and a new chat. The address carries
   the page's hash, and any old hash is answered with today's page.
 - **Measured in Chromium, not seen on a phone**: nothing crosses the plate
   or the section it sits in (text runs included) at 320, 360, 390, 430, 560,
@@ -3201,35 +3203,43 @@ word in the slab, a forge rule, iron in a light host and a dark one alike.
   says WROUGHT, `prefersBorder:false` honoured or not, and the UI guidelines'
   dislike of custom backgrounds at directory review.
 
-### "Can't refresh, no way to do it" — the button is on the website, and the server was answering its first question wrong
+### "Can't refresh, no way to do it" — the button is on the website, and its first question now gets the spec's own answer
 
 The founder, the night the card shipped: *"Can't refresh no way to do it."* He
-was right, and the instruction he had been given was wrong in two places.
+was right: the instruction he had been given pointed at a button his phone does
+not have.
 
 - **The iPhone app has no Refresh.** Managing a custom plugin, Refresh included,
   is on chatgpt.com in a browser — Plugins → Wrought → Refresh (reported as
   *"Refresh tools"* on the page that replaced the old Settings pop-up in late
   September). Every page here said *"Settings → Plugins → Wrought → Refresh"*
-  as though it were wherever he was standing. connect.html and the dashboard
-  say *on chatgpt.com in a web browser* now, and the dashboard no longer offers
-  *Reconnect* as an alternative: OpenAI's own docs put tool changes on Refresh,
-  and a Reconnect renews one account's sign-in.
-- **The refresh itself would probably have failed.** ChatGPT's newer client
-  opens with `server/discover`, the 2026-07-28 era probe, and Wrought answered
-  every unknown method with HTTP 200 and `-32601` — the error a MODERN server
-  sends for an unknown method, so a dual-era client can take Wrought for a
-  modern server and never fall back to `initialize`. Other servers report
-  exactly that as ChatGPT's *"Error retrieving tool list"*. The spec's own
-  fallback rule (Streamable HTTP, *Backward Compatibility*): a 400 whose body is
-  NOT a recognised modern error means fall back. `discoverAnswer()` sends that
-  — 400, `-32000` *"Server not initialized"*, the body a legacy server built on
-  the official SDK sends, naming the versions Wrought speaks. Never a
-  DiscoverResult (one listing only legacy versions is reported to make ChatGPT
-  give up), never `-32022` or 404 (both mark a modern server). Only that method
-  changed; a client that never probes never sees it. **Spec-aligned and
-  unverified against ChatGPT** — the first Refresh is the test, and the trace
-  now logs `server/discover` with the protocol header (a date or *"other"*,
-  never the raw value).
+  as though it were wherever he was standing. connect.html, the dashboard's
+  never-written callout, the Account panel's copies note and
+  `docs/CUSTOM_GPT.md` say *on chatgpt.com in a web browser* now — the
+  Connection step for disconnecting extras stays where it was, because that
+  page IS in the app — and a test holds every sentence that says *choose
+  Refresh* to naming the browser. The dashboard no longer offers *Reconnect*
+  as an alternative: OpenAI's own docs put tool changes on Refresh, and a
+  Reconnect renews one account's sign-in.
+- **Its first question gets the spec's own fallback answer — and that is
+  hardening, not the fix.** ChatGPT's newer client opens a Refresh with
+  `server/discover`, the 2026-07-28 era probe; Wrought answered it like any
+  unknown method, HTTP 200 with `-32601`. The first write-up called that the
+  probable reason a Refresh would fail, on other servers' reports of
+  *"Error retrieving tool list"*. **The review disproved it by running the
+  official TypeScript client (2.1.0) against this handler**: the old answer
+  falls back to `initialize` and lists every tool, exactly like the new one.
+  The new answer stays because it is the spec's explicit trigger (Streamable
+  HTTP, *Backward Compatibility*: a 400 whose body is not a recognised modern
+  error means fall back) for a client stricter than the SDK — `discoverAnswer()`,
+  400 with `-32000` *"Server not initialized"*, the body a legacy server built
+  on the official SDK sends, naming the versions `initialize` accepts. Never
+  a DiscoverResult (one listing only legacy versions is reported to make
+  ChatGPT give up), never `-32022` or 404 (both mark a modern server). Only
+  that method changed. **If a Refresh fails, read the trace before blaming
+  this**: a `server/discover` line (now logged, with the protocol header as a
+  date or *"other"*, never raw) followed by no `initialize` is the only
+  evidence that would.
 - **The default in doubt is the table, and the note now says so first.**
   `DAY_CARD_NOTE` had opened with the skip case — *when Wrought's card is
   drawn, do NOT paste day_card* — and a ChatGPT still holding the tool list
@@ -3237,7 +3247,11 @@ was right, and the instruction he had been given was wrong in two places.
   have left him with neither. It opens with *SHOW day_card EXACTLY AS WRITTEN*
   now; the panel is ONE EXCEPTION, only when the host has said it drew it. Every
   note that said *"the card"* says `day_card`, because to a model reading about
-  a drawn panel two lines earlier, "the card" is the panel.
+  a drawn panel two lines earlier, "the card" is the panel. The sheet's own
+  read-it-out rule and brief's no-verdict line had become unconditional orders
+  to show the table and now defer to the note, and `WIDGET_DESCRIPTION` —
+  one description for every view, stamps included — says that a card showing
+  only a one-line stamp carries none of the day.
 
 **What the logs showed.** ChatGPT had not called Wrought once since 6pm the day
 before, so neither the card nor the calorie fix had reached a real reply. His
@@ -6192,7 +6206,7 @@ self-reporting scale removes the most-abandoned manual entry), then Strava.
 
 ## Conventions
 
-- `npm test` runs `test/harness.mjs` — 864 offline tests, no network, no database.
+- `npm test` runs `test/harness.mjs` — 865 offline tests, no network, no database.
   Run it before every push. It covers the JSON-RPC envelope (which fails as an
   uninformative "could not connect" inside ChatGPT) and all the arithmetic
   (which fails as a confidently wrong number in somebody's verdict).

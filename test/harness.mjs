@@ -114,7 +114,7 @@ await test('unknown method is -32601', async () => {
 await test('the 2026 era probe is answered as a legacy server, so a Refresh falls back to initialize', async () => {
   const res = await handler({ httpMethod: 'POST', headers: { 'MCP-Protocol-Version': '2026-07-28' },
     body: JSON.stringify(rpc('server/discover', { _meta: { 'io.modelcontextprotocol/protocolVersion': '2026-07-28' } }, 7)) });
-  assert.equal(res.statusCode, 400, 'a 200 here can read as a modern server and the client never falls back');
+  assert.equal(res.statusCode, 400, 'the spec\'s explicit fallback trigger is a 400 with a non-modern body');
   const body = JSON.parse(res.body);
   assert.equal(body.jsonrpc, '2.0');
   assert.equal(body.id, 7);
@@ -123,7 +123,29 @@ await test('the 2026 era probe is answered as a legacy server, so a Refresh fall
   assert.ok(!(body.error.code <= -32020 && body.error.code >= -32099), `${body.error.code} is an MCP-reserved (modern) code`);
   assert.notEqual(body.error.code, -32601);
   assert.match(body.error.message, /initialize/);
-  assert.match(body.error.message, /2025-11-25/);
+  // It names the versions initialize actually accepts — the relationship, not a date.
+  const named = body.error.message.match(/\d{4}-\d{2}-\d{2}/g) || [];
+  assert.ok(named.length, 'the probe answer names no version');
+  for (const v of named) {
+    const r = JSON.parse((await post(rpc('initialize', { protocolVersion: v }))).body).result;
+    assert.equal(r.protocolVersion, v, `the probe names ${v} and initialize does not speak it`);
+  }
+  const fallback = JSON.parse((await post(rpc('initialize', { protocolVersion: '1900-01-01' }))).body).result.protocolVersion;
+  assert.ok(named.includes(fallback), 'initialize answers a version the probe does not name');
+  // The probe leaves its trace line, with the header sanitised — the first
+  // Refresh is read from these, so they are run, not grepped.
+  const lines = [];
+  const log = console.log;
+  console.log = (...a) => { lines.push(a.join(' ')); };
+  try {
+    await handler({ httpMethod: 'POST', headers: { 'mcp-protocol-version': '2026-07-28' }, body: JSON.stringify(rpc('server/discover', {}, 8)) });
+    await handler({ httpMethod: 'POST', headers: { 'MCP-Protocol-Version': '<script>' }, body: JSON.stringify(rpc('server/discover', {}, 9)) });
+  } finally { console.log = log; }
+  const traces = lines.map(l => { try { return JSON.parse(l); } catch { return null; } }).filter(o => o && o.mcp === 'server/discover');
+  assert.equal(traces.length, 2, 'the probe leaves no trace line');
+  assert.equal(traces[0].v, '2026-07-28', 'the trace does not carry the protocol header');
+  assert.equal(traces[1].v, 'other');
+  assert.ok(!lines.join('\n').includes('<script>'), 'a raw header reached the log');
   // Everything a legacy client sends is exactly as it was.
   const init = await handler({ httpMethod: 'POST', headers: { 'MCP-Protocol-Version': '2026-07-28' }, body: JSON.stringify(rpc('initialize', { protocolVersion: '2025-06-18' })) });
   assert.equal(init.statusCode, 200);
@@ -16253,7 +16275,7 @@ await test('the day card is the layout the founder asked to keep — the food ta
   assert.match(fnOf('energyBalanceTool'), /cardRead\?\.flags\?\.length \? \{ care_flags: cardRead\.flags/);
   // With no written verdict, brief never also reads the receipt line by line.
   const br = fnOf('brief');
-  assert.match(br, /\(wholeDay\s*\?\s*'There is no written verdict\. Show day_card/);
+  assert.match(br, /\(wholeDay\s*\?\s*'There is no written verdict\. The day is the answer; from day_read\.say only what day_card does not carry/);
   // The card's read is one batch when the day is in hand.
   const fr = fnOf('fullDayRead');
   assert.match(fr, /known \? balanceFor\(userId, profile, date, known\)/);
@@ -17909,6 +17931,24 @@ await test('connect.html names the path he can see', () => {
   assert.match(src, /choose <em>Refresh<\/em>, then start a new chat/);
 });
 
+// "Can't refresh no way to do it": Refresh is on chatgpt.com in a browser and
+// not in the iPhone app, so every sentence that sends somebody to it says so.
+await test('every Refresh instruction names chatgpt.com in a web browser', () => {
+  const told = [
+    ['connect.html', page('connect.html')],
+    ['app.html', page('app.html')],
+    ['copies note (proven)', copiesNote({ name: 'ChatGPT', inUse: 3, oneRecord: true, email: 'me@example.com' })],
+    ['copies note (unproven)', copiesNote({ name: 'ChatGPT', inUse: 3, oneRecord: null, email: 'me@example.com' })],
+    ['docs/CUSTOM_GPT.md', readFileSync(new URL('../docs/CUSTOM_GPT.md', import.meta.url), 'utf8')],
+  ];
+  for (const [where, text] of told) {
+    const plain = String(text).replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').replace(/[*>]/g, '');
+    const sentences = plain.split(/(?<=[.!?])\s+/).filter(s => /\b(?:choose|select|press|tap) Refresh\b/.test(s));
+    assert.ok(sentences.length, `${where} no longer tells anybody to choose Refresh`);
+    for (const s of sentences) assert.match(s, /chatgpt\.com in a web browser/, `${where}: "${s.slice(0, 120)}" sends him to a Refresh the iPhone app does not have`);
+  }
+});
+
 // ── Wrought's card in the chat ─────────────────────────────────────────────
 //
 // The founder, 6 October: "it used to have a fancy background … I'd like to use
@@ -18960,7 +19000,11 @@ await test('the model is told the card is the layout when it is drawn, and the t
   assert.match(DAY_CARD_NOTE, /ONE EXCEPTION: if the host has told you that Wrought's own card was drawn for THIS reply/);
   assert.match(DAY_CARD_NOTE, /If you were not told, no panel was drawn: show day_card\. $/);
   assert.ok(DAY_CARD_NOTE.indexOf('do not paste') > DAY_CARD_NOTE.indexOf('EXACTLY AS WRITTEN'), 'the skip comes before the table');
-  assert.match(WCARD.WIDG.WIDGET_DESCRIPTION, /Do not paste day_card or repeat the card's figures/);
+  assert.match(WCARD.WIDG.WIDGET_DESCRIPTION, /When it shows the day, do not paste day_card or repeat the card's figures/);
+  // A stamp carries none of the day: the description must not tell a model to skip it.
+  assert.match(WCARD.WIDG.WIDGET_DESCRIPTION, /When it shows only a one-line stamp, it carries none of the day: answer as the reply's note says\./);
+  // The sheet's own read-it-out rule carries the same exception, in the same position as the note.
+  assert.match(SERVER_INSTRUCTIONS, /SHOW day_card after your first line, exactly as written \(or, when the host has told you it drew Wrought's own card, that card/);
   assert.match(SERVER_INSTRUCTIONS, /When the host has told you it drew Wrought's own card for the reply, that card is the layout — do not paste day_card under it as well; if you were not told, show day_card\./);
   // The calorie rule rides the log's input schema (reaches the Action uncut);
   // the log description itself is untouched.

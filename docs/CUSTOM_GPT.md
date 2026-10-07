@@ -7,8 +7,9 @@
 > itself could not be read from the build session.) An existing GPT keeps
 > working and this door stays up for it, but this is no longer the durable fix
 > for a new account. For ChatGPT, use the connector (a *plugin* now), keep one
-> account under Settings → Plugins → Wrought → *Connection*, and choose
-> *Refresh* after Wrought updates.
+> account under Settings → Plugins → Wrought → *Connection*, and after Wrought
+> updates choose *Refresh* on chatgpt.com in a web browser (Plugins → Wrought;
+> the iPhone app has no Refresh).
 
 The pasted-in connector (`https://wrought.fit/mcp`) works, and it has one
 structural weakness: ChatGPT does not reliably show the MCP instruction sheet
