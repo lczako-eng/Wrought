@@ -5131,8 +5131,8 @@ function notConnectedCallout() {
       connector is attached and is not being <em>used</em>: your AI is answering from the conversation instead
       of calling it.</p>
       <p class="sub dim">Two things fix it. ${/chatgpt/i.test(who)
-        ? `In ChatGPT open Settings → Plugins → Wrought and choose
-      <em>Refresh</em> (or <em>Reconnect</em> under <em>Connection</em>), so it picks up the current tools and instructions — ChatGPT keeps
+        ? `On chatgpt.com in a web browser (the iPhone app has no Refresh) open Plugins → Wrought and choose
+      <em>Refresh</em>, so it picks up the current tools and instructions — ChatGPT keeps
       its own copy until you do, and adding it a second time makes another copy of the
       same account, not a fix.${trainerLinkNames.some(n => !/chatgpt/i.test(n))
         ? ' Any other assistant here: reconnect it from its own settings rather than adding it again.' : ''}`

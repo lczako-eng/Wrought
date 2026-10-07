@@ -250,9 +250,9 @@ A RUNNING TOTAL IS THE WHOLE DAY, NEVER THE THING JUST LOGGED. "How many am I at
 
 SAYING SOMETHING WAS SAVED IS A CLAIM ABOUT THE RECORD, AND IT MAY ONLY EVER COME FROM A TOOL. Never say saved, added, logged, updated, changed, removed or "it's on your list" unless a tool call in THIS turn came back and said so. This has already gone wrong in production: "Added, Broski — S-Tier Home Workout is now saved" was answered without save_routine ever being called, and the account held one workout, not two. On a product whose entire promise is that it remembers, a claimed write that never happened is the worst failure there is — worse than a crash, because a crash is visible and this looks exactly like success. Nobody discovers it until they open the dashboard weeks later and their workout is not there. So: if they ask for something to be kept, CALL THE TOOL, in the same turn, before answering — "add that to my list", "save that", "keep it" are instructions, not conversation. Then quote what came back: save_routine returns on_file, which is every saved workout read from the database AFTER the write, and saying the count and the names is the only thing that tells a real save apart from a claimed one. If a call fails, say it failed and what to do — an honest error is worth ten confident sentences. Never write the confirmation first and the tool call later, and never let a long conversation about designing something stand in for having stored it.
 
-BOTH SIDES OF THE SUBTRACTION GET ITEMISED, NOT JUST THE EATING. "What did I do today", "how many calories", "what were those hours worth", "how am I doing on the day", "break it down", "where am I at today", "daily totals", "give me everything", "where do I stand", "including activity", "what's my net", "am I up or down" are answered from the receipt block — which brief, log_activity, energy_balance and get_day all return — and best of all from get_day's day_read — THE WHOLE DAY in one read: every item eaten with its calories, the session and its worth, the work and its worth, the steps, the burn added up, the net, each goal with its percentage, the week. When those words ride on a log, the log reply carries day_read too. ANY QUESTION WITH "INCLUDING ACTIVITY", "MY STEPS", "MY MOVE", "MY NET", OR "WHERE AM I AT" MEANS CALL get_day (or energy_balance, or brief) — that response carries the workout burn AND the steps AND the watch's active calories, so answering it from a food total alone, or saying a workout has no burn number, is the tool not being called rather than a number that does not exist. The server prices every logged workout from its minutes and their bodyweight when no watch measured it; there is always a number. When the reply carries day_card, SHOW THE CARD first, exactly as written, and read from day_read.say or the receipt only what the card does not already show (what each burn line is made of, each goal with its percentage, a session or shift's worth) — never a figure twice. Without a card, read it out LINE BY LINE: every item in with its own calories, then resting, training and work each with their own figure and what each is made of, then the two totals, then the net. Either way, do not collapse it into a sentence, do not quote only the totals, and never add anything up yourself — the lines are there so each one can be argued with separately, which is the only way an estimate is worth anything. LOGGING WORK ALWAYS COMES BACK WITH WHAT IT WAS WORTH: "logged four hours as activity" with no number is the feature failing, because the number is the entire reason to log it. And set_aside is not optional — a figure that looks smaller than somebody's own arithmetic reads as the log having been ignored, so say what was not counted and why.
+BOTH SIDES OF THE SUBTRACTION GET ITEMISED, NOT JUST THE EATING. "What did I do today", "how many calories", "what were those hours worth", "how am I doing on the day", "break it down", "where am I at today", "daily totals", "give me everything", "where do I stand", "including activity", "what's my net", "am I up or down" are answered from the receipt block — which brief, log_activity, energy_balance and get_day all return — and best of all from get_day's day_read — THE WHOLE DAY in one read: every item eaten with its calories, the session and its worth, the work and its worth, the steps, the burn added up, the net, each goal with its percentage, the week. When those words ride on a log, the log reply carries day_read too. ANY QUESTION WITH "INCLUDING ACTIVITY", "MY STEPS", "MY MOVE", "MY NET", OR "WHERE AM I AT" MEANS CALL get_day (or energy_balance, or brief) — that response carries the workout burn AND the steps AND the watch's active calories, so answering it from a food total alone, or saying a workout has no burn number, is the tool not being called rather than a number that does not exist. The server prices every logged workout from its minutes and their bodyweight when no watch measured it; there is always a number. When the reply carries day_card, SHOW day_card first, exactly as written, and read from day_read.say or the receipt only what day_card does not already show (what each burn line is made of, each goal with its percentage, a session or shift's worth) — never a figure twice. Without a day_card, read it out LINE BY LINE: every item in with its own calories, then resting, training and work each with their own figure and what each is made of, then the two totals, then the net. Either way, do not collapse it into a sentence, do not quote only the totals, and never add anything up yourself — the lines are there so each one can be argued with separately, which is the only way an estimate is worth anything. LOGGING WORK ALWAYS COMES BACK WITH WHAT IT WAS WORTH: "logged four hours as activity" with no number is the feature failing, because the number is the entire reason to log it. And set_aside is not optional — a figure that looks smaller than somebody's own arithmetic reads as the log having been ignored, so say what was not counted and why.
 
-THE DAY CARD IS THE LAYOUT — KEEP IT. Every log that is not a quiet capture, and get_day, log_activity, amend_last, structure_entries (when it fills in today), energy_balance and brief (when there is no written verdict) return day_card: markdown with the food table (each item, its time, its calories, the total underneath) and the energy balance (eaten, resting, training, work and moving about, the burn, the net), then steps, what is left and the week. The person asked for exactly this layout to stay. Show it EXACTLY as written, after your first line — never rebuild it, reorder it, drop or add a row, put a figure of your own in it, or turn a number into a range. A quiet capture carries no card and gets none. When the host draws Wrought's own card for the reply, that card is the layout — do not paste day_card under it as well.
+THE DAY CARD IS THE LAYOUT — KEEP IT. Every log that is not a quiet capture, and get_day, log_activity, amend_last, structure_entries (when it fills in today), energy_balance and brief (when there is no written verdict) return day_card: markdown with the food table (each item, its time, its calories, the total underneath) and the energy balance (eaten, resting, training, work and moving about, the burn, the net), then steps, what is left and the week. The person asked for exactly this layout to stay. Show it EXACTLY as written, after your first line — never rebuild it, reorder it, drop or add a row, put a figure of your own in it, or turn a number into a range. A quiet capture carries no card and gets none. When the host has told you it drew Wrought's own card for the reply, that card is the layout — do not paste day_card under it as well; if you were not told, show day_card.
 
 STEPS AND EVERY WATCH READING ARE READ, NEVER ASKED FOR. Steps, active calories, resting heart rate, distance, sleep — these arrive from the person's phone and sit on the record. energy_balance and get_day return them directly (device.steps, device.active_calories, and energy_balance's logged.steps). When somebody says "plus my steps", "include my steps", "add my steps", "what are my steps", or anything asking to fold movement in, CALL energy_balance (or get_day) and READ THE NUMBER OFF IT. NEVER ask them for their step count or any watch figure — the watch already sent it, and asking a connected person for data the connector is holding is the exact failure they will call out: "you should know that you're connected." The ONLY honest "no steps" answer is when the tool itself returns none because the watch has not synced today — and even then you say the watch has not sent yet and to open the app, you never ask them to count. This is not a number you are allowed to collect by asking; it is one you are required to look up.
 
@@ -1849,10 +1849,10 @@ async function log(args, user) {
     ...(bridged.deduped ? { sets_deduped: true } : {}),
     note: (hungry.length ? 'ESTIMATE_NOW FIRST: you named the food, so estimate it — call structure_entries with the ids in estimate_now before replying. Never confirm a food with no figure as if it were complete; if the food was never named ("had lunch"), say plainly it is not counted yet. ' : '') +
       (written.length ? 'OPEN WITH "Logged in Wrought" — say the phrase exactly, then each item with ALL its numbers exactly as `say` reads them: calories, protein, carbs (sugar, fibre), fat (saturated), and the time. ' + (cardRead
-      ? 'Then the day: ' + DAY_CARD_NOTE + 'The card IS the day broken down — never also read day_total.breakdown or the day in prose. '
+      ? 'Then the day: ' + DAY_CARD_NOTE + 'day_card IS the day broken down — never also read day_total.breakdown or the day in prose. '
       : 'Then the day broken down the same way — day_total.breakdown is every item of the day with its numbers and the total underneath; read it out, never only a calorie figure. ') + 'Those three words are the receipt: the person uses them to tell a write that landed from food you merely acknowledged. Never say "logged" or "saved" about food without "in Wrought", and never say "Logged in Wrought" unless this reply is in front of you. ' : '') +
       (cardRead && !written.length ? DAY_CARD_NOTE : '') +
-      (fullRead ? 'THEY ASKED WHERE THE DAY STANDS: read day_read.say out LINE BY LINE for everything the card does not already show — each goal with its percentage, what the session and the work were, what each burn row is made of, anything set aside — never the card\'s figures twice, never just the food total. ' : '') +
+      (fullRead ? 'THEY ASKED WHERE THE DAY STANDS: read day_read.say out LINE BY LINE for everything day_card does not already show — each goal with its percentage, what the session and the work were, what each burn row is made of, anything set aside — never its figures twice, never just the food total. ' : '') +
       (workLike.length && !args.quiet ? `WORK_CHECK FIRST: an entry that reads as a shift went in ${workAs} — ask in one clause whether it was work and how many hours ON TASK, and if so log_activity with those hours then undo_last naming it. ` : '') +
       (partial.length ? `MACROS_MISSING: ${partial.map(m => `"${m.summary}"`).join(' and ')} went in with calories and no ${[...new Set(partial.flatMap(m => m.missing))].join(', ')}. You named the food, so estimate the rest: call structure_entries NOW with each id and a detail holding ONLY the missing figures (protein_g, carbs_g, fat_g, and sugar_g, fibre_g, sat_fat_g if you can) and estimated: true — never resend the calories. Do it without asking${args.quiet ? ', silently' : ', then read each item back with all its numbers'}. ` : '') +
       (folded && !folded.error && !written.length
@@ -3246,7 +3246,7 @@ async function structureEntries(args, user) {
         : args.quiet ? 'Caught in passing: the figures are in. Say nothing about it, or a short clause at most, and return immediately to what they were actually talking about — no totals, no follow-up questions, no coaching. '
         : 'If this filled in food logged in this same turn, THIS is the confirmation: open with "Logged in Wrought:" then each item exactly as say reads it — its time and all its numbers — then the day. ') +
       (args.quiet ? '' : 'Housekeeping, not an event. One short clause at most — they already know what they said, and reciting it back at length makes dictating feel like it costs something. Then carry on with whatever they actually asked. ') +
-      (cardRead ? 'If this filled in food logged in this conversation, the card here is the day with those figures in it: ' + DAY_CARD_NOTE : ''),
+      (cardRead ? 'If this filled in food logged in this conversation, day_card here is the day with those figures in it: ' + DAY_CARD_NOTE : ''),
     next_actions: ['brief for the day\'s read now that it counts'],
   };
 }
@@ -3529,17 +3529,17 @@ async function brief(args, user) {
         (wholeDay
           // The card is the day's figures; the receipt read on top of it would
           // say every one twice.
-          ? 'If they asked where the day stands, the card after it is the answer — factual record, not coaching — and from day_read.say only what the card does not carry; nothing in either may become advice about eating less. '
+          ? 'If they asked where the day stands, day_card after it is the answer — factual record, not coaching — and from day_read.say only what day_card does not carry; nothing in either may become advice about eating less. '
           : 'If they asked where the day stands, the receipt may still be read after it — it is factual record, not coaching — but nothing in it may become advice about eating less. ') +
         'No coach_day while a care flag stands — plain delivery; if they ask where their coach went, say coach_paused.say.'
       : (wholeDay
         // No written verdict: the card IS the answer, and the receipt read
         // line by line under it would say every figure twice.
-        ? 'There is no written verdict. Show the card, then from day_read.say only what the card does not carry — each goal with its percentage, what a session or shift was — never the card\'s figures twice, never a range, never added up by you.'
+        ? 'There is no written verdict. Show day_card, then from day_read.say only what day_card does not carry — each goal with its percentage, what a session or shift was — never its figures twice, never a range, never added up by you.'
         : 'Deliver the verdict as written. It is already pitched to the bluntness they chose; do not soften it or add praise. Then read the receipt LINE BY LINE, both sides: each thing eaten with its own calories, then resting, training and work each with their figure, the two totals, the net. Every number comes off a receipt line — one figure each, never a range, never added up by you.') +
         (coach ? ' If coach_day is present, follow coach_day.note: its one line, once, in its register, after the facts.' : '') +
         (paused ? ' A care flag stands today, so the coach is paused: no coach line; if they ask where it went, say coach_paused.say.' : '')) +
-      (wholeDay ? ' ' + DAY_CARD_NOTE + (flags.length ? 'The flag still leads; the card comes after it.' : 'With no written verdict, the card leads.') : ''),
+      (wholeDay ? ' ' + DAY_CARD_NOTE + (flags.length ? 'The flag still leads; day_card comes after it.' : 'With no written verdict, day_card leads.') : ''),
     playbook: 'STANDING ORDER: if they now say they are going to, at, or heading to the gym — or name a workout — call suggest_workout or start_session IN THAT TURN. Encouragement without the tool call loses the session.',
     next_actions: ['progress for the trend and the training matrix', 'whats_next for the immediate move', 'suggest_workout if they are training today'],
   };
@@ -3641,7 +3641,7 @@ async function getDay(args, user) {
       ? 'Care flags are up — they lead, and their guidance is followed exactly: quote no figure of what is left to eat and coach nothing down. The day itself is factual record and may be read after the flag. '
       : '') + (targets
       ? 'No daily calorie target is set. If they ask what they are allowed, quote the COMPUTED figures in no_target_set exactly — never a number of your own and never a range you rounded to. '
-      : '') + DAY_CARD_NOTE + 'Under it, from day_read.say, whatever the card does not already show — never the card\'s figures twice. Reading day_read: ' + full.read.note,
+      : '') + DAY_CARD_NOTE + 'Under it, from day_read.say, whatever day_card does not already show — never its figures twice. Reading day_read: ' + full.read.note,
     next_actions: day.logged ? ['brief for the verdict', 'undo_last if something is wrong'] : ['log to fill it in'],
   };
 }
@@ -6926,7 +6926,7 @@ export const resultMeta = (name, out, user) => (CARD_TOOLS.has(name)
  *   tool "wrought_account"    → ChatGPT read the profile
  *   link non-null             → ChatGPT forwards link_id
  */
-export function rpcTrace(msg, authUser) {
+export function rpcTrace(msg, authUser, headers) {
   const args = msg?.params?.arguments;
   const has = !!args && typeof args === 'object' && Object.prototype.hasOwnProperty.call(args, 'link_id');
   const name = msg?.method === 'tools/call' ? String(msg?.params?.name || '') : '';
@@ -6934,8 +6934,50 @@ export function rpcTrace(msg, authUser) {
            tool: !name ? null : Object.prototype.hasOwnProperty.call(IMPL, name) ? name : 'unknown',
            grant: authUser?.via?.grant || null,
            client: authUser?.via?.client_id ? String(authUser.via.client_id).slice(-8) : null,
-           link: has ? createHash('sha256').update(String(args.link_id)).digest('hex').slice(0, 8) : null };
+           link: has ? createHash('sha256').update(String(args.link_id)).digest('hex').slice(0, 8) : null,
+           v: protocolHeader(headers) };
 }
+
+/**
+ * The MCP-Protocol-Version header, for the trace only — a date or "other",
+ * never the raw value: like a tool name, it arrives before auth and a
+ * caller-supplied string is not something to write into the logs. A 2026-era
+ * version here is the client probing for the new protocol; a 2025 one is the
+ * handshake Wrought speaks.
+ */
+export function protocolHeader(headers) {
+  if (!headers || typeof headers !== 'object') return null;
+  const key = Object.keys(headers).find(k => k.toLowerCase() === 'mcp-protocol-version');
+  if (!key) return null;
+  return /^\d{4}-\d{2}-\d{2}$/.test(String(headers[key])) ? String(headers[key]) : 'other';
+}
+
+/**
+ * How Wrought answers the 2026-07-28 era probe. ChatGPT's newer client opens a
+ * Refresh with `server/discover`; the spec (2026-07-28, Streamable HTTP,
+ * "Backward Compatibility") tells a dual-era client to fall back to
+ * `initialize` when that request gets a 400 whose body is NOT a recognised
+ * modern error. What Wrought used to send — HTTP 200 with -32601 — is neither:
+ * -32601 is the error a MODERN server returns for an unknown method, so a
+ * client may read it as "modern server" and never fall back, which other
+ * servers report as ChatGPT's "Error retrieving tool list". So: 400, and the
+ * body a legacy server built on the official SDK sends before initialize
+ * (-32000, "Server not initialized"), naming the versions it does speak.
+ *
+ * Deliberately NOT a DiscoverResult (a result listing only legacy versions is
+ * reported to make ChatGPT give up), NOT -32022 (that marks a modern server)
+ * and NOT 404 (a 404 with -32601 is the modern unknown-method signal). Only
+ * this method: initialize, tools/list, tools/call and resources/* are exactly
+ * as they were, and a client that never sends server/discover never sees it.
+ */
+export const discoverAnswer = (id) => ({
+  statusCode: 400,
+  body: rpcError(id ?? null, -32000,
+    `Bad Request: Server not initialized — Wrought speaks MCP ${PROTOCOL_VERSIONS.join(', ')}; send initialize.`),
+});
+
+/** The methods that get a trace line. */
+export const TRACED = ['server/discover', 'initialize', 'tools/list', 'tools/call', 'resources/read'];
 
 /** How much a method needs to know who is calling. */
 export const authMode = m => (m === 'tools/call' ? 'required' : String(m).startsWith('resources/') ? 'none' : 'best_effort');
@@ -6985,8 +7027,13 @@ export const handler = async (event) => {
       if (mode === 'required') return unavailable(msg.id);
     }
   }
-  // A resources/read line is the first real-host proof a host fetched the card.
-  if (['initialize', 'tools/list', 'tools/call', 'resources/read'].includes(msg.method)) console.log(JSON.stringify(rpcTrace(msg, authUser)));
+  // A resources/read line is the first real-host proof a host fetched the card;
+  // a server/discover line is a dual-era client (ChatGPT's Refresh) probing.
+  if (TRACED.includes(msg.method)) console.log(JSON.stringify(rpcTrace(msg, authUser, event.headers)));
+  if (msg.method === 'server/discover') {
+    const d = discoverAnswer(msg.id);
+    return { statusCode: d.statusCode, headers: CORS, body: JSON.stringify(d.body) };
+  }
   const response = await handleRpc(msg, authUser);
   if (response && response.__unauthorized) return unauthorized(response.id);
 

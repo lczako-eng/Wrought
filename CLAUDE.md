@@ -3201,6 +3201,57 @@ word in the slab, a forge rule, iron in a light host and a dark one alike.
   says WROUGHT, `prefersBorder:false` honoured or not, and the UI guidelines'
   dislike of custom backgrounds at directory review.
 
+### "Can't refresh, no way to do it" — the button is on the website, and the server was answering its first question wrong
+
+The founder, the night the card shipped: *"Can't refresh no way to do it."* He
+was right, and the instruction he had been given was wrong in two places.
+
+- **The iPhone app has no Refresh.** Managing a custom plugin, Refresh included,
+  is on chatgpt.com in a browser — Plugins → Wrought → Refresh (reported as
+  *"Refresh tools"* on the page that replaced the old Settings pop-up in late
+  September). Every page here said *"Settings → Plugins → Wrought → Refresh"*
+  as though it were wherever he was standing. connect.html and the dashboard
+  say *on chatgpt.com in a web browser* now, and the dashboard no longer offers
+  *Reconnect* as an alternative: OpenAI's own docs put tool changes on Refresh,
+  and a Reconnect renews one account's sign-in.
+- **The refresh itself would probably have failed.** ChatGPT's newer client
+  opens with `server/discover`, the 2026-07-28 era probe, and Wrought answered
+  every unknown method with HTTP 200 and `-32601` — the error a MODERN server
+  sends for an unknown method, so a dual-era client can take Wrought for a
+  modern server and never fall back to `initialize`. Other servers report
+  exactly that as ChatGPT's *"Error retrieving tool list"*. The spec's own
+  fallback rule (Streamable HTTP, *Backward Compatibility*): a 400 whose body is
+  NOT a recognised modern error means fall back. `discoverAnswer()` sends that
+  — 400, `-32000` *"Server not initialized"*, the body a legacy server built on
+  the official SDK sends, naming the versions Wrought speaks. Never a
+  DiscoverResult (one listing only legacy versions is reported to make ChatGPT
+  give up), never `-32022` or 404 (both mark a modern server). Only that method
+  changed; a client that never probes never sees it. **Spec-aligned and
+  unverified against ChatGPT** — the first Refresh is the test, and the trace
+  now logs `server/discover` with the protocol header (a date or *"other"*,
+  never the raw value).
+- **The default in doubt is the table, and the note now says so first.**
+  `DAY_CARD_NOTE` had opened with the skip case — *when Wrought's card is
+  drawn, do NOT paste day_card* — and a ChatGPT still holding the tool list
+  from before the card existed never draws one. A model guessing "drawn" would
+  have left him with neither. It opens with *SHOW day_card EXACTLY AS WRITTEN*
+  now; the panel is ONE EXCEPTION, only when the host has said it drew it. Every
+  note that said *"the card"* says `day_card`, because to a model reading about
+  a drawn panel two lines earlier, "the card" is the panel.
+
+**What the logs showed.** ChatGPT had not called Wrought once since 6pm the day
+before, so neither the card nor the calorie fix had reached a real reply. His
+*"can't refresh"* evening was spent on wrought.fit in iPhone Safari — three
+failed sign-ins, then *sign out on all devices*, then in. Signing out of the
+website never touches the connector's grants; all three were still live.
+
+**What is still unknown, and said to him as unknown**: whether the iPhone app
+draws a custom plugin's card at all (an OpenAI FAQ says MCP apps are not
+available on mobile), whether actions a Refresh finds arrive switched off
+(`wrought_account` is one he has never had), and whether his Plus plan still
+shows Refresh after the Developer-Mode toggle was removed. On the phone he
+keeps the table either way.
+
 ### A food confirmed with no figure — estimated before the reply, never confirmed as complete
 
 6 October: *"Logged in Wrought — Costco restaurant sausage at 3:17 PM"* with
@@ -6141,7 +6192,7 @@ self-reporting scale removes the most-abandoned manual entry), then Strava.
 
 ## Conventions
 
-- `npm test` runs `test/harness.mjs` — 863 offline tests, no network, no database.
+- `npm test` runs `test/harness.mjs` — 864 offline tests, no network, no database.
   Run it before every push. It covers the JSON-RPC envelope (which fails as an
   uninformative "could not connect" inside ChatGPT) and all the arithmetic
   (which fails as a confidently wrong number in somebody's verdict).
