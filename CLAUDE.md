@@ -3104,6 +3104,173 @@ day"*. **A rule enforced on one surface of a reply is not enforced.**
 - **The calendar rounds each item before summing,** as `dayFacts` does, so
   the square and the card cannot differ by a calorie.
 
+### The Wrought card in ChatGPT — the reply framed, the day drawn, nothing the model can contradict
+
+`lib/widgets.js` + `lib/widget_runtime.js` + `dayModel` / `dayMarkdown` /
+`dayView` in `lib/dayread.js` + `resources/*` and `resultMeta` in `mcp.js`.
+The founder, 6 October: *"it used to have a fancy background … I'd like to use
+Wrought colours. It should be so distinctive [that it] tells you, in like a
+framing and so forth, that it's using the connector."* So the seven tools that
+carry the day (`log`, `get_day`, `log_activity`, `amend_last`,
+`structure_entries`, `energy_balance`, `brief`) name an MCP Apps template, and
+ChatGPT and Claude draw Wrought's own card under the reply: the W tile, the
+word in the slab, a forge rule, iron in a light host and a dark one alike.
+
+- **The view rides in the result's `_meta['wrought/card']`, never in the text
+  and never in `structuredContent`.** The model reads exactly what it read
+  before — zero extra tokens, nothing new to contradict — and Claude Code,
+  which hands the model `structuredContent` INSTEAD of the text, is not given a
+  partial object. A tool attaches its view under a Symbol (`CARD`), which
+  `JSON.stringify` never writes; `resultMeta` moves it to `_meta` on the
+  success, the catch and the membership gate alike. The Actions door reads
+  `content[0].text` only and never sees it. **Unverified in a real host**: if
+  `_meta` is dropped, the card draws the header alone — still the frame.
+- **One decision, two renderers.** `dayModel` makes every call the markdown
+  card made (labels, the withheld net, "not counted yet", captions, notes);
+  `dayMarkdown` prints it as the table, `dayView` hands the same strings to the
+  card, and `cardFields` builds both from ONE model, so a reply cannot carry one
+  without the other. The 24 day-card tests run unchanged; a test holds the
+  card's view to the model's, whole — a substring check passed with the Eaten
+  row dropped and "Net so far" cut to "Net". The one caption that differs is
+  the table's dash legend: the card draws no dash, so it says which items are
+  missing macros in words.
+- **The card computes nothing.** Every leaf is a string, a boolean or null;
+  the only numbers are a bar's `share` and a ring's `arc`, clamped 0–100 on the
+  server (the bar off `macroSplit`, now in `wrought.js` beside the dashboard's
+  use of it). The script has no `Math.`, no `.length`, no formatting; a test
+  turns every digit in a view into a letter and finds none drawn.
+- **A stamp never claims a write.** A quiet capture gets a one-strip LOGGED
+  stamp with the item and nothing else; a failure is NOT SAVED (a write) or NO
+  ANSWER (a read) in the server's own sentence; anything with no view of its
+  own is the header alone. The invocation lines say *Writing to Wrought…* /
+  *Wrought replied* — never "logged", because they show whatever happened. A
+  stamp has no foot and no door, so its view carries neither the account nor
+  a link: **the view carries only what is drawn**, and a test renders every
+  string leaf of every view as a sentinel and finds each one on the page,
+  escaped.
+- **Neither door wipes the other's card.** ChatGPT speaks both the MCP Apps
+  bridge and `window.openai`; the first version redrew from `openai:set_globals`
+  on every height change and from every `tool-result`, so one door's
+  unreadable envelope (the nesting is ChatGPT's and unverified) erased the card
+  the other had drawn. Only a view actually read out of an update redraws.
+- **One row on its own, several in the table.** The just-logged block shows a
+  write of ONE row; a catch-up's meals are marked in the day's table instead
+  (`justBlock`), and only what the table does not hold — a weigh-in, another
+  day's entry — is listed again. A seven-meal flush drawn twice was 1,060px at
+  390.
+- **A care flag is a badge, not a band** — the lead engineer's call over the
+  spec. REVIEW in amber outline beside the badge, the human sentence small at
+  the foot, and on an unprompted reply one held line in place of the net and
+  what is left. The rings stay — steps and protein are record — except the
+  intake ring, which is the "at 80% of target" message a flag silences. A food
+  ring is never drawn off a sum with no figure behind it: that ring would read
+  0%. **No review button**: the first version's *Review those days* opened
+  `app.html#care-review`, and the dashboard has no review screen — the review
+  is a sentence to the assistant (`review_intake_days`) — so it landed on the
+  top of the dashboard with nothing to review. `writtenFlag()` in `voice.js` is
+  the card's form of the sentence: *"To review Oct 1 and Oct 2, say which of
+  those days were fully logged…"*, never the lock screen's *"Tap to review"*
+  on a card with nothing to tap. **A door is a claim that something is behind
+  it.**
+- **Model-only, every tool.** A card may call any tool whose visibility
+  includes "app"; all forty-odd are stamped `['model']` after the array, and
+  the card posts nothing but the handshake, its size and an open-link to
+  `https://wrought.fit/`.
+- **Auth by method.** `tools/call` still needs a verdict (503 on an outage);
+  `initialize` and `tools/list` answer through one; `resources/*` never look —
+  the page is a template, and an auth blink must not take the frame down. A
+  `resources/read` trace line is the first proof a host fetched the card.
+- **The text still works without a card.** `DAY_CARD_NOTE` now opens: when
+  the card is drawn it IS the layout, do not paste the table under it; when it
+  is not, show `day_card` exactly as before. The risk is a model that pastes it
+  anyway — the default in doubt is the table, because losing the layout in a
+  text-only host is worse.
+- **A Refresh is needed.** Descriptor `_meta` reaches ChatGPT only after
+  Settings → Plugins → Wrought → Refresh and a new chat. The address carries
+  the page's hash, and any old hash is answered with today's page.
+- **Measured in Chromium, not seen on a phone**: nothing crosses the plate
+  or the section it sits in (text runs included) at 320, 360, 390, 430, 560,
+  600 and 720 in either host theme; a five-row logged card 816px at 390 — the
+  ≤820 budget only held after the rings moved under the balance, the section
+  title rode beside the figure and the macro key moved under the total. The
+  rings are equal `auto-fill` tracks, not the spec's fixed two columns: two
+  put that card 60px over budget. The figure never breaks (*"K / CAL"* at
+  560–600), and its caption wraps under it rather than running a five-digit
+  day's *BREAKDOWN* into the balance. A heavy day (six foods, a shift, a flag,
+  four rings) is about 990px at 390 and is not under budget. Open: ChatGPT's own app label above a card that already
+  says WROUGHT, `prefersBorder:false` honoured or not, and the UI guidelines'
+  dislike of custom backgrounds at directory review.
+
+### A food confirmed with no figure — estimated before the reply, never confirmed as complete
+
+6 October: *"Logged in Wrought — Costco restaurant sausage at 3:17 PM"* with
+the 570 kcal the row held left off, and a 1:02pm toast logged with no
+calories at all and confirmed exactly the same way. The gap read as part of
+the item (`toast — no calories or macros on it yet at 13:02`), the time
+trailed after it on a 24-hour clock, and the instruction to estimate sat a
+thousand characters down the note.
+
+- **`estimate_now` is the first of `log`'s own keys** whenever a named food
+  went in with no figure (`connected_accounts`, stamped by handleRpc when
+  ChatGPT's picker is in play, precedes it — the picker doctrine's order, kept),
+  and the note opens `ESTIMATE_NOW FIRST`: call
+  `structure_entries` with those ids before replying, send numbers (never a
+  range, "~" or a string) and `estimated: true`, then confirm off its `say`.
+  Never `amend_last`: it reaches only the newest row, its plain spread lets an
+  echoed null erase a figure, and it dropped the estimated label.
+- **The confirmation reads a time, then the figures, then the gap in words**:
+  *"toast at 1:02pm — not counted yet: no calories on it. That item counts for
+  nothing in today's total until it has a calorie figure."* The 12-hour clock
+  is `clock12` in `wrought.js`, shared with the card. What is left is withheld
+  while anything is uncounted, and the double period is gone.
+- **`needsMacros` reads the stored row and wants a NUMBER** — `"~400"`,
+  `"about 400"` and `""` are chased like a null.
+- **A day with nothing counted is unknown, not zero**: `dayReadout`'s IN line
+  and `in.total` (null), its NET line (*nothing with a calorie figure*), and
+  `dayFacts`' own sentence (*no calories on it yet*).
+- `structure_entries` and `amend_last` confirm with every number;
+  `amend_last` keeps the estimated label and, with no row today, passes the
+  reading on to `log` instead of losing it; `log_activity` says the day's burn
+  as the card words it (`burnPhrase`) — "about X out" had quoted half a burn
+  as the day.
+
+**The review ran the replies and found the gap in five more places**, each a
+shape of the same failure — a food read as counted when it is not, or a
+counted one read as not:
+
+- **Words in a figure field are no figure, everywhere.** `needsMacros` chased
+  `"~400"`, but `dayFacts` still rounded it through `Number()` to **0** — so one
+  reply said *no calories on it* and *Today so far: 0 kcal* about the same
+  toast, and the follow-up carrying the same words said *0 kcal* and stopped
+  chasing. `figureOf()` is the one rule now (the log rows, `meals_uncounted`,
+  `needsMacros`), `structure_entries` chases a food still without a number by
+  id exactly as `log` does, and `day_total.calories` is null when no item
+  carries a figure.
+- **Macros with no calories lead with the gap.** *"a sausage — 20g protein —
+  carbs, fat not on it"* read as a counted item missing two details.
+  `itemFigures()` says *not counted yet: no calories on it; 20g protein…* on
+  `log`, `amend_last` and `structure_entries` alike.
+- **Another day's entry keeps its figures.** `structure_entries` read figures
+  only off TODAY's log, so yesterday's dictated eggs — 380 kcal on the row —
+  came back *"no calories or macros on it yet"*, the prompt to log them twice.
+  It reads the row as just written now, and names the day.
+- **A quiet fill stays quiet**: the item, no *Today so far*, and the note is
+  the caught-in-passing one, never *"THIS is the confirmation"*.
+- **No net off nothing eaten, on a finished day too** — `dayReadout` AND the
+  receipt beside it in the same `get_day` reply, which still printed *"0 in −
+  3,179 out = 3,179 down"*. A black coffee is not a deficit either.
+
+**These replies are now RUN in the harness.** They cannot be built without a
+database, so their guards were greps of the source — and a grep passed every
+one of the above. `test/fakedb/` swaps `@supabase/supabase-js` for an
+in-memory stand-in by a module hook, in a child process (the harness's own
+no-environment run is untouched), and `scenarios.mjs` calls `log`,
+`structure_entries`, `amend_last`, `log_activity` and `get_day` through
+`handleRpc`. Still offline, still no database. **A test that greps the line
+it guards cannot tell a working reply from a broken one.**
+- The calorie rule also rides `log`'s input schema (`detail`), which reaches
+  the Action uncut; the 300-character `log` description is untouched.
+
 ### The standing coach shapes the day — rhythm and register, never food, never more
 
 `STYLE_DAYS` in `lib/voices.js` + `coachDay()` / `coachRegister()` /
@@ -5974,7 +6141,7 @@ self-reporting scale removes the most-abandoned manual entry), then Strava.
 
 ## Conventions
 
-- `npm test` runs `test/harness.mjs` — 827 offline tests, no network, no database.
+- `npm test` runs `test/harness.mjs` — 863 offline tests, no network, no database.
   Run it before every push. It covers the JSON-RPC envelope (which fails as an
   uninformative "could not connect" inside ChatGPT) and all the arithmetic
   (which fails as a confidently wrong number in somebody's verdict).

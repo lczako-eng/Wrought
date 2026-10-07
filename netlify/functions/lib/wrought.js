@@ -16,7 +16,7 @@
 
 import { createClient } from '@supabase/supabase-js';
 import { createHash, randomBytes } from 'node:crypto';
-import { clock as clock12 } from './timing.js';
+import { clock as minutesClock } from './timing.js';
 import { withVia } from './connections.js';
 
 export const SITE_URL = process.env.WROUGHT_SITE_URL || 'https://wrought.fit';
@@ -409,6 +409,10 @@ export function fastingSummary(rows = []) {
 // the dashboard and the coach all call this and therefore cannot disagree.
 
 const num = v => (Number.isFinite(+v) ? +v : 0);
+// A stored figure, or null when there is none: null, "" and words ("~400",
+// "about 400") are no figure at all. Number("") is 0 and Number(null) is 0, so
+// reading either through num() files a meal with no figure as a 0-kcal meal.
+const figureOf = v => (v == null || v === '' || !Number.isFinite(Number(v)) ? null : Math.round(Number(v)));
 
 // The running totals a phone or watch sends — the numbers that are only true
 // AS OF the moment they were sent. A heart rate is a reading with its own
@@ -477,7 +481,7 @@ export function deviceFreshness({ asOf = null, final = false, timezone = 'UTC', 
     if (date && localDateFor(timezone, at) > date) {
       return { final: true, short: false, stale: false, source, say: 'the full day, sent after it closed' };
     }
-    const when = clock12(localMinutesFor(timezone, at));
+    const when = minutesClock(localMinutesFor(timezone, at));
     return {
       final: false, short: true, stale: true, at: when, as_of: at.toISOString(), source,
       say: `short — the phone last sent this day at ${when}, so anything after that never reached it`,
@@ -490,7 +494,7 @@ export function deviceFreshness({ asOf = null, final = false, timezone = 'UTC', 
   const at = new Date(asOf);
   if (Number.isNaN(at.getTime())) return null;
   const minutes = Math.max(0, Math.round((now.getTime() - at.getTime()) / 60000));
-  const when = clock12(localMinutesFor(timezone, at));
+  const when = minutesClock(localMinutesFor(timezone, at));
   const ago = minutes < 2 ? 'just now'
     : minutes < 60 ? `${minutes} min ago`
     : minutes < 120 ? 'about an hour ago'
@@ -598,7 +602,10 @@ export async function dayFacts(userId, profile, date) {
   // today" reads as a fact about a day somebody ate on. Counting the silent
   // meals is what lets the verdict say "macros unknown for one of them"
   // instead of stating a number that is confidently wrong.
-  const mealsUncounted = meals.filter(e => e.detail?.calories == null).length;
+  // Words in the calories field ("~400") are no figure either — the same rule
+  // every item below is read by, or one reply says "no calories on it" and
+  // "0 kcal" about the same sausage.
+  const mealsUncounted = meals.filter(e => figureOf(e.detail?.calories) == null).length;
 
   // A low total can mean two completely different things: a complete day on
   // too little food, or an incomplete diary. The user is the only person who
@@ -669,7 +676,10 @@ export async function dayFacts(userId, profile, date) {
         // Every meal silent: the total is not zero, it is unknown, and saying
         // zero here is the single easiest way to be confidently wrong.
         : mealsUncounted === meals.length
-          ? `${meals.length} thing${meals.length === 1 ? '' : 's'} logged, no macros on ${meals.length === 1 ? 'it' : 'any of them'} yet — the total is unknown rather than zero.`
+          // CALORIES, not macros: the 6 October toast went in with no figure
+          // at all, and "no macros on it" read as a detail missing from a
+          // counted item rather than an item that counts for nothing.
+          ? `${meals.length} thing${meals.length === 1 ? '' : 's'} logged, no calories on ${meals.length === 1 ? 'it' : 'any of them'} yet — the total is unknown rather than zero.`
           : `${Math.round(food.calories)} kcal · ${Math.round(food.protein_g)}g protein · ${Math.round(food.carbs_g)}g carbs${
               [minor('sugar_g') != null ? `${minor('sugar_g')}g sugar` : null, minor('fibre_g') != null ? `${minor('fibre_g')}g fibre` : null].filter(Boolean).join(', ').replace(/^(.+)$/, ' ($1)')
             } · ${Math.round(food.fat_g)}g fat${minor('sat_fat_g') != null ? ` (${minor('sat_fat_g')}g saturated)` : ''}` +
@@ -787,13 +797,15 @@ export async function dayFacts(userId, profile, date) {
     log: evs.map(e => ({
       id: e.id, type: e.event_type, at: clockString(localMinutesFor(profile.timezone, new Date(e.occurred_at))),
       summary: e.summary, estimated: e.estimated,
-      calories:  e.detail?.calories  != null ? Math.round(num(e.detail.calories))  : null,
-      protein_g: e.detail?.protein_g != null ? Math.round(num(e.detail.protein_g)) : null,
-      carbs_g:   e.detail?.carbs_g   != null ? Math.round(num(e.detail.carbs_g))   : null,
-      fat_g:     e.detail?.fat_g     != null ? Math.round(num(e.detail.fat_g))     : null,
-      sugar_g:   e.detail?.sugar_g   != null ? Math.round(num(e.detail.sugar_g))   : null,
-      fibre_g:   e.detail?.fibre_g   != null ? Math.round(num(e.detail.fibre_g))   : null,
-      sat_fat_g: e.detail?.sat_fat_g != null ? Math.round(num(e.detail.sat_fat_g)) : null,
+      // A figure stored as words ("~400", "") is no figure: null, never the
+      // 0 that Number() makes of it.
+      calories:  figureOf(e.detail?.calories),
+      protein_g: figureOf(e.detail?.protein_g),
+      carbs_g:   figureOf(e.detail?.carbs_g),
+      fat_g:     figureOf(e.detail?.fat_g),
+      sugar_g:   figureOf(e.detail?.sugar_g),
+      fibre_g:   figureOf(e.detail?.fibre_g),
+      sat_fat_g: figureOf(e.detail?.sat_fat_g),
     })),
   };
 }
@@ -833,6 +845,56 @@ export function macroLine(x = {}) {
   if (f != null) parts.push(`${f}g fat${sf != null ? ` (${sf}g saturated)` : ''}`);
   const missing = [p == null ? 'protein' : null, cb == null ? 'carbs' : null, f == null ? 'fat' : null].filter(Boolean);
   return parts.join(' · ') + (missing.length ? ` — ${missing.join(', ')} not on it` : '');
+}
+
+/**
+ * One logged item's figures as a confirmation reads them — pure. A food or
+ * drink with no calorie figure says so FIRST, in words — "not counted yet: no
+ * calories on it" — then whatever macros it does carry. "20g protein — carbs,
+ * fat not on it" on its own read as a counted item missing two details: the 6
+ * October failure (a food confirmed as though it were complete) one field
+ * along. Anything else reads exactly as macroLine does.
+ */
+export function itemFigures(x = {}, { food = false } = {}) {
+  if (food && figureOf(x.calories) == null) {
+    const carries = ['protein_g', 'carbs_g', 'fat_g'].some(k => figureOf(x[k]) != null);
+    return `not counted yet: no calories on it${carries ? `; ${macroLine({ ...x, calories: null })}` : ''}`;
+  }
+  return macroLine(x);
+}
+
+/**
+ * "17:00" → "5:00pm". The one 12-hour clock for an HH:MM stamp off the log, so
+ * the log confirmation, the day card and the drawn card read a time the same
+ * way as the watch's "as of 6:01pm" beside them. Anything that is not HH:MM
+ * comes back as it was.
+ */
+export const clock12 = hhmm => {
+  const m = /^(\d{1,2}):(\d{2})$/.exec(String(hhmm || ''));
+  if (!m) return hhmm || '';
+  const h = Number(m[1]);
+  return `${h % 12 || 12}:${m[2]}${h < 12 ? 'am' : 'pm'}`;
+};
+
+/**
+ * The macro split of a day BY CALORIES, never grams — fat is 9 kcal a gram
+ * against 4, so a gram bar draws a high-fat day as a low-fat one. Sugar is a
+ * SUBSET of carbs, never a fourth slice: it rides as its own share of the carb
+ * block. One function for the dashboard's log (api-log) and Wrought's chat
+ * card, so the two bars are drawn off the same rule. Null with nothing to split.
+ */
+export function macroSplit(t = {}) {
+  const v = x => (Number.isFinite(+x) ? +x : 0);
+  const kcal = { protein: v(t.protein_g) * 4, carbs: v(t.carbs_g) * 4, fat: v(t.fat_g) * 9 };
+  const sum = kcal.protein + kcal.carbs + kcal.fat;
+  if (!sum) return null;
+  const pct = x => Math.round((x / sum) * 1000) / 10;
+  return {
+    protein_pct: pct(kcal.protein),
+    carbs_pct: pct(kcal.carbs),
+    fat_pct: pct(kcal.fat),
+    sugar_pct_of_carbs: v(t.carbs_g) ? Math.round((v(t.sugar_g) / v(t.carbs_g)) * 1000) / 10 : null,
+  };
 }
 
 // ── Reading a stretch of days ───────────────────────────────────────────────
@@ -1416,8 +1478,13 @@ export function needsMacros(written = [], events = []) {
   const out = [];
   written.forEach((row, i) => {
     if (row.event_type !== 'food' && row.event_type !== 'drink') return;
-    const detail = events[i]?.detail || {};
-    if (detail.calories != null) return;
+    // THE STORED ROW WINS, and a figure has to be a NUMBER to count. A model
+    // that sends "~400", "about 400" or "" has sent words, and dayFacts reads
+    // words as no figure (figureOf) — so they are chased exactly like a null.
+    // The events the caller passed are the fallback for a row read back
+    // without detail.
+    const detail = row.detail ?? events[i]?.detail ?? {};
+    if (figureOf(detail.calories) != null) return;
 
     const items = Array.isArray(detail.items) ? detail.items : [];
     // Named if any item is a real food, or if there are no items at all but the
