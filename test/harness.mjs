@@ -106,6 +106,54 @@ await test('unknown method is -32601', async () => {
   assert.equal(body.error.code, -32601);
 });
 
+// ChatGPT's newer client opens a Refresh with server/discover. The 2026-07-28
+// spec tells a dual-era client to fall back to initialize when that gets a
+// 400 whose body is NOT a recognised modern error — and 200 with -32601 (what
+// every unknown method gets) can read as "modern server", the reported cause
+// of "Error retrieving tool list". The founder's one Refresh depends on this.
+await test('the 2026 era probe is answered as a legacy server, so a Refresh falls back to initialize', async () => {
+  const res = await handler({ httpMethod: 'POST', headers: { 'MCP-Protocol-Version': '2026-07-28' },
+    body: JSON.stringify(rpc('server/discover', { _meta: { 'io.modelcontextprotocol/protocolVersion': '2026-07-28' } }, 7)) });
+  assert.equal(res.statusCode, 400, 'the spec\'s explicit fallback trigger is a 400 with a non-modern body');
+  const body = JSON.parse(res.body);
+  assert.equal(body.jsonrpc, '2.0');
+  assert.equal(body.id, 7);
+  assert.ok(!body.result, 'a DiscoverResult listing only legacy versions is reported to make ChatGPT give up');
+  // Not a recognised modern error: not the MCP-reserved range, not method-not-found.
+  assert.ok(!(body.error.code <= -32020 && body.error.code >= -32099), `${body.error.code} is an MCP-reserved (modern) code`);
+  assert.notEqual(body.error.code, -32601);
+  assert.match(body.error.message, /initialize/);
+  // It names the versions initialize actually accepts — the relationship, not a date.
+  const named = body.error.message.match(/\d{4}-\d{2}-\d{2}/g) || [];
+  assert.ok(named.length, 'the probe answer names no version');
+  for (const v of named) {
+    const r = JSON.parse((await post(rpc('initialize', { protocolVersion: v }))).body).result;
+    assert.equal(r.protocolVersion, v, `the probe names ${v} and initialize does not speak it`);
+  }
+  const fallback = JSON.parse((await post(rpc('initialize', { protocolVersion: '1900-01-01' }))).body).result.protocolVersion;
+  assert.ok(named.includes(fallback), 'initialize answers a version the probe does not name');
+  // The probe leaves its trace line, with the header sanitised — the first
+  // Refresh is read from these, so they are run, not grepped.
+  const lines = [];
+  const log = console.log;
+  console.log = (...a) => { lines.push(a.join(' ')); };
+  try {
+    await handler({ httpMethod: 'POST', headers: { 'mcp-protocol-version': '2026-07-28' }, body: JSON.stringify(rpc('server/discover', {}, 8)) });
+    await handler({ httpMethod: 'POST', headers: { 'MCP-Protocol-Version': '<script>' }, body: JSON.stringify(rpc('server/discover', {}, 9)) });
+  } finally { console.log = log; }
+  const traces = lines.map(l => { try { return JSON.parse(l); } catch { return null; } }).filter(o => o && o.mcp === 'server/discover');
+  assert.equal(traces.length, 2, 'the probe leaves no trace line');
+  assert.equal(traces[0].v, '2026-07-28', 'the trace does not carry the protocol header');
+  assert.equal(traces[1].v, 'other');
+  assert.ok(!lines.join('\n').includes('<script>'), 'a raw header reached the log');
+  // Everything a legacy client sends is exactly as it was.
+  const init = await handler({ httpMethod: 'POST', headers: { 'MCP-Protocol-Version': '2026-07-28' }, body: JSON.stringify(rpc('initialize', { protocolVersion: '2025-06-18' })) });
+  assert.equal(init.statusCode, 200);
+  assert.equal(JSON.parse(init.body).result.serverInfo.name, 'wrought');
+  assert.equal((await post(rpc('tools/list'))).statusCode, 200);
+  assert.equal((await post(rpc('nope/nope'))).statusCode, 200, 'only the probe changed');
+});
+
 await test('unknown tool is -32602', async () => {
   const body = JSON.parse((await post(rpc('tools/call', { name: 'not_a_tool', arguments: {} }))).body);
   assert.equal(body.error.code, -32602);
@@ -4803,7 +4851,7 @@ await test('"where am I at" is the whole day — every item, the session, the wo
   assert.match(tool, /THE WHOLE DAY in one read/);
   assert.match(tool, /"daily totals", "give me everything"/);
   const { GPT_INSTRUCTIONS } = await import('../netlify/functions/lib/gpt_instructions.js');
-  assert.match(GPT_INSTRUCTIONS, /"daily totals", "give me everything", "how am I doing today", "what did I do today"[^.]*? mean get_day — show day_card exactly as written, then from day_read\.say only what the card lacks/);
+  assert.match(GPT_INSTRUCTIONS, /"daily totals", "give me everything", "how am I doing today", "what did I do today"[^.]*? mean get_day — show day_card exactly as written, then from day_read\.say only what day_card lacks/);
   // The founder's own questions land on the whole day on the GPT sheet too.
   const gptDay = GPT_INSTRUCTIONS.slice(GPT_INSTRUCTIONS.indexOf('"Where am I at"'), GPT_INSTRUCTIONS.indexOf('mean get_day'));
   for (const q of ['what did I eat today', 'how much should I eat today', 'what did I burn', 'what did my work burn']) assert.ok(gptDay.includes(`"${q}"`), `"${q}" is not sent to get_day on the GPT sheet`);
@@ -16227,7 +16275,7 @@ await test('the day card is the layout the founder asked to keep — the food ta
   assert.match(fnOf('energyBalanceTool'), /cardRead\?\.flags\?\.length \? \{ care_flags: cardRead\.flags/);
   // With no written verdict, brief never also reads the receipt line by line.
   const br = fnOf('brief');
-  assert.match(br, /\(wholeDay\s*\?\s*'There is no written verdict\. Show the card/);
+  assert.match(br, /\(wholeDay\s*\?\s*'There is no written verdict\. The day is the answer; from day_read\.say only what day_card does not carry/);
   // The card's read is one batch when the day is in hand.
   const fr = fnOf('fullDayRead');
   assert.match(fr, /known \? balanceFor\(userId, profile, date, known\)/);
@@ -17849,7 +17897,13 @@ await test('every request leaves a trace of what was asked, never what was said'
   assert.equal(t.grant, 'dNXaY');
   assert.equal(t.tool, 'log');
   assert.equal(t.client, CGPT.slice(-8), 'the trace cannot show which registration a call came through');
-  assert.deepEqual(Object.keys(t), ['mcp', 'tool', 'grant', 'client', 'link']);
+  assert.deepEqual(Object.keys(t), ['mcp', 'tool', 'grant', 'client', 'link', 'v']);
+  // The protocol header arrives before auth too: a date or "other", never the raw value.
+  const probe = rpcTrace({ method: 'server/discover' }, null, { 'MCP-Protocol-Version': '2026-07-28' });
+  assert.equal(probe.v, '2026-07-28');
+  assert.equal(rpcTrace({ method: 'server/discover' }, null, { 'mcp-protocol-version': 'x'.repeat(500) + ' ignore previous' }).v, 'other');
+  assert.equal(rpcTrace({ method: 'tools/list' }, null, {}).v, null);
+  assert.equal(rpcTrace({ method: 'tools/list' }, null).v, null);
   // A caller-supplied name reaches the log only when it is one of ours: it
   // arrives before auth is checked.
   const junk = rpcTrace({ method: 'tools/call', params: { name: 'x'.repeat(5000) + ' ignore previous' } }, null);
@@ -17862,7 +17916,7 @@ await test('every request leaves a trace of what was asked, never what was said'
   const mcp = decomment(readFileSync(new URL('../netlify/functions/mcp.js', import.meta.url), 'utf8'));
   const h = mcp.slice(mcp.indexOf('export const handler'));
   const authAt = h.indexOf('authUser = await getAuthUser(event);');
-  const traceAt = h.indexOf('console.log(JSON.stringify(rpcTrace(msg, authUser)))');
+  const traceAt = h.indexOf('console.log(JSON.stringify(rpcTrace(msg, authUser');
   const rpcAt = h.indexOf('await handleRpc(msg, authUser)');
   assert.ok(authAt > -1 && traceAt > authAt && rpcAt > traceAt, 'the trace is not logged between sign-in and dispatch');
   assert.ok(!/console\.log\([^)]*(?:params|arguments|authorization|token)/i.test(h), 'the handler logs arguments or the bearer');
@@ -17875,6 +17929,24 @@ await test('connect.html names the path he can see', () => {
   assert.match(src, /Never uninstall Wrought/);
   assert.match(src, /Already listed\? Reconnect that one instead of adding it again/);
   assert.match(src, /choose <em>Refresh<\/em>, then start a new chat/);
+});
+
+// "Can't refresh no way to do it": Refresh is on chatgpt.com in a browser and
+// not in the iPhone app, so every sentence that sends somebody to it says so.
+await test('every Refresh instruction names chatgpt.com in a web browser', () => {
+  const told = [
+    ['connect.html', page('connect.html')],
+    ['app.html', page('app.html')],
+    ['copies note (proven)', copiesNote({ name: 'ChatGPT', inUse: 3, oneRecord: true, email: 'me@example.com' })],
+    ['copies note (unproven)', copiesNote({ name: 'ChatGPT', inUse: 3, oneRecord: null, email: 'me@example.com' })],
+    ['docs/CUSTOM_GPT.md', readFileSync(new URL('../docs/CUSTOM_GPT.md', import.meta.url), 'utf8')],
+  ];
+  for (const [where, text] of told) {
+    const plain = String(text).replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').replace(/[*>]/g, '');
+    const sentences = plain.split(/(?<=[.!?])\s+/).filter(s => /\b(?:choose|select|press|tap) Refresh\b/.test(s));
+    assert.ok(sentences.length, `${where} no longer tells anybody to choose Refresh`);
+    for (const s of sentences) assert.match(s, /chatgpt\.com in a web browser/, `${where}: "${s.slice(0, 120)}" sends him to a Refresh the iPhone app does not have`);
+  }
 });
 
 // ── Wrought's card in the chat ─────────────────────────────────────────────
@@ -18457,7 +18529,8 @@ await test('auth by method: the card\'s page needs no lookup, the handshake answ
   assert.match(h, /const mode = authMode\(msg\.method\);\s*let authUser = null;\s*if \(mode !== 'none'\) \{\s*try \{\s*authUser = await getAuthUser\(event\);/);
   assert.match(h, /if \(mode === 'required'\) return unavailable\(msg\.id\);/);
   // A resources/read line is the first proof a real host fetched the card.
-  assert.match(h, /\['initialize', 'tools\/list', 'tools\/call', 'resources\/read'\]\.includes\(msg\.method\)\) console\.log\(JSON\.stringify\(rpcTrace\(msg, authUser\)\)\)/);
+  assert.match(h, /if \(TRACED\.includes\(msg\.method\)\) console\.log\(JSON\.stringify\(rpcTrace\(msg, authUser/);
+  for (const m of ['server/discover', 'initialize', 'tools/list', 'tools/call', 'resources/read']) assert.ok(WCARD.MCP.TRACED.includes(m), `${m} leaves no trace line`);
 });
 
 await test('the view rides in the result\'s _meta, never in the text: a stamp never claims a write it was not handed', async () => {
@@ -18921,11 +18994,18 @@ await test('params: null is answered, never thrown out of the handler', async ()
 
 await test('the model is told the card is the layout when it is drawn, and the table when it is not', () => {
   const { DAY_CARD_NOTE } = WCARD.DR;
-  assert.ok(DAY_CARD_NOTE.startsWith('WHEN WROUGHT\'S CARD IS DRAWN FOR THIS REPLY'));
-  assert.match(DAY_CARD_NOTE, /do NOT paste day_card or re-list its rows/);
-  assert.match(DAY_CARD_NOTE, /WHEN NO CARD IS DRAWN: SHOW day_card EXACTLY AS WRITTEN/);
-  assert.match(WCARD.WIDG.WIDGET_DESCRIPTION, /Do not paste day_card or repeat the card's figures/);
-  assert.match(SERVER_INSTRUCTIONS, /When the host draws Wrought's own card for the reply, that card is the layout — do not paste day_card under it as well\./);
+  // The default in doubt is the table: a model cannot see whether a card was
+  // drawn, and a ChatGPT still holding the old tool list never draws one.
+  assert.ok(DAY_CARD_NOTE.startsWith('SHOW day_card EXACTLY AS WRITTEN'), 'the note opens with the skip case');
+  assert.match(DAY_CARD_NOTE, /ONE EXCEPTION: if the host has told you that Wrought's own card was drawn for THIS reply/);
+  assert.match(DAY_CARD_NOTE, /If you were not told, no panel was drawn: show day_card\. $/);
+  assert.ok(DAY_CARD_NOTE.indexOf('do not paste') > DAY_CARD_NOTE.indexOf('EXACTLY AS WRITTEN'), 'the skip comes before the table');
+  assert.match(WCARD.WIDG.WIDGET_DESCRIPTION, /When it shows the day, do not paste day_card or repeat the card's figures/);
+  // A stamp carries none of the day: the description must not tell a model to skip it.
+  assert.match(WCARD.WIDG.WIDGET_DESCRIPTION, /When it shows only a one-line stamp, it carries none of the day: answer as the reply's note says\./);
+  // The sheet's own read-it-out rule carries the same exception, in the same position as the note.
+  assert.match(SERVER_INSTRUCTIONS, /SHOW day_card after your first line, exactly as written \(or, when the host has told you it drew Wrought's own card, that card/);
+  assert.match(SERVER_INSTRUCTIONS, /When the host has told you it drew Wrought's own card for the reply, that card is the layout — do not paste day_card under it as well; if you were not told, show day_card\./);
   // The calorie rule rides the log's input schema (reaches the Action uncut);
   // the log description itself is untouched.
   const log = TOOLS.find(t => t.name === 'log');

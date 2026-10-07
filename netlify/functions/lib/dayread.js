@@ -718,6 +718,10 @@ export function burnPhrase(read) {
 
 // How the card is to be shown — one sentence, shared by every reply that
 // carries it, so the instruction cannot drift between tools. It opens with the
-// host's own card: where Wrought's card is drawn it IS the layout, and pasting
-// the table under it would show every figure twice.
-export const DAY_CARD_NOTE = 'WHEN WROUGHT\'S CARD IS DRAWN FOR THIS REPLY — the host shows a dark WROUGHT panel with this day on it and tells you so when it loads — that card IS the layout: do NOT paste day_card or re-list its rows; give the reply\'s say line (on a write it opens "Logged in Wrought") and then only what the card does not show, never a figure that differs from it. WHEN NO CARD IS DRAWN: SHOW day_card EXACTLY AS WRITTEN — it is the layout the person asked to keep: the food table with each item\'s calories and macros and the totals, then the energy balance. Put it after your first line, as markdown, unchanged: never rebuild it, reorder it, drop a row, add a row or a figure of your own, or turn any number into a range. If more than one reply this turn carries a day_card for the same day, show only the LATEST one, once. ';
+// TABLE, because the default in doubt is the table: a model cannot see whether
+// a host drew Wrought's card, and a ChatGPT still holding the tool list from
+// before the card existed never draws one. The panel is the exception, and
+// only when the host has said so — skipping the table on a guess leaves
+// somebody with neither. Where the panel IS drawn, pasting the table under it
+// shows every figure twice, which is the cheaper of the two failures.
+export const DAY_CARD_NOTE = 'SHOW day_card EXACTLY AS WRITTEN — it is the layout the person asked to keep: the food table with each item\'s calories and macros and the totals, then the energy balance. Put it after your first line, as markdown, unchanged: never rebuild it, reorder it, drop a row, add a row or a figure of your own, or turn any number into a range. If more than one reply this turn carries a day_card for the same day, show only the LATEST one, once. ONE EXCEPTION: if the host has told you that Wrought\'s own card was drawn for THIS reply (a dark WROUGHT panel with this day on it), that panel is the layout — do not paste day_card under it as well; give the reply\'s say line (on a write it opens "Logged in Wrought") and then only what the panel does not show, never a figure that differs from it. If you were not told, no panel was drawn: show day_card. ';

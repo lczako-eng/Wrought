@@ -42,7 +42,7 @@ const URI_RE = /^ui:\/\/wrought\/([a-z]+)-[0-9a-f]{6,16}\.html$/;
 
 // Surfaced to the model by ChatGPT when the card loads — the one place it is
 // told a card is on screen, so it can stop pasting the table under it.
-export const WIDGET_DESCRIPTION = 'Wrought\'s card for this reply, drawn in the person\'s view: on a write the item just logged with its figures, then the day — each food with its calories and macros, the total, the energy balance row by row, the net when one can be given, steps, what is left and the week. Do not paste day_card or repeat the card\'s figures. Say the reply\'s say line (it opens "Logged in Wrought" on a write) and only what the card does not show. Never a figure that differs from the card.';
+export const WIDGET_DESCRIPTION = 'Wrought\'s card for this reply, drawn in the person\'s view: on a write the item just logged with its figures, then the day — each food with its calories and macros, the total, the energy balance row by row, the net when one can be given, steps, what is left and the week. When it shows the day, do not paste day_card or repeat the card\'s figures: say the reply\'s say line (it opens "Logged in Wrought" on a write) and only what the card does not show, never a figure that differs from it. When it shows only a one-line stamp, it carries none of the day: answer as the reply\'s note says.';
 
 /** The card's whole page. */
 function page() {
