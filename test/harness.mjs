@@ -1,4 +1,5 @@
 import { readdirSync as readdirSyncTop } from 'node:fs';
+import { execFileSync as execFileSyncTop } from 'node:child_process';
 // test/harness.mjs
 // Local protocol + arithmetic harness. `npm test`.
 //
@@ -77,6 +78,8 @@ await test('initialize returns serverInfo and the doctrines', async () => {
   assert.equal(body.result.serverInfo.name, 'wrought');
   assert.ok(body.result.instructions.length > 2000, 'instructions should carry the doctrines');
   assert.ok(body.result.capabilities.tools);
+  // …and resources: the one page Wrought's card is drawn from.
+  assert.ok(body.result.capabilities.resources, 'initialize must advertise resources, or no host reads the card');
 });
 
 await test('ping answers empty', async () => {
@@ -138,7 +141,12 @@ await test('"could not check" is never answered as "not signed in"', async () =>
   // And the handler turns it into a 503 with Retry-After — never the 401
   // challenge, which is the answer that costs a reconnect.
   const mcp = readFileSync(new URL('../netlify/functions/mcp.js', import.meta.url), 'utf8');
-  assert.match(mcp, /if \(e instanceof AuthUnavailable\) return unavailable\(msg\.id\);/);
+  // Pin the shape, never the spelling: auth now goes by method (the card's
+  // page needs none, the handshake answers through an outage), and a tool
+  // call — the one that REQUIRES a verdict — still answers an outage 503.
+  assert.match(mcp, /if \(!\(e instanceof AuthUnavailable\)\) throw e;\s*if \(mode === 'required'\) return unavailable\(msg\.id\);/);
+  const { authMode } = await import('../netlify/functions/mcp.js');
+  assert.equal(authMode('tools/call'), 'required');
   const fn = mcp.slice(mcp.indexOf('function unavailable('), mcp.indexOf('function unavailable(') + 600);
   assert.match(fn, /statusCode: 503/);
   assert.match(fn, /'Retry-After'/);
@@ -4766,7 +4774,13 @@ await test('"where am I at" is the whole day — every item, the session, the wo
   // the receipt's arithmetic.
   assert.match(src, /import \{[^}]*\boutSay\b[^}]*\} from '\.\/receipt\.js'/);
   assert.ok(!/import \{[^}]*\bdayReceipt\b[^}]*\} from '\.\/receipt\.js'/.test(src), 'the readout is building its own receipt');
-  assert.match(src, /import \{ macroLine \} from '\.\/wrought\.js'/);
+  // Pin the shape, never the spelling: the SET of names taken from wrought.js
+  // — the macro line, the one 12-hour clock, and the calorie split the
+  // dashboard's log bar also draws (arithmetic that lives in wrought.js, not
+  // here). The drawn card added the last two; a fourth is a decision.
+  const wImp = src.match(/import \{([^}]*)\} from '\.\/wrought\.js'/);
+  assert.ok(wImp, 'dayread.js no longer imports from wrought.js');
+  assert.deepEqual(wImp[1].split(',').map(x => x.trim()).filter(Boolean).sort(), ['clock12', 'macroLine', 'macroSplit']);
   assert.equal((src.match(/from '\.\/wrought\.js'/g) || []).length, 1);
 
   // WIRED. get_day is the whole day and says so; a log whose sentence asked
@@ -4887,7 +4901,10 @@ await test('a note that reads as a shift is said with its fix, and calories with
   assert.match(seFull, /const structured = updated\.map[\s\S]*?detail: keepKnown\(prev\.detail, incoming\?\.detail\)/);
   assert.ok(!/detail: \{ \.\.\.\(prev\.detail \|\| \{\}\)/.test(seFull), 'structure_entries still spreads raw somewhere');
   // Entries filled from a log reply are not "things you told the phone".
-  assert.match(seFull, /every\(u => byId\.get\(String\(u\.id\)\)\?\.source === 'voice'\) \? ' you told the phone' : ''/);
+  // Pin the shape, never the spelling: the say moved into a const so the
+  // drawn card's stamp can carry the same line; the voice test is unchanged.
+  assert.match(seFull, /const voice = updated\.length && updated\.every\(u => byId\.get\(String\(u\.id\)\)\?\.source === 'voice'\)/);
+  assert.match(seFull, /\$\{voice \? ' you told the phone' : ''\}/);
   // A quiet capture stays quiet: the shift question is deferred, never asked mid-way through something else.
   assert.match(lg, /workLike\.length && !args\.quiet \? `WORK_CHECK FIRST/);
   assert.match(lg, /workLike\.length && !args\.quiet \? `Check:/);
@@ -4919,7 +4936,13 @@ await test('every item carries all of its numbers, and the day is broken down th
 
   // ONE renderer, on every surface that reads a food line out.
   const mcp = readFileSync(new URL('../netlify/functions/mcp.js', import.meta.url), 'utf8');
-  assert.match(mcp, /function itemSay\(e\) \{[\s\S]{0,300}macroLine\(nums\)/, 'the log confirmation does not carry the macros');
+  // itemSay now takes the clock (the time leads the figures) and says a food
+  // with no figure in its own words before the macro line — same renderer.
+  // (Through itemFigures, which is macroLine for any item with a figure and
+  // leads with the gap in words for a food without one — pin the chain.)
+  assert.match(mcp, /function itemSay\(e, at = ''\) \{[\s\S]{0,500}itemFigures\(nums, \{ food \}\)/, 'the log confirmation does not carry the macros');
+  const wrSrc = readFileSync(new URL('../netlify/functions/lib/wrought.js', import.meta.url), 'utf8');
+  assert.match(wrSrc, /export function itemFigures\([\s\S]{0,600}return macroLine\(x\);\n\}/, 'itemFigures is not macroLine for a counted item');
   const dt = mcp.slice(mcp.indexOf('function dayTotal('), mcp.indexOf('function itemSay('));
   assert.match(dt, /sugar_g: day\.food\.sugar_g,\s*fibre_g: day\.food\.fibre_g,\s*sat_fat_g: day\.food\.sat_fat_g/);
   assert.match(dt, /breakdown: \[/);
@@ -16178,20 +16201,27 @@ await test('the day card is the layout the founder asked to keep — the food ta
   const fnOf = name => mcp.slice(mcp.indexOf(`async function ${name}(`), mcp.indexOf('\nasync function ', mcp.indexOf(`async function ${name}(`) + 10));
   for (const name of ['log', 'getDay', 'logActivity', 'amendLast', 'structureEntries', 'energyBalanceTool', 'brief']) {
     const f = fnOf(name);
-    assert.match(f, /day_card: dayCard\(/, `${name} carries no card`);
+    // Pin the shape, never the spelling: day_card now comes out of
+    // cardFields, which builds the markdown and Wrought's drawn card from ONE
+    // model — the relationship (every reply that answers the day carries the
+    // card) is unchanged; only the call that carries it changed.
+    assert.match(f, /\.\.\.(?:\([\w.]+ \? )?cardFields\(/, `${name} carries no card`);
     assert.match(f, /DAY_CARD_NOTE/, `${name} never says how to show the card`);
   }
   for (const name of ['log', 'logActivity', 'amendLast', 'structureEntries', 'energyBalanceTool']) {
     assert.match(fnOf(name), /fullDayRead\((?:[^()]|\([^()]*\))*\)\.catch\(\(\) => null\)/, `${name}'s card read is not caught`);
   }
   assert.match(fnOf('log'), /Promise\.all\(\[\s*wantRead \? fullDayRead\(/);
-  assert.match(fnOf('getDay'), /dayCard\(full\.read, \{ explicit: true \}\)/);
-  assert.match(fnOf('log'), /dayCard\(cardRead\.read, \{ explicit: !!fullRead \}\)/);
+  // Same relationship through cardFields: get_day is an asked-for read, and
+  // log's card is explicit exactly when the sentence asked for the day.
+  assert.match(fnOf('getDay'), /cardFields\(full\.read, \{ explicit: true/);
+  assert.match(fnOf('log'), /cardFields\(cardRead\.read, \{\s*explicit: !!fullRead/);
   // A card riding a reply with no write in it still says how to show it.
   assert.match(fnOf('log'), /cardRead && !written\.length \? DAY_CARD_NOTE/);
   // structure_entries fills in dictation from days ago under the morning
   // brief: its card is TODAY's, so it rides only when today was touched.
-  assert.match(fnOf('structureEntries'), /const cardRead = touchesToday\s*\?/);
+  // …and never on a quiet fill (a capture made in passing gets the stamp).
+  assert.match(fnOf('structureEntries'), /const cardRead = touchesToday && !args\.quiet\s*\?/);
   assert.match(fnOf('structureEntries'), /local_date === todayNow/);
   // energy_balance's card carries the flags that govern it.
   assert.match(fnOf('energyBalanceTool'), /cardRead\?\.flags\?\.length \? \{ care_flags: cardRead\.flags/);
@@ -17845,6 +17875,1063 @@ await test('connect.html names the path he can see', () => {
   assert.match(src, /Never uninstall Wrought/);
   assert.match(src, /Already listed\? Reconnect that one instead of adding it again/);
   assert.match(src, /choose <em>Refresh<\/em>, then start a new chat/);
+});
+
+// ── Wrought's card in the chat ─────────────────────────────────────────────
+//
+// The founder, 6 October: "it used to have a fancy background … I'd like to use
+// Wrought colours. It should be so distinctive that it tells you, in like a
+// framing, that it's using the connector." And the same afternoon a sausage
+// confirmed "Logged in Wrought" with its 570 left off, and a toast logged with
+// no figure at all. So the day is drawn by Wrought itself — an MCP Apps card on
+// every log and day reply — off the SAME decisions the markdown card makes,
+// and a named food with no figure is estimated before the reply.
+
+group('Wrought\'s card in the chat');
+
+const WCARD = {
+  WIDG: await import('../netlify/functions/lib/widgets.js'),
+  WRT: await import('../netlify/functions/lib/widget_runtime.js'),
+  DR: await import('../netlify/functions/lib/dayread.js'),
+  RC: await import('../netlify/functions/lib/receipt.js'),
+  MCP: await import('../netlify/functions/mcp.js'),
+  WR: await import('../netlify/functions/lib/wrought.js'),
+  VOICE: await import('../netlify/functions/lib/voice.js'),
+  vm: await import('node:vm'),
+};
+// The card's script exactly as served — the one a host runs.
+WCARD.script = WCARD.WIDG.WIDGETS.day.html.match(/<script>([\s\S]*)<\/script>/)[1];
+WCARD.run = ({ openai } = {}) => {
+  const posted = [], listeners = {};
+  const cls = new Set();
+  const root = { innerHTML: '', classList: { add: c => cls.add(c), remove: c => cls.delete(c), contains: c => cls.has(c), toggle: c => (cls.has(c) ? cls.delete(c) : cls.add(c)) }, querySelector: () => null, querySelectorAll: () => [] };
+  const parent = { postMessage: m => posted.push(JSON.parse(JSON.stringify(m))) };
+  const docEl = { props: {}, attrs: {}, style: { setProperty(k, v) { docEl.props[k] = v; } },
+    setAttribute(k, v) { docEl.attrs[k] = v; }, offsetHeight: 320, offsetWidth: 400 };
+  const document = { getElementById: id => (id === 'wr-root' ? root : null), documentElement: docEl };
+  const window = { addEventListener: (t, fn) => { (listeners[t] ||= []).push(fn); }, openai };
+  // A real ResizeObserver reports once as soon as it observes — before any
+  // host has answered the handshake — so the stub does too.
+  const ctx = { window, document, parent, ResizeObserver: class { constructor(fn) { this.fn = fn; } observe() { this.fn([]); } } };
+  WCARD.vm.createContext(ctx);
+  WCARD.vm.runInContext(WCARD.script, ctx);
+  const send = (data, source = parent) => (listeners.message || []).forEach(fn => fn({ source, data }));
+  const fire = (type, detail) => (listeners[type] || []).forEach(fn => fn({ detail }));
+  const render = view => { ctx.__v = view; return WCARD.vm.runInContext('wrRender(__v)', ctx); };
+  return { posted, root, send, fire, ctx, docEl, render, cls };
+};
+// Fixtures through the REAL chain (energyBalance → dayReceipt → dayReadout →
+// dayView), on the shapes dayFacts stores: null for a missing figure, every
+// day sum starting at zero.
+{
+  const { dayReadout } = WCARD.DR;
+  const { dayReceipt } = WCARD.RC;
+  const profile = { height_cm: 191, birth_year: 1982, sex: 'male' };
+  const TODAY = '2026-10-06';
+  const item = (id, at, summary, calories, m = {}) => ({ id, type: 'food', at, summary, calories,
+    protein_g: m.protein_g ?? null, carbs_g: m.carbs_g ?? null, fat_g: m.fat_g ?? null,
+    sugar_g: m.sugar_g ?? null, fibre_g: m.fibre_g ?? null, sat_fat_g: m.sat_fat_g ?? null, estimated: true });
+  const foodOf = log => {
+    const f = log.filter(e => e.type === 'food' || e.type === 'drink');
+    const sum = k => Math.round(f.reduce((t, e) => t + (Number(e[k]) || 0), 0));
+    return { calories: sum('calories'), protein_g: sum('protein_g'), carbs_g: sum('carbs_g'), fat_g: sum('fat_g'),
+             sugar_g: sum('sugar_g'), fibre_g: sum('fibre_g'), sat_fat_g: sum('sat_fat_g'),
+             meals: f.length, estimated: true, meals_uncounted: f.filter(e => e.calories == null).length };
+  };
+  const read = ({ log = [], date = TODAY, device = {}, bal = {}, flags = [], left = null, work = [], scored = [] } = {}) => {
+    const day = { date, logged: log.length > 0, food: foodOf(log), log, training: { sessions: 0, entries: bal.workouts || [] }, activity: { count: work.length, entries: work }, device };
+    const balance = energyBalance({ profile, weightKg: 150, caloriesIn: day.food.calories, foodEstimated: true, workouts: [], activities: work, ...bal });
+    const receipt = dayReceipt({ day, balance, date, today: TODAY });
+    return dayReadout({ day, balance, receipt, scored, week: { say: '1 of 3 sessions this week.' }, date, today: TODAY, flags, left });
+  };
+  const goal = (metric, target, actual, unit, direction = 'at_least') => ({ scored: true, goal: `${metric} goal`, metric, cadence: 'daily', target, actual,
+    percent: Math.round(actual / target * 100), hit: direction === 'at_most' ? actual <= target : actual >= target, over: direction === 'at_most' ? actual > target : false, unit, gap: actual - target, direction });
+  const log = [
+    item('a1', '07:32', 'Two eggs, scrambled', 300, { protein_g: 18, carbs_g: 2, fat_g: 22 }),
+    item('a2', '10:15', 'Protein shake', 420, { protein_g: 40, carbs_g: 30, fat_g: 12, sugar_g: 8 }),
+    item('a3', '13:02', 'Two slices of toasted sourdough with cheese', 400, { protein_g: 16, carbs_g: 48, fat_g: 16 }),
+  ];
+  const device = { steps: 5075, active_calories: 612, fresh: { at: '12:15pm', stale: false } };
+  const scored = [goal('calories', 1723, 1120, ' kcal', 'at_most'), goal('protein_g', 180, 74, 'g'), goal('steps', 10000, 5075, '')];
+  const flags = [{ flag: 'very_low_intake', detail: 'Under 1,200 on 4 of the last 7 logged days.', needs_review: true, evidence_dates: ['2026-10-01', '2026-10-02'] }];
+  WCARD.TODAY = TODAY;
+  WCARD.item = item;
+  WCARD.read = read;
+  WCARD.reads = {
+    watch: read({ log, device, bal: { activeCalories: 612 }, scored, left: { short: 'About 603 left of today\'s 1,723 target.', withheld: false } }),
+    nofig: read({ log: [item('t1', '13:02', 'two slices of toasted sourdough with cheese', null)], device, bal: { activeCalories: 612 }, scored: [goal('calories', 1723, 0, ' kcal', 'at_most'), goal('protein_g', 180, 0, 'g'), goal('steps', 10000, 5075, '')] }),
+    half: read({ log, bal: { activeCalories: 0, deviceExpected: true }, scored }),
+    restingPart: read({ log, device: { active_calories: 600, resting_calories: 1500, resting_so_far: 1500, resting_projected: false, fresh: { at: '3:00pm' } }, bal: { activeCalories: 600, deviceResting: 1500, deviceRestingSoFar: 1500 } }),
+    flagged: read({ log, device, bal: { activeCalories: 612 }, flags, scored, left: { short: 'Target about 1,723 — no figure of what is left while the record review stands.', withheld: true } }),
+    shortDay: read({ log, date: '2026-10-05', device: { active_calories: 612, fresh: { short: true, final: false, at: '6:01pm' } }, bal: { activeCalories: 612 } }),
+    empty: read({ device, bal: { activeCalories: 612 } }),
+    past: read({ date: '2026-10-01', bal: { activeCalories: 0 } }),
+    unpriced: read({ log, work: [{ event_type: 'activity', summary: 'animal care, 4h', detail: { kcal: null, hours: 4, label: 'animal care' } }], device: { active_calories: 500 }, bal: { activeCalories: 500 } }),
+  };
+  WCARD.flags = flags;
+}
+
+// ── One decision, two renderers ──────────────────────────────────────────
+
+await test('the drawn card prints the markdown card\'s own strings — one model, never a second wording', () => {
+  const { dayView, dayCard, cardParts, dayModel } = WCARD.DR;
+  for (const [name, r] of Object.entries(WCARD.reads)) {
+    for (const explicit of [false, true]) {
+      const md = dayCard(r, { explicit });
+      const v = dayView(r, { explicit });
+      const m = dayModel(r, { explicit });
+      const at = `${name}${explicit ? ' (asked)' : ''}`;
+      assert.equal(cardParts(r, { explicit }).markdown, md, `${name}: cardParts' markdown is not dayCard`);
+      assert.deepEqual(cardParts(r, { explicit }).view, v, `${name}: cardParts' view is not dayView`);
+      // WHOLE, not just "every card string is somewhere in the markdown": a
+      // dropped Eaten row, "Net so far" cut to "Net", a footer cut short or a
+      // row's source stripped would all still be substrings of the table.
+      assert.deepEqual(v.balance.rows, m.energy.rows.map(x => ({ label: x.label, kcal: x.kcal })), `${at}: the card's balance rows are not the model's`);
+      assert.deepEqual(v.balance.burn, m.energy.burn ? { label: m.energy.burn.label, kcal: m.energy.burn.kcal } : null, `${at}: burn`);
+      assert.deepEqual(v.balance.net, m.energy.net ? { label: m.energy.net.label, value: m.energy.net.value, tone: m.energy.net.tone } : null, `${at}: net`);
+      assert.equal(v.balance.missing, m.energy.missing, `${at}: missing`);
+      assert.deepEqual(v.notes, m.notes.map(x => ({ lead: x.lead, strong: x.strong, text: x.body })), `${at}: notes`);
+      assert.equal(v.foot, m.foot, `${at}: foot`);
+      assert.equal(v.intake.title, m.food.title, `${at}: title`);
+      assert.deepEqual(v.intake.captions, m.food.card_captions, `${at}: captions`);
+      assert.deepEqual(v.intake.rows.map(x => [x.what, x.at, x.uncounted ? null : x.kcal]), m.food.items.map(x => [x.what, x.at, x.kcal]), `${at}: rows`);
+      assert.equal(v.intake.total ? (v.intake.total.unset ? null : v.intake.total.kcal) : null, m.food.items.length ? m.food.total.kcal : null, `${at}: total`);
+      // …and every one of those strings is the table's own. The one caption
+      // that differs is the table's dash legend: the card prints no dash.
+      const said = [
+        ...v.intake.rows.map(x => x.kcal), v.intake.total?.kcal,
+        ...v.balance.rows.flatMap(x => [x.label, x.kcal]),
+        v.balance.burn?.label, v.balance.burn?.kcal, v.balance.net?.value, v.balance.missing,
+        ...v.notes.map(x => x.text), ...m.food.captions.filter(c => !c.startsWith('—')), v.intake.empty, v.foot,
+      ].filter(x => typeof x === 'string');
+      for (const s of said) assert.ok(md.includes(s), `${at}: the card prints "${s}" and the markdown does not:\n${md}`);
+      const shared = m.food.captions.filter(c => !c.startsWith('—'));
+      assert.deepEqual(v.intake.captions.filter(c => shared.includes(c)), shared, `${at}: a shared caption differs`);
+      for (const c of v.intake.captions) assert.ok(!c.includes('—'), `${at}: the card explains a dash it never draws: ${c}`);
+    }
+  }
+});
+
+await test('every leaf of the card\'s view is a string, a boolean or null — the only numbers are a bar\'s share and a ring\'s arc', () => {
+  const walk = (o, path, out) => {
+    if (Array.isArray(o)) o.forEach((x, i) => walk(x, `${path}[${i}]`, out));
+    else if (o && typeof o === 'object') for (const [k, x] of Object.entries(o)) walk(x, `${path}.${k}`, out);
+    else out.push([path, o]);
+    return out;
+  };
+  const views = Object.values(WCARD.reads).flatMap(r => [WCARD.DR.dayView(r), WCARD.DR.dayView(r, { explicit: true, badge: 'LOGGED', fresh: ['a3'],
+    just: { caption: 'Just logged', rows: WCARD.DR.justRows([{ type: 'food', summary: 'x', at: '13:02', calories: 400, protein_g: 16, estimated: true }]) } })]);
+  let numbers = 0;
+  for (const v of views) {
+    for (const [path, leaf] of walk(v, 'view', [])) {
+      if (typeof leaf === 'number') {
+        if (path === 'view.v') continue; // the view's version, never printed
+        assert.match(path, /\.(share|arc)$/, `${path} is a number the card would have to format`);
+        assert.ok(leaf >= 0 && leaf <= 100, `${path} = ${leaf}`);
+        numbers++;
+      } else {
+        assert.ok(leaf === null || typeof leaf === 'string' || typeof leaf === 'boolean', `${path} is ${typeof leaf}`);
+      }
+    }
+  }
+  assert.ok(numbers > 0, 'no bar or ring was built — the case this guards is not being exercised');
+});
+
+await test('a food with no figure is never a zero — not on the card, not in the read, not on a ring', () => {
+  const r = WCARD.reads.nofig;
+  const v = WCARD.DR.dayView(r);
+  assert.equal(v.intake.rows[0].kcal, 'not counted yet');
+  assert.equal(v.intake.rows[0].uncounted, true);
+  assert.equal(v.intake.figure, null);
+  assert.equal(v.intake.figure_missing, 'not counted yet');
+  assert.equal(v.intake.total.kcal, 'not counted yet');
+  assert.ok(!v.balance.rows.some(x => x.label === 'Eaten'), 'an Eaten row off nothing counted');
+  assert.equal(v.balance.net, null);
+  for (const f of [v.intake.figure, v.intake.total.kcal, ...v.intake.rows.map(x => x.kcal)]) assert.notEqual(f, '0');
+  // No calorie or protein ring off a sum that is a zero nobody ate.
+  assert.ok(!(v.targets || []).some(t => /calories|protein/i.test(t.label)), JSON.stringify(v.targets));
+  assert.ok((v.targets || []).some(t => /steps/i.test(t.label)), 'the steps ring went too');
+  // The read says the same in words: unknown, never "0 kcal".
+  assert.equal(r.in.total, null);
+  assert.equal(r.in.counted, false);
+  assert.equal(r.net, null);
+  const inPart = r.say.slice(0, r.say.indexOf('TRAINED'));
+  assert.ok(!/\b0 kcal|\b0g /.test(inPart), inPart);
+  assert.match(r.say, /^IN — 1 thing logged, no calories on it yet — the total is unknown rather than zero$/m);
+  assert.match(r.say, /^NET — nothing with a calorie figure is logged yet/m);
+  // A past day the same: no in-versus-out off a zero that is not one.
+  const past = WCARD.read({ log: [WCARD.item('p1', '12:00', 'a sandwich', null)], date: '2026-10-05', bal: { activeCalories: 600 } });
+  assert.match(past.say, /^NET — nothing with a calorie figure was logged this day/m);
+  assert.equal(past.net, null);
+  // dayFacts' own sentence names the calories.
+  const wr = readFileSync(new URL('../netlify/functions/lib/wrought.js', import.meta.url), 'utf8');
+  assert.match(wr, /logged, no calories on \$\{meals\.length === 1 \? 'it' : 'any of them'\} yet — the total is unknown rather than zero/);
+});
+
+await test('under a care flag the card says REVIEW in its header, keeps the day, and drops only the intake ring', () => {
+  const r = WCARD.reads.flagged;
+  const s = WCARD.run();
+  const say = WCARD.flags.map(WCARD.VOICE.writtenFlag).join(' ');
+  // Unprompted (a log): no net, no Left, one held line, the person's own sentence.
+  const un = WCARD.DR.dayView(r, { badge: 'LOGGED' });
+  assert.equal(un.review.say, say);
+  // NO REVIEW BUTTON: the dashboard has no review screen (#care-review lands
+  // on the top of it), and the review is a sentence to the assistant — which
+  // the card's sentence says, never "tap to review" on a card with nothing to tap.
+  assert.equal(un.review.link, null);
+  assert.equal(un.review.link_label, null);
+  assert.ok(!/\btap\b/i.test(un.review.say), un.review.say);
+  assert.match(un.review.say, /To review Oct 1 and Oct 2, say which of those days were fully logged/);
+  assert.match(un.review.say, /never invent the food/);
+  // The lock screen keeps its own form: there, the tap opens the review.
+  assert.match(WCARD.flags.map(WCARD.VOICE.spokenFlag).join(' '), /Tap to review Oct 1 and Oct 2/);
+  // Every other flag reads on the card exactly as it is spoken.
+  for (const f of [{ flag: 'rapid_loss', detail: 'x.' }, { flag: 'no_rest', detail: 'y.' }, { flag: 'very_low_intake', detail: 'z.' }]) {
+    assert.equal(WCARD.VOICE.writtenFlag(f), WCARD.VOICE.spokenFlag(f));
+  }
+  assert.equal(un.balance.net, null);
+  assert.ok(!un.notes.some(n => n.lead === 'Left' || n.lead === 'Target'), 'the held target rode an unprompted card');
+  assert.equal(un.held, 'Net and what\'s left aren\'t shown while a review stands.');
+  assert.ok(un.targets && !un.targets.some(t => /calories/i.test(t.label)), 'the intake ring survived a flag');
+  assert.ok(un.targets.some(t => /steps/i.test(t.label)) && un.targets.some(t => /protein/i.test(t.label)), 'a flag took the record rings too');
+  const html = s.render(un);
+  assert.match(html, /<header class="wr-strip">[\s\S]*<span class="wr-rev">REVIEW<\/span>[\s\S]*<\/header>/, 'REVIEW is not in the header');
+  // A badge, never a band across the day: the sentence sits small at the foot.
+  assert.ok(html.indexOf('wr-review') > html.indexOf('wr-out'), 'the review sentence leads the card');
+  assert.ok(!/wr-flag"|class="wr-band/.test(html));
+  // Asked for (get_day): the net is shown per the usual rules; the intake ring still is not.
+  const asked = WCARD.DR.dayView(r, { explicit: true });
+  assert.ok(asked.balance.net, 'an asked-for read lost its net under a flag');
+  assert.equal(asked.held, null);
+  assert.ok(asked.notes.some(n => n.lead === 'Left'));
+  assert.ok(!asked.targets.some(t => /calories/i.test(t.label)));
+  // No flag: no review, no held line.
+  const clear = WCARD.DR.dayView(WCARD.reads.watch);
+  assert.equal(clear.review, null);
+  assert.equal(clear.held, null);
+  assert.ok(!s.render(clear).includes('wr-rev'));
+});
+
+await test('half a burn and a so-far basal get no net on the card, and say why', () => {
+  for (const name of ['half', 'restingPart']) {
+    const v = WCARD.DR.dayView(WCARD.reads[name], { explicit: true });
+    assert.equal(v.balance.net, null, `${name} drew a net`);
+    assert.ok(v.notes.some(n => /^No net/.test(n.lead || '')), `${name} does not say why`);
+  }
+  const shown = WCARD.DR.dayView(WCARD.reads.watch, { explicit: true });
+  assert.equal(shown.balance.net.tone, 'down');
+  assert.match(shown.balance.net.value, /^[\d,]+ down$/);
+});
+
+await test('more than five rows fold the earliest behind one written line; a row this reply wrote never folds', () => {
+  const log = Array.from({ length: 8 }, (_, i) => WCARD.item(`f${i + 1}`, `${String(7 + i).padStart(2, '0')}:00`, `item ${i + 1}`, 100 + i));
+  const v = WCARD.DR.dayView(WCARD.read({ log, bal: { activeCalories: 400 } }), { fresh: ['f1', 'f8'] });
+  assert.deepEqual(v.intake.rows.filter(x => x.folded).map(x => x.id), ['f2', 'f3', 'f4']);
+  assert.equal(v.intake.more_label, 'Show 3 earlier');
+  assert.ok(!v.intake.rows.some(x => x.fresh && x.folded));
+  assert.deepEqual(v.intake.rows.filter(x => x.fresh).map(x => x.id), ['f1', 'f8']);
+  const five = WCARD.DR.dayView(WCARD.read({ log: log.slice(0, 5), bal: { activeCalories: 400 } }));
+  assert.equal(five.intake.more_label, null);
+  assert.ok(!five.intake.rows.some(x => x.folded));
+});
+
+await test('the "just logged" rows: a food with no figure says so in words, the clock reads 1:02pm', () => {
+  const [nofig, fig, shift, weigh] = WCARD.DR.justRows([
+    { type: 'food', summary: 'toast', at: '13:02', calories: null },
+    { type: 'food', summary: 'sausage', at: '15:17', calories: 570, protein_g: 22, carbs_g: 4, fat_g: 52, estimated: true },
+    { type: 'activity', summary: 'animal care, 3h on task', calories: 1556, estimated: true },
+    { type: 'weight', summary: '150 kg' },
+  ]);
+  assert.equal(nofig.flag, 'No figure');
+  assert.equal(nofig.figure, null);
+  assert.equal(nofig.gap, 'No calories on it yet — it counts for nothing in today\'s total until it has one.');
+  assert.equal(nofig.at, '1:02pm');
+  assert.equal(fig.figure, '570 kcal');
+  assert.equal(fig.at, '3:17pm');
+  assert.equal(fig.macros, '22g protein · 4g carbs · 52g fat');
+  assert.equal(fig.est, 'estimated');
+  assert.equal(fig.flag, null);
+  assert.equal(shift.figure, '1,556 kcal');
+  assert.equal(weigh.figure, null);
+  assert.equal(weigh.flag, null, 'a weigh-in is not a food with no figure');
+  assert.equal(WCARD.WR.clock12('13:02'), '1:02pm');
+  assert.equal(WCARD.WR.clock12('00:05'), '12:05am');
+  assert.equal(WCARD.WR.clock12('12:00'), '12:00pm');
+});
+
+await test('one calorie split, in wrought.js: the dashboard\'s log bar and the chat card draw off the same rule', () => {
+  const { macroSplit } = WCARD.WR;
+  const split = macroSplit({ protein_g: 50, carbs_g: 100, fat_g: 40, sugar_g: 20 });
+  // 200 + 400 + 360 kcal: by calories, never grams — fat is 9 a gram.
+  assert.deepEqual(split, { protein_pct: 20.8, carbs_pct: 41.7, fat_pct: 37.5, sugar_pct_of_carbs: 20 });
+  assert.equal(macroSplit({}), null);
+  const apiLog = readFileSync(new URL('../netlify/functions/api-log.js', import.meta.url), 'utf8');
+  assert.match(apiLog, /import \{[^}]*\bmacroSplit\b[^}]*\} from '\.\/lib\/wrought\.js'/);
+  assert.ok(!/function macroSplit\(/.test(apiLog), 'api-log.js keeps its own copy');
+  const dr = readFileSync(new URL('../netlify/functions/lib/dayread.js', import.meta.url), 'utf8');
+  assert.match(dr, /const split = macroSplit\(inn\)/);
+  // The bar's shares are the split's own, clamped, never recomputed.
+  const v = WCARD.DR.dayView(WCARD.reads.watch);
+  const sp = macroSplit(WCARD.reads.watch.in);
+  assert.deepEqual(v.intake.bar.map(b => b.share), [sp.protein_pct, sp.carbs_pct, sp.fat_pct]);
+});
+
+await test('a named food is chased when its calories are not a NUMBER, and the stored row wins', () => {
+  const row = (detail, extra = {}) => ({ id: 'r', event_type: 'food', summary: 'two slices of sourdough', ...(detail === undefined ? {} : { detail }), ...extra });
+  for (const kcal of ['~400', '', 'about 400', null]) {
+    assert.equal(needsMacros([row({ calories: kcal })]).length, 1, `${JSON.stringify(kcal)} was not chased`);
+  }
+  for (const kcal of [400, '400', 0]) {
+    assert.equal(needsMacros([row({ calories: kcal })]).length, 0, `${JSON.stringify(kcal)} was chased`);
+  }
+  // The stored row's detail over the events the caller passed.
+  assert.equal(needsMacros([row({ calories: 400 })], [{ detail: {} }]).length, 0, 'the stored figure lost to the request');
+  assert.equal(needsMacros([row({})], [{ detail: { calories: 400 } }]).length, 1, 'a figure only in the request was trusted');
+  // A row read back without detail falls back to the events, as before.
+  assert.equal(needsMacros([row(undefined)], [{ detail: { calories: 400 } }]).length, 0);
+  assert.equal(needsMacros([row(undefined)], [{ detail: {} }]).length, 1);
+  // An unnamed meal is still never chased.
+  assert.equal(needsMacros([{ id: 'l', event_type: 'food', summary: 'lunch', detail: {} }]).length, 0);
+});
+
+// ── The replies themselves, run end to end ──────────────────────────────
+// log, structure_entries, amend_last, log_activity and get_day cannot answer
+// without a database, and a grep of their source passed every time a reply
+// said the wrong thing. So they are RUN: test/fakedb swaps the Supabase client
+// for an in-memory one in a child process (this process keeps its no-env
+// run), and test/fakedb/scenarios.mjs calls each tool through handleRpc.
+WCARD.scenarios = (() => {
+  let cached = null;
+  return () => {
+    if (cached) return cached;
+    const out = execFileSyncTop(process.execPath, ['--import', new URL('./fakedb/register.mjs', import.meta.url).pathname,
+      new URL('./fakedb/scenarios.mjs', import.meta.url).pathname], { encoding: 'utf8', maxBuffer: 32 * 1024 * 1024, timeout: 120000 });
+    const line = out.split('\n').find(l => l.startsWith('SCENARIOS '));
+    assert.ok(line, `the scenarios printed nothing:\n${out.slice(-2000)}`);
+    cached = JSON.parse(line.slice('SCENARIOS '.length));
+    return cached;
+  };
+})();
+
+await test('every food confirmation carries its calories: the time first, the gap in words, estimate_now first of the tool\'s own keys', () => {
+  const S = WCARD.scenarios();
+  for (const k of Object.keys(S)) if (S[k] && typeof S[k] === 'object' && 'error' in S[k]) assert.equal(S[k].error, null, `${k} answered with a protocol error`);
+  // The 6 October toast: logged with no figure.
+  const nf = S.nofig.body;
+  assert.equal(S.nofig.keys[0], 'estimate_now', `the reply opens with ${S.nofig.keys[0]}`);
+  assert.equal(nf.estimate_now.call, 'structure_entries');
+  assert.deepEqual(nf.estimate_now.entries.map(e => e.summary), ['two slices of toasted sourdough with cheese']);
+  assert.match(nf.estimate_now.send, /never a range, "~" or a string/);
+  assert.match(nf.note, /^ESTIMATE_NOW FIRST: /);
+  assert.ok(!/call amend_last NOW/.test(nf.note), 'the note still sends the model to amend_last');
+  // The time BEFORE the figures, on the 12-hour clock, and the gap in words.
+  assert.match(nf.say, /^Logged in Wrought \(1 thing\): two slices of toasted sourdough with cheese at 1:02pm — not counted yet: no calories on it\. That item counts for nothing in today's total until it has a calorie figure\./);
+  assert.ok(!/\.\./.test(nf.say), 'a double period');
+  // Through ChatGPT's account picker connected_accounts is stamped first —
+  // the picker doctrine's order — and estimate_now is the first of log's own.
+  assert.deepEqual(S.nofig_link.keys.slice(0, 2), ['connected_accounts', 'estimate_now']);
+  // A figure: every number, the time first.
+  assert.match(S.sausage.body.say, /^Logged in Wrought \(1 thing\): Costco restaurant sausage at 3:17pm — 570 kcal · 22g protein · 4g carbs · 52g fat\. Today so far: 570 kcal/);
+  assert.equal(S.sausage.body.estimate_now, undefined);
+  // What is left: said with everything counted, withheld while an item is not
+  // — the figure would be too high by the item nobody has priced.
+  assert.match(S.left_shown.body.say, /About [\d,]+ left of today's 1,723 target/);
+  assert.ok(!/left of today/.test(S.left_held.body.say), S.left_held.body.say);
+  // Nothing to amend today: a first mention, and the reading travels with it.
+  assert.match(S.amend_first.body.say, /^Logged in Wrought \(1 thing\): a bagel at [\d:]+[ap]m — 300 kcal · 11g protein · 58g carbs · 2g fat\./);
+});
+
+await test('a calorie figure sent as words is no figure — on the row, the card, the day total and the follow-up', () => {
+  const S = WCARD.scenarios();
+  // "~400": chased, never filed as a 0-kcal toast.
+  const w = S.words;
+  assert.ok(w.body.estimate_now, 'words were taken for a figure');
+  assert.match(w.body.say, /toast with cheese at [\d:]+[ap]m — not counted yet: no calories on it; 16g protein · 48g carbs · 16g fat\./);
+  assert.ok(!/\b0 kcal/.test(w.body.say), w.body.say);
+  assert.equal(w.body.day_total.calories, null, 'day_total.calories is a 0 beside a say calling the total unknown');
+  assert.equal(w.card.intake.rows[0].kcal, 'not counted yet');
+  assert.equal(w.card.intake.figure, null);
+  assert.equal(w.card.intake.total.kcal, 'not counted yet');
+  assert.ok(!w.card.balance.rows.some(r => r.label === 'Eaten'), 'an Eaten row off words');
+  assert.equal(w.card.just.rows[0].flag, 'No figure');
+  assert.match(w.body.day_card, /\| toast with cheese \([\d:]+[ap]m\) \| not counted yet \|/);
+  assert.match(w.body.day_card, /\| \*\*Total\*\* \| \*\*not counted yet\*\* \|/);
+  // The same words again on the follow-up: chased again, never "0 kcal".
+  const a = S.words_again;
+  assert.ok(a.body.estimate_now, 'the follow-up stopped chasing');
+  assert.equal(a.keys[0], 'estimate_now');
+  assert.match(a.body.note, /^ESTIMATE_NOW FIRST: /);
+  assert.match(a.body.say, /not counted yet: no calories on it; 16g protein/);
+  assert.ok(!/\b0 kcal/.test(a.body.say), a.body.say);
+  // A number lands, and the day counts it.
+  assert.match(S.words_fixed.body.say, /toast with cheese at [\d:]+[ap]m — 400 kcal · 16g protein · 48g carbs · 16g fat\. Today so far: 400 kcal/);
+  assert.equal(S.words_fixed.body.day_total.calories, 400);
+  assert.equal(S.words_fixed.body.estimate_now, undefined);
+  // The no-figure toast's day_total says null too, never 0.
+  assert.equal(S.nofig.body.day_total.calories, null);
+});
+
+await test('structure_entries: another day\'s entry keeps its figures, a quiet fill stays quiet, macros without calories say so', () => {
+  const S = WCARD.scenarios();
+  // Yesterday's dictation: 380 kcal on the row, so the reply says 380 — and
+  // the day it is on — never "no calories or macros on it yet".
+  const p = S.past_fill.body;
+  assert.match(p.say, /^Filled in 1 thing you told the phone: two eggs and toast at 8:30am on [A-Z][a-z]{2} \d{1,2} [A-Z][a-z]{2} — 380 kcal · 18g protein · 30g carbs · 20g fat\.$/);
+  assert.ok(!/no calories/.test(p.say), p.say);
+  assert.equal(p.entries[0].calories, 380);
+  assert.equal(S.past_fill.card.kind, 'stamp', 'yesterday\'s fill drew today\'s card');
+  assert.equal(S.past_fill.card.line, p.say);
+  // A quiet fill: the item, no day; no confirmation recital; the stamp the same.
+  const q = S.quiet_fill.body;
+  assert.match(q.say, /^Filled in 1 thing: a sausage roll at [\d:]+[ap]m — 330 kcal · 9g protein · 27g carbs · 21g fat\.$/);
+  assert.ok(!/Today so far/.test(q.say), q.say);
+  assert.ok(!/THIS is the confirmation/.test(q.note), q.note);
+  assert.match(q.note, /^Caught in passing/);
+  assert.equal(S.quiet_fill.card.kind, 'stamp');
+  assert.ok(!/Today so far|1,?130/.test(S.quiet_fill.card.line), S.quiet_fill.card.line);
+  assert.equal(q.day_card, undefined, 'a quiet fill carried the day');
+  // Macros with no calories: uncounted, in words, first — then the macros.
+  assert.match(S.se_macros.body.say, /a hot dog at [\d:]+[ap]m — not counted yet: no calories on it; 20g protein — carbs, fat not on it\./);
+  assert.ok(S.se_macros.body.estimate_now, 'a named food with only protein was not chased');
+  assert.match(S.amend_macros.body.say, /"a sausage" — not counted yet: no calories on it; 20g protein — carbs, fat not on it\. Today so far/);
+  assert.ok(!/for that one/.test(S.amend_macros.body.say), 'an uncounted item read "for that one" like a counted one');
+  // amend_last keeps the row's estimated label when the amend says nothing about it.
+  assert.deepEqual(S.amend_macros.stored_estimated, [true]);
+  // And the drawn card agrees: the just block says "No figure".
+  assert.equal(S.amend_macros.card.just.rows[0].flag, 'No figure');
+  assert.equal(S.se_macros.card.just.rows[0].flag, 'No figure');
+  // The input schema still offers quiet.
+  assert.equal(TOOLS.find(t => t.name === 'structure_entries').inputSchema.properties.quiet.type, 'boolean');
+});
+
+await test('the card a reply carries: LOGGED with the write marked, one row on its own, a catch-up marked in the table, the day asked for', () => {
+  const S = WCARD.scenarios();
+  // One food: LOGGED, its row fresh, the write on its own with its figure.
+  const one = S.sausage.card;
+  assert.equal(one.kind, 'day');
+  assert.equal(one.badge, 'LOGGED');
+  assert.deepEqual(one.intake.rows.filter(r => r.fresh).map(r => r.what), ['Costco restaurant sausage']);
+  assert.equal(one.just.caption, 'Just logged');
+  assert.deepEqual(one.just.rows.map(r => [r.what, r.at, r.figure]), [['Costco restaurant sausage', '3:17pm', '570 kcal']]);
+  assert.equal(one.account, 'someone@example.com');
+  // An unprompted write is not an asked-for read: the explicit flag stays off
+  // (no care flag here, so the net may show either way — the flag case is
+  // pinned on the view).
+  // Seven meals at once: all seven marked in the table, none drawn twice.
+  const f7 = S.flush7.card;
+  assert.equal(f7.just, null, 'a catch-up drew every meal twice');
+  assert.equal(f7.intake.rows.filter(r => r.fresh).length, 7);
+  assert.ok(!f7.intake.rows.some(r => r.fresh && r.folded), 'a row this reply wrote was folded');
+  // Food beside a weigh-in: the meal is in the table; the weigh-in is not, so
+  // it is the one row listed.
+  const fw = S.food_weight.card;
+  assert.deepEqual(fw.just.rows.map(r => r.what), ['weighed 150 kg']);
+  assert.deepEqual(fw.intake.rows.filter(r => r.fresh).map(r => r.what), ['two eggs']);
+  // The day asked for: TODAY, no write, nothing marked.
+  const gd = S.get_day.card;
+  assert.equal(gd.badge, 'TODAY');
+  assert.equal(gd.just, null);
+  assert.ok(!gd.intake.rows.some(r => r.fresh));
+  // A shift: the burn said the way the card's burn row says it, never "about X out".
+  const sh = S.shift;
+  assert.equal(sh.card.badge, 'LOGGED');
+  assert.ok(sh.body.say.includes(`Day so far: ${sh.card.balance.burn.label} — about ${sh.card.balance.burn.kcal} kcal.`), sh.body.say);
+  // burnPhrase is the card's own burn row, never a second wording.
+  for (const r of Object.values(WCARD.reads)) {
+    const bp = WCARD.DR.burnPhrase(r);
+    const v = WCARD.DR.dayView(r);
+    assert.deepEqual(bp, v.balance.burn ? { label: v.balance.burn.label, kcal: v.balance.burn.kcal } : null);
+  }
+  assert.match(WCARD.DR.burnPhrase(WCARD.reads.half).label, /^Burn counted so far — resting/, 'half a burn was quoted as the day');
+});
+
+await test('a finished day with nothing eaten has no net — not in the read, not in the receipt beside it', async () => {
+  const S = WCARD.scenarios();
+  const b = S.past_nofood.body;
+  assert.equal(b.day_read.net, null);
+  assert.match(b.day_read.say, /^NET — nothing eaten was logged this day, so there is no in-versus-out$/m);
+  assert.equal(b.receipt.net, null, 'the receipt in the same reply still gave a deficit');
+  assert.match(b.receipt.say, /^NET — not worked out: nothing eaten was logged this day, so there is no in-versus-out$/m);
+  assert.ok(!/NET — 0 in/.test(b.receipt.say + b.day_read.say));
+  assert.match(b.receipt.math.net, /^not worked out — nothing eaten was logged this day/);
+  assert.match(b.receipt.note, /THERE IS NO NET HERE: nothing eaten was logged this day/);
+  assert.equal(S.past_nofood.card.balance.net, null);
+  // The same on the pure chain, and a black coffee is not a deficit either.
+  const past = WCARD.read({ date: '2026-10-05', device: { active_calories: 700, fresh: { final: true } }, bal: { activeCalories: 700 } });
+  assert.equal(past.net, null);
+  assert.match(past.say, /^NET — nothing eaten was logged this day/m);
+  const coffee = WCARD.read({ log: [WCARD.item('c1', '08:00', 'black coffee', 0)], date: '2026-10-05', device: { active_calories: 700, fresh: { final: true } }, bal: { activeCalories: 700 } });
+  assert.equal(coffee.net, null);
+  assert.match(coffee.say, /^NET — nothing with calories in it was logged this day/m);
+  // A counted day keeps its net.
+  const fed = WCARD.read({ log: [WCARD.item('c2', '08:00', 'oats', 400)], date: '2026-10-05', device: { active_calories: 700, fresh: { final: true } }, bal: { activeCalories: 700 } });
+  assert.ok(fed.net < 0, `a counted past day lost its net: ${fed.net}`);
+  // The read's own rule, not only the receipt's: handed a receipt that still
+  // carries a net, a day with nothing eaten gives none.
+  const { energyBalance } = await import('../netlify/functions/lib/training.js');
+  const day = { date: '2026-10-05', logged: true, food: { calories: 0, meals: 0, meals_uncounted: 0 }, log: [], training: { sessions: 0 }, activity: { count: 0 }, device: { active_calories: 700, fresh: { final: true } } };
+  const balance = energyBalance({ profile: { height_cm: 191, birth_year: 1982, sex: 'male' }, weightKg: 150, caloriesIn: 0, activeCalories: 700, workouts: [], activities: [] });
+  const rc = WCARD.RC.dayReceipt({ day, balance, date: '2026-10-05', today: WCARD.TODAY });
+  const old = { ...rc, net: -3179, math: { ...rc.math, net: '0 in − 3,179 out = 3,179 down' } };
+  const rd = WCARD.DR.dayReadout({ day, balance, receipt: old, scored: [], date: '2026-10-05', today: WCARD.TODAY });
+  assert.equal(rd.net, null, 'the read passed on a net off nothing eaten');
+  assert.ok(!/NET — 0 in/.test(rd.say), rd.say);
+  assert.match(rd.note, /There is NO NET: nothing with calories is logged for this day/);
+});
+
+// ── The plumbing ───────────────────────────────────────────────────────────
+
+await test('the card is declared on exactly the seven day tools, all three addresses agree, and it is the page\'s own hash', () => {
+  const { CARD_TOOLS } = WCARD.MCP;
+  assert.deepEqual([...CARD_TOOLS].sort(), ['amend_last', 'brief', 'energy_balance', 'get_day', 'log', 'log_activity', 'structure_entries']);
+  const src = decomment(readFileSync(new URL('../netlify/functions/mcp.js', import.meta.url), 'utf8'));
+  assert.match(src, /CARD_TOOLS = new Set\(TOOLS\.filter\(t => t\._meta\?\.ui\?\.resourceUri\)\.map\(t => t\.name\)\)/, 'the card tools are a hand list');
+  const { html, uri } = WCARD.WIDG.WIDGETS.day;
+  assert.equal(uri, 'ui://wrought/day-' + crypto.createHash('sha256').update(html).digest('hex').slice(0, 10) + '.html');
+  for (const t of TOOLS.filter(x => CARD_TOOLS.has(x.name))) {
+    const m = t._meta;
+    assert.match(m.ui.resourceUri, /^ui:\/\/wrought\/day-[0-9a-f]{10}\.html$/);
+    assert.equal(m['ui/resourceUri'], m.ui.resourceUri);
+    assert.equal(m['openai/outputTemplate'], m.ui.resourceUri);
+    assert.equal(m['openai/widgetAccessible'], false);
+    for (const k of ['openai/toolInvocation/invoking', 'openai/toolInvocation/invoked']) {
+      assert.ok(typeof m[k] === 'string' && m[k].length <= 64, `${t.name} ${k}`);
+      // Shown whatever the outcome: never a claim that something landed.
+      assert.ok(!/logged|saved|added/i.test(m[k]), `${t.name} ${k} claims a write: ${m[k]}`);
+    }
+    // ChatGPT adds link_id to every tool when several accounts are connected.
+    assert.equal(t.inputSchema.additionalProperties, undefined, `${t.name} refuses link_id`);
+  }
+});
+
+await test('every tool is model-only — a card can call nothing', async () => {
+  for (const t of TOOLS) assert.deepEqual(t._meta?.ui?.visibility, ['model'], `${t.name} is callable from a card`);
+  const listed = JSON.parse((await post(rpc('tools/list'))).body).result.tools;
+  for (const t of listed) assert.deepEqual(t._meta?.ui?.visibility, ['model'], `${t.name} as listed`);
+  // The profile tool keeps its own contract beside it.
+  assert.equal(TOOLS.find(t => t.name === 'wrought_account')._meta['openai/profile'], true);
+});
+
+await test('resources: the card\'s page is listed and read — any old hash gets today\'s page, an unknown kind is refused', async () => {
+  const init = JSON.parse((await post(rpc('initialize', { protocolVersion: '2025-06-18' }))).body);
+  assert.deepEqual(init.result.capabilities.resources, { listChanged: false });
+  const listed = JSON.parse((await post(rpc('resources/list'))).body).result.resources;
+  assert.deepEqual(listed.map(r => r.uri), Object.values(WCARD.WIDG.WIDGETS).map(w => w.uri));
+  for (const r of listed) assert.equal(r.mimeType, 'text/html;profile=mcp-app');
+  const { uri, html } = WCARD.WIDG.WIDGETS.day;
+  const c = JSON.parse((await post(rpc('resources/read', { uri }))).body).result.contents[0];
+  assert.equal(c.uri, uri);
+  assert.equal(c.text, html);
+  assert.ok(c.text.startsWith('<!DOCTYPE html>') && c.text.includes('<meta charset="utf-8">'));
+  assert.deepEqual(c._meta.ui.csp, { connectDomains: [], resourceDomains: [] });
+  assert.deepEqual(c._meta['openai/widgetCSP'], { connect_domains: [], resource_domains: [], redirect_domains: ['https://wrought.fit'] });
+  assert.equal(c._meta.ui.domain, undefined, 'a mismatched domain shows an error instead of the card on Claude');
+  assert.equal(c._meta['openai/widgetDomain'], undefined);
+  assert.equal(c._meta.ui.prefersBorder, false);
+  assert.equal(c._meta['openai/widgetPrefersBorder'], false);
+  assert.match(c._meta['openai/widgetDescription'], /do not paste day_card/i);
+  assert.deepEqual(listed[0]._meta, c._meta);
+  const stale = JSON.parse((await post(rpc('resources/read', { uri: 'ui://wrought/day-deadbeef00.html' }))).body).result.contents[0];
+  assert.equal(stale.uri, 'ui://wrought/day-deadbeef00.html');
+  assert.equal(stale.text, html);
+  assert.equal(JSON.parse((await post(rpc('resources/read', { uri: 'ui://wrought/workout-deadbeef00.html' }))).body).error.code, -32002);
+  assert.equal(JSON.parse((await post(rpc('resources/read', { uri: 'ui://wrought/__proto__-deadbeef00.html' }))).body).error.code, -32002);
+  assert.equal(JSON.parse((await post(rpc('resources/read', {}))).body).error.code, -32602);
+  assert.equal(JSON.parse((await post(rpc('resources/read', { uri: 42 }))).body).error.code, -32602);
+  assert.deepEqual(JSON.parse((await post(rpc('resources/templates/list'))).body).result.resourceTemplates, []);
+});
+
+await test('auth by method: the card\'s page needs no lookup, the handshake answers through an outage, a tool call still needs a verdict', async () => {
+  const { authMode } = WCARD.MCP;
+  assert.equal(authMode('tools/call'), 'required');
+  assert.equal(authMode('resources/read'), 'none');
+  assert.equal(authMode('resources/list'), 'none');
+  assert.equal(authMode('initialize'), 'best_effort');
+  assert.equal(authMode('tools/list'), 'best_effort');
+  const res = await handler({ httpMethod: 'POST', headers: {}, body: JSON.stringify(rpc('resources/read', { uri: WCARD.WIDG.WIDGETS.day.uri })) });
+  assert.equal(res.statusCode, 200);
+  assert.equal(JSON.parse(res.body).result.contents[0].text, WCARD.WIDG.WIDGETS.day.html);
+  const src = decomment(readFileSync(new URL('../netlify/functions/mcp.js', import.meta.url), 'utf8'));
+  const h = src.slice(src.indexOf('export const handler'));
+  // The lookup sits inside the not-none branch: the page never reaches it.
+  assert.match(h, /const mode = authMode\(msg\.method\);\s*let authUser = null;\s*if \(mode !== 'none'\) \{\s*try \{\s*authUser = await getAuthUser\(event\);/);
+  assert.match(h, /if \(mode === 'required'\) return unavailable\(msg\.id\);/);
+  // A resources/read line is the first proof a real host fetched the card.
+  assert.match(h, /\['initialize', 'tools\/list', 'tools\/call', 'resources\/read'\]\.includes\(msg\.method\)\) console\.log\(JSON\.stringify\(rpcTrace\(msg, authUser\)\)\)/);
+});
+
+await test('the view rides in the result\'s _meta, never in the text: a stamp never claims a write it was not handed', async () => {
+  const { cardFor, CARD, CARD_META, stampView, withCard } = WCARD.WIDG;
+  const { resultMeta } = WCARD.MCP;
+  const view = WCARD.DR.dayView(WCARD.reads.watch, { badge: 'LOGGED' });
+  const out = { say: 'Logged in Wrought', ...withCard(view) };
+  assert.deepEqual(cardFor(out, { write: true, email: 'a@b.c' }), { ...view, account: 'a@b.c' });
+  // Never serialised into what a model reads.
+  const text = JSON.stringify(out);
+  for (const bad of ['wrought/card', '"kind"', 'intake']) assert.ok(!text.includes(bad), `the view reached the text: ${bad}`);
+  // A failure: NOT SAVED on a write, NO ANSWER on a read, in the server's words.
+  const fail = cardFor({ error: 'tool_failed', say: 'That did not save — boom' }, { write: true });
+  assert.equal(fail.kind, 'stamp');
+  assert.equal(fail.badge, 'NOT SAVED');
+  assert.equal(fail.tone, 'warn');
+  assert.equal(fail.line, 'That did not save — boom');
+  assert.equal(cardFor({ error: 'x', say: 'no' }).badge, 'NO ANSWER');
+  // A reply with no view of its own: the header alone — no badge, no line.
+  const bare = cardFor({ say: 'which effort?' }, { email: 'a@b.c' });
+  assert.equal(bare.kind, 'stamp');
+  assert.equal(bare.badge, null);
+  assert.equal(bare.line, null);
+  // A stamp draws no foot and no door, so it carries neither the account nor a link.
+  for (const k of ['account', 'open', 'open_label']) assert.ok(!(k in bare), `a stamp carries ${k}, which it never draws`);
+  assert.deepEqual(stampView({ badge: 'LOGGED', line: 'x' }).kind, 'stamp');
+  // Only card tools carry _meta, and it carries the account.
+  const rm = resultMeta('log', out, { email: 'a@b.c' });
+  assert.deepEqual(Object.keys(rm), ['_meta']);
+  assert.equal(rm._meta[CARD_META].account, 'a@b.c');
+  assert.equal(rm._meta[CARD_META].kind, 'day');
+  assert.equal(resultMeta('structure_entries', { error: 'x', say: 'gone' })._meta[CARD_META].badge, 'NOT SAVED');
+  assert.equal(resultMeta('get_day', { error: 'x', say: 'gone' })._meta[CARD_META].badge, 'NO ANSWER');
+  assert.deepEqual(resultMeta('log_set', out, { email: 'a@b.c' }), {});
+  assert.ok(typeof CARD === 'symbol');
+  // The success return, the catch and the membership gate all carry it; no
+  // structuredContent anywhere but the profile's own contract.
+  const src = decomment(readFileSync(new URL('../netlify/functions/mcp.js', import.meta.url), 'utf8'));
+  const hr = src.slice(src.indexOf('export async function handleRpc('), src.indexOf('export const resultMeta'));
+  assert.match(hr, /isError: Boolean\(out && out\.error\),\s*\.\.\.resultMeta\(params\.name, out, authUser\),/);
+  assert.match(hr, /\.\.\.resultMeta\(params\.name, \{ error: 'tool_failed', say: failSay \}, authUser\)/);
+  assert.match(hr, /\.\.\.resultMeta\(params\.name, \{ error: gate\.error, say: gate\.message \}, authUser\)/);
+  assert.equal((hr.match(/structuredContent/g) || []).length, 1, 'structuredContent appears beyond the profile branch');
+  // A failed structure_entries is "did not save", not "could not answer".
+  assert.match(hr, /const writing = \/\^\(log\|amend\|undo\|set_\|start_\|end_\|remember\|connect_\|structure_\)\//);
+  const me = { id: '9be0a0cb-3422-471e-abd7-3738858c792b', email: 'someone@example.com' };
+  const prof = await handleRpc({ jsonrpc: '2.0', id: 7, method: 'tools/call', params: { name: 'wrought_account', arguments: {} } }, me);
+  // The profile's reply is exactly what it was: no card, no _meta.
+  assert.deepEqual(Object.keys(prof.result).sort(), ['content', 'isError', 'structuredContent']);
+  // The seven sites attach the view through cardFields or a stamp, never by hand.
+  const fn = name => src.slice(src.indexOf(`async function ${name}(`), src.indexOf('\nasync function ', src.indexOf(`async function ${name}(`) + 10));
+  assert.match(src, /function cardFields\(read, opts = \{\}\) \{\s*const parts = read \? cardParts\(read, opts\) : null;\s*return parts \? \{ day_card: parts\.markdown, \[CARD\]: parts\.view \} : \{\};/);
+  assert.match(fn('log'), /\.\.\.\(args\.quiet && written\.length \? withCard\(stampView\(\{ badge: 'LOGGED', line: written\.map\(e => itemSay\(e\)\)\.join\('; '\) \}\)\) : \{\}\)/);
+  assert.match(fn('brief'), /: withCard\(stampView\(\{ badge: 'BRIEF', date_label: dayName\(date\) \}\)\)/);
+  assert.ok(!/\[CARD\]:/.test(src.replace(/return parts \? \{ day_card: parts\.markdown, \[CARD\]: parts\.view \} : \{\};/, '')), 'a view is attached by hand somewhere');
+});
+
+await test('the custom GPT\'s Actions door never sees the card', async () => {
+  const { openapi, ACTION_TOOLS } = await import('../netlify/functions/actions.js');
+  const doc = JSON.stringify(openapi('https://wrought.fit'));
+  assert.ok(!doc.includes('ui://') && !doc.includes('outputTemplate') && !doc.includes('wrought/card'));
+  const src = decomment(readFileSync(new URL('../netlify/functions/actions.js', import.meta.url), 'utf8'));
+  assert.match(src, /const text = rpc\?\.result\?\.content\?\.\[0\]\?\.text;/);
+  assert.ok(!/_meta|structuredContent/.test(src.slice(src.indexOf('const rpc = await handleRpc('))), 'the Actions body reads more than the text');
+  assert.ok(ACTION_TOOLS.includes('log') && ACTION_TOOLS.includes('get_day'));
+});
+
+// ── The page ─────────────────────────────────────────────────────────────
+
+await test('the card\'s page loads nothing, reaches nowhere but wrought.fit, calls no tool and fits', () => {
+  const html = WCARD.WIDG.WIDGETS.day.html;
+  for (const bad of ['<script src', '<link', '<img', 'fetch(', 'XMLHttpRequest', 'WebSocket', 'EventSource', 'localStorage', 'sessionStorage',
+    'eval(', 'new Function', 'import(', 'tools/call', 'callTool', 'ui/message', 'sendFollowUpMessage', 'update-model-context', 'request-display-mode',
+    'var(--color-', 'var(--font-']) {
+    assert.ok(!html.includes(bad), `the card's page contains ${bad}`);
+  }
+  for (const m of html.matchAll(/https:\/\/[^\s"'`)<]*/g)) assert.ok(m[0].startsWith('https://wrought.fit'), `the card names ${m[0]}`);
+  const bytes = Buffer.byteLength(html);
+  assert.ok(bytes <= 60000, `the card's page is ${bytes} bytes`);
+  // The largest day a reply carries: twelve items, a flag, rings, the lot.
+  const log = Array.from({ length: 12 }, (_, i) => WCARD.item(`m${i}`, `${String(7 + i).padStart(2, '0')}:15`, `a fairly long meal description number ${i + 1} with sides`, 300 + i, { protein_g: 20, carbs_g: 30, fat_g: 10, sugar_g: 5, fibre_g: 3, sat_fat_g: 4 }));
+  const big = WCARD.read({ log, device: { steps: 9000, active_calories: 700, fresh: { at: '6:01pm' } }, bal: { activeCalories: 700 }, flags: WCARD.flags,
+    left: { short: 'Target about 1,723 — no figure of what is left while the record review stands.', withheld: true } });
+  const view = WCARD.DR.dayView(big, { explicit: true, badge: 'LOGGED', fresh: ['m11'], just: { caption: 'Just logged', rows: WCARD.DR.justRows([{ type: 'food', summary: 'x', at: '18:15', calories: 311 }]) } });
+  const n = JSON.stringify({ _meta: { 'wrought/card': { ...view, account: 'someone.with.a.long.address@example.com' } } }).length;
+  assert.ok(n <= 12000, `a twelve-item day's view is ${n} characters`);
+});
+
+await test('the card is the brand: the W is icon.svg\'s own path, no glow reaches past its box, motion is named and can be refused', () => {
+  const pathOf = s => (s.match(/<path[^>]*\sd="([^"]+)"/) || [])[1]?.replace(/\s+/g, ' ').trim();
+  const icon = readFileSync(new URL('../public/icon.svg', import.meta.url), 'utf8');
+  assert.ok(pathOf(icon), 'icon.svg has no path');
+  assert.equal(pathOf(WCARD.WRT.wrTile()), pathOf(icon), 'the card\'s W is not the W');
+  const css = WCARD.WRT.WIDGET_CSS;
+  for (const m of css.matchAll(/([^{}]*::?(?:before|after)[^{}]*)\{([^}]*)\}/g)) {
+    assert.ok(!/inset:\s*[^;]*-\d/.test(m[2]), `${m[1].trim()} reaches past its box: ${m[2]}`);
+  }
+  const names = [...css.matchAll(/@keyframes\s+([\w-]+)/g)].map(m => m[1]);
+  assert.ok(names.length >= 2);
+  assert.equal(new Set(names).size, names.length, `animation names collide: ${names}`);
+  for (const nm of names) assert.match(nm, /^wr-/);
+  assert.match(css, /@media \(prefers-reduced-motion:reduce\)\{\*,\*::before,\*::after\{animation:none!important;transition:none!important\}\}/);
+  // The plate's colours are the card's own — never the host's.
+  assert.ok(!/var\(--(color|font|border-radius)-/.test(css));
+  assert.match(css, /--wr-iron:#14110F/);
+  assert.ok(!/#7A6E67/i.test(css), 'ash-dim (3.8:1) is text on the card');
+  // Every grid track can shrink.
+  for (const m of css.matchAll(/grid-template-columns:([^;}]+)/g)) {
+    assert.ok(!/(^|\s)1fr/.test(m[1]), `a grid track cannot shrink: ${m[1]}`);
+  }
+});
+
+// ── The card computes nothing ────────────────────────────────────────────
+
+await test('the card\'s script does no arithmetic and counts nothing', () => {
+  for (const bad of ['reduce(', 'toFixed(', 'toLocaleString(', 'Intl.', 'parseFloat(', 'parseInt(', 'Math.', '.length']) {
+    assert.ok(!WCARD.script.includes(bad), `the card's script contains ${bad}`);
+  }
+});
+
+await test('every figure on the card is the server\'s: with every digit in the view turned to a letter, no digit is drawn', () => {
+  const letters = 'abcdefghij';
+  const sentinel = v => (typeof v === 'string' ? v.replace(/\d/g, d => letters[d])
+    : Array.isArray(v) ? v.map(sentinel) : v && typeof v === 'object' ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, sentinel(x)])) : v);
+  const s = WCARD.run();
+  const views = [
+    ...Object.values(WCARD.reads).map(r => WCARD.DR.dayView(r, { explicit: true, badge: 'LOGGED', fresh: ['a3'],
+      just: { caption: 'Just logged', rows: WCARD.DR.justRows([{ type: 'food', summary: 'toast', at: '13:02', calories: 400, protein_g: 16, carbs_g: 48, fat_g: 16, estimated: true }]) } })),
+    WCARD.DR.dayView(WCARD.reads.flagged),
+    WCARD.WIDG.stampView({ badge: 'LOGGED', line: 'two eggs — 300 kcal' }),
+  ];
+  let attrs = 0;
+  for (const view of views) {
+    const html = s.render(sentinel({ ...view, account: 'a1@b2.c3' }));
+    // The numbers it was handed go in two attributes only, as given.
+    for (const m of html.matchAll(/style="([^"]*)"/g)) { assert.match(m[1], /^width:\d+(\.\d+)?%$/); attrs++; }
+    for (const m of html.matchAll(/stroke-dasharray="([^"]*)"/g)) { assert.match(m[1], /^\d+(\.\d+)? 100$/); attrs++; }
+    const rest = html.replace(/<svg[\s\S]*?<\/svg>/g, ' ').replace(/\s(style|tabindex)="[^"]*"/g, '')
+      .replace(/&#39;/g, "'").replace(/&quot;/g, '"').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
+    assert.ok(!/\d/.test(rest), `a digit of the card's own: ${rest.match(/.{0,40}\d.{0,20}/)?.[0]}`);
+  }
+  assert.ok(attrs > 0, 'no bar or ring was drawn — the attribute check is not exercised');
+});
+
+await test('everything the card prints is escaped, and a door anywhere but wrought.fit is no door', () => {
+  const s = WCARD.run();
+  const evil = '<img src=x onerror=alert(1)>';
+  const v = WCARD.DR.dayView(WCARD.reads.flagged, { badge: evil });
+  v.intake.rows[0].what = evil;
+  v.review.say = evil;
+  v.review.link = 'https://evil.example/" onmouseover="x';
+  v.open = '" onmouseover=x "';
+  const html = s.render({ ...v, account: evil });
+  assert.ok(!html.includes('<img'), 'markup reached the page');
+  assert.ok(html.includes('&lt;img src=x onerror=alert(1)&gt;'));
+  assert.ok(!/"\s*onmouseover=/.test(html), 'a quote escaped an attribute');
+  assert.ok(!html.includes('data-wr-open'), 'an unsafe link drew a button');
+  const ok = s.render(WCARD.DR.dayView(WCARD.reads.flagged));
+  assert.ok(ok.includes('data-wr-open="https://wrought.fit/app.html"'));
+  assert.ok(!ok.includes('#care-review'), 'a review button to a screen that does not exist');
+  // A view that DOES carry a review link on wrought.fit gets its button.
+  const withLink = WCARD.DR.dayView(WCARD.reads.flagged);
+  withLink.review = { ...withLink.review, link: 'https://wrought.fit/app.html#somewhere', link_label: 'Go' };
+  assert.ok(s.render(withLink).includes('data-wr-open="https://wrought.fit/app.html#somewhere"'));
+  const st = s.render({ kind: 'stamp', badge: evil, line: evil });
+  assert.ok(!st.includes('<img'));
+});
+
+// ── The bridge, run exactly as served ────────────────────────────────────
+
+await test('the handshake: one ui/initialize, then initialized; the result\'s _meta draws the card; strangers ignored; teardown answered', () => {
+  const s = WCARD.run();
+  assert.equal(s.posted.length, 1, 'nothing may be posted before the host answers the handshake');
+  assert.equal(s.posted[0].method, 'ui/initialize');
+  assert.equal(s.posted[0].params.protocolVersion, '2026-01-26');
+  assert.deepEqual(s.posted[0].params.appCapabilities, { availableDisplayModes: ['inline'] });
+  // Before any result: the header, never an empty frame.
+  assert.match(s.root.innerHTML, /<header class="wr-strip">/);
+  s.send({ jsonrpc: '2.0', id: s.posted[0].id, result: { hostContext: { theme: 'light' } } });
+  const init = s.posted.find(m => m.method === 'ui/notifications/initialized');
+  assert.ok(init && init.id === undefined, 'initialized is a notification');
+  assert.equal(s.docEl.attrs['data-theme'], 'light');
+  assert.ok(s.posted.some(m => m.method === 'ui/notifications/size-changed'));
+  const view = WCARD.DR.dayView(WCARD.reads.watch, { badge: 'LOGGED' });
+  s.send({ jsonrpc: '2.0', method: 'ui/notifications/tool-result', params: { content: [{ type: 'text', text: '{}' }], _meta: { 'wrought/card': view } } });
+  assert.ok(s.root.innerHTML.includes('Protein shake') && s.root.innerHTML.includes('LOGGED'), 'the result\'s _meta did not draw');
+  const drawn = s.root.innerHTML;
+  s.send({ jsonrpc: '2.0', method: 'ui/notifications/tool-result', params: { _meta: { 'wrought/card': { ...view, badge: 'IMPOSTER' } } } }, { not: 'the host' });
+  assert.equal(s.root.innerHTML, drawn, 'a message from anywhere but the host changes nothing');
+  s.send({ jsonrpc: '2.0', id: 7, method: 'ui/resource-teardown', params: {} });
+  assert.ok(s.posted.some(m => m.id === 7 && m.result && Object.keys(m.result).length === 0 && !m.method));
+  const before = s.posted.length;
+  s.ctx.__post = m => s.posted.push(m);
+  assert.equal(WCARD.vm.runInContext('wrOpen("https://evil.example", __post, () => 99)', s.ctx), false);
+  assert.ok(!s.posted.slice(before).some(m => m.method === 'ui/open-link'));
+  assert.equal(WCARD.vm.runInContext('wrOpen("https://wrought.fit/app.html", __post, () => 99)', s.ctx), true);
+  assert.ok(s.posted.some(m => m.method === 'ui/open-link' && m.params.url === 'https://wrought.fit/app.html'));
+  // Nothing it posts reaches a tool or the model.
+  for (const m of s.posted) assert.ok(['ui/initialize', 'ui/notifications/initialized', 'ui/notifications/size-changed', 'ui/open-link', undefined].includes(m.method), m.method);
+});
+
+await test('ChatGPT\'s window.openai draws at once off toolResponseMetadata — envelope forms too — and only a new view redraws', () => {
+  const view = WCARD.DR.dayView(WCARD.reads.watch, { badge: 'LOGGED' });
+  const s = WCARD.run({ openai: { theme: 'dark', toolResponseMetadata: { 'wrought/card': view } } });
+  assert.ok(s.root.innerHTML.includes('Protein shake'), 'the card must draw with no bridge answer at all');
+  assert.equal(s.docEl.attrs['data-theme'], 'dark');
+  for (const meta of [{ mcp_tool_result: { _meta: { 'wrought/card': view } } }, { call_tool_result: { _meta: { 'wrought/card': view } } }, { _meta: { 'wrought/card': view } }]) {
+    assert.ok(WCARD.run({ openai: { toolResponseMetadata: meta } }).root.innerHTML.includes('Protein shake'), JSON.stringify(Object.keys(meta)));
+  }
+  // toolOutput is not where the card lives.
+  assert.ok(!WCARD.run({ openai: { toolOutput: { 'wrought/card': view } } }).root.innerHTML.includes('Protein shake'));
+  // A theme, a height, or a fresh copy of the same view: no redraw (an opened list stays open).
+  s.cls.add('wr-all');
+  s.fire('openai:set_globals', { globals: { theme: 'light' } });
+  s.fire('openai:set_globals', { globals: { maxHeight: 500 } });
+  s.fire('openai:set_globals', { globals: { toolResponseMetadata: JSON.parse(JSON.stringify({ 'wrought/card': view })) } });
+  assert.ok(s.cls.has('wr-all'), 'an unchanged view was redrawn');
+  assert.equal(s.docEl.attrs['data-theme'], 'light');
+  // A new view redraws — folded again.
+  s.fire('openai:set_globals', { globals: { toolResponseMetadata: { 'wrought/card': WCARD.WIDG.stampView({ badge: 'LOGGED', line: 'two eggs' }) } } });
+  assert.ok(s.root.innerHTML.includes('two eggs'));
+  assert.ok(!s.cls.has('wr-all'), 'a new card did not start folded');
+});
+
+await test('an unknown kind or a missing view draws the header alone — never the old card; an unknown theme is ignored', () => {
+  const s = WCARD.run();
+  s.send({ jsonrpc: '2.0', id: 1, result: {} });
+  s.send({ jsonrpc: '2.0', method: 'ui/notifications/tool-result', params: { _meta: { 'wrought/card': WCARD.DR.dayView(WCARD.reads.watch) } } });
+  assert.ok(s.root.innerHTML.includes('Protein shake'));
+  s.send({ jsonrpc: '2.0', method: 'ui/notifications/tool-result', params: { content: [{ type: 'text', text: '{}' }] } });
+  assert.ok(!s.root.innerHTML.includes('Protein shake'), 'the old card stayed up');
+  assert.match(s.root.innerHTML, /<header class="wr-strip">[\s\S]*WROUGHT[\s\S]*<\/header><\/article>$/);
+  s.send({ jsonrpc: '2.0', method: 'ui/notifications/tool-result', params: { _meta: { 'wrought/card': { kind: 'chart', v: 9, shiny: true } } } });
+  assert.match(s.root.innerHTML, /<header class="wr-strip">/);
+  assert.ok(!/Couldn't draw/.test(s.root.innerHTML));
+  // A day view with fields it does not know still draws.
+  const future = { ...WCARD.DR.dayView(WCARD.reads.watch), sparkle: { x: 1 } };
+  assert.ok(s.render(future).includes('Protein shake'));
+  s.send({ jsonrpc: '2.0', method: 'ui/notifications/host-context-changed', params: { theme: 'sepia', styles: { variables: { '--color-text-primary': 'red' } } } });
+  assert.notEqual(s.docEl.attrs['data-theme'], 'sepia');
+  assert.deepEqual(s.docEl.props, {}, 'a host variable was set');
+});
+
+// ── What the card actually draws ─────────────────────────────────────────
+
+// A root that answers wrMount's attribute selectors off the HTML it was just
+// given — enough to fire the card's taps without a browser.
+WCARD.mount = (view, { openai } = {}) => {
+  const s = WCARD.run({ openai });
+  const cls = new Set();
+  const opened = [];
+  const unesc = v => String(v).replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
+  let built = null, builtFor = null;
+  const elements = () => {
+    if (builtFor === root.innerHTML) return built;
+    builtFor = root.innerHTML;
+    built = [...root.innerHTML.matchAll(/<([a-z]+)((?:\s+[\w-]+(?:="[^"]*")?)*)\s*\/?>/g)].map(m => {
+      const attrs = Object.fromEntries([...m[2].matchAll(/([\w-]+)(?:="([^"]*)")?/g)].map(a => [a[1], a[2] == null ? '' : unesc(a[2])]));
+      const own = new Set(String(attrs.class || '').split(/\s+/).filter(Boolean));
+      const listeners = {};
+      return { tag: m[1], attrs, removed: false, listeners,
+        classList: { add: c => own.add(c), remove: c => own.delete(c), contains: c => own.has(c), toggle: c => (own.has(c) ? own.delete(c) : own.add(c)) },
+        addEventListener(t, fn) { (listeners[t] ||= []).push(fn); },
+        remove() { this.removed = true; },
+        getAttribute(k) { return Object.hasOwn(attrs, k) ? attrs[k] : null; },
+        setAttribute(k, v) { attrs[k] = String(v); },
+        fire(t, ev = {}) { (listeners[t] || []).forEach(fn => fn({ preventDefault() {}, ...ev })); } };
+    });
+    return built;
+  };
+  const by = sel => { const a = (sel.match(/^\[([\w-]+)\]$/) || [])[1]; return elements().filter(e => a && Object.hasOwn(e.attrs, a)); };
+  const root = { innerHTML: '', classList: { add: c => cls.add(c), remove: c => cls.delete(c), contains: c => cls.has(c) },
+    querySelector: sel => by(sel)[0] || null, querySelectorAll: sel => by(sel) };
+  s.ctx.__root = root; s.ctx.__v = view; s.ctx.__open = url => { opened.push(url); return true; };
+  WCARD.vm.runInContext('wrMount(__root, __v, __open)', s.ctx);
+  return { root, cls, opened, by, s };
+};
+
+await test('the card\'s taps: earlier rows unfold, a row opens its macros, the review sentence opens, a door opens the record', () => {
+  // Eight meals: three fold behind "Show 3 earlier", and the tap unfolds them.
+  const log = Array.from({ length: 8 }, (_, i) => WCARD.item(`f${i + 1}`, `${String(7 + i).padStart(2, '0')}:00`, `item ${i + 1}`, 100 + i, { protein_g: 5, carbs_g: 10, fat_g: 3 }));
+  const m = WCARD.mount(WCARD.DR.dayView(WCARD.read({ log, bal: { activeCalories: 400 } })));
+  const more = m.by('[data-wr-more]');
+  assert.equal(more.length, 1, 'no "Show earlier" button');
+  assert.ok(!m.cls.has('wr-all'));
+  more[0].fire('click');
+  assert.ok(m.cls.has('wr-all'), 'the tap did not unfold the earlier rows');
+  assert.ok(more[0].removed, 'the button stayed after unfolding');
+  // A row with macros: a tap (or Enter / Space) opens them and says so.
+  const row = m.by('[data-wr-row]')[0];
+  assert.ok(row, 'no tappable row');
+  assert.equal(row.getAttribute('aria-expanded'), 'false');
+  row.fire('click');
+  assert.ok(row.classList.contains('wr-open'));
+  assert.equal(row.getAttribute('aria-expanded'), 'true');
+  row.fire('keydown', { key: ' ' });
+  assert.equal(row.getAttribute('aria-expanded'), 'false');
+  // The door: the record on wrought.fit, through the host's open.
+  const doors = m.by('[data-wr-open]');
+  assert.deepEqual(doors.map(d => d.getAttribute('data-wr-open')), ['https://wrought.fit/app.html']);
+  doors[0].fire('click');
+  assert.deepEqual(m.opened, ['https://wrought.fit/app.html']);
+  // The review sentence: with no review link it unfolds and opens nothing…
+  const f = WCARD.mount(WCARD.DR.dayView(WCARD.reads.flagged));
+  const flag = f.by('[data-wr-flag]')[0];
+  assert.ok(flag, 'no review sentence under a flag');
+  assert.equal(flag.getAttribute('role'), 'button');
+  flag.fire('click');
+  assert.ok(flag.classList.contains('wr-opened'));
+  assert.deepEqual(f.opened, []);
+  // …and with one, a tap goes where the button goes, by click or by key.
+  const linked = WCARD.DR.dayView(WCARD.reads.flagged);
+  linked.review = { ...linked.review, link: 'https://wrought.fit/app.html#r', link_label: 'Review' };
+  const g = WCARD.mount(linked);
+  const gf = g.by('[data-wr-flag]')[0];
+  gf.fire('keydown', { key: 'Enter' });
+  assert.deepEqual(g.opened, ['https://wrought.fit/app.html#r']);
+  assert.ok(!gf.classList.contains('wr-opened'), 'a tap that went to the review also unfolded');
+  // NOT SAVED keeps its warning plate.
+  const ns = WCARD.mount(WCARD.WIDG.cardFor({ error: 'tool_failed', say: 'That did not save — boom' }, { write: true }));
+  assert.match(ns.root.innerHTML, /^<article class="wr wr-stamp wr-warn"/);
+  assert.match(ns.root.innerHTML, /<span class="wr-kind">NOT SAVED<\/span>/);
+  // ChatGPT's own height report is made.
+  const heights = [];
+  WCARD.run({ openai: { notifyIntrinsicHeight: h => heights.push(h) } });
+  assert.ok(heights.length > 0, 'ChatGPT was never told the card\'s height');
+});
+
+await test('every string the view carries is drawn, escaped — and the only numbers drawn are the arcs and bars as given', () => {
+  const s = WCARD.run();
+  const { wrEsc } = WCARD.WRT;
+  // Leaves that are never printed as text: the view's own bookkeeping, the
+  // whitelisted class words, the per-row gram columns (the card prints the
+  // row's macro line instead), and the links (attributes, checked elsewhere).
+  const UNPRINTED = new Set(['v', 'kind', 'id', 'tone', 'key', 'state', 'protein', 'carbs', 'fat', 'open', 'link', 'link_label']);
+  const sentinel = (o, path, printed) => {
+    if (Array.isArray(o)) return o.map((x, i) => sentinel(x, `${path}.${i}`, printed));
+    if (o && typeof o === 'object') return Object.fromEntries(Object.entries(o).map(([k, x]) => [k, UNPRINTED.has(k) || typeof x !== 'string' ? (typeof x === 'object' ? sentinel(x, `${path}.${k}`, printed) : x) : (printed.push(`${path}.${k}`), `<zq data-p="${path}.${k}">`)]));
+    return o;
+  };
+  const views = [
+    ...Object.entries(WCARD.reads).flatMap(([name, r]) => [
+      [name, WCARD.DR.dayView(r)],
+      [`${name}+`, WCARD.DR.dayView(r, { explicit: true, badge: 'LOGGED', fresh: ['a3'],
+        just: WCARD.DR.justBlock([{ type: 'food', summary: 'toast', at: '13:02', calories: 400, protein_g: 16, carbs_g: 48, fat_g: 16, estimated: true }]) })],
+      [`${name}?`, WCARD.DR.dayView(r, { badge: 'LOGGED',
+        just: WCARD.DR.justBlock([{ type: 'food', summary: 'toast', at: '13:02', calories: null, protein_g: 16 }]) })],
+    ]),
+    ['stamp', WCARD.WIDG.stampView({ badge: 'LOGGED', line: 'two eggs', date_label: 'Mon 5 Oct' })],
+  ];
+  let checked = 0, arcs = 0, bars = 0;
+  for (const [name, view] of views) {
+    const printed = [];
+    const html = s.render(sentinel(view.kind === 'day' ? { ...view, account: 'a@b.c' } : view, 'view', printed));
+    assert.ok(!/<zq[\s>]/.test(html), `${name}: a string reached the page unescaped`);
+    for (const p of printed) {
+      assert.ok(html.includes(wrEsc(`<zq data-p="${p}">`)), `${name}: ${p} is in the view and never drawn`);
+      checked++;
+    }
+    // With the real strings: each arc and each bar segment is the server's own number.
+    const real = s.render(view);
+    for (const t of view.targets || []) {
+      if (t.arc > 0) { assert.ok(real.includes(`stroke-dasharray="${t.arc} 100"`), `${name}: arc ${t.arc} not drawn as given`); arcs++; }
+    }
+    for (const b of view.intake?.bar || []) { assert.ok(real.includes(`class="wr-${b.key}" style="width:${b.share}%"`), `${name}: bar ${b.key} not ${b.share}%`); bars++; }
+  }
+  assert.ok(checked > 200 && arcs > 0 && bars > 0, `too little was exercised: ${checked} strings, ${arcs} arcs, ${bars} bars`);
+  // An empty day draws no hero, so it carries no caption for one.
+  assert.equal(WCARD.DR.dayView(WCARD.reads.empty).intake.caption, null);
+});
+
+await test('a ring is coloured by the server\'s verdict: a ceiling on a day still running is never "met", and 0% draws no dot', () => {
+  const g = (metric, target, actual, direction, cadence = 'daily') => ({ scored: true, goal: metric, metric, cadence, target, actual, unit: metric === 'calories' ? ' kcal' : '',
+    percent: Math.round(actual / target * 100), hit: direction === 'at_most' ? actual <= target : actual >= target, over: direction === 'at_most' && actual > target, gap: actual - target, direction });
+  const log = [WCARD.item('r1', '08:00', 'oats', 900, { protein_g: 20, carbs_g: 100, fat_g: 20 })];
+  const states = (date, scored) => WCARD.DR.dayView(WCARD.read({ log, date, scored, bal: { activeCalories: 400 } })).targets.map(t => [t.label, t.state, t.arc]);
+  // Today: 900 of a 1,723 ceiling is on the way, not met; steps over target are met.
+  assert.deepEqual(states(WCARD.TODAY, [g('calories', 1723, 900, 'at_most'), g('steps', 10000, 12000, 'at_least')]),
+    [['Calories', 'way', 52], ['Steps', 'met', 100]]);
+  // A ceiling passed is over, whenever.
+  assert.deepEqual(states(WCARD.TODAY, [g('calories', 800, 900, 'at_most')]), [['Calories', 'over', 100]]);
+  // A finished day under its ceiling did meet it.
+  assert.deepEqual(states('2026-10-05', [g('calories', 1723, 900, 'at_most')]), [['Calories', 'met', 52]]);
+  // A weekly ceiling is scored as the week stands.
+  assert.equal(states(WCARD.TODAY, [g('calories', 12000, 900, 'at_most', 'weekly')])[0][1], 'met');
+  // 0%: the track, never a round-capped dot at twelve o'clock.
+  const zero = WCARD.DR.dayView(WCARD.read({ log, scored: [g('steps', 10000, 0, 'at_least')], bal: { activeCalories: 400 } }));
+  assert.equal(zero.targets[0].arc, 0);
+  const html = WCARD.run().render(zero);
+  assert.ok(html.includes('class="trk"') && !html.includes('class="arc"'), 'a 0% ring drew an arc');
+});
+
+await test('the "just logged" block: one row on its own, several only for what the table does not hold', () => {
+  const { justBlock } = WCARD.DR;
+  const food = (n, kcal = 100) => ({ type: 'food', summary: `food ${n}`, at: '08:00', calories: kcal });
+  assert.deepEqual(justBlock([food(1)]).rows.map(r => r.what), ['food 1']);
+  assert.equal(justBlock([food(1)]).caption, 'Just logged');
+  assert.equal(justBlock([food(1), food(2), food(3)]), null);
+  assert.deepEqual(justBlock([food(1), { type: 'weight', summary: 'weighed 150 kg' }]).rows.map(r => r.what), ['weighed 150 kg']);
+  assert.equal(justBlock([]), null);
+  // Another day's food is not in today's table: listed, with its day.
+  const other = { ...food(9, 380), date: '2026-10-05' };
+  const b = justBlock([food(1), other], { caption: 'Filled in', inTable: r => r.type === 'food' && !r.date });
+  assert.equal(b.caption, 'Filled in');
+  assert.deepEqual(b.rows.map(r => [r.what, r.at, r.figure]), [['food 9', '8:00am · Mon 5 Oct', '380 kcal']]);
+  // A seven-meal catch-up measured 1,060px at 390 with every meal drawn twice.
+  const S = WCARD.scenarios();
+  assert.equal(S.flush7.card.just, null);
+});
+
+await test('the card\'s layout: the figure never breaks, a stamp keeps its date on a phone, the rings sit in equal tiles', () => {
+  const css = WCARD.WRT.WIDGET_CSS;
+  // "kcal" broke into "K / CAL" at 560–600px, and a five-digit figure split.
+  assert.match(css, /\.wr-fig\{[^}]*white-space:nowrap/);
+  assert.ok(!/\.wr-fig\{[^}]*overflow-wrap:anywhere/.test(css), 'the figure may still break inside a number');
+  // …and its caption wraps under it rather than shrinking past its longest
+  // word: a five-digit day at 560px ran "BREAKDOWN" into the balance beside it.
+  assert.match(css, /\.wr-hero\{[^}]*flex-wrap:wrap/);
+  assert.match(css, /\.wr-figcap\{flex:1 1 \d+px;/);
+  // The day card's date drops on a phone (its title carries it); a stamp's never.
+  assert.match(css, /@media \(max-width:419px\)\{\.wr-when\{display:none\}\.wr-stamp \.wr-when\{display:inline\}\}/);
+  // Equal tracks: a wrapping flex row stretched a fourth ring across the card.
+  // auto-fill keeps a lone ring a tile wide (auto-fit would stretch it).
+  assert.match(css, /\.wr-goals\{display:grid;grid-template-columns:repeat\(auto-fill,minmax\(104px,1fr\)\)/);
+  assert.ok(!/\.wr-g\{[^}]*flex(-basis)?:/.test(css), 'a ring still takes a flex basis');
+});
+
+await test('the bridge: neither door wipes the card the other drew, and only a carried view redraws', () => {
+  const view = WCARD.DR.dayView(WCARD.reads.watch, { badge: 'LOGGED' });
+  // A: the card arrived through the MCP Apps door while ChatGPT's metadata is
+  // an envelope this door cannot read; a height change must not wipe it.
+  const a = WCARD.run({ openai: { toolResponseMetadata: { status: 'success' } } });
+  a.send({ jsonrpc: '2.0', method: 'ui/notifications/tool-result', params: { _meta: { 'wrought/card': view } } });
+  assert.ok(a.root.innerHTML.includes('Protein shake'));
+  a.fire('openai:set_globals', { globals: { maxHeight: 500 } });
+  assert.ok(a.root.innerHTML.includes('Protein shake'), 'a height change wiped the card');
+  a.fire('openai:set_globals', { globals: { toolResponseMetadata: { status: 'success' } } });
+  assert.ok(a.root.innerHTML.includes('Protein shake'), 'an unreadable envelope wiped the card');
+  // B: drawn from window.openai; a tool-result this door cannot read leaves it.
+  const b = WCARD.run({ openai: { toolResponseMetadata: { 'wrought/card': view } } });
+  assert.ok(b.root.innerHTML.includes('Protein shake'));
+  b.send({ jsonrpc: '2.0', method: 'ui/notifications/tool-result', params: { content: [{ type: 'text', text: '{}' }] } });
+  assert.ok(b.root.innerHTML.includes('Protein shake'), 'an empty tool-result wiped the card ChatGPT drew');
+  // A carried NEW view still redraws on either door.
+  b.fire('openai:set_globals', { globals: { toolResponseMetadata: { 'wrought/card': WCARD.WIDG.stampView({ badge: 'LOGGED', line: 'two eggs' }) } } });
+  assert.ok(b.root.innerHTML.includes('two eggs'));
+  a.send({ jsonrpc: '2.0', method: 'ui/notifications/tool-result', params: { _meta: { 'wrought/card': WCARD.WIDG.stampView({ badge: 'UPDATED', line: 'oats' }) } } });
+  assert.ok(a.root.innerHTML.includes('oats'));
+});
+
+await test('params: null is answered, never thrown out of the handler', async () => {
+  const init = await handleRpc({ jsonrpc: '2.0', id: 3, method: 'initialize', params: null }, null);
+  assert.ok(init.result && init.result.capabilities.resources, JSON.stringify(init));
+  const read = await handleRpc({ jsonrpc: '2.0', id: 4, method: 'resources/read', params: null }, null);
+  assert.equal(read.error.code, -32602);
+  const res = await handler({ httpMethod: 'POST', headers: {}, body: JSON.stringify({ jsonrpc: '2.0', id: 5, method: 'resources/read', params: null }) });
+  assert.equal(JSON.parse(res.body).error.code, -32602);
+});
+
+// ── What the model reads ─────────────────────────────────────────────────
+
+await test('the model is told the card is the layout when it is drawn, and the table when it is not', () => {
+  const { DAY_CARD_NOTE } = WCARD.DR;
+  assert.ok(DAY_CARD_NOTE.startsWith('WHEN WROUGHT\'S CARD IS DRAWN FOR THIS REPLY'));
+  assert.match(DAY_CARD_NOTE, /do NOT paste day_card or re-list its rows/);
+  assert.match(DAY_CARD_NOTE, /WHEN NO CARD IS DRAWN: SHOW day_card EXACTLY AS WRITTEN/);
+  assert.match(WCARD.WIDG.WIDGET_DESCRIPTION, /Do not paste day_card or repeat the card's figures/);
+  assert.match(SERVER_INSTRUCTIONS, /When the host draws Wrought's own card for the reply, that card is the layout — do not paste day_card under it as well\./);
+  // The calorie rule rides the log's input schema (reaches the Action uncut);
+  // the log description itself is untouched.
+  const log = TOOLS.find(t => t.name === 'log');
+  assert.match(log.inputSchema.properties.events.items.properties.detail.description, /FOOD\/DRINK: calories is a NUMBER on every named food or drink \(a photo counts as named\)/);
+  assert.match(log.inputSchema.properties.events.items.properties.detail.description, /filed NOT COUNTED and must be estimated with structure_entries in the same turn/);
+  assert.ok(!/FOOD\/DRINK: calories is a NUMBER/.test(log.description));
 });
 
 // ── Report ──────────────────────────────────────────────────────────────────

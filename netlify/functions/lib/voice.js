@@ -42,6 +42,20 @@ export function spokenFlag(flag) {
   return shape ? shape(flag.detail, flag) : flag.detail || null;
 }
 
+/**
+ * The care flag as Wrought's chat card prints it — pure. The spoken form says
+ * "Tap to review", which is right on a lock screen whose tap opens the review
+ * and wrong on a card, where there is nothing to tap: the review happens in
+ * the conversation (review_intake_days), so the card says what to tell it.
+ * Every other flag reads exactly as it is spoken.
+ */
+export function writtenFlag(flag) {
+  if (flag?.flag === 'very_low_intake' && flag?.needs_review) {
+    return `${flag.detail} To review ${shortDates(flag.evidence_dates)}, say which of those days were fully logged and which had meals missing — never invent the food. If the log was complete, that is under what a body runs on and worth a doctor.`;
+  }
+  return spokenFlag(flag);
+}
+
 function shortDates(dates = []) {
   const shown = dates.slice(0, 4).map(date => {
     const d = new Date(`${date}T12:00:00Z`);

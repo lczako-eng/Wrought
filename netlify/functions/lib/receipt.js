@@ -190,7 +190,18 @@ export function dayReceipt({ day = null, balance = null, date = null, today = nu
 
   // No net off half a burn, or off a resting figure that is only part of the
   // day: a number that reads as eating over when somebody may be well under.
-  const net = cav.show ? inn.total - out.total : null;
+  // And NONE OFF NOTHING EATEN — today or any day. "0 in − 3,179 out = 3,179
+  // down" off a past day with nothing logged is a deficit nobody ran, and the
+  // whole-day read beside this receipt already says there is no
+  // in-versus-out; one reply must not say both.
+  const counted = inLines.some(l => l.calories != null && l.calories !== '' && Number.isFinite(Number(l.calories)));
+  const noIntake = !counted || !(inn.total > 0);
+  const netCav = noIntake
+    ? { show: false, why: `${inLines.length && !counted ? `nothing with a calorie figure ${partial ? 'is logged yet' : 'was logged this day'}`
+      : inLines.length ? `nothing with calories in it ${partial ? 'is logged yet' : 'was logged this day'}`
+      : partial ? 'nothing eaten is logged yet' : 'nothing eaten was logged this day'}, so there is no in-versus-out` }
+    : cav;
+  const net = netCav.show ? inn.total - out.total : null;
 
   // THE MATH, SHOWN. The founder, on being handed lines without the add-up:
   // "do the math, do the add-up — we have to see either plus or minus. My
@@ -202,7 +213,7 @@ export function dayReceipt({ day = null, balance = null, date = null, today = nu
   const math = {
     out: `${out.lines.map(l => `${money(l.calories)} ${shortName(l.what)}`).join(' + ')} = ${money(out.total)} out`,
     net: net == null
-      ? `not worked out — ${cav.why}`
+      ? `not worked out — ${netCav.why}`
       : `${money(inn.total)} in − ${money(out.total)} out = ${net < 0 ? `${money(Math.abs(net))} down` : net > 0 ? `${money(net)} over` : 'level'}`,
   };
 
@@ -223,10 +234,10 @@ export function dayReceipt({ day = null, balance = null, date = null, today = nu
     ...(span.short ? { short_note: `The watch stopped reporting for this day at ${span.at || 'before midnight'}, so the evening is missing from the burn: the real burn is higher and the real net further down.` } : {}),
     ...(setAside.length ? { set_aside: setAside } : {}),
     estimated: true,
-    say: receiptSay(inn, out, net, cav),
+    say: receiptSay(inn, out, net, netCav),
     note:
       'READ THIS OUT AS A RECEIPT, line by line, not as a summary. Every line keeps its own number and the two totals go underneath, ' +
-      (!cav.show ? `THERE IS NO NET HERE: ${cav.why}. Say that, and never work one out yourself. `
+      (!netCav.show ? `THERE IS NO NET HERE: ${netCav.why}. Say that, and never work one out yourself. `
         : partial ? 'SAY THAT TODAY IS NOT OVER whenever you quote the net: ' + (span.watchSoFar ? `resting is a whole-day figure, the watch's part is only as of ${span.at || 'its last send'}` : 'the burn is a whole-day figure') + ' and the food is only what has been logged so far, so a large-looking deficit is the day being incomplete rather than a deficit they have run. Never let it stand as a finished number — an overstated deficit is the one that tells somebody to eat less than they need. '
         : span.short ? 'Say the watch stopped reporting early on this day, so the burn is short and the net is further down than it reads. ' : '') +
       'then the net. Do not round them differently, do not add them up yourself, and do not drop the lines and quote only the totals — ' +

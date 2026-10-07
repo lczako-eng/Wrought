@@ -18,7 +18,7 @@
 import {
   getAuthUser, getProfile, localDateFor, localMinutesFor, clockString,
   addDays, daysBetween, sayWeight, sayLength, kgToLb, humanDuration, supabase,
-  insertEvents, withEffectiveTypes,
+  insertEvents, withEffectiveTypes, macroSplit,
 } from './lib/wrought.js';
 import { parseQuickAdd } from './lib/quickadd.js';
 import { activityBurn } from './lib/activity.js';
@@ -32,21 +32,6 @@ const CORS = {
 };
 
 const num = v => (Number.isFinite(+v) ? +v : 0);
-
-function macroSplit(t) {
-  const kcal = { protein: num(t.protein_g) * 4, carbs: num(t.carbs_g) * 4, fat: num(t.fat_g) * 9 };
-  const sum = kcal.protein + kcal.carbs + kcal.fat;
-  if (!sum) return null;
-  const pct = v => Math.round((v / sum) * 1000) / 10;
-  return {
-    protein_pct: pct(kcal.protein),
-    carbs_pct: pct(kcal.carbs),
-    fat_pct: pct(kcal.fat),
-    // Sugar is a SUBSET of carbs, never additional to them — it rides as its
-    // own share of the carb block rather than a fourth slice.
-    sugar_pct_of_carbs: num(t.carbs_g) ? Math.round((num(t.sugar_g) / num(t.carbs_g)) * 1000) / 10 : null,
-  };
-}
 
 const reply = (statusCode, body) => ({ statusCode, headers: CORS, body: JSON.stringify(body) });
 
