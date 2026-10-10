@@ -16039,15 +16039,25 @@ await test('the day card is the layout the founder asked to keep — the food ta
   assert.equal(watch.out.source, 'device');
   const card = dayCard(watch);
   const lines = card.split('\n');
-  // Every item with ITS OWN time (12-hour, like the watch's), calories and
-  // macros — a pipe in what somebody said is a character, never a column.
-  assert.ok(lines.includes('| two slices COBS sourdough \\| margarine and Havarti (11:18am) | 590 | — | — | — |'), card);
-  assert.ok(lines.includes('| KFC strips, fries, gravy (5:00pm) | 1,115 | 50g | 90g | 60g |'), card);
-  const foodRows = lines.slice(lines.indexOf('|---|---:|---:|---:|---:|') + 1, lines.findIndex(l => l.startsWith('| **Total**')));
+  // The founder's layout (8 October, "I love the format … keep the format"):
+  // the label, the day's calories as the headline, a Food / Calories table,
+  // the total, then protein, carbs and fat. Every item with ITS OWN time
+  // (12-hour, like the watch's) and calories — a pipe in what somebody said
+  // is a character, never a column.
+  assert.equal(lines[0], '**Estimated food intake · today so far**', card);
+  assert.ok(lines.includes('### 2,205 calories'), card);
+  assert.ok(lines.indexOf('### 2,205 calories') < lines.indexOf('| Food | Calories |'), 'the headline is not above the table');
+  assert.ok(lines.includes('| two slices COBS sourdough \\| margarine and Havarti (11:18am) | 590 |'), card);
+  assert.ok(lines.includes('| KFC strips, fries, gravy (5:00pm) | 1,115 |'), card);
+  const foodRows = lines.slice(lines.indexOf('|---|---:|') + 1, lines.findIndex(l => l.startsWith('| **Total**')));
   assert.equal(foodRows.length, watch.in.items.length, 'the table does not hold every item');
-  assert.equal(foodRows.reduce((t, r) => t + Number(r.split(' | ')[1].replace(/,/g, '')), 0), watch.in.total, 'the items do not add up to the card\'s own total');
-  assert.ok(lines.includes('| **Total** | **2,205** | **50g** | **90g** | **60g** |'), card);
-  assert.match(card, /2 of 3 items have none, so those totals count only the items that carry them/);
+  assert.equal(foodRows.reduce((t, r) => t + Number(r.split(' | ')[1].replace(/[ |,]/g, '')), 0), watch.in.total, 'the items do not add up to the card\'s own total');
+  assert.ok(lines.includes('| **Total** | **2,205** |'), card);
+  // Protein, carbs and fat under the total, as three figures of their own.
+  assert.equal(lines[lines.indexOf('| **Total** | **2,205** |') + 2], '**Protein** 50 g · **Carbs** 90 g · **Fat** 60 g', card);
+  assert.match(card, /2 of 3 items are missing protein, carbs or fat, so those totals count only the items that carry them/);
+  // No dash is drawn for a missing macro any more, so none is explained.
+  assert.ok(!/— means|\| — \|/.test(card), card);
   // No item carries sugar, fibre or saturated fat, and the day's zeros are
   // not figures: nothing about them is printed.
   assert.ok(!/sugar|fibre|saturated|\| 0g \|/i.test(card), `a zero that was never there:\n${card}`);
@@ -16077,7 +16087,9 @@ await test('the day card is the layout the founder asked to keep — the food ta
 
   // ── A meal with no calories is not a zero-calorie meal ──────────────────
   const lunch = dayCard(read({ log: [item('12:30', 'had lunch', null)], bal: { activeCalories: 400 } }));
-  assert.ok(lunch.includes('| had lunch (12:30pm) | not counted yet | — | — | — |'), lunch);
+  assert.ok(lunch.includes('| had lunch (12:30pm) | not counted yet |'), lunch);
+  // No headline off nothing counted, and no "0 g" for a macro nobody carries.
+  assert.ok(!/^### /m.test(lunch) && !/Protein|Carbs|\bFat\b/.test(lunch), lunch);
   assert.ok(lunch.includes('| **Total** | **not counted yet** |'), lunch);
   assert.ok(!/\| Eaten \||Net/.test(lunch), `a meal with no calories drew a deficit:\n${lunch}`);
   // Said once, under the food table — not again as something "not added".
@@ -16089,7 +16101,7 @@ await test('the day card is the layout the founder asked to keep — the food ta
   assert.match(empty, /Nothing eaten is logged yet today\./);
   assert.ok(!/\| Eaten \||Net/.test(empty), empty);
   const past = dayCard(read({ date: '2026-09-20', bal: { activeCalories: 0 } }));
-  assert.match(past, /^\*\*Calorie breakdown · Sun 20 Sep\*\*$/m, past);
+  assert.match(past, /^\*\*Estimated food intake · Sun 20 Sep\*\*$/m, past);
   assert.match(past, /Nothing eaten was logged this day\./);
   assert.ok(!/\| Eaten \||Net|so far|today/.test(past), past);
   const closed = dayCard(read({ log, date: '2026-09-25', bal: { activeCalories: 953 } }));
@@ -18205,6 +18217,12 @@ await test('more than five rows fold the earliest behind one written line; a row
   const five = WCARD.DR.dayView(WCARD.read({ log: log.slice(0, 5), bal: { activeCalories: 400 } }));
   assert.equal(five.intake.more_label, null);
   assert.ok(!five.intake.rows.some(x => x.folded));
+  // Six: the one row over is shown, never hidden behind a line as tall as it.
+  const six = WCARD.DR.dayView(WCARD.read({ log: log.slice(0, 6), bal: { activeCalories: 400 } }));
+  assert.equal(six.intake.more_label, null);
+  assert.ok(!six.intake.rows.some(x => x.folded));
+  const seven = WCARD.DR.dayView(WCARD.read({ log: log.slice(0, 7), bal: { activeCalories: 400 } }));
+  assert.equal(seven.intake.more_label, 'Show 2 earlier');
 });
 
 await test('the "just logged" rows: a food with no figure says so in words, the clock reads 1:02pm', () => {
@@ -18242,10 +18260,17 @@ await test('one calorie split, in wrought.js: the dashboard\'s log bar and the c
   assert.ok(!/function macroSplit\(/.test(apiLog), 'api-log.js keeps its own copy');
   const dr = readFileSync(new URL('../netlify/functions/lib/dayread.js', import.meta.url), 'utf8');
   assert.match(dr, /const split = macroSplit\(inn\)/);
-  // The bar's shares are the split's own, clamped, never recomputed.
+  // The tiles' shares are the split's own, clamped, never recomputed — and
+  // said in words only when every item carries all three macros: over a
+  // partial record the split is of what was recorded, not of the day.
   const v = WCARD.DR.dayView(WCARD.reads.watch);
   const sp = macroSplit(WCARD.reads.watch.in);
-  assert.deepEqual(v.intake.bar.map(b => b.share), [sp.protein_pct, sp.carbs_pct, sp.fat_pct]);
+  assert.deepEqual(v.intake.tiles.map(b => [b.key, b.share]), [['protein', sp.protein_pct], ['carbs', sp.carbs_pct], ['fat', sp.fat_pct]]);
+  const whole = WCARD.reads.watch.in.items.every(it => ['protein_g', 'carbs_g', 'fat_g'].every(k => it[k] != null));
+  for (const t of v.intake.tiles) assert.equal(t.share_label, whole ? `${Math.round(sp[`${t.key}_pct`])}% of kcal` : null);
+  const full = WCARD.DR.dayView(WCARD.read({ log: [WCARD.item('z1', '08:00', 'oats', 900, { protein_g: 20, carbs_g: 100, fat_g: 20 })], bal: { activeCalories: 400 } }));
+  const fsp = macroSplit({ protein_g: 20, carbs_g: 100, fat_g: 20 });
+  assert.deepEqual(full.intake.tiles.map(t => t.share_label), [`${Math.round(fsp.protein_pct)}% of kcal`, `${Math.round(fsp.carbs_pct)}% of kcal`, `${Math.round(fsp.fat_pct)}% of kcal`]);
 });
 
 await test('a named food is chased when its calories are not a NUMBER, and the stored row wins', () => {
@@ -18325,7 +18350,11 @@ await test('a calorie figure sent as words is no figure — on the row, the card
   assert.equal(w.card.intake.figure, null);
   assert.equal(w.card.intake.total.kcal, 'not counted yet');
   assert.ok(!w.card.balance.rows.some(r => r.label === 'Eaten'), 'an Eaten row off words');
-  assert.equal(w.card.just.rows[0].flag, 'No figure');
+  // The toast is in the table, marked as this reply's write, saying in words
+  // that it counts for nothing yet — never drawn a second time above it.
+  assert.equal(w.card.just, null);
+  assert.equal(w.card.intake.rows[0].fresh, true);
+  assert.ok(w.card.intake.captions.some(c => /no calories on it yet, so the real total is higher/.test(c)), w.card.intake.captions);
   assert.match(w.body.day_card, /\| toast with cheese \([\d:]+[ap]m\) \| not counted yet \|/);
   assert.match(w.body.day_card, /\| \*\*Total\*\* \| \*\*not counted yet\*\* \|/);
   // The same words again on the follow-up: chased again, never "0 kcal".
@@ -18369,22 +18398,26 @@ await test('structure_entries: another day\'s entry keeps its figures, a quiet f
   assert.ok(!/for that one/.test(S.amend_macros.body.say), 'an uncounted item read "for that one" like a counted one');
   // amend_last keeps the row's estimated label when the amend says nothing about it.
   assert.deepEqual(S.amend_macros.stored_estimated, [true]);
-  // And the drawn card agrees: the just block says "No figure".
-  assert.equal(S.amend_macros.card.just.rows[0].flag, 'No figure');
-  assert.equal(S.se_macros.card.just.rows[0].flag, 'No figure');
+  // And the drawn card agrees: the row in today's table, marked, reads
+  // "not counted yet" — and is not drawn a second time above the table.
+  for (const c of [S.amend_macros.card, S.se_macros.card]) {
+    assert.equal(c.just, null);
+    const r = c.intake.rows.find(x => x.fresh);
+    assert.ok(r && r.uncounted && r.kcal === 'not counted yet', JSON.stringify(c.intake.rows));
+  }
   // The input schema still offers quiet.
   assert.equal(TOOLS.find(t => t.name === 'structure_entries').inputSchema.properties.quiet.type, 'boolean');
 });
 
-await test('the card a reply carries: LOGGED with the write marked, one row on its own, a catch-up marked in the table, the day asked for', () => {
+await test('the card a reply carries: LOGGED with the write marked in the table, never drawn twice, the day asked for', () => {
   const S = WCARD.scenarios();
-  // One food: LOGGED, its row fresh, the write on its own with its figure.
+  // One food: LOGGED, its row in the table marked, with its time and figure —
+  // and not repeated above the headline the founder's layout leads with.
   const one = S.sausage.card;
   assert.equal(one.kind, 'day');
   assert.equal(one.badge, 'LOGGED');
-  assert.deepEqual(one.intake.rows.filter(r => r.fresh).map(r => r.what), ['Costco restaurant sausage']);
-  assert.equal(one.just.caption, 'Just logged');
-  assert.deepEqual(one.just.rows.map(r => [r.what, r.at, r.figure]), [['Costco restaurant sausage', '3:17pm', '570 kcal']]);
+  assert.deepEqual(one.intake.rows.filter(r => r.fresh).map(r => [r.what, r.at, r.kcal]), [['Costco restaurant sausage', '3:17pm', '570']]);
+  assert.equal(one.just, null);
   assert.equal(one.account, 'someone@example.com');
   // An unprompted write is not an asked-for read: the explicit flag stays off
   // (no care flag here, so the net may show either way — the flag case is
@@ -18895,11 +18928,13 @@ await test('every string the view carries is drawn, escaped — and the only num
     for (const t of view.targets || []) {
       if (t.arc > 0) { assert.ok(real.includes(`stroke-dasharray="${t.arc} 100"`), `${name}: arc ${t.arc} not drawn as given`); arcs++; }
     }
-    for (const b of view.intake?.bar || []) { assert.ok(real.includes(`class="wr-${b.key}" style="width:${b.share}%"`), `${name}: bar ${b.key} not ${b.share}%`); bars++; }
+    for (const b of view.intake?.tiles || []) { assert.ok(real.includes(`class="wr-${b.key}" style="width:${b.share}%"`), `${name}: tile ${b.key} not ${b.share}%`); bars++; }
   }
   assert.ok(checked > 200 && arcs > 0 && bars > 0, `too little was exercised: ${checked} strings, ${arcs} arcs, ${bars} bars`);
-  // An empty day draws no hero, so it carries no caption for one.
-  assert.equal(WCARD.DR.dayView(WCARD.reads.empty).intake.caption, null);
+  // An empty day draws no headline, so it carries no Estimated mark, no
+  // table head and no tiles for one.
+  const emptyIn = WCARD.DR.dayView(WCARD.reads.empty).intake;
+  assert.deepEqual([emptyIn.pill, emptyIn.head, emptyIn.tiles], [null, null, null]);
 });
 
 await test('a ring is coloured by the server\'s verdict: a ceiling on a day still running is never "met", and 0% draws no dot', () => {
@@ -18923,12 +18958,14 @@ await test('a ring is coloured by the server\'s verdict: a ceiling on a day stil
   assert.ok(html.includes('class="trk"') && !html.includes('class="arc"'), 'a 0% ring drew an arc');
 });
 
-await test('the "just logged" block: one row on its own, several only for what the table does not hold', () => {
+await test('the "just logged" block lists only what the day\'s table does not hold', () => {
   const { justBlock } = WCARD.DR;
   const food = (n, kcal = 100) => ({ type: 'food', summary: `food ${n}`, at: '08:00', calories: kcal });
-  assert.deepEqual(justBlock([food(1)]).rows.map(r => r.what), ['food 1']);
-  assert.equal(justBlock([food(1)]).caption, 'Just logged');
+  // One meal or seven: each is marked in the table, never drawn twice.
+  assert.equal(justBlock([food(1)]), null);
   assert.equal(justBlock([food(1), food(2), food(3)]), null);
+  assert.deepEqual(justBlock([{ type: 'weight', summary: 'weighed 150 kg' }]).rows.map(r => r.what), ['weighed 150 kg']);
+  assert.equal(justBlock([{ type: 'weight', summary: 'weighed 150 kg' }]).caption, 'Just logged');
   assert.deepEqual(justBlock([food(1), { type: 'weight', summary: 'weighed 150 kg' }]).rows.map(r => r.what), ['weighed 150 kg']);
   assert.equal(justBlock([]), null);
   // Another day's food is not in today's table: listed, with its day.
@@ -18946,10 +18983,14 @@ await test('the card\'s layout: the figure never breaks, a stamp keeps its date 
   // "kcal" broke into "K / CAL" at 560–600px, and a five-digit figure split.
   assert.match(css, /\.wr-fig\{[^}]*white-space:nowrap/);
   assert.ok(!/\.wr-fig\{[^}]*overflow-wrap:anywhere/.test(css), 'the figure may still break inside a number');
-  // …and its caption wraps under it rather than shrinking past its longest
-  // word: a five-digit day at 560px ran "BREAKDOWN" into the balance beside it.
+  // …and the Estimated mark wraps under it rather than squeezing it: the
+  // headline's own box may shrink, the mark never breaks.
   assert.match(css, /\.wr-hero\{[^}]*flex-wrap:wrap/);
-  assert.match(css, /\.wr-figcap\{flex:1 1 \d+px;/);
+  assert.match(css, /\.wr-hl\{flex:1 1 auto;min-width:0\}/);
+  assert.match(css, /\.wr-pill\{flex:none;[^}]*white-space:nowrap/);
+  // The founder's tiles: three equal tracks that can shrink, never a row
+  // that wraps one tile onto a line of its own.
+  assert.match(css, /\.wr-macros\{display:grid;grid-template-columns:repeat\(3,minmax\(0,1fr\)\)/);
   // The day card's date drops on a phone (its title carries it); a stamp's never.
   assert.match(css, /@media \(max-width:419px\)\{\.wr-when\{display:none\}\.wr-stamp \.wr-when\{display:inline\}\}/);
   // Equal tracks: a wrapping flex row stretched a fourth ring across the card.

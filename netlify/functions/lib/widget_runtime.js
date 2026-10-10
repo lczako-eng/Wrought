@@ -128,38 +128,41 @@ export function wrRenderDay(view) {
   }
 
   h.push('<div class="wr-split">');
-  // What was eaten.
+  // What was eaten — the founder's layout: a label, the day's calories as the
+  // headline with its "Estimated" mark, a Food / Calories table, the total,
+  // then protein, carbs and fat as three tiles.
   const inn = v.intake && typeof v.intake === 'object' ? v.intake : {};
   h.push('<section class="wr-sec wr-in">');
   if (list(inn.rows).some(Boolean)) {
-    // The section's title rides beside the figure it titles.
-    h.push('<div class="wr-hero">' +
-      (inn.figure ? '<b class="wr-fig">' + wrEsc(inn.figure) + '<small>kcal</small></b>'
+    h.push('<div class="wr-hero"><div class="wr-hl"><p class="wr-cap">' + wrEsc(inn.title) + '</p>' +
+      (inn.figure ? '<b class="wr-fig">' + wrEsc(inn.figure) + (inn.unit ? '<small>' + wrEsc(inn.unit) + '</small>' : '') + '</b>'
         : '<b class="wr-fig wr-unset">' + wrEsc(inn.figure_missing) + '</b>') +
-      '<span class="wr-figcap"><span class="wr-cap">' + wrEsc(inn.title) + '</span>' + wrEsc(inn.caption) + '</span></div>');
-    const bar = list(inn.bar).filter(function (b) { return b && share(b.share) && (b.key === 'protein' || b.key === 'carbs' || b.key === 'fat'); });
-    if (bar[0]) {
-      h.push('<div class="wr-mbar" aria-hidden="true">' + bar.map(function (b) {
-        return '<span class="wr-' + b.key + '" style="width:' + b.share + '%"></span>';
-      }).join('') + '</div>');
-    }
-    // The bar's key rides under the total it splits: the grams, each with its swatch.
-    const keys = bar[0] ? '<span class="wr-mkeys">' + bar.map(function (b) {
-      return '<span><i class="wr-' + b.key + '"></i>' + wrEsc(b.label) + '</span>';
-    }).join('') + '</span>' : '';
+      '</div>' + (inn.pill ? '<span class="wr-pill">' + wrEsc(inn.pill) + '</span>' : '') + '</div>');
+    const head = inn.head && typeof inn.head === 'object' ? inn.head : null;
+    if (head) h.push('<div class="wr-thead"><span>' + wrEsc(head.what) + '</span><span>' + wrEsc(head.kcal) + '</span></div>');
     h.push('<ol class="wr-rows">');
     list(inn.rows).forEach(function (r) {
       if (!r || typeof r !== 'object') return;
       h.push('<li class="wr-row' + (r.fresh ? ' wr-new' : '') + (r.folded ? ' wr-more' : '') + '"' +
         (r.macros ? ' data-wr-row tabindex="0" role="button" aria-expanded="false"' : '') + '>' +
-        '<span class="tm">' + wrEsc(r.at) + '</span>' +
-        '<span class="nm">' + wrEsc(r.what) + (r.macros ? '<small>' + wrEsc(r.macros) + '</small>' : '') + '</span>' +
+        '<span class="nm">' + wrEsc(r.what) + (r.at ? ' <span class="tm">' + wrEsc(r.at) + '</span>' : '') +
+        (r.macros ? '<small>' + wrEsc(r.macros) + '</small>' : '') + '</span>' +
         '<span class="kc' + (r.uncounted ? ' wr-unset' : '') + '">' + wrEsc(r.kcal) + '</span></li>');
     });
     h.push('</ol>');
     if (inn.more_label) h.push('<button type="button" class="wr-earlier" data-wr-more>' + wrEsc(inn.more_label) + '</button>');
     if (inn.total && typeof inn.total === 'object') {
-      h.push('<div class="wr-total"><span>' + wrEsc(inn.total.label) + keys + '</span><b' + (inn.total.unset ? ' class="wr-unset"' : '') + '>' + wrEsc(inn.total.kcal) + '</b></div>');
+      h.push('<div class="wr-total"><span>' + wrEsc(inn.total.label) + '</span><b' + (inn.total.unset ? ' class="wr-unset"' : '') + '>' + wrEsc(inn.total.kcal) + '</b></div>');
+    }
+    const tiles = list(inn.tiles).filter(function (t) { return t && typeof t === 'object' && (t.key === 'protein' || t.key === 'carbs' || t.key === 'fat'); });
+    if (tiles[0]) {
+      h.push('<div class="wr-macros">' + tiles.map(function (t) {
+        return '<div class="wr-mt wr-' + t.key + '"><span class="lb">' + wrEsc(t.label) + '</span>' +
+          '<b>' + wrEsc(t.value) + '<small>' + wrEsc(t.unit) + '</small></b>' +
+          (t.share_label ? '<span class="sh">' + wrEsc(t.share_label) + '</span>' : '') +
+          (share(t.share) ? '<span class="tr" aria-hidden="true"><i class="wr-' + t.key + '" style="width:' + t.share + '%"></i></span>' : '') +
+          '</div>';
+      }).join('') + '</div>');
     }
     list(inn.captions).forEach(function (c) { if (c) h.push('<p class="wr-note">' + wrEsc(c) + '</p>'); });
   } else {
@@ -401,43 +404,54 @@ export const WIDGET_CSS = [
   '.wr-nofig{flex:none;font:700 9.5px/1 var(--wr-mono);letter-spacing:.12em;text-transform:uppercase;color:var(--wr-heat-hi);padding:4px 6px 3px;border-radius:4px;box-shadow:inset 0 0 0 1px rgba(245,166,35,.7);white-space:nowrap}',
   '.wr-mac{margin-top:4px!important;font:11px/1.45 var(--wr-mono);color:var(--wr-ash);overflow-wrap:anywhere}',
   '.wr-gap{margin-top:6px!important;font-size:13px;line-height:1.4;color:var(--wr-bright)}',
-  // THE DAY
-  // The caption wraps under the figure rather than shrinking past its longest
-  // word: a five-digit figure at 560px squeezed it to a column narrower than
-  // "BREAKDOWN", which then ran into the balance beside it.
-  '.wr-hero{display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:4px 12px}',
-  // The figure and its unit never break: "kcal" split into "K / CAL" at
-  // 560–600px, and a five-digit figure split across two lines.
-  '.wr-fig{flex:none;font:900 38px/.82 var(--wr-grotesk);letter-spacing:-.055em;font-variant-numeric:tabular-nums;white-space:nowrap}',
-  '.wr-fig small{margin-left:4px;font:700 10px/1 var(--wr-mono);letter-spacing:.12em;text-transform:uppercase;color:var(--wr-label)}',
-  '.wr-fig.wr-unset{max-width:62%;white-space:normal;font:800 22px/1.1 var(--wr-grotesk);letter-spacing:-.01em;color:var(--wr-ash)}',
-  '.wr-figcap{flex:1 1 72px;min-width:0;text-align:right;font:700 9.5px/1.35 var(--wr-mono);letter-spacing:.1em;text-transform:uppercase;color:var(--wr-ash)}',
-  '.wr-figcap .wr-cap{display:block;margin:0 0 2px!important;color:var(--wr-label);text-wrap:balance}',
-  '.wr-mbar{display:flex;height:7px;margin:9px 0 2px;border-radius:999px;overflow:hidden;background:var(--wr-raise);box-shadow:inset 0 0 0 1px var(--wr-edge);transform-origin:0 50%}',
-  '.wr-mbar span{display:block;height:100%}',
-  '.wr-mbar .wr-protein,.wr-mkeys i.wr-protein{background:var(--wr-temper)}',
-  '.wr-mbar .wr-carbs,.wr-mkeys i.wr-carbs{background:var(--wr-heat)}',
-  '.wr-mbar .wr-fat,.wr-mkeys i.wr-fat{background:var(--wr-heat-hi)}',
-  '.wr-mkeys{display:flex;flex-wrap:wrap;gap:1px 12px;margin-top:3px;font-size:12px;font-weight:600;color:var(--wr-bright);font-variant-numeric:tabular-nums}',
-  '.wr-mkeys span{display:inline-flex;align-items:center;gap:5px}',
-  '.wr-mkeys i{display:block;width:7px;height:7px;border-radius:2px}',
-  '.wr-rows{list-style:none;margin:6px 0 0;padding:0}',
-  '.wr-row{display:grid;grid-template-columns:58px minmax(0,1fr) auto;gap:10px;align-items:baseline;padding:2px 0;border-top:1px solid var(--wr-edge);font-size:13px;line-height:1.3}',
+  // THE DAY — the founder's layout (8 October, "I love the format … keep the
+  // format, use the colours"): a label, the day's calories as the headline
+  // with its Estimated mark, a Food / Calories table, the total, then protein,
+  // carbs and fat as three tiles — on iron, in the forge colours.
+  // The headline's label and figure sit on the left, the mark on the right;
+  // the figure and its unit never break ("kcal" once split into "K / CAL" at
+  // 560–600px, and a five-digit figure split across two lines).
+  '.wr-hero{display:flex;flex-wrap:wrap;align-items:flex-start;justify-content:space-between;gap:6px 12px}',
+  '.wr-hl{flex:1 1 auto;min-width:0}',
+  '.wr-hl .wr-cap{margin:0 0 6px!important}',
+  '.wr-fig{display:block;font:900 40px/.9 var(--wr-grotesk);letter-spacing:-.045em;font-variant-numeric:tabular-nums;white-space:nowrap}',
+  '.wr-fig small{margin-left:7px;font:800 21px/1 var(--wr-grotesk);letter-spacing:-.02em;color:var(--wr-heat-hi)}',
+  '.wr-fig.wr-unset{white-space:normal;font:800 22px/1.1 var(--wr-grotesk);letter-spacing:-.01em;color:var(--wr-ash)}',
+  '.wr-pill{flex:none;padding:5px 10px;border-radius:999px;font:600 12px/1 var(--wr-sans);color:var(--wr-heat-hi);background:rgba(242,100,25,.14);box-shadow:inset 0 0 0 1px rgba(245,166,35,.35);white-space:nowrap}',
+  // THE TABLE — Food and Calories, a hairline under every row, the total under a heavier rule.
+  '.wr-thead{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px;margin-top:11px;padding-bottom:5px;border-bottom:1px solid var(--wr-edge-lit);font-size:13px;font-weight:700;color:var(--wr-bright)}',
+  '.wr-thead span+span{text-align:right}',
+  '.wr-rows{list-style:none;margin:0;padding:0}',
+  '.wr-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px;align-items:baseline;padding:5px 0;border-top:1px solid var(--wr-edge);font-size:14px;line-height:1.3}',
+  '.wr-row:first-child{border-top:0}',
   '.wr-row[data-wr-row]{cursor:pointer}',
-  '.wr-row .tm{white-space:nowrap;font:10.5px/1.3 var(--wr-mono);color:var(--wr-label);font-variant-numeric:tabular-nums}',
   '.wr-row .nm{min-width:0;overflow-wrap:anywhere}',
-  '.wr-row .nm small{display:none;margin-top:2px;font:10.5px/1.4 var(--wr-mono);color:var(--wr-ash)}',
+  '.wr-row .tm{white-space:nowrap;font:10.5px/1 var(--wr-mono);color:var(--wr-label);font-variant-numeric:tabular-nums}',
+  '.wr-row .nm small{display:none;margin-top:3px;font:10.5px/1.4 var(--wr-mono);color:var(--wr-ash)}',
   '.wr-row.wr-open .nm small{display:block}',
-  '.wr-row .kc{font-weight:650;font-variant-numeric:tabular-nums;text-align:right}',
+  '.wr-row .kc{font-weight:600;font-variant-numeric:tabular-nums;text-align:right}',
   '.wr-row.wr-new .nm{font-weight:650}',
   '.wr-row.wr-new .tm{color:var(--wr-heat)}',
   '.wr-unset{font-style:italic;font-weight:400!important;color:var(--wr-ash)}',
   '.wr-row.wr-more{display:none}',
   '.wr-all .wr-row.wr-more{display:grid}',
   '.wr-earlier{display:block;width:100%;margin:0;padding:8px 0;border:0;border-top:1px solid var(--wr-edge);background:none;text-align:left;font:11.5px/1.3 var(--wr-mono);color:var(--wr-ash);cursor:pointer}',
-  '.wr-total{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;padding-top:6px;border-top:2px solid var(--wr-edge-lit);font-weight:650}',
-  '.wr-total b{font:800 16px/1 var(--wr-grotesk);font-variant-numeric:tabular-nums}',
+  '.wr-total{display:flex;align-items:baseline;justify-content:space-between;gap:12px;padding-top:7px;border-top:2px solid var(--wr-edge-lit);font-size:14px;font-weight:700}',
+  '.wr-total b{font:800 18px/1 var(--wr-grotesk);font-variant-numeric:tabular-nums}',
   '.wr-total b.wr-unset{font:italic 400 13px/1.3 var(--wr-sans);color:var(--wr-ash)}',
+  // THE TILES — protein, carbs and fat, each with its share of the calories
+  // drawn along its foot in the colour the dashboard gives it.
+  '.wr-macros{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:10px}',
+  '.wr-mt{position:relative;min-width:0;display:flex;flex-direction:column;gap:3px;padding:8px 10px 10px;border-radius:12px;background:var(--wr-raise);border:1px solid var(--wr-edge);overflow:hidden}',
+  '.wr-mt .lb{font-size:12px;line-height:1.2;color:var(--wr-ash)}',
+  '.wr-mt b{font:800 22px/1 var(--wr-grotesk);letter-spacing:-.02em;font-variant-numeric:tabular-nums;white-space:nowrap}',
+  '.wr-mt b small{margin-left:3px;font:700 13px/1 var(--wr-sans);letter-spacing:0;color:var(--wr-ash)}',
+  '.wr-mt .sh{font:10px/1.25 var(--wr-mono);color:var(--wr-label)}',
+  '.wr-mt .tr{position:absolute;left:0;right:0;bottom:0;height:3px;background:var(--wr-track)}',
+  '.wr-mt .tr i{display:block;height:100%;transform-origin:0 50%}',
+  '.wr-mt .tr .wr-protein{background:var(--wr-temper)}',
+  '.wr-mt .tr .wr-carbs{background:var(--wr-heat)}',
+  '.wr-mt .tr .wr-fat{background:var(--wr-heat-hi)}',
   '.wr-note{margin-top:4px!important;font-size:11px;line-height:1.35;color:var(--wr-ash)}',
   '.wr-empty{margin-top:0!important;font-size:13px}',
   // THE BALANCE — every row with its figure, the burn under a rule, the net.
@@ -492,16 +506,16 @@ export const WIDGET_CSS = [
   '.wr-btn:focus-visible,.wr-row:focus-visible,.wr-review:focus-visible,.wr-earlier:focus-visible{outline:2px solid var(--wr-heat-hi);outline-offset:2px}',
   // WIDER: the day and the balance side by side.
   '@media (min-width:560px){.wr-split{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,1fr);border-bottom:1px solid var(--wr-edge)}' +
-    '.wr-split>.wr-sec{border-bottom:0}.wr-split>.wr-sec+.wr-sec{border-left:1px solid var(--wr-edge)}.wr-fig{font-size:52px}}',
+    '.wr-split>.wr-sec{border-bottom:0}.wr-split>.wr-sec+.wr-sec{border-left:1px solid var(--wr-edge)}.wr-fig{font-size:50px}.wr-fig small{font-size:24px}}',
   // A phone drops the day card's date (its title carries it) — never a
   // stamp's, where the date is the only thing beside the badge.
   '@media (max-width:419px){.wr-when{display:none}.wr-stamp .wr-when{display:inline}}',
-  '@media (max-width:359px){.wr-strip{gap:6px}.wr-strip,.wr-sec,.wr-foot{padding-left:12px;padding-right:12px}.wr-fig{font-size:38px}' +
-    '.wr-row{grid-template-columns:52px minmax(0,1fr) auto;gap:8px}.wr-row .tm{font-size:9.5px}' +
+  '@media (max-width:359px){.wr-strip{gap:6px}.wr-strip,.wr-sec,.wr-foot{padding-left:12px;padding-right:12px}.wr-fig{font-size:34px}.wr-fig small{font-size:18px}' +
+    '.wr-row{gap:8px}.wr-row .tm{font-size:9.5px}.wr-macros{gap:6px}.wr-mt{padding:8px 8px 11px}.wr-mt b{font-size:20px}' +
     '.wr-goals{grid-template-columns:repeat(auto-fill,minmax(96px,1fr))}.wr-g{gap:6px}.wr-g b{font-size:14px}.wr-btn{padding:0 12px}}',
   // MOTION — the arc and the bar may arrive; no figure ever counts up, and
   // nothing loops. Names are the card's own.
-  '@media (prefers-reduced-motion:no-preference){.wr-g .arc{animation:wr-sweep .7s cubic-bezier(.22,.61,.36,1) both}.wr-mbar{animation:wr-grow .6s cubic-bezier(.22,.61,.36,1) both}}',
+  '@media (prefers-reduced-motion:no-preference){.wr-g .arc{animation:wr-sweep .7s cubic-bezier(.22,.61,.36,1) both}.wr-mt .tr i{animation:wr-grow .6s cubic-bezier(.22,.61,.36,1) both}}',
   '@keyframes wr-sweep{from{stroke-dashoffset:100}to{stroke-dashoffset:0}}',
   '@keyframes wr-grow{from{transform:scaleX(0)}to{transform:scaleX(1)}}',
   '@media (prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important}}',
