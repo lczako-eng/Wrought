@@ -18678,6 +18678,39 @@ await test('the card is the brand: the W is icon.svg\'s own path, no glow reache
 
 // ── The card computes nothing ────────────────────────────────────────────
 
+await test('the card is white paper with iron ink, and every word on it is readable on white', () => {
+  // The founder, 10 October: "I love everything about it except the black
+  // background … keep it still a white background and keep all the fonts and
+  // all the other colouring borders the same." White in a light host and a
+  // dark one alike; the brand colours stay on every bar, ring and rule.
+  const css = WCARD.WRT.WIDGET_CSS;
+  const tok = name => (css.match(new RegExp(`--wr-${name}:(#[0-9A-Fa-f]{6})`)) || [])[1];
+  assert.equal(tok('paper'), '#FFFFFF');
+  assert.match(css, /\.wr\{[^}]*background:[^;}]*var\(--wr-paper\)/, 'the plate is not the paper');
+  assert.ok(!/\.wr\{[^}]*var\(--wr-iron\) \d+%/.test(css), 'the plate still fades to iron');
+  assert.ok(!/data-theme=dark\] \.wr\{/.test(css) && !/data-theme=light\] \.wr\{/.test(css), 'a host theme repaints the plate');
+  const lum = h => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16) / 255).map(v => (v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4))
+    .reduce((t, v, i) => t + v * [0.2126, 0.7152, 0.0722][i], 0);
+  const ratio = (a, b) => { const [x, y] = [lum(a), lum(b)].sort((m, n) => n - m); return (x + 0.05) / (y + 0.05); };
+  // Every colour the card sets text in, against the paper and the raised tile.
+  const used = new Set([...css.matchAll(/(?:^|[;{])color:var\(--wr-([\w-]+)\)/g)].map(m => m[1]));
+  assert.ok(used.size >= 5, [...used].join(','));
+  // The one large-type exception: "calories" beside the headline figure
+  // (21px, weight 800) keeps the brand heat — WCAG's large-text 3:1.
+  const LARGE = new Set(['heat']);
+  for (const name of used) {
+    const hex = tok(name);
+    assert.ok(hex, `--wr-${name} is not a literal token`);
+    // The headline sits on the paper; everything else may sit on a tile too.
+    for (const bg of LARGE.has(name) ? [tok('paper')] : [tok('paper'), tok('raise')]) {
+      const r = ratio(hex, bg);
+      assert.ok(r >= (LARGE.has(name) ? 3 : 4.5), `--wr-${name} ${hex} is ${r.toFixed(2)}:1 on ${bg}`);
+    }
+  }
+  // The heat used as text is only the headline unit, never small type.
+  for (const m of css.matchAll(/([^{}]+)\{[^}]*(?:^|[;{])color:var\(--wr-heat\)/g)) assert.equal(m[1].trim(), '.wr-fig small', `heat as small text: ${m[1]}`);
+});
+
 await test('the card\'s script does no arithmetic and counts nothing', () => {
   for (const bad of ['reduce(', 'toFixed(', 'toLocaleString(', 'Intl.', 'parseFloat(', 'parseInt(', 'Math.', '.length']) {
     assert.ok(!WCARD.script.includes(bad), `the card's script contains ${bad}`);
