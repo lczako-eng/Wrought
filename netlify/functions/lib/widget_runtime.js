@@ -10,10 +10,14 @@
 //
 // The founder: "it used to have a fancy background … I'd like to use Wrought
 // colours. It should be so distinctive that it tells you, in like a framing,
-// that it's using the connector." So the card owns its plate — iron, the W
-// tile, the word in the slab, a forge rule across the top — in a light host
-// and a dark one alike, and never takes the host's colours: a host's black
-// text painted onto iron is unreadable.
+// that it's using the connector." So the card owns its plate — the W tile,
+// the word in the slab, a forge rule across the top, an orange edge — and
+// never takes the host's colours. The plate is WHITE paper, in a light host
+// and a dark one alike: the founder, 10 October, on the iron version —
+// "I love everything about it except the black background … keep it still a
+// white background and keep all the fonts and all the other colouring
+// borders the same … it's cleaner."
+
 //
 // WHAT THE CARD MAY DO, and it is short on purpose:
 //
@@ -52,8 +56,8 @@ export function wrOpen(url, post, nextId) {
 }
 
 /**
- * The host's theme, and nothing else of the host's. The plate is iron in
- * either theme; the theme changes only the plate's edge, and it reaches
+ * The host's theme, and nothing else of the host's. The plate is white in
+ * either theme; the theme changes nothing on the card itself, and it reaches
  * color-scheme so the frame's own canvas matches the host — a scheme that
  * differs from the embedding page paints an opaque box behind the plate's
  * rounded corners. The host's colour and font variables are never read.
@@ -353,8 +357,8 @@ export function wrBridge() {
 export const WIDGET_RUNTIME = [wrEsc, wrSafeLink, wrOpen, wrTheme, wrViewOf, wrTile, wrStrip, wrRenderStamp, wrRenderDay, wrRender, wrMount, wrBridge];
 
 // The card's stylesheet — the plate. Every colour is a literal Wrought token
-// on :root and none is the host's: the card is iron in a light host and a dark
-// one alike, which is the frame the founder asked for, and a token swap is all
+// on :root and none is the host's: the card is white paper in a light host and
+// a dark one alike, which is the frame the founder asked for, and a token swap is all
 // a host-following skin would ever need. No web font: the CSP is empty, so the
 // slab is Rockwell where the phone has it and a system serif where it does not.
 // Every grid track is minmax(0,…) — a track is min-width:auto by default, and
@@ -362,9 +366,14 @@ export const WIDGET_RUNTIME = [wrEsc, wrSafeLink, wrOpen, wrTheme, wrViewOf, wrT
 // row's time refuses to wrap, and no ::before/::after reaches past its box: a
 // glow ten pixels outside its parent made a whole page slide sideways.
 export const WIDGET_CSS = [
-  ':root{color-scheme:light dark;--wr-iron:#14110F;--wr-plate:#1E1917;--wr-raise:#262020;--wr-edge:#332B27;--wr-edge-lit:#4A3E37;--wr-track:#2A2220;' +
-    '--wr-bright:#F7F3EE;--wr-ash:#A79A90;--wr-label:#94867D;--wr-heat:#F26419;--wr-heat-hi:#F5A623;--wr-heat-lo:#C3350D;--wr-on-heat:#1A0A02;' +
+  // White paper, iron ink. The brand colours stay as they are for every bar,
+  // ring, rule and badge; text set in an accent uses its INK — the same hue
+  // darkened to at least 4.5:1 on white, because amber or moss type on white
+  // is unreadable at the sizes a card uses.
+  ':root{color-scheme:light dark;--wr-iron:#14110F;--wr-paper:#FFFFFF;--wr-raise:#F7F3EF;--wr-edge:#ECE5DF;--wr-edge-lit:#D9CFC7;--wr-track:#EDE6E0;' +
+    '--wr-bright:#14110F;--wr-ash:#6B5F57;--wr-label:#74675E;--wr-heat:#F26419;--wr-heat-hi:#F5A623;--wr-heat-lo:#C3350D;--wr-on-heat:#1A0A02;' +
     '--wr-temper:#5B90B0;--wr-moss:#6FA672;--wr-amber:#E8B64C;' +
+    '--wr-heat-ink:#C2410C;--wr-temper-ink:#3B6E8F;--wr-moss-ink:#3E7A43;--wr-amber-ink:#8A6100;' +
     '--wr-stamp:Rockwell,"Roboto Slab","Bookman Old Style","Iowan Old Style",Georgia,serif;' +
     '--wr-grotesk:-apple-system,BlinkMacSystemFont,"Helvetica Neue","Arial Narrow",system-ui,sans-serif;' +
     '--wr-sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;' +
@@ -373,23 +382,22 @@ export const WIDGET_CSS = [
   'html,body{margin:0;padding:0;background:transparent}',
   'body{padding:1px 1px 2px;-webkit-text-size-adjust:100%}',
   '#wr-root{max-width:768px}',
-  // THE PLATE — iron in either host theme; only its edge changes.
+  // THE PLATE — white paper in either host theme, an orange edge.
   '.wr{position:relative;overflow:hidden;isolation:isolate;border-radius:18px;color:var(--wr-bright);font:14px/1.45 var(--wr-sans);-webkit-font-smoothing:antialiased;' +
-    'background:radial-gradient(120% 80% at 100% 0,rgba(242,100,25,.06),transparent 58%),linear-gradient(180deg,var(--wr-plate),var(--wr-iron) 62%);' +
-    'border:1px solid rgba(242,100,25,.24);box-shadow:inset 0 1px 0 rgba(255,255,255,.06)}',
-  ':root[data-theme=light] .wr{border-color:#2A2220}',
+    'background:radial-gradient(120% 80% at 100% 0,rgba(242,100,25,.05),transparent 58%),var(--wr-paper);' +
+    'border:1px solid rgba(242,100,25,.28)}',
   // The forge rule: the tile's own gradient, across the top, inside the plate.
   '.wr::before{content:"";position:absolute;inset:0 0 auto;height:3px;z-index:1;background:linear-gradient(90deg,var(--wr-heat-hi),var(--wr-heat) 55%,var(--wr-heat-lo))}',
   '.wr p{margin:0}',
   // THE STRIP — the framing on every card: tile, word, what this reply was.
   '.wr-strip{display:flex;align-items:center;flex-wrap:wrap;gap:8px;padding:11px 14px 8px;border-bottom:1px solid var(--wr-edge)}',
   '.wr-stamp .wr-strip{border-bottom:0}',
-  '.wr-tile{display:block;flex:none;width:22px;height:22px;border-radius:23%;box-shadow:0 6px 14px -7px rgba(242,100,25,.9),0 0 0 1px rgba(255,255,255,.08)}',
+  '.wr-tile{display:block;flex:none;width:22px;height:22px;border-radius:23%;box-shadow:0 6px 14px -7px rgba(242,100,25,.9),0 0 0 1px rgba(20,17,15,.08)}',
   '.wr-word{font:700 13px/1 var(--wr-stamp);letter-spacing:.1em;text-transform:uppercase}',
   '.wr-kind,.wr-rev{font:700 9.5px/1 var(--wr-mono);letter-spacing:.14em;text-transform:uppercase;padding:4px 6px 3px;border-radius:4px;white-space:nowrap}',
   '.wr-kind{color:var(--wr-on-heat);background:var(--wr-heat)}',
-  '.wr-rev{color:var(--wr-amber);box-shadow:inset 0 0 0 1px rgba(232,182,76,.7)}',
-  '.wr-warn .wr-kind{color:var(--wr-heat-hi);background:transparent;box-shadow:inset 0 0 0 1px rgba(245,166,35,.75)}',
+  '.wr-rev{color:var(--wr-amber-ink);box-shadow:inset 0 0 0 1px rgba(232,182,76,.9)}',
+  '.wr-warn .wr-kind{color:var(--wr-heat-ink);background:transparent;box-shadow:inset 0 0 0 1px rgba(242,100,25,.75)}',
   '.wr-when{margin-left:auto;font:10.5px/1 var(--wr-mono);letter-spacing:.04em;color:var(--wr-label);white-space:nowrap}',
   '.wr-line{padding:10px 14px 12px;border-top:1px solid var(--wr-edge);font-size:13.5px;line-height:1.45;color:var(--wr-bright);overflow-wrap:anywhere}',
   '.wr-sec{padding:9px 14px;border-bottom:1px solid var(--wr-edge);min-width:0}',
@@ -401,7 +409,7 @@ export const WIDGET_CSS = [
   '.wr-it+.wr-it,.wr-mac+.wr-it,.wr-gap+.wr-it{margin-top:8px}',
   '.wr-it .nm{flex:1;min-width:0;font-size:14.5px;line-height:1.3;font-weight:600;overflow-wrap:anywhere}',
   '.wr-it .kc{flex:none;font:800 18px/1 var(--wr-grotesk);letter-spacing:-.02em;font-variant-numeric:tabular-nums;white-space:nowrap}',
-  '.wr-nofig{flex:none;font:700 9.5px/1 var(--wr-mono);letter-spacing:.12em;text-transform:uppercase;color:var(--wr-heat-hi);padding:4px 6px 3px;border-radius:4px;box-shadow:inset 0 0 0 1px rgba(245,166,35,.7);white-space:nowrap}',
+  '.wr-nofig{flex:none;font:700 9.5px/1 var(--wr-mono);letter-spacing:.12em;text-transform:uppercase;color:var(--wr-heat-ink);padding:4px 6px 3px;border-radius:4px;box-shadow:inset 0 0 0 1px rgba(242,100,25,.7);white-space:nowrap}',
   '.wr-mac{margin-top:4px!important;font:11px/1.45 var(--wr-mono);color:var(--wr-ash);overflow-wrap:anywhere}',
   '.wr-gap{margin-top:6px!important;font-size:13px;line-height:1.4;color:var(--wr-bright)}',
   // THE DAY — the founder's layout (8 October, "I love the format … keep the
@@ -415,9 +423,9 @@ export const WIDGET_CSS = [
   '.wr-hl{flex:1 1 auto;min-width:0}',
   '.wr-hl .wr-cap{margin:0 0 6px!important}',
   '.wr-fig{display:block;font:900 40px/.9 var(--wr-grotesk);letter-spacing:-.045em;font-variant-numeric:tabular-nums;white-space:nowrap}',
-  '.wr-fig small{margin-left:7px;font:800 21px/1 var(--wr-grotesk);letter-spacing:-.02em;color:var(--wr-heat-hi)}',
+  '.wr-fig small{margin-left:7px;font:800 21px/1 var(--wr-grotesk);letter-spacing:-.02em;color:var(--wr-heat)}',
   '.wr-fig.wr-unset{white-space:normal;font:800 22px/1.1 var(--wr-grotesk);letter-spacing:-.01em;color:var(--wr-ash)}',
-  '.wr-pill{flex:none;padding:5px 10px;border-radius:999px;font:600 12px/1 var(--wr-sans);color:var(--wr-heat-hi);background:rgba(242,100,25,.14);box-shadow:inset 0 0 0 1px rgba(245,166,35,.35);white-space:nowrap}',
+  '.wr-pill{flex:none;padding:5px 10px;border-radius:999px;font:600 12px/1 var(--wr-sans);color:var(--wr-heat-ink);background:rgba(242,100,25,.1);box-shadow:inset 0 0 0 1px rgba(242,100,25,.35);white-space:nowrap}',
   // THE TABLE — Food and Calories, a hairline under every row, the total under a heavier rule.
   '.wr-thead{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px;margin-top:11px;padding-bottom:5px;border-bottom:1px solid var(--wr-edge-lit);font-size:13px;font-weight:700;color:var(--wr-bright)}',
   '.wr-thead span+span{text-align:right}',
@@ -431,7 +439,7 @@ export const WIDGET_CSS = [
   '.wr-row.wr-open .nm small{display:block}',
   '.wr-row .kc{font-weight:600;font-variant-numeric:tabular-nums;text-align:right}',
   '.wr-row.wr-new .nm{font-weight:650}',
-  '.wr-row.wr-new .tm{color:var(--wr-heat)}',
+  '.wr-row.wr-new .tm{color:var(--wr-heat-ink)}',
   '.wr-unset{font-style:italic;font-weight:400!important;color:var(--wr-ash)}',
   '.wr-row.wr-more{display:none}',
   '.wr-all .wr-row.wr-more{display:grid}',
@@ -463,9 +471,9 @@ export const WIDGET_CSS = [
   '.wr-brow.wr-burn{border-top:1px solid var(--wr-edge-lit)}',
   '.wr-brow.wr-burn span,.wr-brow.wr-net span{color:var(--wr-bright);font-weight:650}',
   '.wr-brow.wr-net b{font:800 19px/1 var(--wr-grotesk);letter-spacing:-.02em}',
-  '.wr-net.wr-down b{color:var(--wr-temper)}',
-  '.wr-net.wr-over b{color:var(--wr-heat)}',
-  '.wr-net.wr-level b{color:var(--wr-amber)}',
+  '.wr-net.wr-down b{color:var(--wr-temper-ink)}',
+  '.wr-net.wr-over b{color:var(--wr-heat-ink)}',
+  '.wr-net.wr-level b{color:var(--wr-amber-ink)}',
   '.wr-held{margin-top:8px!important;font-size:12.5px;line-height:1.4;color:var(--wr-ash);font-style:italic}',
   '.wr-notes{list-style:none;margin:6px 0 0;padding:0}',
   '.wr-notes li{font-size:12px;line-height:1.3;color:var(--wr-ash);overflow-wrap:anywhere}',
@@ -478,7 +486,7 @@ export const WIDGET_CSS = [
   // a lone ring keeps a tile's width, and three still sit in one row at 390 —
   // two columns put a five-row card 60px over the one-screen budget.
   '.wr-goals{display:grid;grid-template-columns:repeat(auto-fill,minmax(104px,1fr));gap:6px;margin-top:6px}',
-  '.wr-g{display:grid;grid-template-columns:26px minmax(0,1fr);gap:7px;align-items:center;padding:5px 8px 5px 7px;border-radius:11px;background:rgba(20,17,15,.62);border:1px solid rgba(255,255,255,.05);min-width:0}',
+  '.wr-g{display:grid;grid-template-columns:26px minmax(0,1fr);gap:7px;align-items:center;padding:5px 8px 5px 7px;border-radius:11px;background:var(--wr-raise);border:1px solid var(--wr-edge);min-width:0}',
   '.wr-g.wr-met{border-color:rgba(111,166,114,.3)}',
   '.wr-g svg{display:block;width:26px;height:26px}',
   '.wr-g circle{fill:none;stroke-width:4}',
@@ -488,8 +496,8 @@ export const WIDGET_CSS = [
   '.wr-g.wr-over .arc{stroke:var(--wr-heat)}',
   '.wr-g .tx{min-width:0;display:flex;flex-direction:column;gap:2px}',
   '.wr-g b{font:800 15px/1 var(--wr-grotesk);font-variant-numeric:tabular-nums;overflow-wrap:anywhere}',
-  '.wr-g.wr-met b{color:var(--wr-moss)}',
-  '.wr-g.wr-over b{color:var(--wr-heat)}',
+  '.wr-g.wr-met b{color:var(--wr-moss-ink)}',
+  '.wr-g.wr-over b{color:var(--wr-heat-ink)}',
   '.wr-g small{font:10px/1.2 var(--wr-mono);color:var(--wr-label);overflow-wrap:anywhere}',
   '.wr-g em{font:700 9px/1.2 var(--wr-mono);font-style:normal;letter-spacing:.1em;text-transform:uppercase;color:var(--wr-ash);overflow-wrap:anywhere}',
   // THE FOOT
@@ -497,12 +505,12 @@ export const WIDGET_CSS = [
   '.wr-fine{font-size:10.5px;line-height:1.35;font-style:italic;color:var(--wr-ash)}',
   '.wr-review{margin-top:8px!important;font-size:11.5px;line-height:1.4;color:var(--wr-ash);display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;cursor:pointer}',
   '.wr-review.wr-opened{display:block;-webkit-line-clamp:unset}',
-  '.wr-review span{margin-right:4px;font:700 9px/1 var(--wr-mono);letter-spacing:.12em;color:var(--wr-amber)}',
+  '.wr-review span{margin-right:4px;font:700 9px/1 var(--wr-mono);letter-spacing:.12em;color:var(--wr-amber-ink)}',
   '.wr-door{display:flex;align-items:center;flex-wrap:wrap;gap:6px 10px;margin-top:6px}',
   '.wr-btns{flex:0 1 auto;margin-left:auto;display:flex;flex-wrap:wrap;justify-content:flex-end;gap:8px;min-width:0}',
   '.wr-acct{flex:1 1 140px;min-width:0;font:10px/1.4 var(--wr-mono);letter-spacing:.04em;color:var(--wr-label);overflow-wrap:anywhere}',
-  '.wr-btn{flex:none;max-width:100%;min-height:44px;padding:0 16px;font:600 13px/1 var(--wr-sans);color:var(--wr-bright);background:rgba(255,255,255,.035);border:1px solid var(--wr-edge-lit);border-radius:999px;cursor:pointer}',
-  '.wr-btn-rev{color:var(--wr-amber);border-color:rgba(232,182,76,.45)}',
+  '.wr-btn{flex:none;max-width:100%;min-height:44px;padding:0 16px;font:600 13px/1 var(--wr-sans);color:var(--wr-bright);background:var(--wr-paper);border:1px solid var(--wr-edge-lit);border-radius:999px;cursor:pointer}',
+  '.wr-btn-rev{color:var(--wr-amber-ink);border-color:rgba(232,182,76,.7)}',
   '.wr-btn:focus-visible,.wr-row:focus-visible,.wr-review:focus-visible,.wr-earlier:focus-visible{outline:2px solid var(--wr-heat-hi);outline-offset:2px}',
   // WIDER: the day and the balance side by side.
   '@media (min-width:560px){.wr-split{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,1fr);border-bottom:1px solid var(--wr-edge)}' +

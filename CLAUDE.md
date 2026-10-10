@@ -3361,6 +3361,30 @@ by hand (`detail.repaired`) at noon, since no time was given, with
 calories only: ChatGPT's macro estimate was for the six together and was not
 split per item.
 
+### White paper, the same marks — the card's plate, settled by the founder
+
+10 October, on a render of the card above: *"I love everything about it
+except the black background on GPT. Can we keep it still a white background
+and keep all the fonts and all the other colouring borders the same — I like
+it, it's cleaner."* So the plate is **white paper in a light host and a dark
+one alike**, and nothing else moved: the W tile, the slab wordmark, the forge
+rule along the top, the orange edge, the LOGGED badge, the orange *Estimated*
+pill, *calories* in heat beside the headline, the tiles' macro bars and the
+rings in their dashboard colours.
+
+- **Colours stay; text gets an ink.** Amber, moss and heat-hi are unreadable
+  as type on white (1.9–2.9:1), so wherever an accent is TEXT it uses its ink
+  — the same hue darkened to at least 4.5:1 (`--wr-heat-ink`,
+  `--wr-temper-ink`, `--wr-moss-ink`, `--wr-amber-ink`) — while every bar,
+  ring, rule and badge keeps the brand colour. The one large-type exception
+  is *calories* beside the headline (21px, weight 800) in the brand heat at
+  3.2:1, WCAG's large-text line. A test computes the contrast of every colour
+  the card sets text in, against the paper and the tile, and was verified to
+  fail with moss text and with the iron plate put back.
+- **White in a dark host too**, because that is what he asked for; the host's
+  colours are still never read. If he wants a dark card when ChatGPT is in
+  dark mode, that is one rule keyed on `data-theme`, and it is his call.
+
 ### A food confirmed with no figure — estimated before the reply, never confirmed as complete
 
 6 October: *"Logged in Wrought — Costco restaurant sausage at 3:17 PM"* with
@@ -6301,7 +6325,7 @@ self-reporting scale removes the most-abandoned manual entry), then Strava.
 
 ## Conventions
 
-- `npm test` runs `test/harness.mjs` — 865 offline tests, no network, no database.
+- `npm test` runs `test/harness.mjs` — 866 offline tests, no network, no database.
   Run it before every push. It covers the JSON-RPC envelope (which fails as an
   uninformative "could not connect" inside ChatGPT) and all the arithmetic
   (which fails as a confidently wrong number in somebody's verdict).
