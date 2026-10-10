@@ -3301,6 +3301,66 @@ Voice hangs. The trace cannot settle it either — it carries no platform, the
 card's page is fetched without auth, and a cached template is drawn with no
 fetch at all. The only proof is a screenshot from his phone.
 
+### "I love the format" — his layout, in Wrought's colours, and a picker that never sent a request
+
+8 October, a ChatGPT reply about six foods: *ESTIMATED FOOD INTAKE*, a big
+*1,425 calories* with an *Estimated* mark, a two-column Food / Calories table
+with the total underneath, then *Protein 43 g · Carbs 155 g · Fat 71 g* as
+three tiles. Then: *"You have three Wrought connections showing, and I can't
+verify which is your original account… I haven't saved them."* The founder:
+*"Fix the accounts and I love the format. They keep the format use the
+colors."*
+
+**The format is now the day card's**, in `dayModel` so both renderers print
+it: the label (*Estimated food intake · today so far*), the day's calories as
+the headline, a Food / Calories table with each item's time on it, the total,
+then protein, carbs and fat. The markdown is `### 1,425 calories`, the
+two-column table and a `**Protein** 43 g · **Carbs** 155 g · **Fat** 71 g`
+line; Wrought's drawn card is the same order on iron — the figure white with
+*calories* in forge orange, *Estimated* as an orange pill, and three raised
+tiles whose foot is drawn in each macro's dashboard colour to its share of the
+calories (`macroSplit`, server-side, said in words only when every item
+carries all three macros).
+
+- **An item's own macros left the table, and that is the trade he chose.**
+  Both layouts he has called the format — 26 September and 8 October — were
+  item and calories only; the per-item macro columns were added here and made
+  the table five columns wide on a phone. The just-logged item's full macro
+  line still rides the confirmation (`macroLine`), the day's macros are the
+  tiles, and the drawn card opens an item's macros under a tap.
+- **A macro no item carries is not drawn**, neither as a tile nor as "0 g";
+  a partial one is said to be partial under the tiles. No dash is drawn for a
+  missing macro any more, so no caption explains one.
+- **A meal this reply wrote is marked in the table, never drawn twice.** The
+  "Just logged" block above the headline repeated it and pushed the table he
+  asked for down the screen; it now lists only what the table does not hold
+  (a weigh-in, a session, another day's entry). And **one row never folds** —
+  a "Show 1 earlier" line is as tall as the row it hides — so his six-item
+  day shows all six.
+- **Measured in Chromium at 320, 390, 430 and 720, both host themes:**
+  nothing crosses the plate anywhere. His 8 October day is 830px at 390; the
+  five-row logged fixture is 853px, about 35px over the old 820 target — the
+  table head and the tiles, which are the format. Whether ChatGPT scrolls or
+  clips a card taller than its limit is unverified.
+- **ChatGPT's own widget cannot take Wrought's colours** — it is the model's
+  composition, drawn by ChatGPT (see the green box above). Wrought's card is
+  the only frame that can, and it reaches ChatGPT only after a Refresh on
+  chatgpt.com in a browser. On the phone the markdown carries the layout.
+
+**The picker never sent a request.** Not one token lookup reached Supabase on
+8 October: *"I tried accessing it, but the connection was blocked"* was
+ChatGPT's own account picker refusing the call before it left ChatGPT, so no
+reply, description or `connected_accounts` line of ours was in front of the
+model. Two days later the same three connections logged a breakfast through
+the 18 September grant with no hesitation. Nothing server-side reaches a call
+that is never made; the fix is the founder's — in ChatGPT, Settings → Plugins
+→ Wrought → Connection, keep any one account and disconnect the others (all
+three are his one record) — and revoking grants from here would leave broken
+entries in ChatGPT's picker rather than remove them. The six foods were filed
+by hand (`detail.repaired`) at noon, since no time was given, with
+calories only: ChatGPT's macro estimate was for the six together and was not
+split per item.
+
 ### A food confirmed with no figure — estimated before the reply, never confirmed as complete
 
 6 October: *"Logged in Wrought — Costco restaurant sausage at 3:17 PM"* with

@@ -342,38 +342,51 @@ export function dayModel(read, { explicit = false } = {}) {
   const flagged = !!read.flagged;
 
   // ── What was eaten ──────────────────────────────────────────────────────
+  // The founder's layout, 8 October — "I love the format … keep the format":
+  // a label, the day's calories as the headline, every item with its own
+  // calories in a two-column table, the total under it, then protein, carbs
+  // and fat as three figures of their own. The time rides on the item (the
+  // meal-timing doctrine: a clock read back is a clock that can be put right);
+  // an item's own macros ride on the log confirmation and, on the drawn card,
+  // under a tap.
   const food = {
-    title: partial ? 'Today\'s calorie breakdown so far' : `Calorie breakdown · ${dayName(read.date)}`,
+    title: partial ? 'Estimated food intake · today so far' : `Estimated food intake · ${dayName(read.date)}`,
+    head: { what: 'Food', kcal: 'Calories' },
     items: items.map(it => ({
       id: it.id ?? null, what: it.what, at: it.at ? clock(it.at) : '',
       kcal: n(it.calories) == null ? null : money(it.calories),
       protein: grams(it.protein_g), carbs: grams(it.carbs_g), fat: grams(it.fat_g),
     })),
     counted,
+    headline: counted ? { figure: money(inn.total), unit: 'calories' } : null,
     total: {
       kcal: counted ? money(inn.total) : null,
       protein: has('protein_g') ? grams(inn.protein_g) : '—',
       carbs: has('carbs_g') ? grams(inn.carbs_g) : '—',
       fat: has('fat_g') ? grams(inn.fat_g) : '—',
     },
+    // Protein, carbs and fat — only a macro some item carries. A macro no
+    // item holds is a zero that was never there: it is left out, never drawn
+    // as "0 g", and a partial one is said to be partial underneath.
+    macros: items.length
+      ? [['protein', 'Protein', 'protein_g'], ['carbs', 'Carbs', 'carbs_g'], ['fat', 'Fat', 'fat_g']]
+        .filter(([, , k]) => has(k))
+        .map(([key, label, k]) => ({ key, label, value: money(inn[k]), unit: 'g' }))
+      : [],
     captions: [],
-    // The drawn card's captions: the same sentences, except the one that
-    // explains the table's dash. The card prints no dash — a missing macro is
-    // simply not on the row — so a caption about one explains a glyph the
-    // person never sees.
+    // The drawn card prints the same sentences: neither draws a dash for a
+    // missing macro any more, so neither explains one.
     card_captions: [],
     empty: items.length ? null : (partial ? 'Nothing eaten is logged yet today.' : 'Nothing eaten was logged this day.'),
   };
-  const caption = (both, card = both) => { food.captions.push(both); food.card_captions.push(card); };
+  const caption = text => { food.captions.push(text); food.card_captions.push(text); };
   if (items.length) {
     // Captions, each its own paragraph so no renderer runs them together.
     const bare = items.filter(it => n(it.protein_g) == null || n(it.carbs_g) == null || n(it.fat_g) == null).length;
-    if (bare) caption(bare === items.length
-      ? '— means that figure is not on the item yet.'
-      : `— means that figure is not on the item yet: ${bare} of ${items.length} items ${bare === 1 ? 'has' : 'have'} none, so those totals count only the items that carry them.`,
-    bare === items.length
+    if (bare && food.macros.length) caption(bare === items.length
       ? `${items.length === 1 ? 'It is' : 'Every item is'} missing protein, carbs or fat, so the macro figures are partial.`
       : `${bare} of ${items.length} items ${bare === 1 ? 'is' : 'are'} missing protein, carbs or fat, so those totals count only the items that carry them.`);
+    else if (bare) caption(`${items.length === 1 ? 'It has' : 'No item has'} protein, carbs or fat on it yet.`);
     // Sugar, fibre and saturated fat — only the ones some item carries. The
     // day's sums start at zero, so a figure no item holds is a zero that was
     // never there; it is left out, and a partial one says so.
@@ -479,17 +492,19 @@ export function dayModel(read, { explicit = false } = {}) {
   return { partial, flagged, explicit, date: read.date, food, energy, notes, foot };
 }
 
-/** The model's decisions as the markdown table a chat client renders. */
+/** The model's decisions as the markdown a chat client renders — the founder's layout. */
 export function dayMarkdown(m) {
   if (!m) return null;
   const out = [];
   out.push(`**${m.food.title}**`, '');
   if (m.food.items.length) {
-    out.push('| Food | kcal | Protein | Carbs | Fat |', '|---|---:|---:|---:|---:|');
+    if (m.food.headline) out.push(`### ${m.food.headline.figure} ${m.food.headline.unit}`, '');
+    out.push(`| ${m.food.head.what} | ${m.food.head.kcal} |`, '|---|---:|');
     for (const it of m.food.items) {
-      out.push(`| ${cell(`${it.what}${it.at ? ` (${it.at})` : ''}`)} | ${it.kcal == null ? 'not counted yet' : it.kcal} | ${it.protein} | ${it.carbs} | ${it.fat} |`);
+      out.push(`| ${cell(`${it.what}${it.at ? ` (${it.at})` : ''}`)} | ${it.kcal == null ? 'not counted yet' : it.kcal} |`);
     }
-    out.push(`| **Total** | **${m.food.total.kcal ?? 'not counted yet'}** | **${m.food.total.protein}** | **${m.food.total.carbs}** | **${m.food.total.fat}** |`, '');
+    out.push(`| **Total** | **${m.food.total.kcal ?? 'not counted yet'}** |`, '');
+    if (m.food.macros.length) out.push(m.food.macros.map(x => `**${x.label}** ${x.value} ${x.unit}`).join(' · '), '');
     for (const c of m.food.captions) out.push(c, '');
   } else {
     out.push(m.food.empty, '');
@@ -568,17 +583,18 @@ export function justRows(items = []) {
 }
 
 /**
- * The "just logged" block for a reply that wrote `rows` — pure. ONE row is
- * shown on its own, with its figures. Several are already marked in the day's
- * table, so only the rows the table does not hold — a weigh-in, a session, a
- * day other than the one drawn — are listed again: a seven-meal catch-up drawn
- * twice ran the card to 1,060px at 390, past what a chat host gives a card.
+ * The "just logged" block for a reply that wrote `rows` — pure. A row the
+ * day's table holds is marked there (bold, its time in heat) and never drawn
+ * a second time: only the rows the table does not hold — a weigh-in, a
+ * session, a day other than the one drawn — are listed. A seven-meal catch-up
+ * drawn twice ran the card to 1,060px at 390, and since the founder's layout
+ * (8 October) put the headline and the table first, even one meal repeated
+ * above them pushed the table he asked for down the screen.
  *
  * @param inTable  whether the day's table holds a row (default: food and drink)
  */
 export function justBlock(rows = [], { caption = 'Just logged', inTable = r => r.type === 'food' || r.type === 'drink' } = {}) {
-  const list = (rows || []).filter(Boolean);
-  const shown = list.length === 1 ? list : list.filter(r => !inTable(r));
+  const shown = (rows || []).filter(Boolean).filter(r => !inTable(r));
   return shown.length ? { caption, rows: justRows(shown) } : null;
 }
 
@@ -588,8 +604,11 @@ function viewOf(m, read, { explicit = false, badge = null, fresh = [], just = nu
   const raw = inn.items || [];
   const fresher = new Set((fresh || []).filter(x => x != null).map(String));
   // The newest rows show; the earliest fold behind one line the server
-  // writes. A row this reply just wrote never folds, wherever it sits.
-  let toFold = Math.max(0, m.food.items.length - CARD_ROWS);
+  // writes. A row this reply just wrote never folds, wherever it sits — and
+  // ONE row never folds: a "Show 1 earlier" line is as tall as the row it
+  // hides, so a six-item day (the founder's 8 October) shows all six.
+  const over = m.food.items.length - CARD_ROWS;
+  let toFold = over > 1 ? over : 0;
   let folded = 0;
   const rows = m.food.items.map((it, i) => {
     const isFresh = it.id != null && fresher.has(String(it.id));
@@ -605,14 +624,21 @@ function viewOf(m, read, { explicit = false, badge = null, fresh = [], just = nu
       fresh: isFresh, folded: fold,
     };
   });
-  // The bar is split by CALORIES (macroSplit, the dashboard's rule) — and only
-  // over the macros some item actually carries.
+  // Protein, carbs and fat as three tiles, each with its share of the day's
+  // calories drawn under it — split by CALORIES (macroSplit, the dashboard's
+  // rule), and only over the macros some item actually carries. The share is
+  // said in words only when every item carries all three: over a partial
+  // record the split is of what was recorded, not of the day.
   const split = macroSplit(inn);
-  const bar = split && m.food.items.length
-    ? [['protein', split.protein_pct, m.food.total.protein], ['carbs', split.carbs_pct, m.food.total.carbs], ['fat', split.fat_pct, m.food.total.fat]]
-      .filter(([, , g]) => g !== '—')
-      .map(([key, share, g]) => ({ key, share: CLAMP(share), label: `${g} ${key}` }))
-    : null;
+  const whole = raw.length > 0 && raw.every(r => ['protein_g', 'carbs_g', 'fat_g'].every(k => n(r[k]) != null));
+  const tiles = m.food.macros.map(x => {
+    const pct = split ? split[`${x.key}_pct`] : null;
+    return {
+      key: x.key, label: x.label, value: x.value, unit: x.unit,
+      share: pct == null ? 0 : CLAMP(pct),
+      share_label: whole && pct != null ? `${Math.round(pct)}% of kcal` : null,
+    };
+  });
   // Rings: the dashboard's verdict colours. Under a care flag the intake ring
   // goes — a ring filling toward a calorie ceiling is exactly the "at 80% of
   // target" message a flag silences — and every other ring stays: steps,
@@ -660,11 +686,13 @@ function viewOf(m, read, { explicit = false, badge = null, fresh = [], just = nu
     just: just && Array.isArray(just.rows) && just.rows.length ? { caption: String(just.caption || 'Just logged'), rows: just.rows } : null,
     intake: {
       title: m.food.title,
-      figure: m.food.counted ? m.food.total.kcal : null,
+      figure: m.food.headline ? m.food.headline.figure : null,
+      unit: m.food.headline ? m.food.headline.unit : null,
       figure_missing: m.food.items.length && !m.food.counted ? 'not counted yet' : null,
-      // Only beside a figure: an empty day draws no hero for it to caption.
-      caption: !m.food.items.length ? null : m.partial ? 'in so far · estimated' : 'eaten · estimated',
-      bar: bar && bar.length ? bar : null,
+      // Only beside a figure: an empty day draws no headline for it to mark.
+      pill: m.food.items.length ? 'Estimated' : null,
+      head: m.food.items.length ? { what: m.food.head.what, kcal: m.food.head.kcal } : null,
+      tiles: tiles.length ? tiles : null,
       rows,
       more_label: folded ? `Show ${folded} earlier` : null,
       total: m.food.items.length
@@ -724,4 +752,4 @@ export function burnPhrase(read) {
 // only when the host has said so — skipping the table on a guess leaves
 // somebody with neither. Where the panel IS drawn, pasting the table under it
 // shows every figure twice, which is the cheaper of the two failures.
-export const DAY_CARD_NOTE = 'SHOW day_card EXACTLY AS WRITTEN — it is the layout the person asked to keep: the food table with each item\'s calories and macros and the totals, then the energy balance. Put it after your first line, as markdown, unchanged: never rebuild it, reorder it, drop a row, add a row or a figure of your own, or turn any number into a range. If more than one reply this turn carries a day_card for the same day, show only the LATEST one, once. ONE EXCEPTION: if the host has told you that Wrought\'s own card was drawn for THIS reply (a dark WROUGHT panel with this day on it), that panel is the layout — do not paste day_card under it as well; give the reply\'s say line (on a write it opens "Logged in Wrought") and then only what the panel does not show, never a figure that differs from it. If you were not told, no panel was drawn: show day_card. ';
+export const DAY_CARD_NOTE = 'SHOW day_card EXACTLY AS WRITTEN — it is the layout the person asked to keep: the day\'s calories as the headline, the Food / Calories table with each item and the total, the protein, carbs and fat line, then the energy balance. Put it after your first line, as markdown, unchanged: never rebuild it, reorder it, drop a row, add a row or a figure of your own, or turn any number into a range. If more than one reply this turn carries a day_card for the same day, show only the LATEST one, once. ONE EXCEPTION: if the host has told you that Wrought\'s own card was drawn for THIS reply (a dark WROUGHT panel with this day on it), that panel is the layout — do not paste day_card under it as well; give the reply\'s say line (on a write it opens "Logged in Wrought") and then only what the panel does not show, never a figure that differs from it. If you were not told, no panel was drawn: show day_card. ';

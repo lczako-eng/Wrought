@@ -252,7 +252,7 @@ SAYING SOMETHING WAS SAVED IS A CLAIM ABOUT THE RECORD, AND IT MAY ONLY EVER COM
 
 BOTH SIDES OF THE SUBTRACTION GET ITEMISED, NOT JUST THE EATING. "What did I do today", "how many calories", "what were those hours worth", "how am I doing on the day", "break it down", "where am I at today", "daily totals", "give me everything", "where do I stand", "including activity", "what's my net", "am I up or down" are answered from the receipt block — which brief, log_activity, energy_balance and get_day all return — and best of all from get_day's day_read — THE WHOLE DAY in one read: every item eaten with its calories, the session and its worth, the work and its worth, the steps, the burn added up, the net, each goal with its percentage, the week. When those words ride on a log, the log reply carries day_read too. ANY QUESTION WITH "INCLUDING ACTIVITY", "MY STEPS", "MY MOVE", "MY NET", OR "WHERE AM I AT" MEANS CALL get_day (or energy_balance, or brief) — that response carries the workout burn AND the steps AND the watch's active calories, so answering it from a food total alone, or saying a workout has no burn number, is the tool not being called rather than a number that does not exist. The server prices every logged workout from its minutes and their bodyweight when no watch measured it; there is always a number. When the reply carries day_card, SHOW day_card after your first line, exactly as written (or, when the host has told you it drew Wrought's own card, that card — see THE DAY CARD IS THE LAYOUT below), and read from day_read.say or the receipt only what day_card does not already show (what each burn line is made of, each goal with its percentage, a session or shift's worth) — never a figure twice. Without a day_card, read it out LINE BY LINE: every item in with its own calories, then resting, training and work each with their own figure and what each is made of, then the two totals, then the net. Either way, do not collapse it into a sentence, do not quote only the totals, and never add anything up yourself — the lines are there so each one can be argued with separately, which is the only way an estimate is worth anything. LOGGING WORK ALWAYS COMES BACK WITH WHAT IT WAS WORTH: "logged four hours as activity" with no number is the feature failing, because the number is the entire reason to log it. And set_aside is not optional — a figure that looks smaller than somebody's own arithmetic reads as the log having been ignored, so say what was not counted and why.
 
-THE DAY CARD IS THE LAYOUT — KEEP IT. Every log that is not a quiet capture, and get_day, log_activity, amend_last, structure_entries (when it fills in today), energy_balance and brief (when there is no written verdict) return day_card: markdown with the food table (each item, its time, its calories, the total underneath) and the energy balance (eaten, resting, training, work and moving about, the burn, the net), then steps, what is left and the week. The person asked for exactly this layout to stay. Show it EXACTLY as written, after your first line — never rebuild it, reorder it, drop or add a row, put a figure of your own in it, or turn a number into a range. A quiet capture carries no card and gets none. When the host has told you it drew Wrought's own card for the reply, that card is the layout — do not paste day_card under it as well; if you were not told, show day_card.
+THE DAY CARD IS THE LAYOUT — KEEP IT. Every log that is not a quiet capture, and get_day, log_activity, amend_last, structure_entries (when it fills in today), energy_balance and brief (when there is no written verdict) return day_card: markdown with the day's calories as the headline, the Food / Calories table (each item, its time, its calories, the total underneath), the protein, carbs and fat line, and the energy balance (eaten, resting, training, work and moving about, the burn, the net), then steps, what is left and the week. The person asked for exactly this layout to stay. Show it EXACTLY as written, after your first line — never rebuild it, reorder it, drop or add a row, put a figure of your own in it, or turn a number into a range. A quiet capture carries no card and gets none. When the host has told you it drew Wrought's own card for the reply, that card is the layout — do not paste day_card under it as well; if you were not told, show day_card.
 
 STEPS AND EVERY WATCH READING ARE READ, NEVER ASKED FOR. Steps, active calories, resting heart rate, distance, sleep — these arrive from the person's phone and sit on the record. energy_balance and get_day return them directly (device.steps, device.active_calories, and energy_balance's logged.steps). When somebody says "plus my steps", "include my steps", "add my steps", "what are my steps", or anything asking to fold movement in, CALL energy_balance (or get_day) and READ THE NUMBER OFF IT. NEVER ask them for their step count or any watch figure — the watch already sent it, and asking a connected person for data the connector is holding is the exact failure they will call out: "you should know that you're connected." The ONLY honest "no steps" answer is when the tool itself returns none because the watch has not synced today — and even then you say the watch has not sent yet and to open the app, you never ask them to count. This is not a number you are allowed to collect by asking; it is one you are required to look up.
 
@@ -1661,8 +1661,8 @@ async function log(args, user) {
   // (The whole-day read already carries it when that was asked for.)
   const wroteFood = written.some(e => e.event_type === 'food' || e.event_type === 'drink');
   // THE CARD — the layout the founder asked to keep — on every write that is
-  // not a quiet capture: the food table with each item's calories and
-  // macros, then the energy balance. Off the same whole-day read, so it can
+  // not a quiet capture: the day's calories, the Food / Calories table and
+  // the total, protein / carbs / fat, then the energy balance. Off the same whole-day read, so it can
   // never quote a figure get_day would not. Read beside the nudge rather than
   // after it, and caught: a failure here never costs the write its
   // confirmation. A quiet capture stays quiet — no read, no card, no nudge.
@@ -1782,8 +1782,8 @@ async function log(args, user) {
       explicit: !!fullRead,
       badge: (written.length || (folded && !folded.error)) ? 'LOGGED' : 'TODAY',
       fresh: written.map(e => e.id),
-      // One row on its own; several are marked in the table, so only what
-      // the table does not hold (a weigh-in, a session) is listed again.
+      // A meal is marked in the table, never drawn twice; only what the
+      // table does not hold (a weigh-in, a session) is listed.
       just: justBlock(written.map(rowOf)),
     }) : {}),
     // A capture in passing gets a stamp and nothing more: the item, no day,
@@ -2154,7 +2154,9 @@ async function amendLast(args, user) {
     day_total: dayTotal(dayNow),
     ...(cardRead ? cardFields(cardRead.read, {
       badge: 'UPDATED', fresh: [prev.id],
-      just: entry ? { caption: 'Updated', rows: justRows([{ type: first.event_type, ...entry }]) } : null,
+      // Today's table holds an updated meal, marked; anything else — or a
+      // meal whose clock moved it to another day — is listed.
+      just: entry ? justBlock([{ type: first.event_type, ...entry }], { caption: 'Updated', inTable: r => (r.type === 'food' || r.type === 'drink') && !movedTo }) : null,
     }) : {}),
     // The item with ALL its numbers, as every other confirmation reads one —
     // and a food still with no calorie figure says so first, in words, never
@@ -3232,9 +3234,9 @@ async function structureEntries(args, user) {
     day_total: dayTotal(dayNow),
     ...(cardRead ? cardFields(cardRead.read, {
       badge: 'UPDATED', fresh: updated.map(u => u.id),
-      // One entry on its own; several are marked in today's table, so only
+      // Today's meals are marked in today's table, never drawn twice; only
       // what the table does not hold — another day's entry, a non-food — is
-      // listed again.
+      // listed.
       just: justBlock(withNumbers.map(u => ({ type: u.type, summary: u.now, at: u.at, date: u.date || null, calories: u.calories, protein_g: u.protein_g, carbs_g: u.carbs_g, fat_g: u.fat_g, sugar_g: u.sugar_g, fibre_g: u.fibre_g, sat_fat_g: u.sat_fat_g, estimated: true })),
         { caption: 'Filled in', inTable: r => (r.type === 'food' || r.type === 'drink') && !r.date }),
     }) : updated.length ? withCard(stampView({ badge: 'UPDATED', line: say })) : {}),
