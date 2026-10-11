@@ -19528,6 +19528,20 @@ await test('the fitness card is the same view as a table and as a picture, and t
   assert.ok(!FIT.fitnessMarkdown(flag).includes('Next:'));
 });
 
+await test('a picture never carries a character its fonts cannot draw — an arrow draws as a box', () => {
+  // The fonts carry no arrows: "Health → Heart" and "Zone 4 ← 150 bpm" both
+  // came out of the renderer as empty boxes, on the card that was meant to
+  // look finished. Every view the pictures draw, day and fitness, is checked.
+  const S = WCARD.scenarios();
+  const missing = { kind: 'fitness', vo2: { title: 'VO2 max · where you stand', missing: S.fit_none.body.vo2_missing } };
+  const views = [...PIC.views(), ...PIC.fitViews(), ['fit_none', missing]];
+  for (const [name, v] of views) {
+    const drawn = PIC.texts(PIC.IMG.cardTree(v)).join('\n');
+    const bad = drawn.match(/[\u2190-\u21FF\u2B00-\u2BFF]/g);
+    assert.equal(bad, null, `${name}: the picture draws ${bad?.join(' ')}, which its fonts do not have`);
+  }
+});
+
 await test('fitness_check keeps the VO2 max they say, reads it back, and refuses one no watch shows', () => {
   const S = WCARD.scenarios();
   const f = S.fit.body;
@@ -19541,7 +19555,7 @@ await test('fitness_check keeps the VO2 max they say, reads it back, and refuses
   assert.match(f.not_medical, /never a diagnosis/);
   assert.equal(S.fit_bad.body.error, 'unreadable');
   assert.equal(S.fit_bad.metrics, 0, 'a misheard VO2 max was kept');
-  assert.match(S.fit_none.body.vo2_missing, /Health → Heart → Cardio Fitness/);
+  assert.match(S.fit_none.body.vo2_missing, /in the Health app, under Heart, it is Cardio Fitness/);
   assert.match(S.fit_none.body.coach_line, /Tell me the VO2 max your watch shows/);
   // Under a flag the reading stands; the plan, the coach and the next rung go.
   const g = S.fit_flag.body;

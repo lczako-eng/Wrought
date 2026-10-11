@@ -2850,7 +2850,7 @@ async function fitnessCheck(args, user) {
   if (age == null) missing.push('a birth year');
   if (vo2 != null && !standing && !sexKey(profile.sex)) missing.push('their sex');
   const vo2Missing = vo2 == null
-    ? 'No VO2 max on file yet. An Apple Watch estimates it on outdoor walks and runs — Health → Heart → Cardio Fitness — and it arrives on its own once the phone sends it; or say the number it shows.'
+    ? 'No VO2 max on file yet. An Apple Watch estimates it on outdoor walks and runs — in the Health app, under Heart, it is Cardio Fitness — and it arrives on its own once the phone sends it; or say the number it shows.'
     : !standing ? `VO2 max ${vo2} is on file; placing it for their age group needs ${missing.join(' and ')} (set_profile).` : null;
   const view = fitnessView({
     standing, zones, placed, plan, resting: restingLine(rhr), coachLine,
