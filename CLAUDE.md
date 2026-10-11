@@ -3527,14 +3527,18 @@ an estimate read against a lab reference.
   the day, `source: manual`, so the same day re-told replaces. A watch reads
   about 15–70; anything outside 10–90 is a mishearing and is refused, because
   a kept mishearing would sit on the ladder for good. His phone has never sent
-  one, so until it does the card asks for the number on Health → Heart →
-  Cardio Fitness.
+  one, so until it does the card asks for the number the Health app shows
+  under Heart, as Cardio Fitness.
 - **ChatGPT gets the card as a picture**, through the same path as the day card.
   `pictureSlot()` names which card a tool's reply may picture and the sentence
   its note swaps out (`FITNESS_CARD_SHOW` → `FITNESS_PICTURE_NOTE`).
   `savePicture` keeps `day` and `fitness` views only. The picture draws the
   view's strings and computes nothing; the zone the heart rate sits in carries
   a pill, because the fonts have no arrow and a missing glyph draws as a box.
+  **The arrow came back once more, in a sentence**: "Health → Heart → Cardio
+  Fitness" on his real card drew two boxes, found by rendering his own record
+  after the tests had passed. A test now draws every view, day and fitness, and
+  refuses any arrow in a picture. Arrows stay fine in text a model reads.
 
 **One mutation could not fail, and that is correct**: removing `!args.quiet`
 from the score still scores nothing on a quiet capture, because the quiet path
@@ -6484,7 +6488,7 @@ self-reporting scale removes the most-abandoned manual entry), then Strava.
 
 ## Conventions
 
-- `npm test` runs `test/harness.mjs` — 891 offline tests, no network, no database.
+- `npm test` runs `test/harness.mjs` — 892 offline tests, no network, no database.
   Run it before every push. It covers the JSON-RPC envelope (which fails as an
   uninformative "could not connect" inside ChatGPT) and all the arithmetic
   (which fails as a confidently wrong number in somebody's verdict).
