@@ -9,8 +9,10 @@
     "sql": "node scripts/build-all-sql.mjs"
   },
   "dependencies": {
+    "@resvg/resvg-wasm": "2.6.2",
     "@supabase/supabase-js": "^2.49.4",
-    "openai": "^4.96.2"
+    "openai": "^4.96.2",
+    "satori": "0.18.3"
   },
   "devDependencies": {
     "acorn": "^8.12.0"

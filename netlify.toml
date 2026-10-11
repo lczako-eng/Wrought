@@ -265,3 +265,15 @@
     Cache-Control = "no-cache, no-store, must-revalidate"
     X-Content-Type-Options = "nosniff"
     Referrer-Policy = "strict-origin-when-cross-origin"
+
+# Wrought's day card as a picture, for the chat that cannot draw the card
+# itself. The renderer and its wasm ship as modules beside the function rather
+# than bundled into it, and the fonts ride as files — see card-image.js.
+[[redirects]]
+  from = "/c/*"
+  to = "/.netlify/functions/card-image/:splat"
+  status = 200
+
+[functions."card-image"]
+  external_node_modules = ["satori", "@resvg/resvg-wasm"]
+  included_files = ["netlify/functions/assets/fonts/*", "node_modules/@resvg/resvg-wasm/index_bg.wasm"]
