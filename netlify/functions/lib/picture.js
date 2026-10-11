@@ -7,6 +7,7 @@
 // a chat shows.
 
 import { randomBytes } from 'node:crypto';
+import { DAY_CARD_NOTE, PICTURE_NOTE } from './dayread.js';
 
 // 128 random bits, base64url: 22 characters. The whole of the key.
 export const PICTURE_ID = /^[A-Za-z0-9_-]{22}$/;
@@ -43,4 +44,26 @@ export async function savePicture(db, userId, view, { timeoutMs = 1500 } = {}) {
   } catch {
     return null;
   }
+}
+
+/**
+ * The reply with its day card as a picture: `card_image` directly above
+ * `day_card` (which stays, as data, for anything that reads it), and the
+ * note's show-the-table instruction swapped for show-the-picture. A reply
+ * with no day_card is returned as it was — the picture only ever stands in
+ * for the card, never arrives on a reply that did not carry one.
+ */
+export function pictured(body, md) {
+  if (!body || typeof body !== 'object' || Array.isArray(body) || typeof body.day_card !== 'string' || !md) return body;
+  const swapped = typeof body.note === 'string' && body.note.includes(DAY_CARD_NOTE);
+  const out = {};
+  for (const [k, v] of Object.entries(body)) {
+    if (k === 'day_card') {
+      out.card_image = md;
+      // A note that never said "show day_card" gets the rule beside the picture.
+      if (!swapped) out.card_image_note = PICTURE_NOTE;
+    }
+    out[k] = k === 'note' && swapped ? v.split(DAY_CARD_NOTE).join(PICTURE_NOTE) : v;
+  }
+  return out;
 }
