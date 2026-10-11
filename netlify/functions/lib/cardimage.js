@@ -203,6 +203,80 @@ function foot(v) {
       el('div', { fontFamily: SLAB, fontWeight: 700, fontSize: 11, letterSpacing: 0.6, color: C['heat-ink'] }, 'wrought.fit')));
 }
 
+// ── The fitness card ────────────────────────────────────────────────────────
+// Where the VO2 max sits on its age group's ladder, the five zones, the plan.
+// Tones are names the view carries; the colours come from the card's palette.
+// Nothing red and nothing scolding: the bottom of the ladder is a quiet grey,
+// because a level is a reading of a number, never of a person.
+const TONE = { quiet: () => C['edge-lit'], amber: () => C.amber, temper: () => C.temper, moss: () => C.moss, 'moss-deep': () => C['moss-ink'], heat: () => C.heat };
+const toneOf = t => (TONE[t] ? TONE[t]() : C['edge-lit']);
+
+function fitnessSections(v) {
+  const out = [];
+  const vo2 = v.vo2 && typeof v.vo2 === 'object' ? v.vo2 : {};
+  if (str(vo2.missing)) {
+    out.push(el('div', { flexDirection: 'column', padding: '9px 14px', borderBottom: `1px solid ${C.edge}` },
+      cap(vo2.title), txt({ fontSize: 13, lineHeight: 1.4, color: C.bright }, vo2.missing)));
+  } else if (str(vo2.figure)) {
+    const ladder = list(vo2.ladder).filter(b => b && typeof b === 'object');
+    out.push(el('div', { flexDirection: 'column', padding: '9px 14px 11px', borderBottom: `1px solid ${C.edge}` },
+      el('div', { justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 },
+        el('div', { flexDirection: 'column', flex: 1 }, cap(vo2.title),
+          el('div', { alignItems: 'baseline', marginTop: 1 },
+            el('div', { fontWeight: 900, fontSize: 40, lineHeight: 0.9, letterSpacing: -1.8, color: C.bright }, str(vo2.figure)),
+            el('div', { marginLeft: 7, fontWeight: 800, fontSize: 15, color: C.heat }, str(vo2.unit)))),
+        str(vo2.pill) ? el('div', { padding: '5px 10px', borderRadius: 999, fontWeight: 600, fontSize: 12, color: C['heat-ink'], backgroundColor: 'rgba(242,100,25,0.1)', border: '1px solid rgba(242,100,25,0.35)' }, str(vo2.pill)) : null),
+      el('div', { marginTop: 8, fontSize: 19, fontWeight: 800, color: C.bright }, str(vo2.level)),
+      txt({ fontSize: 12.5, lineHeight: 1.35, color: C.ash }, [vo2.group, vo2.percentile].filter(x => str(x)).join(' · ')),
+      // The ladder: five equal bands, the marker where the server put it.
+      el('div', { position: 'relative', flexDirection: 'column', marginTop: 16 },
+        share(vo2.marker) !== null ? el('div', { position: 'absolute', top: -12, left: `${share(vo2.marker)}%`, width: 2, height: 30, marginLeft: -1, backgroundColor: C.bright, borderRadius: 1 }) : null,
+        el('div', { height: 10, borderRadius: 5, overflow: 'hidden' },
+          ...ladder.map(b => el('div', { flex: 1, height: 10, backgroundColor: toneOf(b.tone), opacity: b.current ? 1 : 0.55 })))),
+      el('div', { marginTop: 6 },
+        ...ladder.map(b => el('div', { flex: 1, flexDirection: 'column', alignItems: 'center' },
+          el('div', { fontSize: 10.5, lineHeight: 1.2, fontWeight: b.current ? 800 : 500, color: b.current ? C.bright : C.ash, textAlign: 'center' }, str(b.label)),
+          el('div', { fontFamily: MONO, fontSize: 9.5, color: C.label, marginTop: 1 }, str(b.range))))),
+      txt({ marginTop: 8, fontSize: 13, lineHeight: 1.4, fontWeight: 600, color: C['temper-ink'] }, vo2.next)));
+  }
+  const zones = v.zones && typeof v.zones === 'object' ? v.zones : null;
+  if (zones) {
+    out.push(el('div', { flexDirection: 'column', padding: '9px 14px 11px', borderBottom: `1px solid ${C.edge}` },
+      cap(zones.title), txt({ fontSize: 11.5, color: C.ash, marginBottom: 6 }, zones.basis),
+      ...list(zones.rows).filter(z => z && typeof z === 'object').map(z => el('div', { flexDirection: 'column', marginTop: 5 },
+        el('div', { justifyContent: 'space-between', alignItems: 'baseline', gap: 10, fontSize: 13.5 },
+          // The reading they asked about is a pill beside its zone — the
+          // fonts carry no arrow, and a missing glyph draws as a box.
+          el('div', { alignItems: 'center', gap: 6 },
+            el('div', { fontWeight: z.here ? 800 : 600, color: C.bright }, str(z.label)),
+            z.here && str(zones.placed_label) ? el('div', { padding: '1px 7px', borderRadius: 999, fontFamily: MONO, fontWeight: 700, fontSize: 9.5, letterSpacing: 0.6, color: C.paper, backgroundColor: C.heat }, str(zones.placed_label)) : null),
+          el('div', { fontWeight: 700, color: C.bright }, str(z.range))),
+        el('div', { marginTop: 3, height: 7, borderRadius: 4, backgroundColor: C.track, overflow: 'hidden' },
+          share(z.share) !== null ? el('div', { width: `${share(z.share)}%`, height: 7, backgroundColor: toneOf(z.tone) }) : null),
+        txt({ marginTop: 2, fontSize: 11, color: C.ash }, z.use))),
+      txt({ marginTop: 8, fontSize: 12.5, lineHeight: 1.4, fontWeight: 600, color: C.bright }, zones.placed)));
+  }
+  const plan = v.plan && typeof v.plan === 'object' ? v.plan : null;
+  if (plan) {
+    out.push(el('div', { flexDirection: 'column', padding: '9px 14px 11px', borderBottom: `1px solid ${C.edge}`, borderLeft: `3px solid ${C.heat}`, backgroundImage: 'linear-gradient(90deg, rgba(242,100,25,0.07), rgba(242,100,25,0) 72%)' },
+      cap(plan.title),
+      str(plan.paused) ? txt({ fontSize: 13, lineHeight: 1.4, color: C.bright }, plan.paused) : null,
+      ...list(plan.rows).filter(r => r && typeof r === 'object').map(r => el('div', { alignItems: 'flex-start', gap: 8, marginTop: 4 },
+        el('div', { fontWeight: 800, fontSize: 15, color: C['heat-ink'], width: 32 }, str(r.times)),
+        el('div', { flex: 1, flexDirection: 'column' },
+          el('div', { fontWeight: 700, fontSize: 13.5, color: C.bright }, str(r.what)),
+          txt({ fontSize: 12, lineHeight: 1.35, color: C.ash }, r.how)))),
+      txt({ marginTop: 6, fontSize: 12, lineHeight: 1.35, color: C.bright }, plan.then),
+      txt({ marginTop: 6, fontSize: 11.5, fontStyle: 'italic', color: C.ash }, plan.offered)));
+  }
+  if (str(v.coach) || str(v.resting)) {
+    out.push(el('div', { flexDirection: 'column', padding: '9px 14px', borderBottom: `1px solid ${C.edge}` },
+      str(v.coach) ? el('div', { fontSize: 13.5, lineHeight: 1.4, fontWeight: 700, color: C.bright }, str(v.coach)) : null,
+      txt({ marginTop: str(v.coach) ? 6 : 0, fontSize: 12, lineHeight: 1.35, color: C.ash }, v.resting)));
+  }
+  return out;
+}
+
 /**
  * The picture's element tree for a view. Pure: strings in, boxes out. A view
  * it cannot read draws the header alone, as the card does.
@@ -218,6 +292,7 @@ export function cardTree(view) {
   };
   // The forge rule along the top, the tile's own gradient.
   const forge = el('div', { position: 'absolute', top: 0, left: 0, right: 0, height: 3, backgroundImage: `linear-gradient(90deg, ${C['heat-hi']}, ${C.heat} 55%, ${C['heat-lo']})` });
+  if (v.kind === 'fitness') return el('div', plate, forge, strip(v), ...fitnessSections(v), foot(v));
   if (!day) {
     return el('div', plate, forge, strip(v),
       str(v.line) ? el('div', { padding: '10px 14px 12px', borderTop: `1px solid ${C.edge}`, fontSize: 13.5, lineHeight: 1.45, color: C.bright }, str(v.line)) : null);

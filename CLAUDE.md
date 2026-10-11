@@ -3448,6 +3448,91 @@ the mistake. Use a random id for a live test. And a `delete` through the
 Supabase connector timed out twice waiting for a confirmation nobody could give.
 The row was neutralised with an `update` to a header-only view instead.
 
+### The meal rated, the engine placed — computed, never ChatGPT's impression
+
+`mealScore()` in `lib/nutrition.js` + `meal_score` on `log` / `structure_entries`
+and `meal_scores` on `get_day`; `lib/fitness.js` + the `fitness_check` tool +
+the fitness card, as a picture in ChatGPT. The founder, under four ChatGPT
+screenshots — *"I'd give it an 8/10 nutritionally"*, a table of VO2 max tiers,
+five heart-rate zones in colour, a list of workouts: *"I also wanna rate the
+food like this, exactly like this, and your VO2 and other vitals — show you
+where you are. Your coach on there should be encouraging to do better, and how
+to train to optimise that."* Every one of those was drawn from ChatGPT's own
+memory. The 8/10 was an impression; the tiers had no source; the zones came off
+a max heart rate nothing computed. **The invented-2,600 failure, four times in
+one reply, pointed at the two things he asked to see next.**
+
+**The meal score is ten points, each against a named guide.** Protein's share
+of the calories (3 points; 25% or more scores full, inside the Institute of
+Medicine's 10–35% range). Fibre per 1,000 kcal (3 points; 14 g is the US
+Dietary Guidelines figure). Sugar under 10% of calories (2 points; the WHO
+line), with whole fruit and its fibre exempt. Saturated fat under 10% (2
+points).
+
+- **It rates what is in the food — never the amount, never the person.** No
+  "good food", no "bad food", no "too much", and the one thing that would lift
+  it is always something to ADD or SWAP — never "less", because nothing here
+  tells anybody to eat less. A test greps every reading for the words.
+- **A missing figure is no score.** Without calories, protein, fibre, sugar and
+  saturated fat on the row it says which are missing, and the note says to
+  estimate them and send them by id in the same turn. A score off a guessed
+  zero is the poisoned-total failure.
+- **Shares are held to 100.** An estimate with 39 g of sugar on a 140 kcal row
+  printed 111% before the cap.
+- **A care flag silences it, and a flag state nobody read counts as one.**
+  Rating food is coaching. A quiet capture never reads the flags, so it is
+  never scored. His lunch today scores 9/10 off the row ChatGPT wrote.
+
+**The fitness card places VO2 max against the FRIEND registry** (Kaminsky et
+al., Mayo Clinic Proceedings 2015): laboratory treadmill percentiles by decade
+and sex. The table was taken from published reproductions that agree with each
+other, and the medians at both ends match the paper's abstract. This is the
+one "how fit am I for my age" figure this file already called defensible. It
+is a percentile, never a "fitness age", and the card says a watch's VO2 max is
+an estimate read against a lab reference.
+
+- **The levels are plain**: Low, Below average, Above average, High, Very
+  high. Cut at the 25th, 50th, 75th and 90th percentiles. "Low" rather than
+  "poor", because it is a reading of a number. The bottom band is a quiet grey,
+  never red.
+- **Zones are percentages of an estimated maximum** (Tanaka: 208 − 0.7 × age,
+  177 for him). Percentage of maximum rather than of heart-rate reserve on
+  purpose: it sits lower, and an easy day that is really easy is the safe
+  error. A heart rate he mentions is placed in its zone; *"150 bpm is Zone 4"*.
+- **The plan only ever offers, fitted inside their week.** Below average or
+  under: Zone 2 base work, then one 4 × 4 interval session after three or four
+  weeks (Helgerud et al. 2007). Above: Zone 2 plus one 4 × 4 a week. Never more
+  sessions than they committed to, three offered when nothing is committed,
+  written only on a yes. **A strained recovery read means easy work only**,
+  and **nothing all-out is ever prescribed**.
+- **The coach encourages about the record, never the body.** *"0.5 from below
+  average, and VO2 max is one of the most trainable numbers you have."*
+  Relative VO2 max is per kilo, and the obvious lever is the one this product
+  never mentions. A test greps every coach line for body and clinical words.
+- **Under a care flag the reading stands and the push goes.** Plan paused, coach
+  silent, and nothing counts him towards the next rung, in the card or in the
+  `vo2.say` beside it. The reading is still his.
+- **The VO2 max he says is kept**: a `vo2max` row in `wrought_metrics`, noon of
+  the day, `source: manual`, so the same day re-told replaces. A watch reads
+  about 15–70; anything outside 10–90 is a mishearing and is refused, because
+  a kept mishearing would sit on the ladder for good. His phone has never sent
+  one, so until it does the card asks for the number on Health → Heart →
+  Cardio Fitness.
+- **ChatGPT gets the card as a picture**, through the same path as the day card.
+  `pictureSlot()` names which card a tool's reply may picture and the sentence
+  its note swaps out (`FITNESS_CARD_SHOW` → `FITNESS_PICTURE_NOTE`).
+  `savePicture` keeps `day` and `fitness` views only. The picture draws the
+  view's strings and computes nothing; the zone the heart rate sits in carries
+  a pill, because the fonts have no arrow and a missing glyph draws as a box.
+
+**One mutation could not fail, and that is correct**: removing `!args.quiet`
+from the score still scores nothing on a quiet capture, because the quiet path
+never reads the flags and the score refuses without them. It is closed twice.
+
+**Not on the dashboard yet.** Both are tool answers with no panel — this file's
+most repeated shape. The fitness read belongs beside the athlete panel, and the
+day's items could carry their score. Next, if he wants them on the website.
+
 ### A food confirmed with no figure — estimated before the reply, never confirmed as complete
 
 6 October: *"Logged in Wrought — Costco restaurant sausage at 3:17 PM"* with
@@ -6388,7 +6473,7 @@ self-reporting scale removes the most-abandoned manual entry), then Strava.
 
 ## Conventions
 
-- `npm test` runs `test/harness.mjs` — 879 offline tests, no network, no database.
+- `npm test` runs `test/harness.mjs` — 891 offline tests, no network, no database.
   Run it before every push. It covers the JSON-RPC envelope (which fails as an
   uninformative "could not connect" inside ChatGPT) and all the arithmetic
   (which fails as a confidently wrong number in somebody's verdict).

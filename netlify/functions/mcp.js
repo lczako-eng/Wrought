@@ -46,7 +46,7 @@ import { preflight } from './lib/preflight.js';
 import { finaliseSession, closeStaleSessions, recordSet, foldIntoSession } from './lib/session.js';
 import { effortFromWords, wordsForRecord, beforeSet, afterSet, methodsFor } from './lib/coach.js';
 import { PROVIDERS, providerSummary, recommendRoute, liveConnections } from './lib/providers.js';
-import { nutritionTotals, composition, macroMatrix, yearOverYear } from './lib/nutrition.js';
+import { nutritionTotals, composition, macroMatrix, yearOverYear, mealScores, MEAL_SCORE_NOTE } from './lib/nutrition.js';
 import {
   exerciseKey, lastPerformance, progressionCall, TIERS,
   restingBurn, energyBalance, planFromRoutine, sessionTotals, earnedRoom,
@@ -60,10 +60,11 @@ import { PROGRAMMES, GOALS, MOVEMENTS, movementsFor, pickProgramme, buildProgram
 import { FOCUSES, FOCUS_NAMES, focusFrom, designSession, designQuestions, designNote, STYLES, styleFrom, stylesList, recommendStyles, creditedName, shelfSay } from './lib/design.js';
 import { styleRoutine, STYLE_ROUTINES } from './lib/style_routines.js';
 import { pickDue } from './lib/morning.js';
-import { athleteRows, athleteRead, TESTS, parseTestValue, ATHLETE_COMMITMENT } from './lib/athlete.js';
+import { athleteRows, athleteRead, markerRead, TESTS, parseTestValue, ATHLETE_COMMITMENT } from './lib/athlete.js';
+import { ageFrom, sexKey, vo2Standing, hrZones, placeHeartRate, vo2Plan, fitnessCoachLine, restingLine, fitnessView, fitnessMarkdown, FITNESS_NOTE, FITNESS_CARD_SHOW, FITNESS_PICTURE_NOTE } from './lib/fitness.js';
 import { resolvePlace, placeEquipment, listPlaces, bumpPlace, applyPlaces, sessionsCanCarryPlace, PLACE_KINDS } from './lib/places.js';
 import { dayReceipt, wholeDayBurn } from './lib/receipt.js';
-import { dayReadout, roomless, cardParts, justRows, justBlock, burnPhrase, dayName, DAY_CARD_NOTE } from './lib/dayread.js';
+import { dayReadout, roomless, cardParts, justRows, justBlock, burnPhrase, dayName, DAY_CARD_NOTE, PICTURE_NOTE } from './lib/dayread.js';
 import { WIDGETS, widgetFor, RESOURCE_MIME, CARD, CARD_META, templateMeta, withCard, stampView, cardFor } from './lib/widgets.js';
 import { savePicture, pictured, pictureMarkdown } from './lib/picture.js';
 import { mealTiming } from './lib/timing.js';
@@ -105,7 +106,7 @@ const CORS = {
 // not to — and on a phone, mid-sentence, the answer never comes.
 const LOG_FIRST = 'LOG FIRST, ANSWER SECOND: the moment a message mentions anything eaten or drunk, a workout, a shift of work or a weight — in passing, mid-question, in a list, in a photo — call log (or log_activity for work) BEFORE writing the reply. Never ask whether to log it, never wait to be asked, never recite food back in prose without the call in the same turn; an unsure amount is passed as null, never a reason to hold back.';
 
-const READ_TOOLS = new Set(['get_day', 'brief', 'energy_balance', 'whats_next', 'my_plan', 'get_profile', 'progress', 'nutrition']);
+const READ_TOOLS = new Set(['get_day', 'brief', 'energy_balance', 'whats_next', 'my_plan', 'get_profile', 'progress', 'nutrition', 'fitness_check']);
 
 const WHICH_ACCOUNT = 'WHICH ACCOUNT: when ChatGPT offers a choice of connected Wrought accounts (link_id), the connected_accounts line on any Wrought reply settles it — the server\'s own check, at most thirty seconds old, of which record those accounts write to. When it says one_record: true, the intended account is clear: make each write ONE time in total — never once per connection — through the link_id that reply came from, now, without asking which. With no Wrought reply yet in this chat, call get_day through any one of them first; its connected_accounts line settles it. On the first write of a conversation, name the reply\'s `account` in half a clause.';
 
@@ -222,6 +223,8 @@ HOW PEOPLE ACTUALLY ASK. Nobody says "call the brief tool". They say one of a hu
   my_alerts — "what reminders do I have", "what are you telling me about", "am I set up for notifications", "turn my notifications on"
   drop_alert — "stop telling me about my calories", "turn off the nine o'clock one", "no more training reminders", "stop notifying me"
   training_volume — "am I doing enough back", "how much volume am I doing", "how many sets a week", "am I under-training my arms", "is my chest getting enough work", "what am I neglecting", "how much is too much". Hard SETS per muscle per week, which is what a programme is actually built on — different from the focus on suggest_workout, which counts sessions and cannot tell two sets of flyes from twelve sets of pressing. A light week is answered with more sets or better frequency, NEVER with a heavier bar.
+  fitness_check — "how fit am I", "where's my VO2 max", "is my VO2 max good", "rate my fitness", "what are my heart-rate zones", "what zone is 150", "is 150 bpm good", "how do I improve my cardio", "how do I get my VO2 max up", "my watch says my VO2 max is 31". ALWAYS a tool call: a fitness level, a maximum heart rate or a zone from memory is the invented-number failure, and ChatGPT has drawn exactly those tables from memory before. The number the watch shows goes in vo2_max and is kept; show fitness_card as written and say coach_line.
+  meal_score (on the log reply) / meal_scores (on get_day) — "rate my meal", "rate the food", "is this good food", "how healthy was that", "score my lunch", "out of ten?". The score is COMPUTED from the meal's own figures; rate only as meal_score says — never a score of your own, never "good food" or "bad food", never a word about the amount eaten or their body.
   trainer_styles — "what trainer styles are there", "show me the styles", "where are the styles", "what coaches can I pick", "who can coach me", "what are my coaching options", "show me the coaches", "which famous trainers are there", "whose styles are these", "do you have Arnold's workout", "the Schwarzenegger one", "what is Fight camp", "how does the conjugate one work", "what would Arnold style do", "tell me about the boxing ones". Every style is said WITH its credit, as the website card sets it: "Golden-era volume bodybuilding, in the tradition of Arnold Schwarzenegger" — never "Arnold's workout", never "(Arnold Schwarzenegger)", never his programme, never endorsed by him. "Add the Arnold workout", "put the Freddie Roach one in my list" = save_routine tradition, which writes the whole written session — never retyped by you. NOTE "coach" and "trainer" are also how people ADDRESS Wrought itself ("hey coach, how am I doing") — the SUBJECT decides, exactly as with the misheard spellings: being called coach is a brief, asking WHICH coaches there are is the shelf. The shelf is on the SERVER — naming the styles from memory invents a coach that does not exist. Read them out grouped by discipline with the one line of what each DOES; the whole provenance for all twenty-four is a wall nobody reads.
   my_plan — "what does my coach want today", "is today a rest day", "what's my coach saying", "what's my plan", "what am I on", "what am I actually doing", "what am I aiming for", "why that number", "what's my target", "remind me what this is", "what's my route" (dictation for WROUGHT), "how does this work for me", "who is coaching me", "what style am I on"
   set_plan — "make it aggressive", "I want this off faster", "go harder on me", "chase me", "ease off", "nothing drastic", "stop nagging me", "leave me alone a bit", "make it four days a week", "I can only do three", "change my plan"
@@ -1297,9 +1300,23 @@ const TOOLS = [
   {
     name: 'athlete_report',
     title: 'The athlete read — markers, tests, and what to work on',
-    description: 'For somebody on the athlete track: every performance marker the watch sends (VO2 max, resting HR, HRV, one-minute heart-rate recovery, walking HR) read as this month against last, every logged test with its best, the week against the five-a-week commitment, and at most three recommendations — "these are the ones I recommend you work on" — each with its evidence. "How am I doing as an athlete", "what should I work on", "where is my VO2 max", "am I getting faster". Nothing here is medical: the markers are training signals read as trends, never a diagnosis. A missing marker says how it arrives; nothing is invented.',
+    description: 'For somebody on the athlete track: every performance marker the watch sends (VO2 max, resting HR, HRV, one-minute heart-rate recovery, walking HR) read as this month against last, every logged test with its best, the week against the five-a-week commitment, and at most three recommendations — "these are the ones I recommend you work on" — each with its evidence. "How am I doing as an athlete", "what should I work on", "am I getting faster". VO2 max against their age group, with zones and a plan, is fitness_check. Nothing here is medical: the markers are training signals read as trends, never a diagnosis. A missing marker says how it arrives; nothing is invented.',
     inputSchema: { type: 'object', properties: {} },
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+  },
+  {
+    name: 'fitness_check',
+    title: 'Fitness — VO2 max for your age, heart-rate zones, and how to raise it',
+    description: 'WHERE THEIR ENGINE STANDS AND HOW TO RAISE IT. Their VO2 max against published norms for their age and sex (the FRIEND registry), their five heart-rate zones, where a heart rate they mention sits, and a plan to raise it fitted inside the stamina sessions they committed to. "How fit am I", "where\'s my VO2 max", "is my VO2 max good", "rate my fitness", "what are my heart-rate zones", "what zone is 150", "is 150 bpm good", "how do I improve my cardio", "how do I get my VO2 max up". ALWAYS a tool call: a fitness level, a maximum heart rate or a zone from memory is the invented-number failure. The number their watch shows ("my watch says 31.4") goes in vo2_max and is kept; a heart rate they mention goes in heart_rate. Show fitness_card exactly as written. Nothing is medical: training signals, never "your heart", never a diagnosis.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        vo2_max:    { type: 'number', description: 'The VO2 max their watch or a test shows, in ml/kg/min — on an iPhone, Health → Heart → Cardio Fitness. Stored as a reading. Never estimate one.' },
+        heart_rate: { type: 'number', description: 'A heart rate they mentioned, in beats a minute, to place in its zone.' },
+        date:       { type: 'string', description: 'YYYY-MM-DD the VO2 max reading is from, if not today.' },
+      },
+    },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   },
   {
     name: 'add_gym',
@@ -1352,6 +1369,15 @@ for (const t of TOOLS) t._meta = { ...(t._meta || {}), ui: { ...(t._meta?.ui || 
 export const CARD_TOOLS = new Set(TOOLS.filter(t => t._meta?.ui?.resourceUri).map(t => t.name));
 // …and the ones among them that write, whose failure is "NOT SAVED".
 const CARD_WRITES = new Set(['log', 'log_activity', 'amend_last', 'structure_entries']);
+
+// Which card a ChatGPT reply may carry as a picture, and the sentence the
+// picture swaps out of its note. The day's tools draw the day card; the
+// fitness check draws its own. Nothing else is ever pictured.
+export function pictureSlot(name, body) {
+  if (CARD_TOOLS.has(name) && typeof body?.day_card === 'string') return { slot: 'day_card', from: DAY_CARD_NOTE, to: PICTURE_NOTE };
+  if (name === 'fitness_check' && typeof body?.fitness_card === 'string') return { slot: 'fitness_card', from: FITNESS_CARD_SHOW, to: FITNESS_PICTURE_NOTE };
+  return null;
+}
 
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
@@ -1688,6 +1714,9 @@ async function log(args, user) {
   const { entries: workLike, as: workAs } = shiftsIn(written);
 
   const nudge = nr?.nudge || null;
+  // Scored off the rows as stored, with the flags the card read found; a read
+  // that failed leaves the flags unknown, and unknown means no score.
+  const scores = !args.quiet && wroteFood ? mealScores(written, { flags: cardRead ? (cardRead.flags || []) : null }) : null;
 
   // Each row as the card's "just logged" block reads it — off the STORED row,
   // with the clock it was filed under.
@@ -1745,6 +1774,9 @@ async function log(args, user) {
       places: placesTouched.map(p => ({ name: p.place.name, kind: p.place.kind, created: p.created, ask_kit: p.ask_kit })),
       ...(placesTouched.some(p => p.ask_kit) ? { place_note: `${placesTouched.filter(p => p.ask_kit).map(p => p.place.name).join(', ')} is on file with no kit — ask in ONE clause what is there and call add_gym with it. Never a form.` } : {}),
     } : {}),
+    // THE MEAL SCORE — what is in the plate, out of ten, computed from the
+    // stored row; never on a quiet capture and never under a care flag.
+    ...(scores ? { meal_score: scores, meal_score_note: MEAL_SCORE_NOTE } : {}),
     recorded: written.map(e => ({
       id: e.id, type: e.event_type, summary: e.summary, estimated: e.estimated,
       // THE CLOCK IT WAS FILED UNDER. Said back so a meal eaten an hour ago
@@ -2771,6 +2803,80 @@ async function athleteReport(_args, user) {
   return read;
 }
 
+// ── Fitness: VO2 max for their age, the zones, the plan ─────────────────────
+// The founder, under ChatGPT's own VO2 tiers and coloured zones: "your VO2
+// and other vitals — show you where you are; your coach should be encouraging
+// to do better, and how to train to optimise that." Every figure here is
+// computed in lib/fitness.js against a named reference; the model relays it.
+async function fitnessCheck(args, user) {
+  const profile = await getProfile(user.id);
+  const today = localDateFor(profile.timezone);
+  let stored = null;
+  if (args.vo2_max != null && args.vo2_max !== '') {
+    const v = Number(args.vo2_max);
+    // A watch reads about 15–70; a number outside 10–90 is a mishearing, and
+    // a mishearing kept as a reading would sit on the ladder for good.
+    if (!Number.isFinite(v) || v < 10 || v > 90) {
+      return { error: 'unreadable', say: `${args.vo2_max} is not a VO2 max a watch shows — they read between about 15 and 70 ml/kg/min. What does Cardio Fitness say in the Health app?` };
+    }
+    const date = /^\d{4}-\d{2}-\d{2}$/.test(String(args.date || '')) && String(args.date) <= today ? String(args.date) : today;
+    // Noon on the day and the dedupe index: the same day re-told REPLACES.
+    const row = {
+      user_id: user.id, metric: 'vo2max', value: Math.round(v * 10) / 10, unit: 'ml/kg/min',
+      measured_at: `${date}T12:00:00Z`, local_date: date, source: 'manual', source_ref: `vo2:${date}`,
+    };
+    const { error } = await supabase.from('wrought_metrics').upsert(row, { onConflict: 'user_id,source,metric,measured_at' });
+    if (error) return { error: error.message, say: 'That VO2 max was NOT saved — the record did not take it. Say it again in a moment.' };
+    stored = { value: row.value, date };
+  }
+  const [rows, careRange] = await Promise.all([
+    athleteRows(user.id, addDays(today, -90)),
+    rangeFacts(user.id, profile, addDays(today, -(CARE_WINDOW_DAYS - 1)), today),
+  ]);
+  const flags = careFlags(careRange, profile, { openDate: today });
+  const ready = readiness({ days: careRange.days, today });
+  const vo2m = markerRead('vo2max', rows.filter(r => r.metric === 'vo2max'), today);
+  const rhr = markerRead('resting_hr', rows.filter(r => r.metric === 'resting_hr'), today);
+  // What they just said wins over a watch row from the same day.
+  const vo2 = stored ? stored.value : (vo2m && !vo2m.missing ? vo2m.latest : null);
+  const age = ageFrom(profile.birth_year, today);
+  const standing = vo2 != null ? vo2Standing({ vo2, age, sex: profile.sex }) : null;
+  const zones = hrZones({ age });
+  const placed = args.heart_rate != null && zones ? placeHeartRate(zones, args.heart_rate) : null;
+  const plan = vo2Plan({ standing, zones, cardioPerWeek: profile.cardio_per_week, readiness: ready, flags });
+  const trend = vo2m && !vo2m.missing && vo2m.trend !== 'not_enough' ? vo2m : null;
+  const coachLine = fitnessCoachLine({ standing, trend, plan });
+  const missing = [];
+  if (age == null) missing.push('a birth year');
+  if (vo2 != null && !standing && !sexKey(profile.sex)) missing.push('their sex');
+  const vo2Missing = vo2 == null
+    ? 'No VO2 max on file yet. An Apple Watch estimates it on outdoor walks and runs — Health → Heart → Cardio Fitness — and it arrives on its own once the phone sends it; or say the number it shows.'
+    : !standing ? `VO2 max ${vo2} is on file; placing it for their age group needs ${missing.join(' and ')} (set_profile).` : null;
+  const view = fitnessView({
+    standing, zones, placed, plan, resting: restingLine(rhr), coachLine,
+    missing: vo2Missing,
+  });
+  return {
+    ...(stored ? { saved: { metric: 'vo2max', value: stored.value, unit: 'ml/kg/min', date: stored.date }, say_saved: `Kept: VO2 max ${stored.value} on ${stored.date}.` } : {}),
+    // Under a flag the reading stands and nothing counts them to the next rung.
+    vo2: !standing ? null : flags.length ? { ...standing, next: null, say: standing.level_say }
+      : { ...standing, ...(trend ? { trend: trend.trend, month_avg: trend.month_avg, prior_avg: trend.prior_avg } : {}) },
+    vo2_missing: vo2Missing,
+    zones,
+    heart_rate: placed,
+    plan,
+    resting_hr: rhr && !rhr.missing ? { latest: rhr.latest, month_avg: rhr.month_avg, trend: rhr.trend } : null,
+    readiness: ready?.state || null,
+    care_flags: flags,
+    coach_line: coachLine,
+    fitness_card: fitnessMarkdown(view),
+    not_medical: NOT_MEDICAL_FITNESS,
+    note: FITNESS_NOTE + (age == null ? ' No birth year is on file, so there are no zones and no level: ask for the birth year once, in one clause, and set_profile it.' : ''),
+    ...withCard(view),
+  };
+}
+const NOT_MEDICAL_FITNESS = 'VO2 max and heart rate are training signals read against a published reference and your own record — never a diagnosis, never a clinical reading. A number that worries you is a question for a doctor.';
+
 // The voice a live session speaks in, read off its routine's name: a session
 // started from "Fight camp (Freddie Roach tradition)" is coached in the
 // corner-man register. A plain "Leg day" has no voice and the ordinary
@@ -3216,6 +3322,14 @@ async function structureEntries(args, user) {
   // A named food that is STILL without a figure — words like "~400" sent again
   // — is chased again, by id, exactly as log chases it. Off the stored merge.
   const stillHungry = needsMacros(updated.map(u => ({ id: u.id, event_type: u.type, summary: u.now, detail: merged.get(String(u.id))?.detail || {} })));
+  // A meal whose figures just arrived gets its score here — the reply a
+  // log's "no score yet" sent the model to. Today's, never quiet, never
+  // under a care flag (cardRead is only read for exactly that case).
+  const scores = cardRead ? mealScores(withNumbers.filter(u => !u.date).map(u => ({
+    id: u.id, type: u.type, summary: u.now, calories: u.calories, protein_g: u.protein_g,
+    sugar_g: u.sugar_g, fibre_g: u.fibre_g, sat_fat_g: u.sat_fat_g,
+    categories: merged.get(String(u.id))?.detail?.categories,
+  })), { flags: cardRead.flags || [] }) : null;
 
   return {
     ...(stillHungry.length ? {
@@ -3229,6 +3343,7 @@ async function structureEntries(args, user) {
     } : {}),
     updated: updated.length,
     entries: withNumbers,
+    ...(scores ? { meal_score: scores, meal_score_note: MEAL_SCORE_NOTE } : {}),
     ...(skipped.length ? { skipped } : {}),
     ...(bridged.error ? { sets_error: bridged.error } : {}),
     ...(bridged.skipped ? { sets_skipped: bridged.skipped, sets_note: bridged.say } : {}),
@@ -3618,9 +3733,13 @@ async function getDay(args, user) {
   // always "how many am I allowed". Answering the second from nothing is how a
   // model ends up inventing a target.
   const targets = await targetsFor(user.id, profile, day);
+  // "Is this good food?" asked after the fact lands here: every food on the
+  // day with its score, off the stored rows — none under a care flag.
+  const scores = mealScores(day.log || [], { flags: full.flags });
   return {
     ...day,
     ...(targets ? { no_target_set: targets } : {}),
+    ...(scores ? { meal_scores: scores, meal_score_note: MEAL_SCORE_NOTE } : {}),
     // "What did I do today" is answered line by line, both sides, with the
     // subtraction underneath — never as two summary sentences.
     receipt: full.receipt,
@@ -6715,6 +6834,7 @@ const IMPL = {
   answer_setup: answerSetup,
   log_test: logTest,
   athlete_report: athleteReport,
+  fitness_check: fitnessCheck,
   add_gym: addGym,
   my_gyms: myGyms,
   trainer_styles: trainerStyles,
@@ -6849,10 +6969,11 @@ export async function handleRpc(msg, authUser) {
         // kept frozen — and the note says to show it in place of the table.
         // Anything short of a stored picture leaves the reply exactly as it
         // was, table and all: the default in doubt is the table.
-        if (facts?.chatgpt && CARD_TOOLS.has(params.name) && typeof body?.day_card === 'string') {
+        const slot = facts?.chatgpt ? pictureSlot(params.name, body) : null;
+        if (slot) {
           const view = out?.[CARD];
           const url = await savePicture(supabase, authUser.id, view);
-          if (url) body = pictured(body, pictureMarkdown(url, view));
+          if (url) body = pictured(body, pictureMarkdown(url, view), slot);
         }
         // The text the model reads is exactly as it was; Wrought's card rides
         // in the result's _meta, which the card reads and the model does not.

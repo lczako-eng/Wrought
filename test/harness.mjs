@@ -19315,9 +19315,243 @@ await test('every surface a model reads says the picture is the card, shown exac
   const { GPT_INSTRUCTIONS } = PIC.GPT;
   assert.match(GPT_INSTRUCTIONS, /then the day as card_image or day_card, exactly as written/);
   assert.ok(GPT_INSTRUCTIONS.length <= 8000, `the GPT sheet is ${GPT_INSTRUCTIONS.length} characters`);
-  // Only ChatGPT gets a picture: the connector decides it from the client.
+  // Only ChatGPT gets a picture: the connector decides it from the client,
+  // and only the cards that can be pictured name a slot.
   const src = decomment(PIC.read('netlify/functions/mcp.js'));
-  assert.match(src, /if \(facts\?\.chatgpt && CARD_TOOLS\.has\(params\.name\) && typeof body\?\.day_card === 'string'\)/);
+  assert.match(src, /const (\w+) = facts\?\.chatgpt \? pictureSlot\(params\.name, body\) : null;\s*if \(\1\)/);
+});
+
+// ── The meal score and the fitness check ──────────────────────────────────
+// The founder, under ChatGPT rating his lunch "8/10" and drawing VO2 tiers and
+// coloured zones from memory: rate the food, show where his VO2 and vitals
+// stand, and have the coach say how to train to raise them. Every figure is
+// computed here, against a named reference; the model relays it.
+const FIT = await import('../netlify/functions/lib/fitness.js');
+const NUT = await import('../netlify/functions/lib/nutrition.js');
+
+await test('a meal is scored out of 10 from its own figures, against named guides', () => {
+  const wrap = NUT.mealScore({ calories: 600, protein_g: 40, carbs_g: 68, fat_g: 19, sugar_g: 10, fibre_g: 8, sat_fat_g: 5 });
+  assert.equal(wrap.score, 9);
+  assert.equal(wrap.out_of, 10);
+  assert.equal(wrap.parts.reduce((n, x) => n + x.of, 0), 10, 'the parts are out of ten in total');
+  assert.equal(wrap.parts.reduce((n, x) => n + x.points, 0), wrap.score, 'the score is the sum of its parts');
+  assert.match(wrap.say, /^9\/10 on what is in it\./);
+  const cola = NUT.mealScore({ calories: 140, protein_g: 0, fibre_g: 0, sugar_g: 39, sat_fat_g: 0 });
+  assert.equal(cola.score, 2);
+  assert.match(cola.to_lift, /sugary part/, 'a cola is lifted by its sugar, not by adding protein');
+  assert.ok(cola.parts.every(x => [...x.figure.matchAll(/(\d+)%/g)].every(m => Number(m[1]) <= 100)), 'a share of the calories never prints over 100%');
+  // Whole fruit carries its sugar with its fibre.
+  const apple = NUT.mealScore({ calories: 95, protein_g: 0.5, fibre_g: 4.4, sugar_g: 19, sat_fat_g: 0, categories: ['fruit'] });
+  assert.equal(apple.parts.find(x => x.key === 'sugar').points, 2);
+  const juice = NUT.mealScore({ calories: 110, protein_g: 0.5, fibre_g: 0.5, sugar_g: 24, sat_fat_g: 0, categories: ['fruit'] });
+  assert.equal(juice.parts.find(x => x.key === 'sugar').points, 0, 'juice with no fibre is not whole fruit');
+});
+
+await test('a meal with figures missing is not scored, and says which', () => {
+  const r = NUT.mealScore({ calories: 590, protein_g: 30, carbs_g: 60, fat_g: 20 });
+  assert.equal(r.score, null);
+  assert.deepEqual(r.needs, ['fibre', 'sugar', 'saturated fat']);
+  assert.equal(NUT.mealScore({ calories: '~400', protein_g: 10, fibre_g: 2, sugar_g: 2, sat_fat_g: 2 }).score, null, 'words in a figure field are no figure');
+  assert.equal(NUT.mealScore({ calories: 20, protein_g: 1, fibre_g: 0, sugar_g: 1, sat_fat_g: 1 }).too_small, true);
+});
+
+await test('a meal score rates the food, never the amount or the person, and never says "less"', () => {
+  const cases = [
+    { calories: 600, protein_g: 40, fibre_g: 8, sugar_g: 10, sat_fat_g: 5 },
+    { calories: 140, protein_g: 0, fibre_g: 0, sugar_g: 39, sat_fat_g: 0 },
+    { calories: 1150, protein_g: 70, fibre_g: 11, sugar_g: 10, sat_fat_g: 20 },
+    { calories: 850, protein_g: 20, fibre_g: 4, sugar_g: 6, sat_fat_g: 22 },
+    { calories: 300, protein_g: 4, fibre_g: 1, sugar_g: 2, sat_fat_g: 3 },
+  ];
+  for (const c of cases) {
+    const r = NUT.mealScore(c);
+    const words = [r.say, r.to_lift || ''].join(' ');
+    assert.ok(!/\b(good|bad|junk|healthy|unhealthy) food\b|\btoo much\b|\bportion\b|\bless\b|\bcut (it )?(down|back)\b|\bweight\b|\bbody\b|\bfat loss\b/i.test(words), `judgement in "${words}"`);
+  }
+  assert.match(NUT.MEAL_SCORE_NOTE, /never "good food" or "bad food"/);
+  assert.match(NUT.MEAL_SCORE_NOTE, /never a word about the amount eaten or about their body/);
+});
+
+await test('a care flag silences the meal score, and a flag state nobody read counts as one', () => {
+  const rows = [{ id: 'a', type: 'food', summary: 'wrap', calories: 600, protein_g: 40, fibre_g: 8, sugar_g: 10, sat_fat_g: 5 }];
+  assert.equal(NUT.mealScores(rows, { flags: [{ kind: 'very_low_intake' }] }), null);
+  assert.equal(NUT.mealScores(rows, { flags: null }), null);
+  assert.equal(NUT.mealScores(rows, {}), null);
+  assert.equal(NUT.mealScores(rows, { flags: [] })[0].score, 9);
+  assert.equal(NUT.mealScores([{ id: 'w', type: 'workout' }], { flags: [] }), null, 'only food and drink are scored');
+});
+
+await test('the meal score rides the log reply and the day, and never a quiet capture or a flagged account', () => {
+  const S = WCARD.scenarios();
+  const s = S.score_log.body.meal_score;
+  assert.ok(Array.isArray(s) && s.length === 1, 'no meal_score on a log that wrote food');
+  assert.equal(s[0].score, 9);
+  assert.equal(S.score_log.body.meal_score_note, NUT.MEAL_SCORE_NOTE);
+  assert.equal(S.score_quiet.body.meal_score, undefined, 'a quiet capture was rated');
+  assert.equal(S.score_day.body.meal_scores?.[0]?.score, 2);
+  assert.equal(S.score_flag.body.meal_score, undefined, 'a meal was rated under a care flag');
+  assert.equal(S.score_day_flag.body.meal_scores, undefined, 'the day was rated under a care flag');
+  assert.match(SERVER_INSTRUCTIONS, /meal_score \(on the log reply\) \/ meal_scores \(on get_day\) — "rate my meal"/);
+});
+
+await test('VO2 max is placed against the FRIEND reference for age and sex, and never guessed', () => {
+  // The table: six decades, both sexes, each row rising.
+  for (const sex of ['male', 'female']) {
+    assert.deepEqual(Object.keys(FIT.VO2_NORMS[sex]), ['20', '30', '40', '50', '60', '70']);
+    for (const row of Object.values(FIT.VO2_NORMS[sex])) for (let i = 1; i < 5; i++) assert.ok(row[i] > row[i - 1]);
+  }
+  // The medians at both ends match the paper's own abstract.
+  assert.equal(FIT.VO2_NORMS.male[20][2], 48.0); assert.equal(FIT.VO2_NORMS.male[70][2], 24.4);
+  assert.equal(FIT.VO2_NORMS.female[20][2], 37.6); assert.equal(FIT.VO2_NORMS.female[70][2], 18.3);
+  const s = FIT.vo2Standing({ vo2: 31.4, age: 44, sex: 'male' });
+  assert.equal(s.level, 'Low');
+  assert.equal(s.group, 'men 40–49');
+  assert.deepEqual(s.next, { label: 'Below average', at: 31.9, gap: 0.5 });
+  assert.ok(s.position >= 0 && s.position <= 20);
+  assert.equal(FIT.vo2Standing({ vo2: 31.9, age: 44, sex: 'male' }).level, 'Below average', 'a cut point belongs to the level it starts');
+  assert.equal(FIT.vo2Standing({ vo2: 60, age: 44, sex: 'male' }).next, null);
+  assert.equal(FIT.vo2Standing({ vo2: 25, age: 44, sex: 'woman' }).level, 'Below average', 'women are read against women');
+  assert.equal(FIT.vo2Standing({ vo2: 25, age: 44, sex: 'male' }).level, 'Low');
+  assert.equal(FIT.vo2Standing({ vo2: 31.4, age: null, sex: 'male' }), null, 'no age, no level');
+  assert.equal(FIT.vo2Standing({ vo2: 31.4, age: 44, sex: null }), null, 'no sex, no level');
+  assert.ok(!/fitness age|health age|body age/i.test(JSON.stringify(s)), 'a percentile, never an invented age');
+});
+
+await test('heart-rate zones come from the age, and a heart rate is placed in one', () => {
+  const z = FIT.hrZones({ age: 44 });
+  assert.equal(z.max, 177);
+  assert.deepEqual(z.zones.map(x => [x.lo, x.hi]), [[89, 105], [106, 123], [124, 141], [142, 158], [159, 177]]);
+  for (let i = 1; i < 5; i++) assert.equal(z.zones[i].lo, z.zones[i - 1].hi + 1, 'the zones are contiguous');
+  assert.ok(z.zones.every(x => x.share > 0 && x.share <= 100));
+  assert.equal(FIT.placeHeartRate(z, 150).zone, 4);
+  assert.equal(FIT.placeHeartRate(z, 80).zone, 0);
+  assert.equal(FIT.hrZones({ age: null }), null);
+});
+
+await test('the plan to raise it only ever offers, softens on a strained read, and stops under a flag', () => {
+  const z = FIT.hrZones({ age: 44 });
+  const low = FIT.vo2Standing({ vo2: 31.4, age: 44, sex: 'male' });
+  const mid = FIT.vo2Standing({ vo2: 42, age: 44, sex: 'male' });
+  const base = FIT.vo2Plan({ standing: low, zones: z });
+  assert.equal(base.phase, 'base');
+  assert.ok(base.sessions.every(x => x.what === 'Zone 2'), 'a base is built with easy work first');
+  assert.equal(base.offered, true, 'with no commitment the plan is offered, never set');
+  const build = FIT.vo2Plan({ standing: mid, zones: z, cardioPerWeek: 3 });
+  assert.equal(build.sessions.reduce((n, x) => n + x.times, 0), 3, 'never more sessions than they committed to');
+  assert.equal(build.offered, false);
+  const strained = FIT.vo2Plan({ standing: mid, zones: z, cardioPerWeek: 4, readiness: { state: 'strained' } });
+  assert.equal(strained.phase, 'easy');
+  assert.ok(strained.sessions.every(x => x.what === 'Zone 2') && strained.sessions[0].times <= 2, 'a strained read means lighter, never the intervals');
+  assert.match(strained.then, /strained/);
+  const flagged = FIT.vo2Plan({ standing: mid, zones: z, flags: [{ kind: 'very_low_intake' }] });
+  assert.equal(flagged.paused, true);
+  assert.equal(flagged.sessions, undefined);
+  assert.equal(FIT.fitnessCoachLine({ standing: mid, plan: flagged }), null, 'a flag silences the coach');
+  for (const p of [base, build, strained]) assert.ok(!p.sessions.some(x => /Zone 5|maximum|all-out/i.test(x.what + x.how)), 'nothing all-out is ever prescribed');
+});
+
+await test('the fitness coach encourages about the record, never about the body, and nothing is medical', () => {
+  const z = FIT.hrZones({ age: 44 });
+  const lines = [];
+  for (const vo2 of [null, 25, 31.4, 36, 42, 50, 60]) {
+    const standing = vo2 ? FIT.vo2Standing({ vo2, age: 44, sex: 'male' }) : null;
+    for (const trend of [null, { trend: 'up', month_avg: 32, prior_avg: 31 }, { trend: 'flat', month_avg: 31.4 }]) {
+      const plan = FIT.vo2Plan({ standing, zones: z });
+      lines.push(FIT.fitnessCoachLine({ standing, trend, plan }), plan.say, standing?.say);
+    }
+  }
+  const all = lines.filter(Boolean).join(' ');
+  assert.ok(!/\b(weight|kilos?|kg|lose|losing|fat|heavy|body|your heart|diagnos|disease|healthy|unhealthy|worry)\b/i.test(all), `body or clinical words in: ${all.match(/\b(weight|kilos?|kg|lose|losing|fat|heavy|body|your heart|diagnos|disease|healthy|unhealthy|worry)\b/i)?.[0]}`);
+  assert.match(FIT.FITNESS_NOTE, /NOTHING IS MEDICAL/);
+  assert.match(FIT.FITNESS_NOTE, /never about their body/);
+  assert.ok(FIT.FITNESS_NOTE.startsWith(FIT.FITNESS_CARD_SHOW), 'the show sentence is the one a picture swaps out');
+});
+
+PIC.fitViews = () => {
+  const z = FIT.hrZones({ age: 44 });
+  const mk = (vo2, o = {}) => {
+    const standing = vo2 ? FIT.vo2Standing({ vo2, age: 44, sex: 'male' }) : null;
+    const plan = FIT.vo2Plan({ standing, zones: z, flags: o.flag ? [{ kind: 'very_low_intake' }] : [], readiness: o.ready ? { state: o.ready } : null, cardioPerWeek: o.committed ?? null });
+    return FIT.fitnessView({ standing, zones: z, placed: o.hr ? FIT.placeHeartRate(z, o.hr) : null, plan, resting: 'Resting heart rate 70.2 bpm this month, flat on last month.', coachLine: FIT.fitnessCoachLine({ standing, plan }), missing: vo2 ? null : 'No VO2 max on file yet.' });
+  };
+  return [['low', mk(31.4, { hr: 150 })], ['none', mk(null)], ['flag', mk(31.4, { flag: true })], ['build', mk(42, { committed: 3, hr: 118 })], ['strained', mk(31.4, { ready: 'strained' })]];
+};
+
+await test('the fitness card is the same view as a table and as a picture, and the picture computes nothing', () => {
+  const letters = 'abcdefghij';
+  const sentinel = x => (typeof x === 'string' ? x.replace(/\d/g, d => letters[d])
+    : Array.isArray(x) ? x.map(sentinel) : x && typeof x === 'object' ? Object.fromEntries(Object.entries(x).map(([k, y]) => [k, ['share', 'marker'].includes(k) ? y : sentinel(y)])) : x);
+  for (const [name, v] of PIC.fitViews()) {
+    assert.equal(v.kind, 'fitness');
+    const drawn = PIC.texts(PIC.IMG.cardTree(v)).join('\n');
+    const md = FIT.fitnessMarkdown(v);
+    const want = [v.vo2.figure, v.vo2.level, v.vo2.next, v.vo2.missing, v.zones?.basis, v.zones?.placed, v.plan?.paused, v.plan?.then, v.plan?.offered, v.coach, v.resting, v.foot];
+    for (const b of v.vo2.ladder || []) want.push(b.label, b.range);
+    for (const z of v.zones?.rows || []) want.push(z.label, z.range, z.use);
+    for (const r of v.plan?.rows || []) want.push(r.what, r.how);
+    for (const w of want.filter(x => typeof x === 'string' && x)) {
+      assert.ok(drawn.includes(w), `${name}: the picture is missing "${w}"`);
+      if (w !== v.coach) assert.ok(md.includes(w.replace(/\|/g, '\\|')), `${name}: the table is missing "${w}"`);
+    }
+    const digits = PIC.texts(PIC.IMG.cardTree(sentinel(v))).filter(t => /\d/.test(t));
+    assert.deepEqual(digits, [], `${name}: the picture printed a number of its own: ${digits.join(' | ')}`);
+    // Every leaf is a string, a boolean or null; the only numbers are shares.
+    const walk = (x, k) => {
+      if (typeof x === 'number') assert.ok(['share', 'marker', 'v'].includes(k) && (k === 'v' || (x >= 0 && x <= 100)), `${name}: a number at ${k}`);
+      else if (Array.isArray(x)) x.forEach(y => walk(y, k));
+      else if (x && typeof x === 'object') Object.entries(x).forEach(([kk, y]) => walk(y, kk));
+    };
+    walk(v, '');
+  }
+  const [, flag] = PIC.fitViews().find(([n]) => n === 'flag');
+  assert.equal(flag.vo2.next, null, 'under a flag nothing counts them towards the next rung');
+  assert.equal(flag.coach, null);
+  assert.ok(!FIT.fitnessMarkdown(flag).includes('Next:'));
+});
+
+await test('fitness_check keeps the VO2 max they say, reads it back, and refuses one no watch shows', () => {
+  const S = WCARD.scenarios();
+  const f = S.fit.body;
+  assert.deepEqual(S.fit.metrics.map(r => [r.metric, r.value, r.source, r.measured_at.slice(10), r.source_ref.slice(0, 4)]), [['vo2max', 31.4, 'manual', 'T12:00:00Z', 'vo2:']]);
+  assert.match(f.say_saved, /^Kept: VO2 max 31\.4 on \d{4}-\d{2}-\d{2}\.$/);
+  assert.equal(f.vo2.level, 'Low');
+  assert.equal(f.heart_rate.zone, 4);
+  assert.equal(typeof f.fitness_card, 'string');
+  assert.ok(f.fitness_card.includes('**Low ← you**'));
+  assert.equal(f.note.startsWith(FIT.FITNESS_CARD_SHOW), true);
+  assert.match(f.not_medical, /never a diagnosis/);
+  assert.equal(S.fit_bad.body.error, 'unreadable');
+  assert.equal(S.fit_bad.metrics, 0, 'a misheard VO2 max was kept');
+  assert.match(S.fit_none.body.vo2_missing, /Health → Heart → Cardio Fitness/);
+  assert.match(S.fit_none.body.coach_line, /Tell me the VO2 max your watch shows/);
+  // Under a flag the reading stands; the plan, the coach and the next rung go.
+  const g = S.fit_flag.body;
+  assert.ok(g.care_flags.length > 0);
+  assert.equal(g.plan.paused, true);
+  assert.equal(g.coach_line, null);
+  assert.equal(g.vo2.next, null);
+  assert.ok(!/to go/.test(g.vo2.say) && !g.fitness_card.includes('Next:'));
+  assert.match(SERVER_INSTRUCTIONS, /fitness_check — "how fit am I"/);
+});
+
+await test('a ChatGPT fitness reply carries its card as a picture, and only the cards that can be pictured name a slot', () => {
+  const S = WCARD.scenarios();
+  const r = S.fit_gpt;
+  const MD = /^!\[Wrought fitness card[^\][\n]*\]\(https:\/\/wrought\.fit\/c\/([A-Za-z0-9_-]{22})\.png\)$/;
+  assert.match(r.body.card_image || '', MD);
+  assert.equal(r.keys.indexOf('card_image'), r.keys.indexOf('fitness_card') - 1);
+  assert.ok(r.body.note.startsWith(FIT.FITNESS_PICTURE_NOTE), 'the note does not say to show the picture');
+  assert.ok(!r.body.note.includes(FIT.FITNESS_CARD_SHOW), 'the note still says to paste the table under the picture');
+  assert.equal(r.rows.length, 1);
+  assert.equal(r.rows[0].view.kind, 'fitness');
+  assert.equal(MD.exec(r.body.card_image)[1], r.rows[0].id);
+  assert.equal(S.fit.body.card_image, undefined, 'a caller with no OAuth connection got a picture');
+  const { pictureSlot } = WCARD.MCP;
+  assert.equal(pictureSlot('get_day', { day_card: 'x' }).slot, 'day_card');
+  assert.equal(pictureSlot('fitness_check', { fitness_card: 'x' }).slot, 'fitness_card');
+  assert.equal(pictureSlot('fitness_check', {}), null);
+  assert.equal(pictureSlot('my_plan', { day_card: 'x', fitness_card: 'x' }), null);
+  assert.match(PIC.LINK.pictureAlt({ kind: 'fitness', vo2: { figure: '31.4', level: 'Low' } }), /^Wrought fitness card — VO2 max 31\.4 — Low$/);
 });
 
 // ── Report ──────────────────────────────────────────────────────────────────
