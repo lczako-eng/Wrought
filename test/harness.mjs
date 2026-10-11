@@ -19088,6 +19088,159 @@ await test('the model is told the card is the layout when it is drawn, and the t
   assert.ok(!/FOOD\/DRINK: calories is a NUMBER/.test(log.description));
 });
 
+// ── The card as a picture ────────────────────────────────────────────────
+// For the chat that cannot draw Wrought's card (a ChatGPT that has not
+// reloaded Wrought's tools): the same view, drawn as a PNG the reply links to.
+
+const PIC = {
+  IMG: await import('../netlify/functions/lib/cardimage.js'),
+  LINK: await import('../netlify/functions/lib/picture.js'),
+  FN: await import('../netlify/functions/card-image.js'),
+  read: f => readFileSync(new URL(`../${f}`, import.meta.url), 'utf8'),
+  exists: f => fs.existsSync(new URL(`../${f}`, import.meta.url)),
+};
+// Every string a picture's tree draws, in order.
+PIC.texts = node => {
+  const out = [];
+  const walk = n => {
+    if (typeof n === 'string') { out.push(n); return; }
+    if (!n || typeof n !== 'object') return;
+    const kids = n.props?.children;
+    (Array.isArray(kids) ? kids : [kids]).forEach(walk);
+  };
+  walk(node);
+  return out;
+};
+PIC.views = () => Object.entries(WCARD.reads).flatMap(([name, r]) => [
+  [name, WCARD.DR.dayView(r, { explicit: true })],
+  [`${name}+logged`, WCARD.DR.dayView(r, { explicit: true, badge: 'LOGGED', fresh: ['a3'],
+    just: WCARD.DR.justBlock([{ type: 'weight', summary: 'Weighed in at 150kg', at: '07:10' }]) })],
+]);
+
+await test('the picture prints the card\'s own strings — every figure the card shows, in the card\'s words', () => {
+  for (const [name, v] of PIC.views()) {
+    const drawn = PIC.texts(PIC.IMG.cardTree(v)).join('\n');
+    const want = [];
+    const inn = v.intake || {};
+    if ((inn.rows || []).length) {
+      want.push(inn.title, inn.figure || inn.figure_missing, inn.unit, inn.pill, inn.head?.what, inn.head?.kcal, inn.total?.label, inn.total?.kcal);
+      for (const r of inn.rows) want.push(r.what, r.kcal, r.at);
+      for (const t of inn.tiles || []) want.push(t.label, t.value, t.unit, t.share_label);
+      want.push(...(inn.captions || []));
+    } else want.push(inn.title, inn.empty);
+    const bal = v.balance || {};
+    want.push(bal.title, bal.missing, bal.burn?.label, bal.burn?.kcal, bal.net?.label, bal.net?.value, v.held, v.foot, v.targets_more, v.review?.say);
+    for (const r of bal.missing ? [] : bal.rows || []) want.push(r.label, r.kcal);
+    for (const x of v.notes || []) want.push(x.lead, x.strong, x.text);
+    for (const t of v.targets || []) want.push(t.value, t.of, t.label);
+    for (const r of v.just?.rows || []) want.push(r.what, r.figure, r.flag, r.gap);
+    if (v.just?.rows?.length) want.push(v.just.caption);
+    for (const w of want.filter(x => typeof x === 'string' && x)) assert.ok(drawn.includes(w), `${name}: the picture is missing "${w}"`);
+  }
+});
+
+await test('the picture computes nothing: every digit on it came from the view', () => {
+  const letters = 'abcdefghij';
+  const sentinel = x => (typeof x === 'string' ? x.replace(/\d/g, d => letters[d])
+    : Array.isArray(x) ? x.map(sentinel) : x && typeof x === 'object' ? Object.fromEntries(Object.entries(x).map(([k, y]) => [k, ['share', 'arc'].includes(k) ? y : sentinel(y)])) : x);
+  for (const [name, v] of PIC.views()) {
+    const drawn = PIC.texts(PIC.IMG.cardTree(sentinel(v)));
+    const digits = drawn.filter(t => /\d/.test(t));
+    assert.deepEqual(digits, [], `${name}: the picture printed a number of its own: ${digits.join(' | ')}`);
+  }
+  // The renderer's own source formats no number: no rounding, no locale, no sum.
+  const src = decomment(PIC.read('netlify/functions/lib/cardimage.js'));
+  assert.ok(!/Math\.(round|floor|ceil)|toLocaleString|toFixed|\.reduce\(/.test(src), 'the picture does arithmetic');
+});
+
+await test('the picture carries no email address and nothing dressed as a button', () => {
+  const v = WCARD.DR.dayView(WCARD.reads.watch, { explicit: true });
+  const drawn = PIC.texts(PIC.IMG.cardTree({ ...v, account: 'someone@example.com' })).join('\n');
+  assert.ok(!drawn.includes('someone@example.com'), 'a picture link travels further than a reply; the email must not travel with it');
+  assert.ok(!drawn.includes(v.open_label || 'Open your record'), 'a picture cannot be tapped, so it offers no door');
+  assert.ok(!/Show \d+ earlier/.test(drawn), 'every row is drawn rather than folded behind a tap');
+  assert.ok(drawn.includes('wrought.fit'));
+});
+
+await test('the picture\'s colours are read from the card\'s own stylesheet, so the two cannot drift', () => {
+  const T = PIC.IMG.TOKENS;
+  assert.equal(T.paper, '#FFFFFF');
+  assert.equal(T.heat, '#F26419');
+  assert.equal(T['heat-ink'], '#C2410C');
+  assert.ok(Object.keys(T).length >= 20, 'the palette was read');
+  const src = decomment(PIC.read('netlify/functions/lib/cardimage.js'));
+  // No brand hex typed into the layout itself (the tile's own SVG excepted).
+  const layout = src.replace(/const TILE_SVG[\s\S]*?;\n/, '');
+  assert.deepEqual(layout.match(/#[0-9A-Fa-f]{6}\b/g) || [], [], 'a colour typed into the picture would drift from the card');
+});
+
+await test('the picture renders: a PNG drawn at twice the phone width', async () => {
+  const v = WCARD.DR.dayView(WCARD.reads.watch, { explicit: true, badge: 'LOGGED', fresh: ['a3'] });
+  const png = await PIC.IMG.renderCardPng(v, async n => readFileSync(PIC.FN.assetPath(n)));
+  assert.equal(png.subarray(0, 8).toString('hex'), '89504e470d0a1a0a', 'not a PNG');
+  assert.equal(png.readUInt32BE(16), PIC.IMG.WIDTH * PIC.IMG.SCALE, 'drawn at the phone width, twice over');
+  assert.ok(png.readUInt32BE(20) > 600, 'the day is drawn, not just the header');
+  // A view it cannot read draws the header alone, as the card does.
+  const head = await PIC.IMG.renderCardPng({ kind: 'nonsense' }, async n => readFileSync(PIC.FN.assetPath(n)));
+  assert.ok(head.readUInt32BE(20) < 200);
+});
+
+await test('the picture function answers only a well-formed address, and only to GET', async () => {
+  const h = PIC.FN.handler;
+  for (const path of ['/c/short.png', '/c/../../etc/passwd', '/c/AAAAAAAAAAAAAAAAAAAAA$.png', '/c/', '/c/AAAAAAAAAAAAAAAAAAAAAAA.png']) {
+    assert.equal((await h({ httpMethod: 'GET', path })).statusCode, 404, path);
+  }
+  assert.equal((await h({ httpMethod: 'POST', path: '/c/AAAAAAAAAAAAAAAAAAAAAA.png' })).statusCode, 405);
+  // A good address with no database configured says so — never a picture of nothing.
+  assert.equal((await h({ httpMethod: 'GET', path: '/c/AAAAAAAAAAAAAAAAAAAAAA.png' })).statusCode, 503);
+  const src = decomment(PIC.read('netlify/functions/card-image.js'));
+  assert.match(src, /'Cache-Control': 'public, max-age=31536000, immutable'/, 'a frozen picture is cached for good');
+  assert.match(src, /'X-Robots-Tag': 'noindex, nofollow'/);
+  assert.match(src, /\.eq\('id', id\)\.maybeSingle\(\)/, 'looked up by its address and nothing else');
+});
+
+await test('everything the picture needs ships in its bundle', () => {
+  for (const f of PIC.IMG.FONT_FILES) assert.ok(PIC.exists(`netlify/functions/assets/fonts/${f.file}`), `font missing: ${f.file}`);
+  assert.ok(fs.existsSync(PIC.FN.assetPath('wasm')), 'the renderer\'s wasm is not where the function looks');
+  const toml = PIC.read('netlify.toml');
+  const block = toml.slice(toml.indexOf('[functions."card-image"]'));
+  assert.match(block, /external_node_modules = \["satori", "@resvg\/resvg-wasm"\]/);
+  assert.match(block, /included_files = \[[^\]]*"netlify\/functions\/assets\/fonts\/\*"/);
+  assert.match(block, /included_files = \[[^\]]*"node_modules\/@resvg\/resvg-wasm\/index_bg\.wasm"/);
+  assert.match(toml, /from = "\/c\/\*"\s+to = "\/\.netlify\/functions\/card-image\/:splat"\s+status = 200/);
+  // Pinned exactly: a renderer that changes under a deploy changes every picture.
+  const pkg = JSON.parse(PIC.read('package.json'));
+  assert.match(pkg.dependencies.satori, /^\d+\.\d+\.\d+$/);
+  assert.match(pkg.dependencies['@resvg/resvg-wasm'], /^\d+\.\d+\.\d+$/);
+  for (const lic of ['Inter', 'RobotoSlab', 'JetBrainsMono']) assert.ok(PIC.exists(`netlify/functions/assets/fonts/LICENSE-${lic}.txt`), `licence missing: ${lic}`);
+});
+
+await test('the connector never loads the renderer; only the picture function pays for it', () => {
+  for (const f of ['netlify/functions/mcp.js', 'netlify/functions/lib/picture.js', 'netlify/functions/lib/widgets.js', 'netlify/functions/lib/dayread.js']) {
+    const src = decomment(PIC.read(f));
+    assert.ok(!/cardimage\.js|['"]satori['"]|resvg/.test(src), `${f} pulls in the renderer`);
+  }
+});
+
+await test('a picture\'s address is unguessable, and its alt text cannot break the line it sits on', () => {
+  const ids = new Set(Array.from({ length: 200 }, () => PIC.LINK.newPictureId()));
+  assert.equal(ids.size, 200);
+  for (const id of ids) assert.match(id, PIC.LINK.PICTURE_ID);
+  const md = PIC.LINK.pictureMarkdown('https://wrought.fit/c/AAAAAAAAAAAAAAAAAAAAAA.png', { intake: { title: 'Food ] [x](y)\nmore', figure: '1,234' } });
+  assert.ok(!md.includes('\n'));
+  assert.match(md, /^!\[[^\][]*\]\(https:\/\/wrought\.fit\/c\/AAAAAAAAAAAAAAAAAAAAAA\.png\)$/);
+  assert.match(PIC.LINK.pictureUrl('AAAAAAAAAAAAAAAAAAAAAA'), /\/c\/AAAAAAAAAAAAAAAAAAAAAA\.png$/);
+});
+
+await test('pictures are kept in their own table, read by the server alone, and /status knows it', () => {
+  const sql = PIC.read('schema/029_wrought_card_pictures.sql');
+  assert.match(sql, /create table if not exists public\.wrought_card_pictures/);
+  assert.match(sql, /references auth\.users\(id\) on delete cascade/);
+  assert.match(sql, /enable row level security/);
+  assert.ok(!/create policy/i.test(decomment(sql.replace(/--.*$/gm, ''))), 'no browser reads a picture row');
+  assert.match(PIC.read('netlify/functions/api-status.js'), /'029_wrought_card_pictures\.sql', probe: t\('wrought_card_pictures'\)/);
+});
+
 // ── Report ──────────────────────────────────────────────────────────────────
 
 console.log(results.join('\n'));
