@@ -109,4 +109,28 @@ F.tables.wrought_metrics = [
 ];
 out.past_nofood = await call('get_day', { date: yday });
 
+// THE CARD AS A PICTURE — the same calls, from a ChatGPT connection.
+const gpt = { ...user, via: { kind: 'oauth', client_id: 'wrought_cgpt0001', grant: 'abcde' } };
+const chatgpt = () => { F.tables.wrought_oauth_clients = [{ client_id: 'wrought_cgpt0001', redirect_uris: ['https://chatgpt.com/connector/oauth/xyz'] }]; };
+const callAs = async (who, name, args) => {
+  const r = await M.handleRpc({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name, arguments: args } }, who);
+  const res = r.result || {};
+  let body = null;
+  try { body = JSON.parse(res.content?.[0]?.text); } catch { body = null; }
+  return { keys: Object.keys(body || {}), body, card: res._meta?.['wrought/card'] ?? null };
+};
+reset([weigh()]); chatgpt();
+out.pic_log = await callAs(gpt, 'log', { text: 'Costco restaurant sausage', events: [food('Costco restaurant sausage', { calories: 570, protein_g: 22, carbs_g: 4, fat_g: 52 }, { time_hint: '15:17' })] });
+out.pic_log.rows = JSON.parse(JSON.stringify(F.tables.wrought_card_pictures || []));
+reset([weigh()]); chatgpt();
+out.pic_quiet = await callAs(gpt, 'log', { quiet: true, text: 'did ten push-ups', events: [food('an apple', { calories: 95, protein_g: 0, carbs_g: 25, fat_g: 0 })] });
+out.pic_quiet.rows = (F.tables.wrought_card_pictures || []).length;
+reset([weigh(), ev('d2', today, 'food', 'oatmeal', { calories: 350, protein_g: 12, carbs_g: 60, fat_g: 6 }, { hh: '12:00' })]); chatgpt();
+out.pic_get_day = await callAs(gpt, 'get_day', {});
+// …and the same connection type that is NOT ChatGPT's gets the table alone.
+reset([weigh()]);
+F.tables.wrought_oauth_clients = [{ client_id: 'wrought_claude01', redirect_uris: ['https://claude.ai/api/mcp/auth_callback'] }];
+out.pic_claude = await callAs({ ...user, via: { kind: 'oauth', client_id: 'wrought_claude01', grant: 'fghij' } }, 'log', { text: 'an apple', events: [food('an apple', { calories: 95, protein_g: 0, carbs_g: 25, fat_g: 0 })] });
+out.pic_claude.rows = (F.tables.wrought_card_pictures || []).length;
+
 console.log('SCENARIOS ' + JSON.stringify(out));

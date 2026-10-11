@@ -3385,6 +3385,69 @@ rings in their dashboard colours.
   colours are still never read. If he wants a dark card when ChatGPT is in
   dark mode, that is one rule keyed on `data-theme`, and it is his call.
 
+### The card as a picture — the colours, in a ChatGPT with no Refresh
+
+`lib/cardimage.js` + `card-image.js` at `/c/:id.png` + `029_wrought_card_pictures.sql`
++ `lib/picture.js` + `card_image` / `PICTURE_NOTE` on ChatGPT's replies. The
+founder, 11 October, under a lunch ChatGPT had laid out in grey boxes: *"Looks
+good, but it's not using the colours as we explained."* Then: *"There's no
+refresh on this"*, and when Claude was suggested instead: *"No … it should be
+on the GPT, the colours, the colour card."*
+
+**The logs settled why, and it was not the card.** Wrought's own card was live
+and correct, and the tool list pointed at it, but ChatGPT had not reloaded that
+list once since the card shipped on 6 October. A Refresh would have appeared in
+Supabase's edge logs as a sign-in check with no tool call after it, and there
+was none. His ChatGPT has no Refresh button, so it will never learn the card
+exists. Every reply it drew in grey was ChatGPT's own composition, and nothing a
+server sends can colour that.
+
+**What every ChatGPT does draw, with nothing reloaded, is a picture the reply
+carries.** So a ChatGPT reply that carries `day_card` now also carries
+`card_image`: one markdown line linking to that day's card, drawn as a PNG from
+the same view the drawn card uses. The note swaps *show day_card* for *show
+card_image*, so the picture takes the table's place rather than sitting above a
+duplicate of itself. Tool results reach ChatGPT on the next call, with no
+Refresh.
+
+- **The picture computes nothing.** It prints the view's strings where the card
+  prints them, and its colours are parsed from the card's own `:root`, so the two
+  cannot drift. A test turns every digit in the view into a letter and finds no
+  digit drawn, and another finds no hex colour typed into the layout.
+- **Frozen, and keyed by nothing guessable.** The row keeps the view exactly as
+  the reply had it, so the picture in last Tuesday's chat still shows last
+  Tuesday. The address is 128 random bits, the response is cached for good, and
+  RLS is on with no policy, so only the function reads the table.
+- **No email on it.** A picture's link can travel further than the reply it came
+  in. The stored view leaves the account out, and the reply names it in words.
+- **Nothing dressed as a button.** A picture cannot be tapped, so there is no
+  *Open your record* and no *Show 2 earlier*. Every row is drawn, and the foot
+  names wrought.fit.
+- **ChatGPT only.** The gate is `connectionFacts(...).chatgpt`. Claude draws the
+  real card, and a quiet capture carries neither table nor picture.
+- **The default in doubt is still the table.** An insert that fails, throws or
+  times out (1.5s) means no `card_image`, and the reply is exactly what it was.
+- **The renderer never loads in the connector.** satori 0.18.3 and
+  @resvg/resvg-wasm 2.6.2, both pinned, ship as `external_node_modules` of the
+  picture function, and the fonts (Inter, Roboto Slab, JetBrains Mono, licences
+  beside them) as `included_files`. The bundle was built locally with Netlify's
+  own bundler and run against a stand-in database before it shipped. After
+  deploy, it served the founder's real card from wrought.fit.
+- **`first_seen_at` is the proof.** It is the only sign a chat actually drew a
+  picture, because a host that drops an image says nothing.
+
+**Still unverified:** whether ChatGPT shows an image the model writes into its
+reply from a tool result's link, on the iPhone in particular. Community reports
+say the model has to restate the markdown, which is what the note asks for. **If
+`first_seen_at` stays null after a ChatGPT log, the picture is not being drawn:
+take the gate out and the table returns.**
+
+**Two process notes.** The live check used a row id spelled `TESTtest…`, and a
+guessable address on a table whose whole safety is unguessable addresses is
+the mistake. Use a random id for a live test. And a `delete` through the
+Supabase connector timed out twice waiting for a confirmation nobody could give.
+The row was neutralised with an `update` to a header-only view instead.
+
 ### A food confirmed with no figure — estimated before the reply, never confirmed as complete
 
 6 October: *"Logged in Wrought — Costco restaurant sausage at 3:17 PM"* with
@@ -6325,7 +6388,7 @@ self-reporting scale removes the most-abandoned manual entry), then Strava.
 
 ## Conventions
 
-- `npm test` runs `test/harness.mjs` — 866 offline tests, no network, no database.
+- `npm test` runs `test/harness.mjs` — 879 offline tests, no network, no database.
   Run it before every push. It covers the JSON-RPC envelope (which fails as an
   uninformative "could not connect" inside ChatGPT) and all the arithmetic
   (which fails as a confidently wrong number in somebody's verdict).

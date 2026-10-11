@@ -17710,7 +17710,11 @@ await test('the proof rides every tool reply, first, in the same round trip', ()
   const firstAt = call.indexOf('out.log_first =');
   const stampAt = call.indexOf('stampConnected(');
   assert.ok(firstAt > -1 && stampAt > firstAt, 'the proof is not stamped after the capture rule');
-  assert.match(call.slice(stampAt), /^stampConnected\(out, connectedAccountsBlock\(authUser, await connP, \{ linkId \}\)\)/);
+  // The proof the check started is the proof that is stamped: whatever name it
+  // is awaited under, the stamp reads that value and nothing else.
+  const factsVar = /const (\w+) = await connP;/.exec(call.slice(implAt, stampAt))?.[1];
+  assert.ok(factsVar, 'the check is not awaited between the tool and the stamp');
+  assert.ok(call.slice(stampAt).startsWith(`stampConnected(out, connectedAccountsBlock(authUser, ${factsVar}, { linkId }))`), 'the stamp does not read the check that was started');
   assert.match(call, /text: JSON\.stringify\(body, null, 2\)/, 'the stamped body is not what goes out');
   assert.match(mcp, /const out = await impl\(params\.arguments \|\| \{\}, authUser\);\s*if \(out && typeof out === 'object' && !Array\.isArray\(out\) && out\.account === undefined\) \{\s*out\.account = authUser\?\.email \|\| null;/);
   const prof = call.slice(call.indexOf('if (params.name === PROFILE_TOOL)'), call.indexOf('if (!supabase) return rpcError'));
@@ -19074,7 +19078,7 @@ await test('the model is told the card is the layout when it is drawn, and the t
   assert.match(DAY_CARD_NOTE, /ONE EXCEPTION: if the host has told you that Wrought's own card was drawn for THIS reply/);
   assert.match(DAY_CARD_NOTE, /If you were not told, no panel was drawn: show day_card\. $/);
   assert.ok(DAY_CARD_NOTE.indexOf('do not paste') > DAY_CARD_NOTE.indexOf('EXACTLY AS WRITTEN'), 'the skip comes before the table');
-  assert.match(WCARD.WIDG.WIDGET_DESCRIPTION, /When it shows the day, do not paste day_card or repeat the card's figures/);
+  assert.match(WCARD.WIDG.WIDGET_DESCRIPTION, /When it shows the day, do not paste day_card or card_image or repeat the card's figures/);
   // A stamp carries none of the day: the description must not tell a model to skip it.
   assert.match(WCARD.WIDG.WIDGET_DESCRIPTION, /When it shows only a one-line stamp, it carries none of the day: answer as the reply's note says\./);
   // The sheet's own read-it-out rule carries the same exception, in the same position as the note.
@@ -19096,6 +19100,7 @@ const PIC = {
   IMG: await import('../netlify/functions/lib/cardimage.js'),
   LINK: await import('../netlify/functions/lib/picture.js'),
   FN: await import('../netlify/functions/card-image.js'),
+  GPT: await import('../netlify/functions/lib/gpt_instructions.js'),
   read: f => readFileSync(new URL(`../${f}`, import.meta.url), 'utf8'),
   exists: f => fs.existsSync(new URL(`../${f}`, import.meta.url)),
 };
@@ -19239,6 +19244,80 @@ await test('pictures are kept in their own table, read by the server alone, and 
   assert.match(sql, /enable row level security/);
   assert.ok(!/create policy/i.test(decomment(sql.replace(/--.*$/gm, ''))), 'no browser reads a picture row');
   assert.match(PIC.read('netlify/functions/api-status.js'), /'029_wrought_card_pictures\.sql', probe: t\('wrought_card_pictures'\)/);
+});
+
+await test('a ChatGPT reply that carries the day carries its picture, and says to show it in place of the table', () => {
+  const S = WCARD.scenarios();
+  const { DAY_CARD_NOTE, PICTURE_NOTE } = WCARD.DR;
+  const MD = /^!\[[^\][\n]+\]\(https:\/\/wrought\.fit\/c\/([A-Za-z0-9_-]{22})\.png\)$/;
+  for (const k of ['pic_log', 'pic_get_day']) {
+    const r = S[k];
+    assert.match(r.body.card_image || '', MD, `${k}: no picture line`);
+    assert.equal(r.keys.indexOf('card_image'), r.keys.indexOf('day_card') - 1, `${k}: the picture does not sit where the table did`);
+    assert.ok(r.body.note.includes(PICTURE_NOTE), `${k}: the note does not say to show the picture`);
+    assert.ok(!r.body.note.includes(DAY_CARD_NOTE), `${k}: the note still says to show the table under the picture`);
+    assert.equal(typeof r.body.day_card, 'string', `${k}: day_card is kept as data`);
+  }
+  // The picture is the view the reply carried, frozen — minus the email.
+  const row = S.pic_log.rows[0];
+  assert.equal(S.pic_log.rows.length, 1);
+  assert.equal(row.user_id, 'u1');
+  assert.equal(MD.exec(S.pic_log.body.card_image)[1], row.id);
+  assert.ok(!('account' in row.view), 'the stored picture carries the email address');
+  const { account, ...card } = S.pic_log.card;
+  assert.deepEqual(row.view, card, 'the picture is not the card the reply carried');
+  assert.equal(row.view.kind, 'day');
+  // A quiet capture stays quiet, and a client that is not ChatGPT's keeps the table.
+  assert.equal(S.pic_quiet.body.card_image, undefined);
+  assert.equal(S.pic_quiet.rows, 0);
+  assert.equal(S.pic_claude.body.card_image, undefined);
+  assert.equal(S.pic_claude.rows, 0);
+  assert.ok(S.pic_claude.body.note.includes(DAY_CARD_NOTE));
+  assert.equal(S.sausage.body.card_image, undefined, 'a caller with no OAuth connection got a picture');
+});
+
+await test('the picture only ever stands in for day_card, and anything short of a stored picture leaves the table', async () => {
+  const { pictured, savePicture } = PIC.LINK;
+  const { DAY_CARD_NOTE, PICTURE_NOTE } = WCARD.DR;
+  const md = '![Wrought day card](https://wrought.fit/c/AAAAAAAAAAAAAAAAAAAAAA.png)';
+  const noCard = { say: 'Logged in Wrought', note: DAY_CARD_NOTE };
+  assert.equal(pictured(noCard, md), noCard, 'a reply with no day_card was given a picture');
+  const withCard = { say: 's', day_card: '### 1 calories', note: `First. ${DAY_CARD_NOTE}Then.` };
+  const p = pictured(withCard, md);
+  assert.deepEqual(Object.keys(p), ['say', 'card_image', 'day_card', 'note']);
+  assert.equal(p.note, `First. ${PICTURE_NOTE}Then.`);
+  assert.equal(pictured(withCard, null), withCard);
+  // A note that never said "show day_card" gets the rule beside the picture.
+  const bare = pictured({ day_card: 'x', note: 'something else' }, md);
+  assert.deepEqual(Object.keys(bare), ['card_image', 'card_image_note', 'day_card', 'note']);
+  assert.equal(bare.card_image_note, PICTURE_NOTE);
+  // A row that did not land is no picture: refused, thrown, or not a day.
+  const view = { kind: 'day', intake: {} };
+  const refusing = { from: () => ({ insert: () => ({ abortSignal: async () => ({ error: { message: 'no' } }) }) }) };
+  const throwing = { from: () => { throw new Error('down'); } };
+  let asked = false;
+  const watching = { from: () => { asked = true; return { insert: () => ({ abortSignal: async () => ({ error: null }) }) }; } };
+  assert.equal(await savePicture(refusing, 'u1', view), null);
+  assert.equal(await savePicture(throwing, 'u1', view), null);
+  assert.equal(await savePicture(watching, 'u1', { kind: 'stamp' }), null);
+  assert.equal(asked, false, 'a stamp was stored as a picture');
+  assert.match(await savePicture(watching, 'u1', view), /\/c\/[A-Za-z0-9_-]{22}\.png$/);
+});
+
+await test('every surface a model reads says the picture is the card, shown exactly as written', () => {
+  const { PICTURE_NOTE } = WCARD.DR;
+  assert.match(PICTURE_NOTE, /^SHOW card_image straight after your first line/);
+  assert.match(PICTURE_NOTE, /EXACTLY AS WRITTEN/);
+  assert.match(PICTURE_NOTE, /never put it in a code block/);
+  assert.match(PICTURE_NOTE, /do NOT also paste day_card/);
+  assert.match(PICTURE_NOTE, /show only the LATEST one, once/);
+  assert.match(SERVER_INSTRUCTIONS, /When the reply carries card_image, that is the same card drawn as a picture in Wrought's colours: show card_image in its place, exactly as written, and do not paste day_card under it/);
+  const { GPT_INSTRUCTIONS } = PIC.GPT;
+  assert.match(GPT_INSTRUCTIONS, /then the day as card_image or day_card, exactly as written/);
+  assert.ok(GPT_INSTRUCTIONS.length <= 8000, `the GPT sheet is ${GPT_INSTRUCTIONS.length} characters`);
+  // Only ChatGPT gets a picture: the connector decides it from the client.
+  const src = decomment(PIC.read('netlify/functions/mcp.js'));
+  assert.match(src, /if \(facts\?\.chatgpt && CARD_TOOLS\.has\(params\.name\) && typeof body\?\.day_card === 'string'\)/);
 });
 
 // ── Report ──────────────────────────────────────────────────────────────────
