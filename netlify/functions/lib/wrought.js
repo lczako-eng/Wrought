@@ -806,6 +806,9 @@ export async function dayFacts(userId, profile, date) {
       sugar_g:   figureOf(e.detail?.sugar_g),
       fibre_g:   figureOf(e.detail?.fibre_g),
       sat_fat_g: figureOf(e.detail?.sat_fat_g),
+      // What kinds of food it was — the meal score reads it so the sugar in a
+      // whole apple is not marked down like the sugar in a cola.
+      ...(Array.isArray(e.detail?.categories) && e.detail.categories.length ? { categories: e.detail.categories } : {}),
     })),
   };
 }

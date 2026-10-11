@@ -133,4 +133,34 @@ F.tables.wrought_oauth_clients = [{ client_id: 'wrought_claude01', redirect_uris
 out.pic_claude = await callAs({ ...user, via: { kind: 'oauth', client_id: 'wrought_claude01', grant: 'fghij' } }, 'log', { text: 'an apple', events: [food('an apple', { calories: 95, protein_g: 0, carbs_g: 25, fat_g: 0 })] });
 out.pic_claude.rows = (F.tables.wrought_card_pictures || []).length;
 
+// FITNESS — the VO2 max the watch shows, said in the conversation.
+reset([weigh()]);
+out.fit = await call('fitness_check', { vo2_max: 31.4, heart_rate: 150 });
+out.fit.metrics = JSON.parse(JSON.stringify(F.tables.wrought_metrics || []));
+reset([weigh()]);
+out.fit_none = await call('fitness_check', {});
+reset([weigh()]);
+out.fit_bad = await call('fitness_check', { vo2_max: 314 });
+out.fit_bad.metrics = (F.tables.wrought_metrics || []).length;
+reset([weigh()]); chatgpt();
+out.fit_gpt = await callAs(gpt, 'fitness_check', { vo2_max: 31.4 });
+out.fit_gpt.rows = JSON.parse(JSON.stringify(F.tables.wrought_card_pictures || []));
+// Under a care flag: four thin days in the last week.
+const thin = () => [1, 2, 3, 4].map(i => ev(`t${i}`, addDays(today, -i), 'food', 'a small lunch', { calories: 500, protein_g: 20, carbs_g: 60, fat_g: 15, sugar_g: 5, fibre_g: 6, sat_fat_g: 4 }, { hh: '16:00' }));
+reset([weigh(), ...thin()]);
+out.fit_flag = await call('fitness_check', { vo2_max: 31.4 });
+
+// MEAL SCORES — on the log reply, on the day, and silent under a flag.
+const wrap = () => food('chicken wrap with salad', { calories: 600, protein_g: 40, carbs_g: 68, fat_g: 19, sugar_g: 10, fibre_g: 8, sat_fat_g: 5 });
+reset([weigh()]);
+out.score_log = await call('log', { text: 'chicken wrap with salad', events: [wrap()] });
+reset([weigh()]);
+out.score_quiet = await call('log', { quiet: true, text: 'chicken wrap with salad', events: [wrap()] });
+reset([weigh(), ev('s1', today, 'food', 'a cola', { calories: 140, protein_g: 0, carbs_g: 39, fat_g: 0, sugar_g: 39, fibre_g: 0, sat_fat_g: 0 }, { hh: '15:00' })]);
+out.score_day = await call('get_day', {});
+reset([weigh(), ...thin()]);
+out.score_flag = await call('log', { text: 'chicken wrap with salad', events: [wrap()] });
+reset([weigh(), ...thin(), ev('s2', today, 'food', 'a cola', { calories: 140, protein_g: 0, carbs_g: 39, fat_g: 0, sugar_g: 39, fibre_g: 0, sat_fat_g: 0 }, { hh: '15:00' })]);
+out.score_day_flag = await call('get_day', {});
+
 console.log('SCENARIOS ' + JSON.stringify(out));
