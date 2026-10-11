@@ -3479,9 +3479,17 @@ points).
   zero is the poisoned-total failure.
 - **Shares are held to 100.** An estimate with 39 g of sugar on a 140 kcal row
   printed 111% before the cap.
-- **A care flag silences it, and a flag state nobody read counts as one.**
-  Rating food is coaching. A quiet capture never reads the flags, so it is
-  never scored. His lunch today scores 9/10 off the row ChatGPT wrote.
+- **A care flag SOFTENS it; it does not hide it.** The first version went
+  silent under a flag, and his own record proved the cost the day it shipped.
+  Five of his last seven logged days sit under 1,200, most of them one or two
+  items, none reviewed. So the low-intake flag stands, and he would have seen
+  no score at all. A model asked "rate my meal" with nothing in front of it
+  invents one, advice included. Under a flag the score and what is strong
+  stand, and nothing that would lift it is said. Every swap a meal score
+  suggests (the sugary part, the saturated fat) takes calories away, the one
+  direction that flag exists to stop. `MEAL_SCORE_FLAG_NOTE` says so to the
+  model. A flag state nobody read gives no score, and a quiet capture never
+  reads the flags. His lunch today scores 9/10 off the row ChatGPT wrote.
 
 **The fitness card places VO2 max against the FRIEND registry** (Kaminsky et
 al., Mayo Clinic Proceedings 2015): laboratory treadmill percentiles by decade
@@ -3511,7 +3519,10 @@ an estimate read against a lab reference.
   never mentions. A test greps every coach line for body and clinical words.
 - **Under a care flag the reading stands and the push goes.** Plan paused, coach
   silent, and nothing counts him towards the next rung, in the card or in the
-  `vo2.say` beside it. The reading is still his.
+  `vo2.say` beside it. The reading is still his. **The pause names its way out**
+  in words a person reads: if some of those days were only half logged, say
+  which, and the record is read again. That is his likely case. The tool name
+  stays in the model's note, never on the card.
 - **The VO2 max he says is kept**: a `vo2max` row in `wrought_metrics`, noon of
   the day, `source: manual`, so the same day re-told replaces. A watch reads
   about 15–70; anything outside 10–90 is a mishearing and is refused, because

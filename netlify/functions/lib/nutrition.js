@@ -360,15 +360,36 @@ export function mealScore(e = {}) {
 /** What the model is told to do with a meal score — one sentence, kept with the scores. */
 export const MEAL_SCORE_NOTE = 'RATE THE MEAL AS meal_score SAYS, in one or two lines and in the coach\'s register: the score out of 10, what made it strong, and the one thing in to_lift. Never a score of your own, never "good food" or "bad food", and never a word about the amount eaten or about their body — it rates what is in the food. A meal with no score yet names the figures it needs: estimate them (numbers, never ranges) and send them with structure_entries by id in this same turn; that reply carries the score.';
 
-/** The scores for the food and drink rows just written or read — never under a care flag. */
+/**
+ * Under a care flag the score is SOFTENED, never hidden. Silence here was
+ * the first version, and the founder's own record showed what it costs: a
+ * low-intake flag stands on his account, so he would have seen no score at
+ * all — and a model asked "rate my meal" with nothing in front of it invents
+ * one, with free advice attached. What a flag stops is the PUSH: so the score
+ * and what is strong stand, and nothing that would lift it is said — every
+ * swap a meal score suggests (the sugary part, the saturated fat) takes
+ * calories away, which is the one direction a low-intake flag exists to stop.
+ */
+export const MEAL_SCORE_FLAG_NOTE = 'A CARE FLAG STANDS, so say ONLY the score out of 10 and what made it strong, as meal_score says — no swap, no advice, nothing to lift, nothing about cutting, replacing or skipping anything, never "good food" or "bad food", never a word about the amount or their body. A meal with no score yet names the figures it needs: estimate them and send them with structure_entries by id in this same turn.';
+
+/** The note that goes with a set of scores — the softened one under a flag. */
+export const mealScoreNote = scores => (Array.isArray(scores) && scores.some(x => x.softened) ? MEAL_SCORE_FLAG_NOTE : MEAL_SCORE_NOTE);
+
+/** The scores for the food and drink rows just written or read. A flag softens them; a flag state nobody read gives none. */
 export function mealScores(rows = [], { flags = null } = {}) {
-  // Rating food is coaching, and a care flag stops coaching. A flag state
-  // nobody could read is treated the same way: no score.
-  if (!Array.isArray(flags) || flags.length) return null;
+  // A flag state nobody could read is not "no flag": no score at all.
+  if (!Array.isArray(flags)) return null;
   const food = rows.filter(r => r && (r.type === 'food' || r.type === 'drink' || r.event_type === 'food' || r.event_type === 'drink'));
   if (!food.length) return null;
+  const flagged = flags.length > 0;
   return food.map(r => {
     const d = r.detail && typeof r.detail === 'object' ? r.detail : r;
-    return { id: r.id ?? null, summary: r.summary ?? null, ...mealScore({ ...d, categories: d.categories }) };
+    const m = mealScore({ ...d, categories: d.categories });
+    if (!flagged || m.score == null) return { id: r.id ?? null, summary: r.summary ?? null, ...m };
+    return {
+      id: r.id ?? null, summary: r.summary ?? null, ...m,
+      held_back_by: [], to_lift: null, softened: true,
+      say: `${m.score}/10 on what is in it.` + (m.lifted_by.length ? ` Strong: ${m.lifted_by.join('; ')}.` : ''),
+    };
   });
 }

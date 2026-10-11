@@ -19372,16 +19372,31 @@ await test('a meal score rates the food, never the amount or the person, and nev
   assert.match(NUT.MEAL_SCORE_NOTE, /never a word about the amount eaten or about their body/);
 });
 
-await test('a care flag silences the meal score, and a flag state nobody read counts as one', () => {
-  const rows = [{ id: 'a', type: 'food', summary: 'wrap', calories: 600, protein_g: 40, fibre_g: 8, sugar_g: 10, sat_fat_g: 5 }];
-  assert.equal(NUT.mealScores(rows, { flags: [{ kind: 'very_low_intake' }] }), null);
+await test('a care flag softens the meal score — the score and what is strong stand, nothing that would lift it is said', () => {
+  const rows = [
+    { id: 'a', type: 'food', summary: 'wrap', calories: 600, protein_g: 40, fibre_g: 8, sugar_g: 10, sat_fat_g: 5 },
+    { id: 'b', type: 'drink', summary: 'cola', calories: 140, protein_g: 0, fibre_g: 0, sugar_g: 39, sat_fat_g: 0 },
+  ];
+  const plain = NUT.mealScores(rows, { flags: [] });
+  const soft = NUT.mealScores(rows, { flags: [{ kind: 'very_low_intake' }] });
+  assert.ok(soft, 'a flag hid the score: a model asked to rate the meal with nothing in front of it invents one');
+  assert.deepEqual(soft.map(x => x.score), plain.map(x => x.score), 'a flag changed the score itself');
+  for (const x of soft) {
+    assert.equal(x.softened, true);
+    assert.equal(x.to_lift, null, 'a swap was offered under a low-intake flag');
+    assert.deepEqual(x.held_back_by, []);
+    assert.ok(!/To lift|Holding it back|swap|leaner|diet drink/i.test(x.say), `advice under a flag: ${x.say}`);
+  }
+  assert.equal(NUT.mealScoreNote(soft), NUT.MEAL_SCORE_FLAG_NOTE);
+  assert.equal(NUT.mealScoreNote(plain), NUT.MEAL_SCORE_NOTE);
+  assert.match(NUT.MEAL_SCORE_FLAG_NOTE, /no swap, no advice/);
+  // A flag state nobody read is not "no flag".
   assert.equal(NUT.mealScores(rows, { flags: null }), null);
   assert.equal(NUT.mealScores(rows, {}), null);
-  assert.equal(NUT.mealScores(rows, { flags: [] })[0].score, 9);
   assert.equal(NUT.mealScores([{ id: 'w', type: 'workout' }], { flags: [] }), null, 'only food and drink are scored');
 });
 
-await test('the meal score rides the log reply and the day, and never a quiet capture or a flagged account', () => {
+await test('the meal score rides the log reply and the day, never a quiet capture, and softens on a flagged account', () => {
   const S = WCARD.scenarios();
   const s = S.score_log.body.meal_score;
   assert.ok(Array.isArray(s) && s.length === 1, 'no meal_score on a log that wrote food');
@@ -19389,8 +19404,12 @@ await test('the meal score rides the log reply and the day, and never a quiet ca
   assert.equal(S.score_log.body.meal_score_note, NUT.MEAL_SCORE_NOTE);
   assert.equal(S.score_quiet.body.meal_score, undefined, 'a quiet capture was rated');
   assert.equal(S.score_day.body.meal_scores?.[0]?.score, 2);
-  assert.equal(S.score_flag.body.meal_score, undefined, 'a meal was rated under a care flag');
-  assert.equal(S.score_day_flag.body.meal_scores, undefined, 'the day was rated under a care flag');
+  // Under a flag it is softened, on the log reply and the day alike.
+  assert.equal(S.score_flag.body.meal_score?.[0]?.softened, true, 'a flagged account was given no score, or the full advice');
+  assert.equal(S.score_flag.body.meal_score[0].to_lift, null);
+  assert.equal(S.score_flag.body.meal_score_note, NUT.MEAL_SCORE_FLAG_NOTE);
+  assert.equal(S.score_day_flag.body.meal_scores?.[0]?.softened, true);
+  assert.equal(S.score_day_flag.body.meal_score_note, NUT.MEAL_SCORE_FLAG_NOTE);
   assert.match(SERVER_INSTRUCTIONS, /meal_score \(on the log reply\) \/ meal_scores \(on get_day\) — "rate my meal"/);
 });
 
@@ -19530,6 +19549,8 @@ await test('fitness_check keeps the VO2 max they say, reads it back, and refuses
   assert.equal(g.plan.paused, true);
   assert.equal(g.coach_line, null);
   assert.equal(g.vo2.next, null);
+  assert.match(g.plan.say, /only half logged, say which/, 'the pause does not name its way out');
+  assert.ok(!/review_intake_days/.test(g.fitness_card), 'a tool name on a card a person reads');
   assert.ok(!/to go/.test(g.vo2.say) && !g.fitness_card.includes('Next:'));
   assert.match(SERVER_INSTRUCTIONS, /fitness_check — "how fit am I"/);
 });

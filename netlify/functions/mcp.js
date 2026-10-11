@@ -46,7 +46,7 @@ import { preflight } from './lib/preflight.js';
 import { finaliseSession, closeStaleSessions, recordSet, foldIntoSession } from './lib/session.js';
 import { effortFromWords, wordsForRecord, beforeSet, afterSet, methodsFor } from './lib/coach.js';
 import { PROVIDERS, providerSummary, recommendRoute, liveConnections } from './lib/providers.js';
-import { nutritionTotals, composition, macroMatrix, yearOverYear, mealScores, MEAL_SCORE_NOTE } from './lib/nutrition.js';
+import { nutritionTotals, composition, macroMatrix, yearOverYear, mealScores, mealScoreNote } from './lib/nutrition.js';
 import {
   exerciseKey, lastPerformance, progressionCall, TIERS,
   restingBurn, energyBalance, planFromRoutine, sessionTotals, earnedRoom,
@@ -1776,7 +1776,7 @@ async function log(args, user) {
     } : {}),
     // THE MEAL SCORE — what is in the plate, out of ten, computed from the
     // stored row; never on a quiet capture and never under a care flag.
-    ...(scores ? { meal_score: scores, meal_score_note: MEAL_SCORE_NOTE } : {}),
+    ...(scores ? { meal_score: scores, meal_score_note: mealScoreNote(scores) } : {}),
     recorded: written.map(e => ({
       id: e.id, type: e.event_type, summary: e.summary, estimated: e.estimated,
       // THE CLOCK IT WAS FILED UNDER. Said back so a meal eaten an hour ago
@@ -3343,7 +3343,7 @@ async function structureEntries(args, user) {
     } : {}),
     updated: updated.length,
     entries: withNumbers,
-    ...(scores ? { meal_score: scores, meal_score_note: MEAL_SCORE_NOTE } : {}),
+    ...(scores ? { meal_score: scores, meal_score_note: mealScoreNote(scores) } : {}),
     ...(skipped.length ? { skipped } : {}),
     ...(bridged.error ? { sets_error: bridged.error } : {}),
     ...(bridged.skipped ? { sets_skipped: bridged.skipped, sets_note: bridged.say } : {}),
@@ -3739,7 +3739,7 @@ async function getDay(args, user) {
   return {
     ...day,
     ...(targets ? { no_target_set: targets } : {}),
-    ...(scores ? { meal_scores: scores, meal_score_note: MEAL_SCORE_NOTE } : {}),
+    ...(scores ? { meal_scores: scores, meal_score_note: mealScoreNote(scores) } : {}),
     // "What did I do today" is answered line by line, both sides, with the
     // subtraction underneath — never as two summary sentences.
     receipt: full.receipt,
