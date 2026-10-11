@@ -3540,6 +3540,23 @@ an estimate read against a lab reference.
   after the tests had passed. A test now draws every view, day and fitness, and
   refuses any arrow in a picture. Arrows stay fine in text a model reads.
 
+**A new tool reaches nobody whose ChatGPT cannot Refresh — and his cannot.**
+The meal score rides `log` and `get_day` results, so it arrived on his next
+call. `fitness_check` is a new tool, and his ChatGPT has held its tool list
+since 6 October. Two doors he already has now carry it:
+
+- **`athlete_report` returns the fitness card first**, picture included,
+  through `fitnessRead()`, the one read both tools share. Its old
+  description, still in his frozen list, already claimed "where is my VO2
+  max", so that is where the question lands.
+- **`log` keeps a VO2 max said in so many words.** `vo2FromWords()` takes
+  "my VO2 max is 31.4" or "Cardio Fitness 31", only in a watch's range, and
+  never a percentage ("up 10%" is a change, not a reading). The reply carries
+  `vo2_kept` and points at whichever fitness door the model has.
+
+**Check whether the people asking can actually reach a new tool before
+announcing it.** Shipping a tool is not the same as it being reachable.
+
 **One mutation could not fail, and that is correct**: removing `!args.quiet`
 from the score still scores nothing on a quiet capture, because the quiet path
 never reads the flags and the score refuses without them. It is closed twice.
@@ -6488,7 +6505,7 @@ self-reporting scale removes the most-abandoned manual entry), then Strava.
 
 ## Conventions
 
-- `npm test` runs `test/harness.mjs` — 892 offline tests, no network, no database.
+- `npm test` runs `test/harness.mjs` — 894 offline tests, no network, no database.
   Run it before every push. It covers the JSON-RPC envelope (which fails as an
   uninformative "could not connect" inside ChatGPT) and all the arithmetic
   (which fails as a confidently wrong number in somebody's verdict).

@@ -61,7 +61,7 @@ import { FOCUSES, FOCUS_NAMES, focusFrom, designSession, designQuestions, design
 import { styleRoutine, STYLE_ROUTINES } from './lib/style_routines.js';
 import { pickDue } from './lib/morning.js';
 import { athleteRows, athleteRead, markerRead, TESTS, parseTestValue, ATHLETE_COMMITMENT } from './lib/athlete.js';
-import { ageFrom, sexKey, vo2Standing, hrZones, placeHeartRate, vo2Plan, fitnessCoachLine, restingLine, fitnessView, fitnessMarkdown, FITNESS_NOTE, FITNESS_CARD_SHOW, FITNESS_PICTURE_NOTE } from './lib/fitness.js';
+import { ageFrom, sexKey, vo2FromWords, vo2Standing, hrZones, placeHeartRate, vo2Plan, fitnessCoachLine, restingLine, fitnessView, fitnessMarkdown, FITNESS_NOTE, FITNESS_CARD_SHOW, FITNESS_PICTURE_NOTE } from './lib/fitness.js';
 import { resolvePlace, placeEquipment, listPlaces, bumpPlace, applyPlaces, sessionsCanCarryPlace, PLACE_KINDS } from './lib/places.js';
 import { dayReceipt, wholeDayBurn } from './lib/receipt.js';
 import { dayReadout, roomless, cardParts, justRows, justBlock, burnPhrase, dayName, DAY_CARD_NOTE, PICTURE_NOTE } from './lib/dayread.js';
@@ -1375,7 +1375,7 @@ const CARD_WRITES = new Set(['log', 'log_activity', 'amend_last', 'structure_ent
 // fitness check draws its own. Nothing else is ever pictured.
 export function pictureSlot(name, body) {
   if (CARD_TOOLS.has(name) && typeof body?.day_card === 'string') return { slot: 'day_card', from: DAY_CARD_NOTE, to: PICTURE_NOTE };
-  if (name === 'fitness_check' && typeof body?.fitness_card === 'string') return { slot: 'fitness_card', from: FITNESS_CARD_SHOW, to: FITNESS_PICTURE_NOTE };
+  if ((name === 'fitness_check' || name === 'athlete_report') && typeof body?.fitness_card === 'string') return { slot: 'fitness_card', from: FITNESS_CARD_SHOW, to: FITNESS_PICTURE_NOTE };
   return null;
 }
 
@@ -1717,6 +1717,13 @@ async function log(args, user) {
   // Scored off the rows as stored, with the flags the card read found; a read
   // that failed leaves the flags unknown, and unknown means no score.
   const scores = !args.quiet && wroteFood ? mealScores(written, { flags: cardRead ? (cardRead.flags || []) : null }) : null;
+  // A VO2 MAX SAID IN SO MANY WORDS IS KEPT. "My watch says my VO2 max is
+  // 31.4" lands here, through the tool every ChatGPT already has — not every
+  // one has fitness_check, and a new tool reaches nobody without a Refresh.
+  // Only a figure named as VO2 max (or Cardio Fitness) and in a watch's range;
+  // nothing is inferred. Never allowed to cost the log.
+  const vo2Said = vo2FromWords(text);
+  const vo2Kept = vo2Said != null ? await keepVo2(user.id, vo2Said, today).catch(() => null) : null;
 
   // Each row as the card's "just logged" block reads it — off the STORED row,
   // with the clock it was filed under.
@@ -1777,6 +1784,11 @@ async function log(args, user) {
     // THE MEAL SCORE — what is in the plate, out of ten, computed from the
     // stored row; never on a quiet capture and never under a care flag.
     ...(scores ? { meal_score: scores, meal_score_note: mealScoreNote(scores) } : {}),
+    ...(vo2Kept && !vo2Kept.error ? { vo2_kept: {
+      value: vo2Kept.value, unit: 'ml/kg/min', date: vo2Kept.date,
+      say: `Kept as a VO2 max reading: ${vo2Kept.value} ml/kg/min.`,
+      note: 'Say it was kept, in half a line. For where it stands for their age and sex, with their heart-rate zones, call fitness_check — or athlete_report if fitness_check is not in your tools; both carry the fitness card.',
+    } } : {}),
     recorded: written.map(e => ({
       id: e.id, type: e.event_type, summary: e.summary, estimated: e.estimated,
       // THE CLOCK IT WAS FILED UNDER. Said back so a meal eaten an hour ago
@@ -2790,17 +2802,29 @@ async function logTest(args, user) {
 async function athleteReport(_args, user) {
   const profile = await getProfile(user.id);
   const today = localDateFor(profile.timezone);
-  const range = await rangeFacts(user.id, profile, addDays(today, -27), today);
+  const [range, rows, fit] = await Promise.all([
+    rangeFacts(user.id, profile, addDays(today, -27), today),
+    athleteRows(user.id, addDays(today, -90)),
+    fitnessRead(user, profile, today),
+  ]);
   const week = weekSoFar(range.days, { today, ...weekTargets(profile) });
-  const rows = await athleteRows(user.id, addDays(today, -90));
   const read = athleteRead({ rows, week, days: range.days, profile, today });
+  // THE FITNESS CARD RIDES HERE TOO. A ChatGPT holding its tool list from
+  // before fitness_check existed sends "where is my VO2 max" here, and a
+  // result reaches it on the next call where a new tool never does. The
+  // card leads; the athlete read follows it.
+  const { note: fitNote, ...fitBody } = fit;
+  const out = {
+    ...fitBody,
+    athlete: { ...read, note: undefined },
+    say: read.say,
+    note: `${fitNote} THEN THE ATHLETE READ: ${read.note}`,
+    ...withCard(fit[CARD]),
+  };
   if (profile.track !== 'athlete') {
-    return {
-      ...read,
-      track_note: 'They are not on the athlete track. Offer it in one line — set_plan with track "athlete" and their sport — and only switch it on if they say so. The read above runs either way from whatever is on record.',
-    };
+    out.track_note = 'They are not on the athlete track. Offer it in one line — set_plan with track "athlete" and their sport — and only switch it on if they say so. The read above runs either way from whatever is on record.';
   }
-  return read;
+  return out;
 }
 
 // ── Fitness: VO2 max for their age, the zones, the plan ─────────────────────
@@ -2820,15 +2844,34 @@ async function fitnessCheck(args, user) {
       return { error: 'unreadable', say: `${args.vo2_max} is not a VO2 max a watch shows — they read between about 15 and 70 ml/kg/min. What does Cardio Fitness say in the Health app?` };
     }
     const date = /^\d{4}-\d{2}-\d{2}$/.test(String(args.date || '')) && String(args.date) <= today ? String(args.date) : today;
-    // Noon on the day and the dedupe index: the same day re-told REPLACES.
-    const row = {
-      user_id: user.id, metric: 'vo2max', value: Math.round(v * 10) / 10, unit: 'ml/kg/min',
-      measured_at: `${date}T12:00:00Z`, local_date: date, source: 'manual', source_ref: `vo2:${date}`,
-    };
-    const { error } = await supabase.from('wrought_metrics').upsert(row, { onConflict: 'user_id,source,metric,measured_at' });
-    if (error) return { error: error.message, say: 'That VO2 max was NOT saved — the record did not take it. Say it again in a moment.' };
-    stored = { value: row.value, date };
+    const kept = await keepVo2(user.id, v, date);
+    if (kept.error) return { error: kept.error, say: 'That VO2 max was NOT saved — the record did not take it. Say it again in a moment.' };
+    stored = kept;
   }
+  return {
+    ...(stored ? { saved: { metric: 'vo2max', value: stored.value, unit: 'ml/kg/min', date: stored.date }, say_saved: `Kept: VO2 max ${stored.value} on ${stored.date}.` } : {}),
+    ...await fitnessRead(user, profile, today, { stored, heartRate: args.heart_rate }),
+  };
+}
+
+/** A VO2 max reading kept: noon of the day, manual, the same day re-told REPLACES. */
+async function keepVo2(userId, value, date) {
+  const row = {
+    user_id: userId, metric: 'vo2max', value: Math.round(Number(value) * 10) / 10, unit: 'ml/kg/min',
+    measured_at: `${date}T12:00:00Z`, local_date: date, source: 'manual', source_ref: `vo2:${date}`,
+  };
+  const { error } = await supabase.from('wrought_metrics').upsert(row, { onConflict: 'user_id,source,metric,measured_at' });
+  return error ? { error: error.message } : { value: row.value, date };
+}
+
+/**
+ * The fitness read, shared by fitness_check and athlete_report — the second
+ * because a ChatGPT holding its tool list from before fitness_check existed
+ * (and with no Refresh to fetch a new one) routes "where is my VO2 max" to
+ * athlete_report, whose old description claimed it. A result reaches the
+ * model on the next call; a new tool does not.
+ */
+async function fitnessRead(user, profile, today, { stored = null, heartRate = null } = {}) {
   const [rows, careRange] = await Promise.all([
     athleteRows(user.id, addDays(today, -90)),
     rangeFacts(user.id, profile, addDays(today, -(CARE_WINDOW_DAYS - 1)), today),
@@ -2842,7 +2885,7 @@ async function fitnessCheck(args, user) {
   const age = ageFrom(profile.birth_year, today);
   const standing = vo2 != null ? vo2Standing({ vo2, age, sex: profile.sex }) : null;
   const zones = hrZones({ age });
-  const placed = args.heart_rate != null && zones ? placeHeartRate(zones, args.heart_rate) : null;
+  const placed = heartRate != null && zones ? placeHeartRate(zones, heartRate) : null;
   const plan = vo2Plan({ standing, zones, cardioPerWeek: profile.cardio_per_week, readiness: ready, flags });
   const trend = vo2m && !vo2m.missing && vo2m.trend !== 'not_enough' ? vo2m : null;
   const coachLine = fitnessCoachLine({ standing, trend, plan });
@@ -2857,7 +2900,6 @@ async function fitnessCheck(args, user) {
     missing: vo2Missing,
   });
   return {
-    ...(stored ? { saved: { metric: 'vo2max', value: stored.value, unit: 'ml/kg/min', date: stored.date }, say_saved: `Kept: VO2 max ${stored.value} on ${stored.date}.` } : {}),
     // Under a flag the reading stands and nothing counts them to the next rung.
     vo2: !standing ? null : flags.length ? { ...standing, next: null, say: standing.level_say }
       : { ...standing, ...(trend ? { trend: trend.trend, month_avg: trend.month_avg, prior_avg: trend.prior_avg } : {}) },

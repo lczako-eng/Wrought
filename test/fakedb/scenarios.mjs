@@ -150,6 +150,20 @@ const thin = () => [1, 2, 3, 4].map(i => ev(`t${i}`, addDays(today, -i), 'food',
 reset([weigh(), ...thin()]);
 out.fit_flag = await call('fitness_check', { vo2_max: 31.4 });
 
+// A ChatGPT holding its tool list from before fitness_check: the card rides
+// athlete_report, and a VO2 max said in a log sentence is kept.
+const vo2row = () => ({ id: 'm1', user_id: 'u1', metric: 'vo2max', value: 31.4, unit: 'ml/kg/min', local_date: today, measured_at: `${today}T12:00:00Z`, source: 'manual' });
+reset([weigh()]); F.tables.wrought_metrics = [vo2row()];
+out.ath = await call('athlete_report', {});
+reset([weigh()]); F.tables.wrought_metrics = [vo2row()]; chatgpt();
+out.ath_gpt = await callAs(gpt, 'athlete_report', {});
+reset([weigh()]);
+out.vo2_log = await call('log', { text: 'my watch says my VO2 max is 31.4', events: [{ event_type: 'note', summary: 'Apple Watch VO2 max 31.4', detail: {} }] });
+out.vo2_log.metrics = JSON.parse(JSON.stringify(F.tables.wrought_metrics || []));
+reset([weigh()]);
+out.vo2_pct = await call('log', { text: 'my VO2 max went up 10% this month', events: [{ event_type: 'note', summary: 'VO2 max up 10%', detail: {} }] });
+out.vo2_pct.metrics = (F.tables.wrought_metrics || []).length;
+
 // MEAL SCORES — on the log reply, on the day, and silent under a flag.
 const wrap = () => food('chicken wrap with salad', { calories: 600, protein_g: 40, carbs_g: 68, fat_g: 19, sugar_g: 10, fibre_g: 8, sat_fat_g: 5 });
 reset([weigh()]);
