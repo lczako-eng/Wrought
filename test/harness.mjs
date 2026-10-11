@@ -19569,6 +19569,38 @@ await test('fitness_check keeps the VO2 max they say, reads it back, and refuses
   assert.match(SERVER_INSTRUCTIONS, /fitness_check — "how fit am I"/);
 });
 
+await test('a VO2 max is read off a sentence only when it is named and in a watch\'s range', () => {
+  const cases = [
+    ['my VO2 max is 31.4', 31.4], ['vo2max: 33', 33], ['My watch says my cardio fitness is 31', 31],
+    ['VO2 of 28.5 apparently', 28.5], ['had a vo2 max test, 45,2', 45.2],
+    ['VO2 max went up 10%', null], ['VO2 max up 12 percent', null], ['VO2 max 2', null],
+    ['vo2 max is about 120', null], ['did 3 sets of 10', null], ['ran 31 minutes', null],
+  ];
+  for (const [t, want] of cases) assert.equal(FIT.vo2FromWords(t), want, t);
+});
+
+await test('a ChatGPT with no Refresh still gets the fitness card: it rides athlete_report, and a log keeps a stated VO2 max', () => {
+  const S = WCARD.scenarios();
+  // athlete_report carries the card, the read, and the athlete block after it.
+  assert.equal(typeof S.ath.body.fitness_card, 'string');
+  assert.ok(S.ath.body.fitness_card.includes('**Low ← you**'));
+  assert.ok(S.ath.body.athlete && S.ath.body.athlete.markers, 'the athlete read was dropped');
+  assert.ok(S.ath.body.note.startsWith(FIT.FITNESS_CARD_SHOW), 'the card does not lead the note');
+  assert.match(S.ath.body.note, /THEN THE ATHLETE READ:/);
+  // …and in ChatGPT, as the picture.
+  const r = S.ath_gpt;
+  assert.match(r.body.card_image || '', /^!\[Wrought fitness card[^\][\n]*\]\(https:\/\/wrought\.fit\/c\/[A-Za-z0-9_-]{22}\.png\)$/);
+  assert.equal(r.keys.indexOf('card_image'), r.keys.indexOf('fitness_card') - 1);
+  assert.ok(!r.body.note.includes(FIT.FITNESS_CARD_SHOW), 'the note still says to paste the table under the picture');
+  assert.equal(WCARD.MCP.pictureSlot('athlete_report', { fitness_card: 'x' }).slot, 'fitness_card');
+  // A VO2 max said through log is kept; a percentage is a change, never a reading.
+  assert.equal(S.vo2_log.body.vo2_kept?.value, 31.4);
+  assert.deepEqual(S.vo2_log.metrics.map(m => [m.metric, m.value, m.source]), [['vo2max', 31.4, 'manual']]);
+  assert.match(S.vo2_log.body.vo2_kept.note, /athlete_report if fitness_check is not in your tools/);
+  assert.equal(S.vo2_pct.body.vo2_kept, undefined);
+  assert.equal(S.vo2_pct.metrics, 0);
+});
+
 await test('a ChatGPT fitness reply carries its card as a picture, and only the cards that can be pictured name a slot', () => {
   const S = WCARD.scenarios();
   const r = S.fit_gpt;

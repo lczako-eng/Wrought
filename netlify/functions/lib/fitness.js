@@ -110,6 +110,20 @@ export function vo2Standing({ vo2, age, sex } = {}) {
   };
 }
 
+/**
+ * A VO2 max stated in so many words — "my VO2 max is 31.4", "vo2max 33",
+ * "cardio fitness 31" — read off the sentence. Pure. Null unless the number
+ * sits right after the name and reads like a watch's figure (10–90): a
+ * percentage ("VO2 max up 10%") is a change, never a reading, and nothing is
+ * ever inferred from a sentence that does not name one.
+ */
+export function vo2FromWords(text) {
+  const m = String(text || '').match(/\b(?:v\.?\s?o\.?\s?2(?:\s?max)?|cardio\s+fitness)\b[^\d%]{0,25}?(\d{2}(?:[.,]\d)?)(?!\d)\s*(%|percent)?/i);
+  if (!m || m[2]) return null;
+  const v = Number(m[1].replace(',', '.'));
+  return Number.isFinite(v) && v >= 10 && v <= 90 ? Math.round(v * 10) / 10 : null;
+}
+
 /** Tanaka, Monahan & Seals (2001): 208 − 0.7 × age — better validated than 220 − age. */
 export const maxHeartRate = age => (Number.isFinite(age) ? Math.round(208 - 0.7 * age) : null);
 
