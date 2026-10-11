@@ -158,7 +158,9 @@ export function placeHeartRate(z, bpm) {
  */
 export function vo2Plan({ standing = null, zones = null, cardioPerWeek = null, readiness = null, flags = [] } = {}) {
   if (Array.isArray(flags) && flags.length) {
-    return { paused: true, say: 'The training plan is paused while a care flag stands — coaching stops until it clears. The readings above are still yours.' };
+    // Said, with its way out, never left silent: a flag that fired on
+    // half-logged days clears when those days are named as half-logged.
+    return { paused: true, say: 'The training plan is paused while a care flag stands — coaching stops until it clears. If some of those days were only half logged, say which, and the record is read again. The readings above are still yours.' };
   }
   if (!zones) return null;
   const z2 = zones.zones[1], z4 = zones.zones[3];
@@ -209,7 +211,7 @@ const fmtGap = g => `${fmt1(g)}`;
 // the swap is a string replace and never a rewrite of the rest of the rule.
 export const FITNESS_CARD_SHOW = 'SHOW fitness_card EXACTLY AS WRITTEN after your first line — where their VO2 max stands for their age and sex, their five heart-rate zones, and the plan.';
 
-export const FITNESS_NOTE = FITNESS_CARD_SHOW + ' Then say coach_line in the coach\'s register: encouraging, about what the record shows, never about their body. Every figure here is computed — never a level, a zone, a maximum heart rate or a session of your own, and never a range you rounded to. NOTHING IS MEDICAL: VO2 max and heart rate are training signals, never "your heart", never a diagnosis, never a reassurance; a number that worries them is a doctor\'s question. A watch\'s VO2 max is itself an estimate and the reference was measured in a lab — say the level is approximate. The plan is OFFERED unless they already committed stamina sessions; it goes on their plan only on a yes (set_plan). Under a care flag the plan is paused: say so, plainly, once.';
+export const FITNESS_NOTE = FITNESS_CARD_SHOW + ' Then say coach_line in the coach\'s register: encouraging, about what the record shows, never about their body. Every figure here is computed — never a level, a zone, a maximum heart rate or a session of your own, and never a range you rounded to. NOTHING IS MEDICAL: VO2 max and heart rate are training signals, never "your heart", never a diagnosis, never a reassurance; a number that worries them is a doctor\'s question. A watch\'s VO2 max is itself an estimate and the reference was measured in a lab — say the level is approximate. The plan is OFFERED unless they already committed stamina sessions; it goes on their plan only on a yes (set_plan). Under a care flag the plan is paused: say so, plainly, once, and offer the review once — if the flagged days were only half logged, review_intake_days with the days they name re-reads it; never infer which days yourself.';
 
 export const FITNESS_PICTURE_NOTE = 'SHOW card_image straight after your first line: it is fitness_card itself — the ladder, the zones and the plan — drawn in Wrought\'s colours. Copy that line EXACTLY AS WRITTEN, on its own line, as markdown: never alter, shorten or explain the address, never put it in a code block, and do NOT also paste fitness_card or rebuild any of it in text — under it, never a figure that differs from it.';
 
