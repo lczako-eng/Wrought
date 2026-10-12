@@ -241,7 +241,25 @@ export async function finaliseSession(userId, profile, session,
   // entirely — two numbers, each honest.
   const split = splitWork({ sets: rows, plan: session.plan });
 
-  const [written] = await insertEvents(userId, profile, [{
+  // ONE CLOSE PER SESSION. Two closes can run at once — ChatGPT answering
+  // "I'm done" through each of its connections, the rack screen's End tapped
+  // while the chat says it, a sweep landing on the same minute — and each read
+  // the session as active and filed its own workout: three workouts for one
+  // session, three in the weekly count. Found by the scenario simulator. The
+  // session is CLAIMED first, active → done in one statement; only the call
+  // that moved it files the workout, and a call that finds it already moved
+  // says so instead of filing again.
+  const { data: claimed, error: claimErr } = await supabase.from('wrought_sessions')
+    .update({ status: 'done' }).eq('id', session.id).eq('status', 'active').select('id');
+  if (!claimErr && Array.isArray(claimed) && claimed.length === 0) {
+    const { data: now } = await supabase.from('wrought_sessions')
+      .select('status, event_id').eq('id', session.id).maybeSingle();
+    return { closed: false, already: true, status: now?.status || null, event_id: now?.event_id || null, sets: totals.sets, minutes };
+  }
+
+  let written;
+  try {
+    [written] = await insertEvents(userId, profile, [{
     event_type: 'workout',
     // The shortfall is IN the summary, because the summary is what every list,
     // day card and brief actually shows. "12 sets, 40 min" over a half-done
@@ -283,6 +301,12 @@ export async function finaliseSession(userId, profile, session,
     occurred_at: endedIso,
     estimated: false,
   }], { rawInput: note || null });
+  } catch (e) {
+    // The workout did not land: hand the session back, so the next close (or
+    // the sweep) files it rather than leaving a closed session with no event.
+    if (!claimErr) await supabase.from('wrought_sessions').update({ status: 'active' }).eq('id', session.id);
+    throw e;
+  }
 
   await supabase.from('wrought_sessions').update({
     status: 'done', ended_at: endedIso, event_id: written?.id || null,

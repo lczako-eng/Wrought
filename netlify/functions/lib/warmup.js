@@ -186,7 +186,11 @@ export function sessionProgress(plan = [], setsDone = []) {
       String(s.exercise || '').toLowerCase() === String(e.name || '').toLowerCase()).length;
     return {
       exercise: e.name,
-      target: `${target}×${e.reps}`,
+      // A timed movement or an open slot has no sets×reps: "0×null" was what
+      // the rack screen and the checklist printed for a treadmill walk.
+      target: e.minutes != null && Number(e.minutes) > 0 ? `${e.minutes} min`
+        : target && e.reps != null ? `${target}×${e.reps}`
+        : target ? `${target} sets` : 'open',
       sets: target,
       done: Math.min(done, target),
       complete: target > 0 && done >= target,

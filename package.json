@@ -6,7 +6,8 @@
   "description": "WROUGHT — the honest personal trainer that lives inside your AI. MCP server, Supabase memory, wearable ingest.",
   "scripts": {
     "test": "node scripts/build-all-sql.mjs && node scripts/undeclared.mjs netlify/functions/*.js netlify/functions/lib/*.js public/*.html && node test/harness.mjs && node test/workout-clock.mjs",
-    "sql": "node scripts/build-all-sql.mjs"
+    "sql": "node scripts/build-all-sql.mjs",
+    "sim": "node --import ./test/fakedb/register.mjs test/sim/run.mjs --out sim-report.json"
   },
   "dependencies": {
     "@resvg/resvg-wasm": "2.6.2",

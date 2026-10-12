@@ -3635,6 +3635,51 @@ it guards cannot tell a working reply from a broken one.**
 - The calorie rule also rides `log`'s input schema (`detail`), which reaches
   the Action uncut; the 300-character `log` description is untouched.
 
+### Seven thousand scenarios — the simulator, and what it found in a product that "worked"
+
+`test/sim/` + `npm run sim` + the upgraded `test/fakedb/`. The founder: *"I want you to simulate 1000 or more scenarios — everything from sign up to texting to selling to buying, plus the stuff I'm not thinking of — to test the system. Tell me what we need, to be honest."*
+
+**The full run is 7,245 scenarios and 22,072 calls through the real handlers.** Fifteen people (the founder's own shape, a brand-new account, a small woman, Kolkata at +5:30, Kathmandu at +5:45, Kiritimati at +14, Pago Pago at −11, St John's at −3:30, 88 and 15 years old, sex not given, an athlete, a zone that does not exist, very large, very small). Six histories (none, a week, ninety days, a thin care-flag month, a messy one with nulls, `"~400"`, a shift filed as a workout, duplicates, dictation and a future-dated row, two full years). Four callers (a plain session token, Claude, ChatGPT with three connections, ChatGPT sending a `link_id`). They run the MCP handler over HTTP, the `api-*` doors, ingest, Siri, every OAuth step, the scheduler at all three slots, Actions and the picture renderer. On top of that, 6,240 fuzz calls send every tool its schema's wrong shapes and a list of hostile strings. Every reply is scanned for `NaN`, `undefined`, `[object Object]`, `Infinity`, `Invalid Date`, the epoch, `null×null`, a leaked JavaScript error, negative calories and unrounded decimals, skipping text that only echoes what was sent. Every view is drawn through `cardTree`. `--smoke` (about 490 scenarios, seconds) runs in `npm test`, and a test asserts it finds nothing.
+
+**Ten faults, most severe first. None had been reported, because each one looked like working software:**
+
+- **Any registered client could run code on wrought.fit.** Registration is open by design, because that is how ChatGPT and Claude add a connector, and `redirect_uris` was stored unchecked. A client registered with `javascript:` as its address got a Connect page that, after sign-in, navigated to it, which RUNS it on wrought.fit, where the person's session is kept. One tap, and somebody else holds the record. `redirectRefusal()` in `lib/redirect.js` follows OAuth 2.1 and RFC 8252: https anywhere; plain http to this machine only; a native app's private scheme; never a scheme that runs, embeds or opens something; no fragment; no credentials. It is checked at registration, again when a code is minted (for anything registered before the rule), and a third time on `authorize.html` before it navigates. The only client on the live database is ChatGPT's https address, which passes; nothing was exploited.
+- **One session, three workouts.** Two closes at once (ChatGPT answering "I'm done" through each connection, the rack screen's End tapped while the chat says it, the sweep landing on the same minute) each read the session as active and each filed a workout. The weekly count, the one number the plan rests on, read three. `finaliseSession` now CLAIMS the session in one conditional update (active → done). Only the call that moved it files the workout, a call that finds it already moved says *"already filed, nothing filed twice"*, and a failed insert hands the session back.
+- **"Chips at 11pm", said at half past midnight, was filed 22 hours in the future**, under the new day. Something eaten is in the past, so a stated time more than half an hour ahead of now is last night. `"25:00"` is not a time and lands now.
+- **An unknown timezone filed by UTC while the profile said Toronto.** `getProfile` reads an unknown zone as the default and marks it `_timezone_unknown`. `set_profile` refuses one by name, along with a height outside 100–250 cm, a birth year outside 1900 to ten years ago, and `train_days` over 7. The rest of the call still saves, and the reply says what did not.
+- **A weigh-in of 1,500 kg was kept** ("one fifty" misheard) and re-based the resting burn, the calorie target and the protein target. Outside 20–400 kg, the dashboard's own bounds, it is refused and asked again.
+- **A negative reading at ingest was stored** and subtracted from every total built on that day. Nothing this door carries goes below zero, so a negative is a broken sender and is dropped.
+- **A treadmill walk read `undefined×undefined`** in `list_routines`, `start_session` and the `save_routine` readback, and `0×null` / `null×null` on the checklist and the rack screen. `movementLine()` is the one renderer: minutes, sets×reps, sets alone, or *"not set"*. A set logged with no plan reads *"open"*.
+- **A year of `progress` was a quarter of a megabyte**, enough to crowd the conversation out of ChatGPT's context. Past 62 days each series is weekly means of its LOGGED days (`weeklyMeans`; an unlogged day is never averaged in as zero), and the device matrix is the last 60 days. Both are said so on the reply.
+- **`set_eating_window` relayed Postgres's own error** for *"8ish"*. `clockOf()` reads 8pm, 20:00, noon and midnight; anything else gets a sentence back.
+- **`drop_gym` with no name** matched the first place on file by substring. It asks which.
+
+**The fuzz found no crash**: zero server errors across 22,072 calls, every refusal a sentence.
+
+**The fake had to become a database before it could find any of that.** Three false positives came from the fake, not the product, and each one is now modelled. (1) It returned the same user object to every caller, so one sign-in's `via` leaked into the next and ChatGPT's picture appeared on a plain reply. Copies now. (2) It ignored column lists, so a listing "returned" a hash the real query never selects. It projects now. (3) It had no unique indexes, so a retried tick "landed twice". `UNIQUE` now mirrors the schema with Postgres's semantics: NULLs distinct, partial indexes, error `23505`. Column defaults, upsert conflict targets, `not` / `ilike` / `contains` / `overlaps` and the admin auth calls are modelled too. **A simulator is only as honest as its fake**: every finding was reproduced against the real code path before it was called a bug, and every fix was mutation-tested. Put back each of the eight code faults and the run fails on it.
+
+**What it cannot see, and the report says so:**
+
+- what a real model does with a reply, including ChatGPT's frozen tool list and its account picker;
+- the iPhone, HealthKit, the Watch, and whether ChatGPT on a phone draws `card_image`;
+- real Postgres: RLS, triggers, and the `rpc` functions behind merging and code redemption, which the fake answers with null;
+- latency;
+- a DST transition (the clock is real);
+- push and email delivery.
+
+**And it measured what nobody had:**
+
+- `tools/list` is about 102KB, carried by every ChatGPT chat.
+- `get_profile` has a median of about 22KB; `get_day` and `brief` run 17–30KB.
+- `brief` can make 34 queries.
+- The 1d dashboard is about 117KB, 68KB of it the static styles and traditions, re-sent on every ninety-second refresh.
+- 400 days of a two-year record is about 661KB on the dashboard.
+- Export of that record is about 3MB.
+
+None of those is a bug; all of them are the next thing to trim.
+
+**"Selling and buying" do not exist here**, and the report says so rather than inventing a test for them. Memberships are manual codes, with no payment processor. A marketplace is Revolv, a different product in a different repo.
+
 ### The standing coach shapes the day — rhythm and register, never food, never more
 
 `STYLE_DAYS` in `lib/voices.js` + `coachDay()` / `coachRegister()` /
@@ -6505,7 +6550,7 @@ self-reporting scale removes the most-abandoned manual entry), then Strava.
 
 ## Conventions
 
-- `npm test` runs `test/harness.mjs` — 894 offline tests, no network, no database.
+- `npm test` runs `test/harness.mjs` — 901 offline tests, no network, no database.
   Run it before every push. It covers the JSON-RPC envelope (which fails as an
   uninformative "could not connect" inside ChatGPT) and all the arithmetic
   (which fails as a confidently wrong number in somebody's verdict).

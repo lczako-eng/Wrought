@@ -322,6 +322,10 @@ export function normalise(metric, value, unit) {
   const u = String(unit || '').toLowerCase();
   let v = looseNumber(value);
   if (!Number.isFinite(v)) return null;
+  // Nothing this door carries can be below zero — steps, energy, distance,
+  // heart rate, weight, glucose, sleep, a percentage. A negative is a broken
+  // sender, and a stored one subtracts from every total built on the day.
+  if (v < 0) return null;
 
   if (metric === 'weight_kg') {
     if (u === 'lb' || u === 'lbs' || u === 'pounds') v = v / 2.2046226;

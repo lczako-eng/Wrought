@@ -17,6 +17,7 @@
 // and every call still carries their own token.
 
 import { supabase, newToken, hashToken } from './lib/wrought.js';
+import { redirectRefusal } from './lib/redirect.js';
 import { randomBytes } from 'node:crypto';
 
 const CORS = {
@@ -43,6 +44,13 @@ export const handler = async (event) => {
   if (!redirectUris.length) {
     return { statusCode: 400, headers: CORS,
       body: JSON.stringify({ error: 'invalid_redirect_uri', error_description: 'redirect_uris is required' }) };
+  }
+  // Every address is checked before anything is stored: a `javascript:` one
+  // would run on wrought.fit the moment somebody tapped Connect.
+  const refused = redirectUris.map(u => [u, redirectRefusal(u)]).find(([, why]) => why);
+  if (refused) {
+    return { statusCode: 400, headers: CORS,
+      body: JSON.stringify({ error: 'invalid_redirect_uri', error_description: `redirect_uri refused: ${refused[1]}.` }) };
   }
 
   const clientId = `wrought_${randomBytes(16).toString('hex')}`;

@@ -175,6 +175,21 @@ function request() {
 
 function fail(text) { $('msg').className = 'msg err'; $('msg').textContent = text; }
 
+// The same rule as the server's lib/redirect.js, kept here so this page never
+// navigates somewhere that runs code even if a stale client slipped through.
+function safeRedirect(uri) {
+  const raw = String(uri || '').trim();
+  if (!raw || raw.length > 2000 || /[\u0000-\u0020\u007f]/.test(raw)) return false;
+  let u;
+  try { u = new URL(raw); } catch { return false; }
+  const scheme = u.protocol.toLowerCase();
+  const never = ['javascript:', 'data:', 'vbscript:', 'file:', 'blob:', 'about:', 'filesystem:', 'ws:', 'wss:', 'ftp:', 'mailto:', 'tel:', 'sms:', 'intent:', 'view-source:', 'chrome:', 'jar:'];
+  if (never.includes(scheme) || u.hash || u.username || u.password) return false;
+  if (scheme === 'https:') return !!u.hostname;
+  if (scheme === 'http:') return ['localhost', '127.0.0.1', '[::1]', '::1'].includes(u.hostname.toLowerCase());
+  return /^[a-z][a-z0-9+.-]*:$/.test(scheme);
+}
+
 async function start() {
   if (!sb) return fail('This deploy is missing its Supabase keys.');
   const req = request();
@@ -184,6 +199,12 @@ async function start() {
   // client that cannot do that — the decision is made where the secret is.
   if (!req?.client_id || !req?.redirect_uri) {
     return fail('This link is missing its authorization parameters. Start the connection again from your AI client.');
+  }
+  // The address this page will send you back to is checked before anything
+  // else happens — the same rule the server holds (lib/redirect.js). A
+  // `javascript:` address would RUN here, where your sign-in is kept.
+  if (!safeRedirect(req.redirect_uri)) {
+    return fail('This connection asks to send you somewhere that is not a safe address, so it was stopped. Start the connection again from your AI client.');
   }
 
   // A friendly name beats a raw client id in the one sentence anybody reads.
@@ -438,6 +459,7 @@ async function complete(accessToken, req) {
 
   sessionStorage.removeItem(STASH);
   sessionStorage.removeItem(CHOSE);
+  if (!safeRedirect(req.redirect_uri)) return fail('This connection asks to send you somewhere that is not a safe address, so it was stopped.');
   const back = new URL(req.redirect_uri);
   back.searchParams.set('code', out.code);
   if (req.state) back.searchParams.set('state', req.state);
