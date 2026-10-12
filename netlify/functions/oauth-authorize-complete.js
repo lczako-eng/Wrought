@@ -11,6 +11,7 @@
 // minted somewhere the client cannot wrought one.
 
 import { supabase, hashToken, newToken, mfaSatisfied } from './lib/wrought.js';
+import { redirectRefusal } from './lib/redirect.js';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -75,6 +76,13 @@ export const handler = async (event) => {
   if (!client.redirect_uris.includes(redirect_uri)) {
     return { statusCode: 400, headers: CORS,
       body: JSON.stringify({ error: 'invalid_grant', error_description: 'redirect_uri does not match this client.' }) };
+  }
+  // Checked again here, for anything registered before the rule existed: the
+  // page sends the browser to this address the moment the code comes back.
+  const unsafe = redirectRefusal(redirect_uri);
+  if (unsafe) {
+    return { statusCode: 400, headers: CORS,
+      body: JSON.stringify({ error: 'invalid_request', error_description: `redirect_uri refused: ${unsafe}.` }) };
   }
 
   // NO CHALLENGE IS ONLY ALLOWED FOR A CLIENT THAT CAN KEEP A SECRET. A public

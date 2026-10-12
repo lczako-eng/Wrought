@@ -298,9 +298,20 @@ const DEFAULT_PROFILE = {
   bluntness: 'honest', notes: null,
 };
 
+/** True when the platform knows the zone — "America/Toronto", never "Eastern". Pure. */
+export function validTimezone(tz) {
+  if (typeof tz !== 'string' || !tz.trim()) return false;
+  try { new Intl.DateTimeFormat('en', { timeZone: tz }); return true; } catch { return false; }
+}
+
 export async function getProfile(userId) {
   const { data } = await supabase.from('wrought_profile').select('*').eq('user_id', userId).maybeSingle();
-  return { ...DEFAULT_PROFILE, ...(data || {}), user_id: userId, _exists: !!data };
+  const p = { ...DEFAULT_PROFILE, ...(data || {}), user_id: userId, _exists: !!data };
+  // A zone the platform does not know made every date fall back to UTC — a
+  // late-night snack filed under tomorrow — while the default profile says
+  // Toronto. One answer: an unknown zone reads as the default, and says so.
+  if (!validTimezone(p.timezone)) { p._timezone_unknown = p.timezone ?? null; p.timezone = DEFAULT_PROFILE.timezone; }
+  return p;
 }
 
 export async function getMemory(userId, category) {
@@ -1787,10 +1798,20 @@ export function eventTimestamp(e = {}, profile = {}, now = new Date()) {
     if (Number.isFinite(t.getTime())) return t;
   }
   if (e.time_hint && /^\d{1,2}:\d{2}$/.test(e.time_hint)) {
-    // Anchor a stated time to today in the user's zone by nudging off "now".
+    const [h, m] = e.time_hint.split(':').map(Number);
+    // "25:00" is not a time; it filed a meal under tomorrow. Ignored, and the
+    // entry lands now, like one said with no time at all.
+    if (!(h <= 23 && m <= 59)) return now;
+    // Anchor a stated time to today in the user's zone by nudging off "now"…
     const wantMin = minutesFromTime(e.time_hint);
     const nowMin  = localMinutesFor(profile.timezone, now);
-    return new Date(now.getTime() + (wantMin - nowMin) * 60000);
+    let delta = wantMin - nowMin;
+    // …unless that is still to come. Something eaten is in the past: "chips at
+    // 11pm" said at half past midnight is LAST night, not 22 hours from now —
+    // which filed it under the new day and put a meal in the future. Half an
+    // hour of grace for a clock running a little behind.
+    if (delta > 30) delta -= 1440;
+    return new Date(now.getTime() + delta * 60000);
   }
   return now;
 }

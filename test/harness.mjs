@@ -19621,6 +19621,95 @@ await test('a ChatGPT fitness reply carries its card as a picture, and only the 
   assert.match(PIC.LINK.pictureAlt({ kind: 'fitness', vo2: { figure: '31.4', level: 'Low' } }), /^Wrought fitness card — VO2 max 31\.4 — Low$/);
 });
 
+// ── The scenario simulator, and what it found ─────────────────────────────
+// test/sim drives the real handlers — MCP over HTTP, the website's doors, the
+// phone's ingest and Siri doors, the OAuth sign-in, the scheduler — through
+// thousands of scenarios on the in-memory database. The full run is
+// `npm run sim`; a smoke slice runs here and must report nothing.
+await test('the scenario simulator\'s smoke run finds nothing', () => {
+  const out = execFileSyncTop(process.execPath, ['--import', new URL('./fakedb/register.mjs', import.meta.url).pathname,
+    new URL('./sim/run.mjs', import.meta.url).pathname, '--smoke'], { encoding: 'utf8', maxBuffer: 32 * 1024 * 1024, timeout: 180000 });
+  const line = out.split('\n').find(l => l.startsWith('SIM '));
+  assert.ok(line, `the simulator printed nothing:\n${out.slice(-2000)}`);
+  const sum = JSON.parse(line.slice(4));
+  assert.ok(sum.scenarios >= 400, `only ${sum.scenarios} scenarios ran`);
+  assert.equal(sum.issueKinds, 0, `the simulator found ${sum.issueCount} issue(s):\n${out.split('\n').slice(1, 40).join('\n')}`);
+});
+
+await test('a sign-in may only send somebody back to a safe address', async () => {
+  const { redirectRefusal } = await import('../netlify/functions/lib/redirect.js');
+  for (const ok of ['https://chatgpt.com/connector/oauth/qqpAnGI7qqfx', 'https://claude.ai/api/mcp/auth_callback', 'http://localhost:6274/oauth/callback', 'http://127.0.0.1:33418/', 'cursor://anysphere.cursor-retrieval/oauth/callback', 'com.example.app:/oauth2redirect']) {
+    assert.equal(redirectRefusal(ok), null, `${ok} was refused`);
+  }
+  for (const bad of ['javascript:alert(document.cookie)//', 'JavaScript:alert(1)', ' javascript:alert(1)', 'java\tscript:alert(1)', 'data:text/html,<script>alert(1)</script>', 'vbscript:msgbox', 'file:///etc/passwd', 'http://evil.example.com/cb', 'https://chatgpt.com/cb#frag', 'https://user:pass@chatgpt.com/cb', 'blob:https://x/y', 'intent://x#Intent;end', '', 'not a url']) {
+    assert.ok(redirectRefusal(bad), `${JSON.stringify(bad)} was allowed`);
+  }
+  // The page holds the same rule, and the minting endpoint checks it again.
+  const page = readFileSync(new URL('../public/authorize.html', import.meta.url), 'utf8');
+  assert.match(page, /function safeRedirect\(uri\)/);
+  assert.ok((page.match(/safeRedirect\(req\.redirect_uri\)/g) || []).length >= 2, 'the page does not check the address before it navigates');
+  assert.match(readFileSync(new URL('../netlify/functions/oauth-authorize-complete.js', import.meta.url), 'utf8'), /redirectRefusal\(redirect_uri\)/);
+  assert.match(readFileSync(new URL('../netlify/functions/oauth-register.js', import.meta.url), 'utf8'), /redirectRefusal\(u\)/);
+});
+
+await test('a stated time still to come is last night, and an impossible one is ignored', () => {
+  const { eventTimestamp } = WCARD.WR;
+  const profile = { timezone: 'UTC' };
+  const now = new Date('2026-10-12T00:30:00Z');
+  const chips = eventTimestamp({ time_hint: '23:00' }, profile, now);
+  assert.equal(chips.toISOString(), '2026-10-11T23:00:00.000Z', '"chips at 11pm" said at 12:30am went into the future');
+  assert.equal(eventTimestamp({ time_hint: '00:20' }, profile, now).toISOString(), '2026-10-12T00:20:00.000Z');
+  assert.equal(eventTimestamp({ time_hint: '00:50' }, profile, now).toISOString(), '2026-10-12T00:50:00.000Z', 'half an hour of grace for a slow clock');
+  assert.equal(eventTimestamp({ time_hint: '25:00' }, profile, now).toISOString(), now.toISOString());
+  assert.equal(eventTimestamp({ time_hint: '12:75' }, profile, now).toISOString(), now.toISOString());
+});
+
+await test('a zone the platform does not know is never stored, and reads as the default', async () => {
+  const { validTimezone } = WCARD.WR;
+  assert.equal(validTimezone('America/Toronto'), true);
+  assert.equal(validTimezone('Eastern'), false);
+  assert.equal(validTimezone('Mars/Olympus_Mons'), false);
+  assert.equal(validTimezone(''), false);
+  const src = decomment(readFileSync(new URL('../netlify/functions/mcp.js', import.meta.url), 'utf8'));
+  assert.match(src, /if \(patch\.timezone !== undefined && !validTimezone\(patch\.timezone\)\)/);
+  assert.match(decomment(readFileSync(new URL('../netlify/functions/lib/wrought.js', import.meta.url), 'utf8')), /if \(!validTimezone\(p\.timezone\)\)/);
+});
+
+await test('a movement reads as itself — never "undefined×undefined" or "0×null"', async () => {
+  const { movementLine, weeklyMeans, clockOf } = WCARD.MCP;
+  assert.equal(movementLine({ name: 'Bench press', sets: 3, reps: 8 }), 'Bench press 3×8');
+  assert.equal(movementLine({ name: 'Incline treadmill walk', minutes: 20, detail: 'level 10+, 2.5-3 mph' }), 'Incline treadmill walk 20 min (level 10+, 2.5-3 mph)');
+  assert.equal(movementLine({ name: 'Plank' }), 'Plank — not set');
+  const { sessionProgress } = await import('../netlify/functions/lib/warmup.js');
+  const sp = sessionProgress([{ name: 'Treadmill', minutes: 20, sets: 0 }, { name: 'Bench', sets: 3, reps: 8 }, { name: 'Open', sets: null }], []);
+  assert.deepEqual(sp.exercises.map(e => e.target), ['20 min', '3×8', 'open']);
+  // A year is read in weeks, and an unlogged day is never averaged in as zero.
+  const pts = Array.from({ length: 14 }, (_, i) => ({ date: `2026-01-${String(i + 1).padStart(2, '0')}`, value: i < 7 ? (i % 2 ? 100 : null) : 200 }));
+  assert.deepEqual(weeklyMeans(pts), [{ week_of: '2026-01-01', value: 100, days: 3 }, { week_of: '2026-01-08', value: 200, days: 7 }]);
+  // An eating window is a clock the database can take.
+  assert.equal(clockOf('8pm'), '20:00');
+  assert.equal(clockOf('12am'), '00:00');
+  assert.equal(clockOf('xxxxxxxx'), null);
+  assert.equal(clockOf('25:00'), null);
+});
+
+await test('a weigh-in outside a body\'s range, or a negative reading from a phone, is never kept', async () => {
+  const src = decomment(readFileSync(new URL('../netlify/functions/mcp.js', import.meta.url), 'utf8'));
+  assert.match(src, /if \(!\(kg >= 20 && kg <= 400\)\)/);
+  const { normalise } = await import('../netlify/functions/ingest.js');
+  assert.equal(normalise('steps', -500, 'count'), null);
+  assert.equal(normalise('active_calories', -1, 'kcal'), null);
+  assert.equal(normalise('steps', 8421, 'count')?.value, 8421);
+});
+
+await test('one session closed from two places at once files one workout', () => {
+  const src = decomment(readFileSync(new URL('../netlify/functions/lib/session.js', import.meta.url), 'utf8'));
+  assert.match(src, /\.update\(\{ status: 'done' \}\)\.eq\('id', session\.id\)\.eq\('status', 'active'\)\.select\('id'\)/);
+  assert.match(src, /return \{ closed: false, already: true/);
+  // A workout that did not land hands the session back.
+  assert.match(src, /update\(\{ status: 'active' \}\)\.eq\('id', session\.id\)/);
+});
+
 // ── Report ──────────────────────────────────────────────────────────────────
 
 console.log(results.join('\n'));

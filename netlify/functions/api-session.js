@@ -81,6 +81,8 @@ export const handler = async (event) => {
       return json(200, { ok: true, ended: true, ...(done || {}),
         say: done?.empty
           ? 'Session closed. Nothing was logged in it, so nothing was filed — an empty session is never turned into a workout.'
+          : done?.already
+          ? 'Already filed a moment ago — nothing was filed twice.'
           : `Filed: ${done?.sets} sets, ${done?.minutes} min.` });
     }
 

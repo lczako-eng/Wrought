@@ -22,7 +22,7 @@ import {
   getProfile, getMemory, getGoals, getWindow, windowStatus,
   dayFacts, rangeFacts, summariseRange, scoreGoals, careFlags, CARE_WINDOW_DAYS, lastDays,
   parseLog, eventsFromClient, needsMacros, macrosMissing, needsDuration, matchEntries, duplicateItems, setupNeeded, insertEvents, eventTimestamp, writeVerdict, rememberFact,
-  fastLength, fastingSummary, macroLine, itemFigures, clock12,
+  fastLength, fastingSummary, macroLine, itemFigures, clock12, validTimezone,
 } from './lib/wrought.js';
 import { createHash } from 'node:crypto';
 import { profileIdFor, connectionFacts, connectedAccountsBlock, stampConnected } from './lib/connections.js';
@@ -2021,6 +2021,12 @@ async function logWeight(args, user) {
 
   const unit = args.unit || (profile.units === 'imperial' ? 'lb' : 'kg');
   const kg = unit === 'lb' ? lbToKg(value) : Math.round(value * 100) / 100;
+  // The same bounds the dashboard's form holds: a weight outside them is a
+  // mishearing ("one fifty" as 1,500), and a kept one re-bases the resting
+  // burn, the calorie target and the protein target off a body nobody has.
+  if (!(kg >= 20 && kg <= 400)) {
+    return { error: 'out_of_range', say: `${value} ${unit} is outside what a weigh-in can be (20–400 kg, 44–880 lb), so it was NOT kept. Say the number again — "one eighty five pounds".` };
+  }
 
   await insertEvents(user.id, profile, [{
     event_type: 'weight',
@@ -3037,7 +3043,7 @@ async function trainerStyles(args, user) {
       ...(written ? {
         written: {
           name: written.name, est_minutes: written.est_minutes, notes: written.notes,
-          movements: (written.exercises || []).map(e => e.minutes ? `${e.name} ${e.minutes} min` : `${e.name} ${e.sets}\u00d7${e.reps}`),
+          movements: (written.exercises || []).map(movementLine),
         },
         in_your_workouts: inYours,
       } : {}),
@@ -3071,6 +3077,7 @@ async function trainerStyles(args, user) {
 async function dropGym(args, user) {
   const places = await listPlaces(user.id);
   const wanted = String(args.name || '').trim().toLowerCase();
+  if (!wanted) return { error: 'no_name', say: `Which place? On file: ${places.map(p => p.name).join(', ') || 'none'}.` };
   const hit = places.find(p => p.name.toLowerCase() === wanted) || places.find(p => p.name.toLowerCase().includes(wanted) && wanted.length > 2);
   if (!hit) return { error: 'no_match', say: `Nothing on file called "${args.name}". Places: ${places.map(p => p.name).join(', ') || 'none'}.` };
   const { error } = await supabase.from('wrought_places').update({ active: false }).eq('id', hit.id).eq('user_id', user.id);
@@ -3810,6 +3817,33 @@ async function getDay(args, user) {
   };
 }
 
+/**
+ * One movement as a person reads it: "Bench press 3×8", "Incline treadmill
+ * walk 20 min (level 10+, 2.5-3 mph)". A timed movement has no sets or reps,
+ * and printing them anyway read "undefined×undefined" on the founder's own
+ * S-Tier — found by the scenario simulator. Pure.
+ */
+export function movementLine(e = {}) {
+  const name = String(e.name || 'Movement');
+  const detail = e.detail ? ` (${e.detail})` : '';
+  if (e.minutes != null && Number(e.minutes) > 0) return `${name} ${e.minutes} min${detail}`;
+  if (e.sets != null && e.reps != null) return `${name} ${e.sets}×${e.reps}${detail}`;
+  if (e.sets != null) return `${name} ${e.sets} sets${detail}`;
+  return `${name}${detail || ' — not set'}`;
+}
+
+/** Daily points as weekly means of the days that hold a figure, oldest first. Pure. */
+export function weeklyMeans(points, decimals = 0) {
+  const out = [];
+  for (let end = points.length; end > 0; end -= 7) {
+    const week = points.slice(Math.max(0, end - 7), end);
+    const vals = week.map(p => p.value).filter(v => v != null && Number.isFinite(Number(v))).map(Number);
+    const f = 10 ** decimals;
+    out.unshift({ week_of: week[0].date, value: vals.length ? Math.round((vals.reduce((n, v) => n + v, 0) / vals.length) * f) / f : null, days: vals.length });
+  }
+  return out;
+}
+
 async function progress(args, user) {
   const profile = await getProfile(user.id);
   const to   = args.to || localDateFor(profile.timezone);
@@ -3845,9 +3879,17 @@ async function progress(args, user) {
     steps:    range.days.map(d => ({ date: d.date, value: d.steps })),
     sleep:    range.days.map(d => ({ date: d.date, value: d.sleep_minutes })),
   };
+  // A YEAR IS READ IN WEEKS. Four hundred daily points across six series was
+  // a quarter of a megabyte handed to a model that only needs the shape —
+  // enough to crowd the conversation out of ChatGPT's context. Past two months
+  // each series is the mean of its LOGGED days per week (an unlogged day is
+  // never averaged in as zero), and says so.
+  const bucket = span > 62 ? 'week' : 'day';
+  if (bucket === 'week') for (const k of Object.keys(series)) series[k] = weeklyMeans(series[k], k === 'weight' ? 1 : 0);
 
   return {
     from, to, span_days: span,
+    series_bucket: bucket,
     units: profile.units,
     weight_unit: profile.units === 'imperial' ? 'lb' : 'kg',
     summary: {
@@ -3868,7 +3910,10 @@ async function progress(args, user) {
     },
     weight_trend: summary.weight,
     training_matrix: summary.matrix,
-    device_matrix: deviceMatrix(range.days),
+    // Day by day, the matrix is for reading recent weeks; past two months its
+    // cells were most of a quarter-megabyte reply. The last 60 days, said so.
+    device_matrix: deviceMatrix(bucket === 'week' ? range.days.slice(-60) : range.days),
+    ...(bucket === 'week' ? { device_matrix_days: 60 } : {}),
     weekday_pattern: weekdayPattern(range.days),
     exercise_order: order,
     series,
@@ -4502,7 +4547,7 @@ async function startSession(args, user) {
     // order, and the reason it is in that order — losing the third makes it a
     // list, which is the thing people already have on their phone.
     routine_notes: routine?.notes || null,
-    exercises: plan.map(e => `${e.name} — ${e.sets}×${e.reps}`),
+    exercises: plan.map(movementLine),
     checklist: planChecklist(plan, 0, 0),
     progress: sessionProgress(plan, []),
     total_exercises: plan.length,
@@ -4594,7 +4639,11 @@ async function loadCallFor(userId, exercise, tier) {
 function planChecklist(plan, cursor, setsDoneHere = 0) {
   return plan.map((e, i) => ({
     exercise: e.name,
-    target: `${e.sets}\u00d7${e.reps}`,
+    // An open slot (a set logged with no plan) or a timed movement has no
+    // sets×reps; printing them read "null×null" mid-workout.
+    target: e.minutes != null && Number(e.minutes) > 0 ? `${e.minutes} min`
+      : e.sets != null && e.reps != null ? `${e.sets}\u00d7${e.reps}`
+      : e.sets != null ? `${e.sets} sets` : 'open — as many as you do',
     status: i < cursor ? 'done' : i === cursor ? 'current' : 'to_come',
     // A tick per line, so the checklist reads the same in a conversation as it
     // looks on the Trainer screen. Two representations of one thing that do
@@ -5197,6 +5246,10 @@ async function endSession(args, user) {
     note: args.note || null, closedBy: 'user', endedAt: new Date().toISOString(),
   });
 
+  if (done?.already) {
+    return { ended: true, already_filed: true, event_id: done.event_id,
+      say: 'That session was already closed and filed a moment ago — from another connection or the rack screen. Nothing was filed twice.' };
+  }
   if (!done?.closed) {
     return { ended: true, sets: 0,
       say: 'Session closed. Nothing was logged in it, so there is nothing to file.' };
@@ -5667,7 +5720,7 @@ async function listRoutines(_args, user) {
     exercises: (r.exercises || []).length,
     // The movements themselves, so "what's in my chest day" is answered from
     // this call rather than from whatever the model remembers of last week.
-    movements: (r.exercises || []).map(e => `${e.name} ${e.sets}\u00d7${e.reps}`),
+    movements: (r.exercises || []).map(movementLine),
     sets: (r.exercises || []).reduce((a, e) => a + (Number(e.sets) || 0), 0),
     notes: r.notes || null,
     minutes: r.est_minutes,
@@ -6032,6 +6085,18 @@ async function setProfile(args, user) {
   for (const f of fields) if (args[f] !== undefined) patch[f] = args[f];
   if (!Object.keys(patch).length) return { error: 'Nothing to save.' };
 
+  // Verified, never trusted — the same checks the website's form makes. A
+  // zone the platform does not know files every late snack under tomorrow; a
+  // height or birth year off by a keystroke prices a burn for a body nobody
+  // has. Each refusal names its field, so nothing else in the call is lost.
+  const refused = [];
+  if (patch.timezone !== undefined && !validTimezone(patch.timezone)) { refused.push(`timezone "${String(patch.timezone).slice(0, 40)}" is not a zone the platform knows — use one like America/Toronto or Europe/London`); delete patch.timezone; }
+  if (patch.height_cm != null && !(Number(patch.height_cm) >= 100 && Number(patch.height_cm) <= 250)) { refused.push('height_cm must be between 100 and 250 (centimetres)'); delete patch.height_cm; }
+  const thisYear = new Date().getUTCFullYear();
+  if (patch.birth_year != null && !(Number.isInteger(Number(patch.birth_year)) && Number(patch.birth_year) >= 1900 && Number(patch.birth_year) <= thisYear - 10)) { refused.push(`birth_year must be a year between 1900 and ${thisYear - 10}`); delete patch.birth_year; }
+  if (patch.train_days != null && !(Number.isInteger(Number(patch.train_days)) && Number(patch.train_days) >= 0 && Number(patch.train_days) <= 7)) { refused.push('train_days must be 0 to 7'); delete patch.train_days; }
+  if (!Object.keys(patch).length) return { error: 'not_saved', say: `Nothing was saved: ${refused.join('; ')}.` };
+
   // Checked here so a bad hour comes back as a sentence rather than a Postgres
   // constraint violation. The nightly send reads this per user, in their own
   // zone — 9pm is a different instant for everybody, which is why the function
@@ -6114,8 +6179,11 @@ async function setProfile(args, user) {
 
   return {
     saved: Object.keys(patch).filter(k => !['user_id','updated_at'].includes(k)),
-    say: 'Saved.',
-    note: 'Acknowledge in a few words and move on. Do not read the whole profile back at them.',
+    ...(refused.length ? { not_saved: refused } : {}),
+    say: refused.length ? `Saved the rest — NOT saved: ${refused.join('; ')}.` : 'Saved.',
+    note: refused.length
+      ? 'Say what was not saved and why, in one line, and ask for that one figure again. Never report a clean save.'
+      : 'Acknowledge in a few words and move on. Do not read the whole profile back at them.',
   };
 }
 
@@ -6238,11 +6306,32 @@ async function dropGoal(args, user) {
   };
 }
 
+/** "20:00", "8pm", "8:30 pm", "noon" → "HH:MM", or null. Pure. */
+export function clockOf(v) {
+  const t = String(v ?? '').trim().toLowerCase();
+  if (t === 'noon' || t === 'midday') return '12:00';
+  if (t === 'midnight') return '00:00';
+  const m = t.match(/^(\d{1,2})(?::(\d{2}))?\s*(am|pm|a\.m\.|p\.m\.)?$/);
+  if (!m) return null;
+  let h = Number(m[1]); const min = Number(m[2] || 0);
+  const ap = m[3] ? m[3][0] : null;
+  if (min > 59 || h > 23 || (ap && (h < 1 || h > 12))) return null;
+  if (ap === 'p' && h < 12) h += 12;
+  if (ap === 'a' && h === 12) h = 0;
+  return `${String(h).padStart(2, '0')}:${String(min).padStart(2, '0')}`;
+}
+
 async function setEatingWindow(args, user) {
   const profile = await getProfile(user.id);
   const patch = { user_id: user.id, updated_at: new Date().toISOString() };
-  if (args.opens_at)   patch.opens_at  = args.opens_at;
-  if (args.closes_at)  patch.closes_at = args.closes_at;
+  // A clock the database's time column will take — "20:00", "8pm", "8:30 pm"
+  // — or a sentence back, never Postgres's own error relayed to the person.
+  for (const k of ['opens_at', 'closes_at']) {
+    if (!args[k]) continue;
+    const t = clockOf(args[k]);
+    if (!t) return { error: 'bad_time', say: `"${String(args[k]).slice(0, 40)}" is not a time I can read for ${k === 'opens_at' ? 'when the window opens' : 'when it closes'} — say it like 8pm or 20:00.` };
+    patch[k] = t;
+  }
   if (args.strictness) patch.strictness = args.strictness;
   if (args.active !== undefined) patch.active = !!args.active;
 
