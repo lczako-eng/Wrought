@@ -228,6 +228,7 @@ async function jFirstContact(ctx, c) {
 }
 
 async function jFoodDay(ctx, c, flagged) {
+  const seeded = new Set((F.tables.wrought_events || []).map(e => e.id));
   const b = await rpc(ctx, c, 'log', { text: 'two eggs and toast for breakfast', events: [full('two eggs and toast', 380, 20, 30, 18, 3, 2, 6)] });
   expect(/^Logged in Wrought/.test(b.out?.say || ''), 'logging', 'a written meal is not confirmed with "Logged in Wrought"');
   expect(b.out?.recorded?.length === 1, 'logging', 'one meal sent, not one recorded');
@@ -236,7 +237,8 @@ async function jFoodDay(ctx, c, flagged) {
     expect(!(b.out?.left_today && /\d/.test(JSON.stringify(b.out.left_today))), 'care flag', 'an unprompted log reply quoted what is left under a care flag');
     if (b.out?.meal_score) expect(b.out.meal_score.every(s => s.score == null || (s.softened && !s.to_lift)), 'care flag', 'a meal score offered a swap under a care flag');
   }
-  if (/chatgpt/.test(c)) expect(b.out?.card_image || !b.out?.day_card, 'picture', 'a ChatGPT reply with day_card carried no card_image');
+  // Pictures are off by default (none was ever drawn): ChatGPT gets the table like everybody else.
+  if (/chatgpt/.test(c)) expect(!b.out?.card_image && typeof b.out?.day_card === 'string', 'picture', 'a ChatGPT reply carried a picture, or lost its table, with pictures switched off');
   // Lunch named with no figure.
   const l = await rpc(ctx, c, 'log', { text: 'had a sandwich for lunch', events: [food('a sandwich')] });
   expect(l.out?.estimate_now, 'logging', 'a food with no calories did not ask for an estimate');
@@ -260,7 +262,8 @@ async function jFoodDay(ctx, c, flagged) {
   }
   // The day's rows must all be filed under the person's own date.
   const tz = ctx.persona.tz;
-  const mine = (F.tables.wrought_events || []).filter(e => e.user_id === ctx.uid && e.event_type === 'food' && new Date(e.created_at).getTime() > Date.now() - 60e3);
+  // Only the meals this journey wrote — never a seeded row, whatever its stamps say.
+  const mine = (F.tables.wrought_events || []).filter(e => e.user_id === ctx.uid && e.event_type === 'food' && !seeded.has(e.id));
   for (const e of mine) {
     if (e.summary === 'chips') continue;
     const want = localDate(tz === 'Mars/Olympus_Mons' ? 'America/Toronto' : tz);

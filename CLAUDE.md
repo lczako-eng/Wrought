@@ -3448,6 +3448,47 @@ the mistake. Use a random id for a live test. And a `delete` through the
 Supabase connector timed out twice waiting for a confirmation nobody could give.
 The row was neutralised with an `update` to a header-only view instead.
 
+### The picture was never drawn — switched off, and the table is back
+
+14 October, half a bagel through ChatGPT on his phone: *"Logged in Wrought,
+Broski! Half a bagel — 10:26 AM"*, four bullet points, and his reply: *"No
+border or template or colour like wtf."*
+
+**The record settled it before anything was touched.** `wrought_card_pictures`
+held a row for every ChatGPT log since the picture shipped: 11 October, two on
+the 12th, and the bagel. **`first_seen_at` was null on all four.** A picture a
+chat displays has to be fetched, so none was ever displayed — the test this
+file named in advance (*"if `first_seen_at` stays null after a ChatGPT log, the
+picture is not being drawn: take the gate out and the table returns"*). Whether
+the model dropped the line or ChatGPT refused to fetch it, the server cannot
+tell, and it does not matter: the note told ChatGPT to show the picture
+INSTEAD of the table, so for four days he got neither — just ChatGPT's own
+plain bullets.
+
+- **`picturesOn()` gates the swap, and it is off unless
+  `WROUGHT_CARD_PICTURES=on`.** ChatGPT gets `day_card` and `DAY_CARD_NOTE`
+  like every other client. The machinery stays for the day a ChatGPT is shown
+  to draw one; `first_seen_at` is still the proof, and nothing else is.
+- **Tested both ways** in the scenarios: a ChatGPT log and fitness check with
+  the switch unset carry the table, the note that says to show it, no
+  `card_image` and no picture row; switched on, every earlier picture
+  guarantee still holds. Forcing the switch on fails the new test.
+- **The colour he wants is still not something a reply can carry.** ChatGPT's
+  text is ChatGPT's black and white. The only Wrought-coloured frame is
+  Wrought's own card, which his ChatGPT draws only after reloading the tool
+  list (Refresh, on chatgpt.com in a web browser), and whether the iPhone app
+  draws it then is unverified. The table is the template; the colour waits on
+  that Refresh.
+
+**And the simulator found its own bug the same morning.** Run at 3pm UTC, it
+said two meals in Kiritimati (+14, already 5am tomorrow) were filed under
+yesterday. They were seeded rows, not new ones: the seeding stamped earlier
+days at a fixed UTC hour, which in a +14 zone was **in the future**, so the
+"written in the last minute" check picked them up. Seeded stamps are now never
+later than an hour ago, and the check reads only the rows the journey wrote.
+**A check that finds rows by their clock is only as honest as every clock that
+wrote them.**
+
 ### The meal rated, the engine placed — computed, never ChatGPT's impression
 
 `mealScore()` in `lib/nutrition.js` + `meal_score` on `log` / `structure_entries`
@@ -6550,7 +6591,7 @@ self-reporting scale removes the most-abandoned manual entry), then Strava.
 
 ## Conventions
 
-- `npm test` runs `test/harness.mjs` — 901 offline tests, no network, no database.
+- `npm test` runs `test/harness.mjs` — 902 offline tests, no network, no database.
   Run it before every push. It covers the JSON-RPC envelope (which fails as an
   uninformative "could not connect" inside ChatGPT) and all the arithmetic
   (which fails as a confidently wrong number in somebody's verdict).
