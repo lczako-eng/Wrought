@@ -26,6 +26,7 @@ import {
 } from './lib/wrought.js';
 import { createHash } from 'node:crypto';
 import { profileIdFor, connectionFacts, connectedAccountsBlock, stampConnected } from './lib/connections.js';
+import { markReply } from './lib/mark.js';
 import { allowed } from './lib/membership.js';
 import { pendingVoice } from './lib/voice.js';
 import { activityBurn, EFFORTS, shiftsIn } from './lib/activity.js';
@@ -7071,7 +7072,7 @@ export async function handleRpc(msg, authUser) {
       const gate = await allowed(authUser.id, 'mcp');
       if (!gate.ok) {
         return rpcResult(id, {
-          content: [{ type: 'text', text: JSON.stringify({ error: gate.error, say: gate.message }) }],
+          content: [{ type: 'text', text: JSON.stringify(markReply({ error: gate.error, say: gate.message })) }],
           isError: true,
           ...resultMeta(params.name, { error: gate.error, say: gate.message }, authUser),
         });
@@ -7119,6 +7120,10 @@ export async function handleRpc(msg, authUser) {
           const url = await savePicture(supabase, authUser.id, view);
           if (url) body = pictured(body, pictureMarkdown(url, view), slot);
         }
+        // THE ORANGE SQUARE opens the say line of every reply through an AI
+        // door (lib/mark.js) — on a copy, so the drawn card built from `out`
+        // never picks it up.
+        body = markReply(body);
         // The text the model reads is exactly as it was; Wrought's card rides
         // in the result's _meta, which the card reads and the model does not.
         return rpcResult(id, {
@@ -7140,7 +7145,7 @@ export async function handleRpc(msg, authUser) {
           ? `That did not save — ${err.message}`
           : `WROUGHT could not answer that — ${err.message}`;
         return rpcResult(id, {
-          content: [{ type: 'text', text: JSON.stringify({
+          content: [{ type: 'text', text: JSON.stringify(markReply({
             error: 'tool_failed',
             tool: params.name,
             detail: err.message,
@@ -7148,7 +7153,7 @@ export async function handleRpc(msg, authUser) {
             note: writing
               ? 'NOTHING WAS WRITTEN. Try the same call once more before saying anything; these are usually momentary. If it fails again, tell the user IN FULL what they said is not saved and repeat the detail back so they still have it, and give them the reason above rather than "it is erroring" — a reason can be acted on and an outage cannot.'
               : 'Say what failed and why, in the words above. Never present a failed read as a real answer, and never substitute a number from your own memory of this conversation.',
-          }) }],
+          })) }],
           isError: true,
           ...resultMeta(params.name, { error: 'tool_failed', say: failSay }, authUser),
         });
