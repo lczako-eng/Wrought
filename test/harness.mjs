@@ -18326,20 +18326,20 @@ await test('every food confirmation carries its calories: the time first, the ga
   assert.match(nf.note, /^ESTIMATE_NOW FIRST: /);
   assert.ok(!/call amend_last NOW/.test(nf.note), 'the note still sends the model to amend_last');
   // The time BEFORE the figures, on the 12-hour clock, and the gap in words.
-  assert.match(nf.say, /^Logged in Wrought \(1 thing\): two slices of toasted sourdough with cheese at 1:02pm — not counted yet: no calories on it\. That item counts for nothing in today's total until it has a calorie figure\./);
+  assert.match(nf.say, /^🟧 Logged in Wrought \(1 thing\): two slices of toasted sourdough with cheese at 1:02pm — not counted yet: no calories on it\. That item counts for nothing in today's total until it has a calorie figure\./);
   assert.ok(!/\.\./.test(nf.say), 'a double period');
   // Through ChatGPT's account picker connected_accounts is stamped first —
   // the picker doctrine's order — and estimate_now is the first of log's own.
   assert.deepEqual(S.nofig_link.keys.slice(0, 2), ['connected_accounts', 'estimate_now']);
   // A figure: every number, the time first.
-  assert.match(S.sausage.body.say, /^Logged in Wrought \(1 thing\): Costco restaurant sausage at 3:17pm — 570 kcal · 22g protein · 4g carbs · 52g fat\. Today so far: 570 kcal/);
+  assert.match(S.sausage.body.say, /^🟧 Logged in Wrought \(1 thing\): Costco restaurant sausage at 3:17pm — 570 kcal · 22g protein · 4g carbs · 52g fat\. Today so far: 570 kcal/);
   assert.equal(S.sausage.body.estimate_now, undefined);
   // What is left: said with everything counted, withheld while an item is not
   // — the figure would be too high by the item nobody has priced.
   assert.match(S.left_shown.body.say, /About [\d,]+ left of today's 1,723 target/);
   assert.ok(!/left of today/.test(S.left_held.body.say), S.left_held.body.say);
   // Nothing to amend today: a first mention, and the reading travels with it.
-  assert.match(S.amend_first.body.say, /^Logged in Wrought \(1 thing\): a bagel at [\d:]+[ap]m — 300 kcal · 11g protein · 58g carbs · 2g fat\./);
+  assert.match(S.amend_first.body.say, /^🟧 Logged in Wrought \(1 thing\): a bagel at [\d:]+[ap]m — 300 kcal · 11g protein · 58g carbs · 2g fat\./);
 });
 
 await test('a calorie figure sent as words is no figure — on the row, the card, the day total and the follow-up', () => {
@@ -18381,14 +18381,15 @@ await test('structure_entries: another day\'s entry keeps its figures, a quiet f
   // Yesterday's dictation: 380 kcal on the row, so the reply says 380 — and
   // the day it is on — never "no calories or macros on it yet".
   const p = S.past_fill.body;
-  assert.match(p.say, /^Filled in 1 thing you told the phone: two eggs and toast at 8:30am on [A-Z][a-z]{2} \d{1,2} [A-Z][a-z]{2} — 380 kcal · 18g protein · 30g carbs · 20g fat\.$/);
+  assert.match(p.say, /^🟧 Filled in 1 thing you told the phone: two eggs and toast at 8:30am on [A-Z][a-z]{2} \d{1,2} [A-Z][a-z]{2} — 380 kcal · 18g protein · 30g carbs · 20g fat\.$/);
   assert.ok(!/no calories/.test(p.say), p.say);
   assert.equal(p.entries[0].calories, 380);
   assert.equal(S.past_fill.card.kind, 'stamp', 'yesterday\'s fill drew today\'s card');
-  assert.equal(S.past_fill.card.line, p.say);
+  // The stamp carries the same line WITHOUT the square: the card has the W tile.
+  assert.equal(`🟧 ${S.past_fill.card.line}`, p.say);
   // A quiet fill: the item, no day; no confirmation recital; the stamp the same.
   const q = S.quiet_fill.body;
-  assert.match(q.say, /^Filled in 1 thing: a sausage roll at [\d:]+[ap]m — 330 kcal · 9g protein · 27g carbs · 21g fat\.$/);
+  assert.match(q.say, /^🟧 Filled in 1 thing: a sausage roll at [\d:]+[ap]m — 330 kcal · 9g protein · 27g carbs · 21g fat\.$/);
   assert.ok(!/Today so far/.test(q.say), q.say);
   assert.ok(!/THIS is the confirmation/.test(q.note), q.note);
   assert.match(q.note, /^Caught in passing/);
@@ -19263,7 +19264,7 @@ await test('by default ChatGPT gets the table, never a picture: four were sent a
   assert.equal(r.rows, 0, 'a picture row was written with the switch off');
   assert.equal(typeof r.body.day_card, 'string', 'the table is missing');
   assert.ok(r.body.note.includes(DAY_CARD_NOTE), 'the note does not say to show the table');
-  assert.match(r.body.say, /^Logged in Wrought/);
+  assert.match(r.body.say, /^🟧 Logged in Wrought/);
   // The fitness card likewise stays the table.
   const f = S.gpt_default_fit;
   assert.equal(f.body.card_image, undefined);
@@ -19273,6 +19274,48 @@ await test('by default ChatGPT gets the table, never a picture: four were sent a
   assert.ok(!f.body.note.includes(FITN.FITNESS_PICTURE_NOTE));
   // The gate reads the switch, so turning it on is the only way back to pictures.
   assert.match(decomment(PIC.read('netlify/functions/mcp.js')), /facts\?\.chatgpt && picturesOn\(\) \? pictureSlot\(/);
+});
+
+await test('the orange square opens every AI reply, once, and never reaches the card, the website, the phone or Siri', async () => {
+  const MK = await import('../netlify/functions/lib/mark.js');
+  const { MARK, MARK_NOTE, markReply } = MK;
+  assert.equal(MARK, '🟧');
+  // Marked once, on a copy, with the note carried.
+  const orig = { say: 'Logged in Wrought (1 thing): toast', note: 'Show day_card.', day_card: '### 300 calories' };
+  const m = markReply(orig);
+  assert.equal(m.say, '🟧 Logged in Wrought (1 thing): toast');
+  assert.equal(orig.say, 'Logged in Wrought (1 thing): toast', 'the tool object was changed — the drawn card is built from it');
+  assert.ok(m.note.startsWith('Show day_card.') && m.note.endsWith(MARK_NOTE), 'the note lost its own words or the mark rule');
+  assert.equal(m.day_card, orig.day_card, 'the table was touched');
+  assert.deepEqual(Object.keys(m), Object.keys(orig), 'the key order moved');
+  assert.deepEqual(markReply(m), m, 'marking twice put a second square on');
+  assert.equal(markReply({ say: 'x' }).note, MARK_NOTE);
+  for (const bare of [null, [], 'text', { error: 'x' }, { say: '' }, { say: '   ' }]) assert.deepEqual(markReply(bare), bare);
+  // Through the real handler: ChatGPT and Claude alike, and never in the card.
+  const S = WCARD.scenarios();
+  for (const k of ['gpt_default_log', 'pic_claude', 'sausage']) {
+    assert.ok(S[k].body.say.startsWith('🟧 Logged in Wrought'), `${k}: the reply does not open with the square`);
+    assert.ok(S[k].body.note.includes(MARK_NOTE), `${k}: the note does not ask for the square`);
+  }
+  const card = JSON.stringify(S.gpt_default_log.card || {});
+  assert.ok(S.gpt_default_log.card, 'the scenario carried no drawn card to check');
+  assert.ok(!card.includes('🟧'), 'the drawn card carries the square — it has the W tile');
+  assert.ok(!S.gpt_default_log.body.day_card.includes('🟧'), 'the table carries a second square');
+  // Only the AI doors may use it: every reply leaves through handleRpc's three
+  // exits — the reply, the failure, the suspended account — and nothing else
+  // in the product names the square.
+  const src = decomment(PIC.read('netlify/functions/mcp.js'));
+  assert.match(src, /body = markReply\(body\);\s*return rpcResult/);
+  assert.match(src, /JSON\.stringify\(markReply\(\{\s*error: 'tool_failed'/);
+  assert.match(src, /JSON\.stringify\(markReply\(\{ error: gate\.error, say: gate\.message \}\)\)/);
+  const fsm = await import('node:fs');
+  const files = [
+    ...fsm.readdirSync(new URL('../netlify/functions/', import.meta.url)).filter(f => f.endsWith('.js')).map(f => `netlify/functions/${f}`),
+    ...fsm.readdirSync(new URL('../netlify/functions/lib/', import.meta.url)).filter(f => f.endsWith('.js')).map(f => `netlify/functions/lib/${f}`),
+    ...fsm.readdirSync(new URL('../public/', import.meta.url)).filter(f => /\.(html|js|json)$/.test(f)).map(f => `public/${f}`),
+  ];
+  const users = files.filter(f => PIC.read(f).includes('🟧') || /from '\.\/lib\/mark\.js'|from '\.\/mark\.js'/.test(PIC.read(f)));
+  assert.deepEqual(users.sort(), ['netlify/functions/lib/mark.js', 'netlify/functions/mcp.js'], 'the square appears outside the AI doors');
 });
 
 await test('switched on, a ChatGPT reply that carries the day carries its picture, and says to show it in place of the table', () => {

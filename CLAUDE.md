@@ -3489,6 +3489,35 @@ later than an hour ago, and the check reads only the rows the journey wrote.
 **A check that finds rows by their clock is only as honest as every clock that
 wrote them.**
 
+### The orange square — the founder's call, on every AI reply and nowhere else
+
+`lib/mark.js` + `markReply()` at handleRpc's three exits. Offered the one
+colour a chat reply can carry, a character, the founder said: *"Put the orange
+on it but I only want it on the GPT [and] another AI, so that's my call. I
+want it always on there."* This **overrides the brand rule** below, "nothing
+standing beside the name", for chat replies only, and the override is his.
+
+- **It is in the text, not in a request.** Every reply leaving through an AI
+  door (the MCP connector and the custom GPT's Actions, which both run through
+  `handleRpc`) opens its `say` line with 🟧. That covers the reply, the failure
+  and the suspended account alike. A note sentence (`MARK_NOTE`) asks for it to
+  be kept; the square does not depend on that sentence, because it is already
+  in the line being relayed. ChatGPT can still drop it, and nothing a server
+  sends can force it to show any character.
+- **Never anywhere else.** The website, the iPhone app, notifications, email
+  and Siri (who would read it aloud) never carry it, and neither does
+  Wrought's own drawn card, which has the W tile. `markReply` works on a copy
+  so the card built from the tool's object cannot pick it up. A test lists
+  every file that names the square: `lib/mark.js` and `mcp.js`, nothing else.
+  The simulator checks every AI reply opens with it, and that no card,
+  website, phone or Siri reply carries it.
+- **One square, not two.** It is on `say` only, not on `day_card` as well, so a
+  reply that shows both opens with one.
+- **A guard nearly went dead with it.** The simulator's "claimed a write"
+  check matched `^Logged in Wrought`, which would never match again once the
+  square led. It accepts the square now. A rule that pins the start of a line
+  goes silent the day something is put in front of it.
+
 ### The meal rated, the engine placed — computed, never ChatGPT's impression
 
 `mealScore()` in `lib/nutrition.js` + `meal_score` on `log` / `structure_entries`
@@ -6420,7 +6449,9 @@ with integrations.
 ### Brand — the word is the mark
 
 **Still no invented symbol** — no wave, no abstract glyph, nothing standing
-beside the name pretending to mean it. That rule holds.
+beside the name pretending to mean it. That rule holds. **One exception, the
+founder's own:** the 🟧 that opens every AI chat reply (see *The orange
+square*). It never appears on the site, the app, a notification or the card.
 
 **But the word now has a tile**, because a favicon slot and a connector listing
 render something whether you supply one or not, and an empty slot is somebody
@@ -6591,7 +6622,7 @@ self-reporting scale removes the most-abandoned manual entry), then Strava.
 
 ## Conventions
 
-- `npm test` runs `test/harness.mjs` — 902 offline tests, no network, no database.
+- `npm test` runs `test/harness.mjs` — 903 offline tests, no network, no database.
   Run it before every push. It covers the JSON-RPC envelope (which fails as an
   uninformative "could not connect" inside ChatGPT) and all the arithmetic
   (which fails as a confidently wrong number in somebody's verdict).
