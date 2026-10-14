@@ -119,6 +119,17 @@ const callAs = async (who, name, args) => {
   try { body = JSON.parse(res.content?.[0]?.text); } catch { body = null; }
   return { keys: Object.keys(body || {}), body, card: res._meta?.['wrought/card'] ?? null };
 };
+// By default — WROUGHT_CARD_PICTURES unset — ChatGPT gets the table, like
+// everybody else: four pictures were sent in October and none was ever drawn.
+delete process.env.WROUGHT_CARD_PICTURES;
+reset([weigh()]); chatgpt();
+out.gpt_default_log = await callAs(gpt, 'log', { text: 'half a bagel', events: [food('half a bagel', { calories: 150, protein_g: 5, carbs_g: 29, fat_g: 2 }, { time_hint: '10:26' })] });
+out.gpt_default_log.rows = (F.tables.wrought_card_pictures || []).length;
+reset([weigh()]); chatgpt();
+out.gpt_default_fit = await callAs(gpt, 'fitness_check', { vo2_max: 31.4 });
+out.gpt_default_fit.rows = (F.tables.wrought_card_pictures || []).length;
+// …and switched on, the picture machinery still does exactly what it did.
+process.env.WROUGHT_CARD_PICTURES = 'on';
 reset([weigh()]); chatgpt();
 out.pic_log = await callAs(gpt, 'log', { text: 'Costco restaurant sausage', events: [food('Costco restaurant sausage', { calories: 570, protein_g: 22, carbs_g: 4, fat_g: 52 }, { time_hint: '15:17' })] });
 out.pic_log.rows = JSON.parse(JSON.stringify(F.tables.wrought_card_pictures || []));
@@ -157,6 +168,7 @@ reset([weigh()]); F.tables.wrought_metrics = [vo2row()];
 out.ath = await call('athlete_report', {});
 reset([weigh()]); F.tables.wrought_metrics = [vo2row()]; chatgpt();
 out.ath_gpt = await callAs(gpt, 'athlete_report', {});
+delete process.env.WROUGHT_CARD_PICTURES;
 reset([weigh()]);
 out.vo2_log = await call('log', { text: 'my watch says my VO2 max is 31.4', events: [{ event_type: 'note', summary: 'Apple Watch VO2 max 31.4', detail: {} }] });
 out.vo2_log.metrics = JSON.parse(JSON.stringify(F.tables.wrought_metrics || []));

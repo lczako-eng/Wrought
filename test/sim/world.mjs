@@ -74,12 +74,16 @@ const FOODS = [
   ['salmon with rice and broccoli', 720, 45, 70, 25, 3, 6, 5],
 ];
 
+const past = iso => new Date(Math.min(Date.parse(iso), Date.now() - 3600e3)).toISOString();
+
 function foodRow(uid, tz, date, hh, f, r, extra = {}) {
   const [summary, kcal, p, c, fat, sugar, fibre, sat] = f;
   return {
     id: `e${F.seq++}`, user_id: uid, event_type: 'food', summary, local_date: date,
     occurred_at: `${date}T${String(hh).padStart(2, '0')}:${String(Math.floor(r() * 59)).padStart(2, '0')}:00Z`,
-    created_at: `${date}T${String(hh).padStart(2, '0')}:00:00Z`,
+    // Never in the future: in a +14 zone, yesterday evening at a fixed UTC
+    // hour can be later than now, and a row cannot be written before it is.
+    created_at: past(`${date}T${String(hh).padStart(2, '0')}:00:00Z`),
     source: 'agent', estimated: true,
     detail: { items: [summary], calories: kcal, protein_g: p, carbs_g: c, fat_g: fat, sugar_g: sugar, fibre_g: fibre, sat_fat_g: sat },
     ...extra,
@@ -113,10 +117,10 @@ function seedHistory(uid, persona, history, r) {
       ev.push({ id: `e${F.seq++}`, user_id: uid, event_type: 'workout', summary: 'Push day — bench, press, row', local_date: date, occurred_at: ended, source: 'agent', estimated: false, detail: { session_id: sid, minutes: 55, kind: 'strength', muscles: ['chest', 'shoulders', 'back'] } });
     }
     if (d % 7 === 1 && persona.weight) ev.push({ id: `e${F.seq++}`, user_id: uid, event_type: 'weight', summary: `weighed ${Math.round((persona.weight - d / 30) * 10) / 10}kg`, local_date: date, occurred_at: `${date}T12:00:00Z`, source: 'agent', estimated: false, detail: { value_kg: Math.round((persona.weight - d / 30) * 10) / 10 } });
-    mx.push({ id: `m${F.seq++}`, user_id: uid, metric: 'steps', value: 4000 + Math.floor(r() * 8000), unit: 'count', local_date: date, measured_at: `${date}T12:00:00Z`, source: 'wrought_ios', source_ref: 'day_final', created_at: `${date}T23:30:00Z` });
-    mx.push({ id: `m${F.seq++}`, user_id: uid, metric: 'active_calories', value: 300 + Math.floor(r() * 600), unit: 'kcal', local_date: date, measured_at: `${date}T12:00:00Z`, source: 'wrought_ios', source_ref: 'day_final', created_at: `${date}T23:30:00Z` });
-    mx.push({ id: `m${F.seq++}`, user_id: uid, metric: 'resting_hr', value: 62 + Math.floor(r() * 12), unit: 'bpm', local_date: date, measured_at: `${date}T12:00:00Z`, source: 'wrought_ios', created_at: `${date}T23:30:00Z` });
-    if ((history === 'heavy' || history === 'years') && d % 5 === 0) mx.push({ id: `m${F.seq++}`, user_id: uid, metric: 'vo2max', value: Math.round((33 + r() * 3) * 10) / 10, unit: 'ml/kg/min', local_date: date, measured_at: `${date}T12:00:00Z`, source: 'wrought_ios', created_at: `${date}T23:30:00Z` });
+    mx.push({ id: `m${F.seq++}`, user_id: uid, metric: 'steps', value: 4000 + Math.floor(r() * 8000), unit: 'count', local_date: date, measured_at: `${date}T12:00:00Z`, source: 'wrought_ios', source_ref: 'day_final', created_at: past(`${date}T23:30:00Z`) });
+    mx.push({ id: `m${F.seq++}`, user_id: uid, metric: 'active_calories', value: 300 + Math.floor(r() * 600), unit: 'kcal', local_date: date, measured_at: `${date}T12:00:00Z`, source: 'wrought_ios', source_ref: 'day_final', created_at: past(`${date}T23:30:00Z`) });
+    mx.push({ id: `m${F.seq++}`, user_id: uid, metric: 'resting_hr', value: 62 + Math.floor(r() * 12), unit: 'bpm', local_date: date, measured_at: `${date}T12:00:00Z`, source: 'wrought_ios', created_at: past(`${date}T23:30:00Z`) });
+    if ((history === 'heavy' || history === 'years') && d % 5 === 0) mx.push({ id: `m${F.seq++}`, user_id: uid, metric: 'vo2max', value: Math.round((33 + r() * 3) * 10) / 10, unit: 'ml/kg/min', local_date: date, measured_at: `${date}T12:00:00Z`, source: 'wrought_ios', created_at: past(`${date}T23:30:00Z`) });
   }
   if (history === 'messy') {
     const date = addDays(today, -1);

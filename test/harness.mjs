@@ -19246,7 +19246,36 @@ await test('pictures are kept in their own table, read by the server alone, and 
   assert.match(PIC.read('netlify/functions/api-status.js'), /'029_wrought_card_pictures\.sql', probe: t\('wrought_card_pictures'\)/);
 });
 
-await test('a ChatGPT reply that carries the day carries its picture, and says to show it in place of the table', () => {
+await test('by default ChatGPT gets the table, never a picture: four were sent and none was ever drawn', async () => {
+  const S = WCARD.scenarios();
+  const FITN = await import('../netlify/functions/lib/fitness.js');
+  const { DAY_CARD_NOTE } = WCARD.DR;
+  const { picturesOn } = WCARD.MCP;
+  // The switch: off unless it says "on".
+  assert.equal(picturesOn({}), false);
+  assert.equal(picturesOn({ WROUGHT_CARD_PICTURES: '' }), false);
+  assert.equal(picturesOn({ WROUGHT_CARD_PICTURES: 'off' }), false);
+  assert.equal(picturesOn({ WROUGHT_CARD_PICTURES: 'true' }), false);
+  assert.equal(picturesOn({ WROUGHT_CARD_PICTURES: ' ON ' }), true);
+  // A ChatGPT log: the table and the note that says to show it, no picture, no row.
+  const r = S.gpt_default_log;
+  assert.equal(r.body.card_image, undefined, 'a ChatGPT log still carries a picture with the switch off');
+  assert.equal(r.rows, 0, 'a picture row was written with the switch off');
+  assert.equal(typeof r.body.day_card, 'string', 'the table is missing');
+  assert.ok(r.body.note.includes(DAY_CARD_NOTE), 'the note does not say to show the table');
+  assert.match(r.body.say, /^Logged in Wrought/);
+  // The fitness card likewise stays the table.
+  const f = S.gpt_default_fit;
+  assert.equal(f.body.card_image, undefined);
+  assert.equal(f.rows, 0);
+  assert.equal(typeof f.body.fitness_card, 'string');
+  assert.ok(f.body.note.includes(FITN.FITNESS_CARD_SHOW), 'the fitness note does not say to show the card');
+  assert.ok(!f.body.note.includes(FITN.FITNESS_PICTURE_NOTE));
+  // The gate reads the switch, so turning it on is the only way back to pictures.
+  assert.match(decomment(PIC.read('netlify/functions/mcp.js')), /facts\?\.chatgpt && picturesOn\(\) \? pictureSlot\(/);
+});
+
+await test('switched on, a ChatGPT reply that carries the day carries its picture, and says to show it in place of the table', () => {
   const S = WCARD.scenarios();
   const { DAY_CARD_NOTE, PICTURE_NOTE } = WCARD.DR;
   const MD = /^!\[[^\][\n]+\]\(https:\/\/wrought\.fit\/c\/([A-Za-z0-9_-]{22})\.png\)$/;
@@ -19318,7 +19347,7 @@ await test('every surface a model reads says the picture is the card, shown exac
   // Only ChatGPT gets a picture: the connector decides it from the client,
   // and only the cards that can be pictured name a slot.
   const src = decomment(PIC.read('netlify/functions/mcp.js'));
-  assert.match(src, /const (\w+) = facts\?\.chatgpt \? pictureSlot\(params\.name, body\) : null;\s*if \(\1\)/);
+  assert.match(src, /const (\w+) = facts\?\.chatgpt && picturesOn\(\) \? pictureSlot\(params\.name, body\) : null;\s*if \(\1\)/);
 });
 
 // ── The meal score and the fitness check ──────────────────────────────────

@@ -1370,6 +1370,18 @@ export const CARD_TOOLS = new Set(TOOLS.filter(t => t._meta?.ui?.resourceUri).ma
 // …and the ones among them that write, whose failure is "NOT SAVED".
 const CARD_WRITES = new Set(['log', 'log_activity', 'amend_last', 'structure_entries']);
 
+// THE PICTURE IS OFF UNLESS IT IS SWITCHED ON. From 11 to 14 October every
+// ChatGPT log carried its card as a picture and a note saying to show it in
+// place of the table — and not one of those pictures was ever fetched
+// (wrought_card_pictures.first_seen_at null on all four), so the founder got
+// neither: no picture, no table, ChatGPT's own plain bullets. A picture
+// nothing draws is worse than the table it replaced, so the table is the
+// default again. The machinery stays, behind WROUGHT_CARD_PICTURES=on, for
+// the day a ChatGPT is shown to draw one — first_seen_at is the proof.
+export function picturesOn(env = process.env) {
+  return String(env.WROUGHT_CARD_PICTURES || '').trim().toLowerCase() === 'on';
+}
+
 // Which card a ChatGPT reply may carry as a picture, and the sentence the
 // picture swaps out of its note. The day's tools draw the day card; the
 // fitness check draws its own. Nothing else is ever pictured.
@@ -7094,13 +7106,14 @@ export async function handleRpc(msg, authUser) {
         // where it is seen: ChatGPT fans reads out across every connection.
         const facts = await connP;
         let body = stampConnected(out, connectedAccountsBlock(authUser, facts, { linkId }));
-        // THE CARD AS A PICTURE, for ChatGPT. Its own card is drawn only after
-        // a Refresh not every ChatGPT has, so a reply that carries the day
-        // carries a link to that day's card drawn as a PNG — the same view,
-        // kept frozen — and the note says to show it in place of the table.
-        // Anything short of a stored picture leaves the reply exactly as it
-        // was, table and all: the default in doubt is the table.
-        const slot = facts?.chatgpt ? pictureSlot(params.name, body) : null;
+        // THE CARD AS A PICTURE, for ChatGPT — only when switched on (see
+        // picturesOn: four pictures sent, none ever drawn). When on, a reply
+        // that carries the day carries a link to that day's card drawn as a
+        // PNG — the same view, kept frozen — and the note says to show it in
+        // place of the table. Anything short of a stored picture leaves the
+        // reply exactly as it was, table and all: the default in doubt is the
+        // table.
+        const slot = facts?.chatgpt && picturesOn() ? pictureSlot(params.name, body) : null;
         if (slot) {
           const view = out?.[CARD];
           const url = await savePicture(supabase, authUser.id, view);
