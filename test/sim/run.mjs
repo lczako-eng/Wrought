@@ -892,9 +892,13 @@ await scenario('actions', 'every operation answers', async () => {
 });
 
 // 8. The picture door — a handful, because each one boots the renderer.
+// Pictures are off by default since none was ever drawn (see CLAUDE.md), so
+// the door is tested switched on, exactly as the machinery is kept for.
 if (!SMOKE) await scenario('pictures', 'a stored card draws as a PNG', async () => {
   const ctx = world(PERSONAS[0], 'week');
-  const r = await rpc(ctx, 'chatgpt', 'get_day', {});
+  process.env.WROUGHT_CARD_PICTURES = 'on';
+  let r;
+  try { r = await rpc(ctx, 'chatgpt', 'get_day', {}); } finally { delete process.env.WROUGHT_CARD_PICTURES; }
   const m = /\/c\/([A-Za-z0-9_-]{22})\.png/.exec(r.out?.card_image || '');
   expect(m, 'pictures', 'a ChatGPT get_day carried no picture link');
   if (m) {
