@@ -241,7 +241,7 @@ async function jFoodDay(ctx, c, flagged) {
   if (b.out?.recorded?.[0]) expect(b.out.recorded[0].at, 'logging', 'the confirmation does not say the time back');
   if (flagged) {
     expect(!(b.out?.left_today && /\d/.test(JSON.stringify(b.out.left_today))), 'care flag', 'an unprompted log reply quoted what is left under a care flag');
-    if (b.out?.meal_score) expect(b.out.meal_score.every(s => s.score == null || (s.softened && !s.to_lift)), 'care flag', 'a meal score offered a swap under a care flag');
+    if (b.out?.meal_score) expect(b.out.meal_score.every(s => s.score == null || (s.softened && !s.to_lift && (s.better?.lifts || []).every(l => l.mode === 'add'))), 'care flag', 'a meal score offered a swap under a care flag');
   }
   // Pictures are off by default (none was ever drawn): ChatGPT gets the table like everybody else.
   if (/chatgpt/.test(c)) expect(!b.out?.card_image && typeof b.out?.day_card === 'string', 'picture', 'a ChatGPT reply carried a picture, or lost its table, with pictures switched off');
@@ -892,9 +892,13 @@ await scenario('actions', 'every operation answers', async () => {
 });
 
 // 8. The picture door — a handful, because each one boots the renderer.
+// Pictures are off by default since none was ever drawn (see CLAUDE.md), so
+// the door is tested switched on, exactly as the machinery is kept for.
 if (!SMOKE) await scenario('pictures', 'a stored card draws as a PNG', async () => {
   const ctx = world(PERSONAS[0], 'week');
-  const r = await rpc(ctx, 'chatgpt', 'get_day', {});
+  process.env.WROUGHT_CARD_PICTURES = 'on';
+  let r;
+  try { r = await rpc(ctx, 'chatgpt', 'get_day', {}); } finally { delete process.env.WROUGHT_CARD_PICTURES; }
   const m = /\/c\/([A-Za-z0-9_-]{22})\.png/.exec(r.out?.card_image || '');
   expect(m, 'pictures', 'a ChatGPT get_day carried no picture link');
   if (m) {
