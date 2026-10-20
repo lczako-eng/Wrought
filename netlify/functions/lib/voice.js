@@ -105,7 +105,11 @@ export function spokenBrief({ day = null, balance = null, week = null, flags = [
     // A watch that has not sent today leaves only the resting half: said as
     // that, never as the day's burn with a net under it — an understated
     // burn is the number that tells somebody to eat less than they need.
-    parts.push(balance.active_source === 'awaiting_device'
+    // Nothing eaten is not a deficit — spoken or written. "Roughly 0 in …
+    // 1,358 down" read a morning as a day of starving.
+    parts.push(!(Number(balance.calories_in) > 0)
+      ? `Nothing with calories in it is logged yet, so there's no in-versus-out — about ${Math.round(balance.calories_out)} out.`
+      : balance.active_source === 'awaiting_device'
       ? `Roughly ${Math.round(balance.calories_in)} in. Your watch hasn't sent today, so only the resting ${Math.round(balance.calories_out)} is counted out.`
       : `Roughly ${Math.round(balance.calories_in)} in, about ${Math.round(balance.calories_out)} out` +
       (net < -150 ? `, ${Math.abs(Math.round(net))} down on the day.`

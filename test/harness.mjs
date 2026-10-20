@@ -19537,6 +19537,151 @@ await test('the meal score rides the log reply and the day, never a quiet captur
   assert.match(SERVER_INSTRUCTIONS, /meal_score \(on the log reply\) \/ meal_scores \(on get_day\) — "rate my meal"/);
 });
 
+// ── Options that know them, and a workout that comes back coached ──────────
+// The founder: "you have a sweet tooth, give you other options … take a
+// picture of your fridge … it should know you personally … same with your
+// workout strategies — it should be giving you advice, not just putting it in."
+const TRN = await import('../netlify/functions/lib/training.js');
+
+await test('a craving is read off their words, and their own foods that fit and scored well come first', () => {
+  assert.deepEqual(NUT.cravingFrom('I want something sweet'), ['sweet']);
+  assert.deepEqual(NUT.cravingFrom('craving something salty and crunchy'), ['salty', 'crunchy']);
+  assert.deepEqual(NUT.cravingFrom('I am starving'), ['filling']);
+  assert.deepEqual(NUT.cravingFrom('what should I eat'), [], 'a craving was guessed from words that named none');
+  const rows = [
+    { event_type: 'food', summary: 'Greek yogurt with berries and honey', local_date: '2026-10-10', detail: { calories: 250, protein_g: 20, fibre_g: 4, sugar_g: 24, sat_fat_g: 1, categories: ['dairy', 'fruit'] } },
+    { event_type: 'food', summary: 'greek yogurt with berries and honey', local_date: '2026-10-12', detail: { calories: 260, protein_g: 20, fibre_g: 4, sugar_g: 24, sat_fat_g: 1, categories: ['dairy', 'fruit'] } },
+    { event_type: 'food', summary: 'chocolate bar', local_date: '2026-10-14', detail: { calories: 240, protein_g: 3, fibre_g: 1, sugar_g: 24, sat_fat_g: 8 } },
+    { event_type: 'food', summary: 'pita chips', local_date: '2026-10-12', detail: { calories: 1100, protein_g: 22, fibre_g: 8, sugar_g: 4, sat_fat_g: 6 } },
+    { event_type: 'food', summary: 'toast', local_date: '2026-10-11', detail: {} },
+  ];
+  const sweet = NUT.ownOptions(rows, { want: ['sweet'] });
+  assert.deepEqual(sweet.map(o => o.name), ['greek yogurt with berries and honey'], 'only their own sweet food that scored 7+ is offered, named once');
+  assert.equal(sweet[0].times, 2, 'the same food logged twice is one option, counted twice');
+  assert.equal(sweet[0].kcal, 260, 'the figure is the latest row they logged');
+  assert.equal(sweet[0].score, 10);
+  // Under a flag: anything they eat that fits, with no score and no figure.
+  const flagged = NUT.ownOptions(rows, { want: ['sweet'], flagged: true });
+  assert.deepEqual(flagged.map(o => o.name).sort(), ['chocolate bar', 'greek yogurt with berries and honey']);
+  assert.ok(flagged.every(o => o.score === undefined && o.kcal === undefined), 'a flagged option carried a score or a calorie figure');
+  // A row with no figures is never scored, so it is never offered as scoring well.
+  assert.ok(!NUT.ownOptions(rows, {}).some(o => o.name === 'toast'));
+});
+
+await test('options carry their tastes, never their logging habits, and never answer a craving with nothing', () => {
+  const o = NUT.optionsFor({
+    text: 'something salty', rows: [], dietary: ['no pork'],
+    memory: [
+      { fact: 'I have a sweet tooth', category: 'preference' },
+      { fact: 'Hates fish', category: 'preference' },
+      { fact: 'Always log my snacks and cravings to Wrought rather than the chat', category: 'preference' },
+      { fact: 'Log every takeaway in my totals', category: 'food' },
+      { fact: 'Right knee is sore', category: 'injury' },
+    ],
+  });
+  assert.deepEqual(o.want, ['salty']);
+  assert.deepEqual(o.known, ['Does not eat: no pork', 'I have a sweet tooth', 'Hates fish'], 'known must be their tastes — not a logging habit, not an injury');
+  assert.equal(o.say, null, 'with nothing of their own that fits, the server says nothing and the model names the ideas');
+  assert.match(o.fridge, /choose only from what is in it/);
+  assert.match(NUT.OPTIONS_NOTE, /first anything in options\.yours/);
+  assert.match(NUT.OPTIONS_NOTE, /With a photo of their fridge, cupboard or a menu, choose ONLY from what is in it/);
+  assert.match(NUT.OPTIONS_NOTE, /never a meal score of your own/);
+  assert.match(NUT.OPTIONS_NOTE, /never "just have water", "wait it out" or "brush your teeth"/);
+  assert.match(NUT.OPTIONS_NOTE, /goes to remember \(category preference\)/);
+  assert.match(NUT.OPTIONS_FLAG_NOTE, /no score, no calorie figure, nothing lighter, never "instead"/);
+});
+
+await test('whats_next carries options from their own record, and only things to eat under a flag', () => {
+  const S = WCARD.scenarios();
+  const sw = S.opts_sweet.body;
+  assert.deepEqual(sw.options.want, ['sweet']);
+  assert.deepEqual(sw.options.yours.map(y => [y.name, y.score]), [['Greek yogurt with berries and honey', 10], ['apple and peanut butter', 8]],
+    'their own sweet foods that scored well, best first — the chocolate bar scored 1 and is not offered');
+  assert.deepEqual(sw.options.known, ['I have a sweet tooth'], 'the remembered taste rides along; the logging preference does not');
+  assert.match(sw.say, /For something sweet, from what you already eat that scored well: Greek yogurt with berries and honey \(10\/10\); apple and peanut butter \(8\/10\)\./);
+  assert.ok(sw.note.includes(NUT.OPTIONS_NOTE));
+  const fl = S.opts_flag.body;
+  assert.equal(fl.options.additions_only, true);
+  assert.ok(fl.options.yours.every(y => y.score === undefined && y.kcal === undefined));
+  assert.ok(fl.note.includes(NUT.OPTIONS_FLAG_NOTE) && !fl.note.includes(NUT.OPTIONS_NOTE));
+  assert.ok(!/\/10|kcal/.test(fl.options.say), `a figure in a flagged options line: ${fl.options.say}`);
+});
+
+await test('next time: each lift against last time and the call, computed from their own sets in their own unit', () => {
+  const today = [
+    { exercise: 'Bench press', reps: 8, weight_kg: 102.06, local_date: '2026-10-20' },
+    { exercise: 'Bench press', reps: 6, weight_kg: 106.6, local_date: '2026-10-20' },
+    { exercise: 'Seated row machine', reps: 12, weight_kg: 68.04, rpe: 8, local_date: '2026-10-20' },
+    { exercise: 'Push-ups', reps: 15, weight_kg: null, local_date: '2026-10-20' },
+    { exercise: 'Incline treadmill walk', reps: null, weight_kg: null, local_date: '2026-10-20' },
+    { exercise: 'Shoulder press', reps: 10, weight_kg: 40, rpe: 9.5, local_date: '2026-10-20' },
+    { exercise: 'Leg press', reps: 14, weight_kg: 140, local_date: '2026-10-20' },
+  ];
+  const before = [
+    { exercise: 'Bench press', reps: 6, weight_kg: 102.06, local_date: '2026-10-13' },
+    { exercise: 'Bench press', reps: 8, weight_kg: 97.5, local_date: '2026-10-06' },
+    { exercise: 'Seated row machine', reps: 12, weight_kg: 68.04, local_date: '2026-10-13' },
+    { exercise: 'Push-ups', reps: 12, local_date: '2026-10-13' },
+    { exercise: 'Shoulder press', reps: 10, weight_kg: 45, local_date: '2026-10-13' },
+  ];
+  const r = TRN.nextTimeRead(today, before, { units: 'imperial', max: 10 });
+  const by = Object.fromEntries(r.lifts.map(l => [l.lift, l]));
+  assert.ok(!by['Incline treadmill walk'], 'timed work is not a lift');
+  // The heaviest set is the lift's top set; compared with the LATEST earlier day.
+  assert.equal(by['Bench press'].say, 'Bench press: 235 lb × 6, up from 225 lb × 6 on Oct 13. Next time: 235 lb again and aim for 7 — the weight moves once the reps climb.');
+  // 12 with an RPE of 8 has room: the smallest plate step in THEIR unit, a pair of 2.5s — never 5.5 lb.
+  assert.equal(by['Seated row machine'].verdict, 'add_load');
+  assert.match(by['Seated row machine'].say, /Next time: 155 lb — 12 with reps to spare/);
+  assert.equal(by['Push-ups'].say, 'Push-ups: 15 reps, up from 12 reps on Oct 13. Next time: aim for 16.');
+  // RPE 9.5: hold. Under last time is a fact, never a scolding and never explained.
+  assert.equal(by['Shoulder press'].verdict, 'hold');
+  assert.match(by['Shoulder press'].say, /under 99 lb × 10 on Oct 13/);
+  // 14 reps with no effort reported: never added outright — the step is conditional on their read.
+  assert.equal(by['Leg press'].verdict, 'hold_or_step');
+  assert.equal(by['Leg press'].compare, 'first');
+  assert.match(by['Leg press'].say, /the first one on the record — this is the baseline/);
+  // Without a target or a reported effort, a weight never moves on its own.
+  for (const l of r.lifts) {
+    if (l.verdict === 'add_load') assert.ok(today.find(t => t.exercise === l.lift)?.rpe != null, `${l.lift} was given more weight with no effort reported and no target`);
+    assert.ok(!/\b(should have|failed|weak|lazy|disappoint|only managed|go heavier|test your max|1RM)\b/i.test(l.say), `judgement or a max in: ${l.say}`);
+  }
+  // With a plan, double progression against its target: missed reps hold the weight.
+  const planned = TRN.nextTimeRead(today, before, { units: 'metric', plan: [{ name: 'Bench press', reps: '6-8' }] });
+  assert.match(planned.lifts[0].say, /Next time: 106\.5kg again and finish all 8\./);
+  // Under a care flag: the comparison stands, nothing is added.
+  const flagged = TRN.nextTimeRead(today, before, { units: 'imperial', flagged: true, max: 10 });
+  assert.ok(flagged.lifts.every(l => l.verdict === 'same' && /Next time: the same again\./.test(l.say)));
+  assert.equal(flagged.held_by_flag, true);
+  // Four lifts said; the rest are pointed at, never silently dropped.
+  assert.match(TRN.nextTimeRead(today, before, { units: 'imperial' }).say, /\(1 more in next_time\.lifts\.\)$/);
+  assert.equal(TRN.targetOf('8-12'), 12);
+  assert.equal(TRN.targetOf(null), null);
+});
+
+await test('a logged workout and a closed session come back coached; a quiet capture does not', () => {
+  const S = WCARD.scenarios();
+  const lg = S.lift_log.body;
+  assert.ok(lg.next_time, 'a workout told through log came back with no advice');
+  assert.match(lg.say, /^🟧 Logged in Wrought \(1 thing\): chest day\. Bench press: 235 lb × 6, up from 225 lb × 6 on Sep 30\. Next time: 235 lb again and aim for 7/,
+    'the advice rides the line the model relays, in their own unit');
+  assert.ok(!lg.next_time.lifts.some(l => /treadmill/i.test(l.lift)));
+  assert.equal(lg.next_time_note, TRN.NEXT_TIME_NOTE);
+  assert.equal(S.lift_quiet.body.next_time, undefined, 'a quiet capture was coached');
+  assert.ok(S.lift_flag.body.next_time.lifts.every(l => l.verdict === 'same'), 'weight was added on a flagged account');
+  const end = S.lift_end.body;
+  assert.ok(end.next_time, 'end_session came back with no advice');
+  assert.match(end.say, /Bench press: 106\.5kg × 6, up from 102kg × 6 on Sep 30\. Next time:/);
+  assert.ok(end.note.includes(TRN.NEXT_TIME_NOTE));
+  // Found on the way: an open slot read "set 2 of null, null reps", and a day
+  // with nothing eaten read as "Roughly 0 in … down on the day".
+  assert.ok(!/of null|null reps/.test(S.lift_set.body.say), S.lift_set.body.say);
+  assert.ok(!/Roughly 0 in|down on the day/.test(end.say), 'nothing eaten was read as a deficit at the close');
+  // …and Siri said the same thing out loud.
+  const spoken = spokenBrief({ balance: { known: true, calories_in: 0, calories_out: 1358, net: -1358, active_source: 'device' } });
+  assert.ok(!/Roughly 0 in|down/.test(spoken), spoken);
+  assert.match(spoken, /Nothing with calories in it is logged yet, so there's no in-versus-out — about 1358 out\./);
+});
+
 await test('VO2 max is placed against the FRIEND reference for age and sex, and never guessed', () => {
   // The table: six decades, both sexes, each row rising.
   for (const sex of ['male', 'female']) {

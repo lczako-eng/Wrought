@@ -749,10 +749,16 @@ export function energyBalance({
     level_projection: viaLevel,
     ...(trainingClamped ? { training_clamped: trainingClamped } : {}),
     ...(activity.count ? { logged_activity: activity } : {}),
-    say: `Roughly ${inn} in, about ${out} out (${parts.join(' · ')}) — ` +
+    // NOTHING EATEN IS NOT A DEFICIT — the receipt's and the whole-day
+    // read's rule, which this sentence had missed: "Roughly 0 in … around
+    // 2,490 down on the day" at the close of a morning session told somebody
+    // they were 2,490 under on a day that had barely started.
+    say: (inn > 0
+      ? `Roughly ${inn} in, about ${out} out (${parts.join(' · ')}) — ` +
          (net < -150 ? `around ${Math.abs(net)} down on the day.`
         : net > 150  ? `around ${net} over.`
-        : `about level.`) +
+        : `about level.`)
+      : `Nothing with calories in it is logged, so there is no in-versus-out — about ${out} out (${parts.join(' · ')}).`) +
          (foodEstimated ? ' Food is estimated from what you described, so treat it as a direction, not a measurement.' : '') +
          // A logged shift on a day the watch also reported is NOT added, and
          // staying quiet about that reads as the log having been ignored.
@@ -2509,3 +2515,151 @@ export async function backfillDerivedSets(userId, { sinceDate = null } = {}) {
 
   return syncSetsFromWorkouts(userId, fresh);
 }
+
+// ── Next time — the advice a workout comes back with ─────────────────────────
+// The founder: "same with your workout strategies — it should be giving you
+// advice, not just putting it in." A logged workout came back as a receipt:
+// filed, minutes, volume. The advice a trainer gives at the end of a set of
+// sessions is two sentences per lift — how today went against last time, and
+// what to do next time — and both are arithmetic on rows the record already
+// holds, so both are computed here and relayed.
+//
+// THE LOAD RULES ARE THE PRODUCT'S OWN, NOT NEW ONES. With a target (a planned
+// session) it is progressionCall's double progression. With no target (a
+// workout told afterwards) the honest call is the first half of double
+// progression — same weight, one more rep — because a weight only moves once
+// the reps have climbed, and adding load to a set nobody rated is how a
+// number gets ahead of a body. Never a load the record did not produce, never
+// a max to test, never a lift with no history given a weight. A lift that went
+// down is a fact and is never explained: a lighter day has a hundred causes.
+// UNDER A CARE FLAG nothing is added — the comparison stands, the call is
+// "the same again".
+
+const shortDate = date => {
+  const d = new Date(`${date}T12:00:00Z`);
+  return Number.isNaN(d.getTime()) ? String(date) : d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
+};
+const loadIn = (kg, units) => (units === 'imperial'
+  ? `${Math.round(Number(kg) * 2.2046226 * 2) / 2} lb`
+  : `${Math.round(Number(kg) * 4) / 4}kg`);
+const LB_STEP = { 5: 10, 2.5: 5, 1.25: 2.5 };
+// One plate step in the unit they load in: a pair of 5s, not 5.5 lb.
+const stepUp = (kg, key, tier, units) => {
+  const step = loadStep(key, tier);
+  if (units !== 'imperial') return Math.round((Number(kg) + step) * 4) / 4;
+  const lb = Math.round(Number(kg) * 2.2046226 * 2) / 2 + (LB_STEP[step] ?? 5);
+  return Math.round((lb / 2.2046226) * 100) / 100;
+};
+const stepDown = (kg, units) => (units === 'imperial'
+  ? Math.round(((Math.round(Number(kg) * 2.2046226 * 0.9 / 5) * 5) / 2.2046226) * 100) / 100
+  : Math.round(Number(kg) * 0.9 / 2.5) * 2.5);
+
+/** The top of a planned rep range: "8-12" → 12, "10" → 10, nothing → null. */
+export function targetOf(reps) {
+  if (reps == null) return null;
+  const ns = String(reps).match(/\d+/g);
+  return ns ? Math.max(...ns.map(Number)) : null;
+}
+
+/**
+ * The heaviest set per lift (more reps on a tie), lifts only — timed work and
+ * rows with neither a weight nor reps are not lifts. Keyed by exercise_key so
+ * "Bench" and "bench press" are one lift. Order is the order they were done.
+ */
+export function topSetsByLift(rows = []) {
+  const out = new Map();
+  for (const s of rows) {
+    if (!s || !s.exercise || TIMED_MOVEMENT.test(String(s.exercise))) continue;
+    const reps = s.reps == null || s.reps === '' ? null : Number(s.reps);
+    const w = s.weight_kg == null || s.weight_kg === '' ? null : Number(s.weight_kg);
+    if (reps == null && w == null) continue;
+    const key = s.exercise_key || exerciseKey(s.exercise);
+    const prev = out.get(key);
+    const better = !prev
+      || (w ?? 0) > (prev.weight_kg ?? 0)
+      || ((w ?? 0) === (prev.weight_kg ?? 0) && (reps ?? 0) > (prev.reps ?? 0));
+    if (better) out.set(key, { key, name: s.exercise, weight_kg: w, reps, rpe: s.rpe == null ? null : Number(s.rpe), date: s.local_date || null });
+  }
+  return [...out.values()];
+}
+
+/** The most recent earlier day's top set per lift, from rows before today. */
+export function lastTopSets(rows = []) {
+  const latest = new Map();
+  for (const s of rows) {
+    const key = s.exercise_key || exerciseKey(s.exercise);
+    if (!latest.has(key) || String(s.local_date) > latest.get(key)) latest.set(key, String(s.local_date));
+  }
+  return new Map(topSetsByLift(rows.filter(s => latest.get(s.exercise_key || exerciseKey(s.exercise)) === String(s.local_date))).map(t => [t.key, t]));
+}
+
+const setIn = (t, units) => (t.weight_kg == null || t.weight_kg <= 0
+  ? `${t.reps} reps`
+  : `${loadIn(t.weight_kg, units)} × ${t.reps ?? '?'}`);
+
+/**
+ * One lift: today against last time, and the call for next time. Pure.
+ * @param now    today's top set {key, name, weight_kg, reps, rpe}
+ * @param before the last earlier top set, or null
+ */
+export function nextTimeCall({ now, before = null, targetReps = null, tier = 'intermediate', units = 'metric', flagged = false }) {
+  const w = now.weight_kg != null && now.weight_kg > 0 ? now.weight_kg : null;
+  const r = now.reps;
+  const bw = before && before.weight_kg != null && before.weight_kg > 0 ? before.weight_kg : null;
+  let compare = 'first';
+  if (before) {
+    if ((w ?? 0) !== (bw ?? 0)) compare = (w ?? 0) > (bw ?? 0) ? 'up' : 'down';
+    else compare = (r ?? 0) > (before.reps ?? 0) ? 'up' : (r ?? 0) < (before.reps ?? 0) ? 'down' : 'same';
+  }
+  const when = before?.date ? ` on ${shortDate(before.date)}` : '';
+  const how = compare === 'first' ? 'the first one on the record — this is the baseline'
+    : compare === 'up' ? `up from ${setIn(before, units)}${when}`
+    : compare === 'down' ? `under ${setIn(before, units)}${when}`
+    : `the same as${when || ' last time'}`;
+
+  let verdict, weight_kg = w, reps = null, call;
+  if (flagged) {
+    verdict = 'same'; call = 'the same again';
+  } else if (w == null) {
+    verdict = 'reps'; reps = (r ?? 0) + 1; call = `aim for ${reps}`;
+  } else if (targetReps) {
+    const pc = progressionCall({ last: { top_weight_kg: w, top_reps: r, rpe: now.rpe, date: 'today' }, targetReps, tier, key: now.key });
+    verdict = pc.verdict;
+    if (verdict === 'add_load') { weight_kg = stepUp(w, now.key, tier, units); call = `${loadIn(weight_kg, units)} — you got all ${targetReps}${now.rpe != null ? ` at RPE ${now.rpe}` : ''}`; }
+    else if (verdict === 'deload') { weight_kg = stepDown(w, units); call = `drop to ${loadIn(weight_kg, units)} and own ${targetReps} there`; }
+    else if (verdict === 'hold') call = `${loadIn(w, units)} again — the reps came at RPE ${now.rpe}, so own it before adding`;
+    else { reps = targetReps; call = `${loadIn(w, units)} again and finish all ${targetReps}`; }
+  } else if (now.rpe != null && now.rpe >= 9) {
+    verdict = 'hold'; call = `${loadIn(w, units)} again — that was close to the limit, so own it before adding`;
+  } else if ((r ?? 0) >= 12 && now.rpe != null && now.rpe <= 8) {
+    verdict = 'add_load'; weight_kg = stepUp(w, now.key, tier, units);
+    call = `${loadIn(weight_kg, units)} — ${r} with reps to spare means the weight is ready to move`;
+  } else if ((r ?? 0) >= 12) {
+    verdict = 'hold_or_step'; call = `${loadIn(w, units)} again, or the smallest step to ${loadIn(stepUp(w, now.key, tier, units), units)} if that last rep was clean`;
+  } else {
+    verdict = 'reps'; reps = (r ?? 0) + 1;
+    call = `${loadIn(w, units)} again and aim for ${reps} — the weight moves once the reps climb`;
+  }
+  return {
+    lift: now.name, key: now.key, today: setIn(now, units), compare, verdict,
+    next: { weight_kg: verdict === 'reps' && w == null ? null : weight_kg, reps },
+    say: `${now.name}: ${setIn(now, units)}, ${how}. Next time: ${call}.`,
+  };
+}
+
+/** The whole read for a workout: every lift's call, and the line to say. Pure. */
+export function nextTimeRead(todayRows = [], beforeRows = [], { plan = null, tier = 'intermediate', units = 'metric', flagged = false, max = 4 } = {}) {
+  const before = lastTopSets(beforeRows);
+  const targets = new Map((Array.isArray(plan) ? plan : []).map(p => [exerciseKey(p.name || p.exercise || ''), targetOf(p.reps)]));
+  const lifts = topSetsByLift(todayRows).map(now => nextTimeCall({
+    now, before: before.get(now.key) || null, targetReps: targets.get(now.key) || null, tier, units, flagged,
+  }));
+  if (!lifts.length) return null;
+  const shown = lifts.slice(0, max);
+  return {
+    lifts, held_by_flag: flagged,
+    say: shown.map(l => l.say).join(' ') + (lifts.length > shown.length ? ` (${lifts.length - shown.length} more in next_time.lifts.)` : ''),
+  };
+}
+
+export const NEXT_TIME_NOTE = 'COACH THE WORKOUT, DON\'T JUST FILE IT: after the confirmation, say next_time.say — each lift against last time, then the call for next time — as written, in the coach\'s register. Every load is computed from their own sets: never a weight of your own, never "go heavier" on top of it, never a max to test. A lift under last time is a fact, never a scolding, and never explained — a lighter day has a hundred causes. Asked why: it is double progression — the reps climb at a weight, then the weight moves.';

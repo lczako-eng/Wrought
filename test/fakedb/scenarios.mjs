@@ -25,6 +25,7 @@ delete process.env.OPENAI_API_KEY;
 const F = globalThis.__FAKEDB || (globalThis.__FAKEDB = { tables: {}, seq: 1000 });
 const M = await import('../../netlify/functions/mcp.js');
 const { localDateFor, addDays } = await import('../../netlify/functions/lib/wrought.js');
+const { exerciseKey } = await import('../../netlify/functions/lib/training.js');
 
 const tz = 'America/Toronto';
 const user = { id: 'u1', email: 'someone@example.com' };
@@ -201,5 +202,48 @@ reset([weigh(), ...thin()]);
 out.score_flag = await call('log', { text: 'chicken wrap with salad', events: [wrap()] });
 reset([weigh(), ...thin(), ev('s2', today, 'food', 'a cola', { calories: 140, protein_g: 0, carbs_g: 39, fat_g: 0, sugar_g: 39, fibre_g: 0, sat_fat_g: 0 }, { hh: '15:00' })]);
 out.score_day_flag = await call('get_day', {});
+
+// OPTIONS THAT KNOW THEM — "you have a sweet tooth, give you other options".
+const ownFood = (id, daysAgo, summary, d) => ev(id, addDays(today, -daysAgo), 'food', summary, d, { hh: '16:00' });
+// Each of those days also had a real dinner, so no low-intake flag stands.
+const dinners = () => [3, 5, 6].map(d => ownFood(`d${d}`, d, 'steak dinner with fries', { calories: 1400, protein_g: 60, carbs_g: 110, fat_g: 70, sugar_g: 6, fibre_g: 6, sat_fat_g: 28 }));
+const eatsLike = () => [
+  ...dinners(),
+  ownFood('o1', 3, 'Greek yogurt with berries and honey', { calories: 250, protein_g: 20, carbs_g: 30, fat_g: 4, sugar_g: 24, fibre_g: 4, sat_fat_g: 1, categories: ['dairy', 'fruit'] }),
+  ownFood('o2', 5, 'chocolate bar', { calories: 240, protein_g: 3, carbs_g: 26, fat_g: 13, sugar_g: 24, fibre_g: 1, sat_fat_g: 8 }),
+  ownFood('o3', 6, 'apple and peanut butter', { calories: 300, protein_g: 8, carbs_g: 30, fat_g: 16, sugar_g: 20, fibre_g: 7, sat_fat_g: 3, categories: ['fruit'] }),
+];
+reset([weigh(), ...eatsLike()]);
+F.tables.wrought_memory = [
+  { id: 'm1', user_id: 'u1', fact: 'I have a sweet tooth', category: 'preference', active: true, created_at: at(yday, '12:00') },
+  { id: 'm2', user_id: 'u1', fact: 'Always log my food to Wrought rather than the chat', category: 'preference', active: true, created_at: at(yday, '12:00') },
+];
+out.opts_sweet = await call('whats_next', { context: 'I want something sweet' });
+reset([weigh(), ...thin(), ...eatsLike()]);
+out.opts_flag = await call('whats_next', { context: 'craving something sweet' });
+
+// A WORKOUT COMES BACK COACHED — each lift against last time, the call for next time.
+const priorSet = (id, daysAgo, exercise, reps, kg) => ({ id, user_id: 'u1', session_id: null, event_id: null, exercise, exercise_key: exerciseKey(exercise), set_number: 1, position: 1, reps, weight_kg: kg, rpe: null, local_date: addDays(today, -daysAgo), logged_at: at(addDays(today, -daysAgo), '16:00') });
+const lifting = () => ({ event_type: 'workout', summary: 'chest day', detail: { minutes: 50, exercises: [
+  { name: 'Bench press', sets: 3, reps: 6, weight_kg: 106.6 },
+  { name: 'Push-ups', sets: 2, reps: 15 },
+  { name: 'Incline treadmill walk', minutes: 15 },
+] }, estimated: true });
+reset([weigh()]);
+F.tables.wrought_profile[0].units = 'imperial';
+F.tables.wrought_sets = [priorSet('p1', 7, 'Bench press', 6, 102.06), priorSet('p2', 7, 'Push-ups', 12, null)];
+out.lift_log = await call('log', { text: 'did chest: bench 235 for 3 sets of 6, push-ups 2x15, 15 min incline walk', events: [lifting()] });
+reset([weigh()]);
+F.tables.wrought_sets = [priorSet('p1', 7, 'Bench press', 6, 102.06)];
+out.lift_quiet = await call('log', { quiet: true, text: 'did chest', events: [lifting()] });
+reset([weigh(), ...thin()]);
+F.tables.wrought_sets = [priorSet('p1', 7, 'Bench press', 6, 102.06)];
+out.lift_flag = await call('log', { text: 'did chest', events: [lifting()] });
+
+// …and a session closed by hand comes back the same way.
+reset([weigh()]);
+F.tables.wrought_sets = [priorSet('p1', 7, 'Bench press', 6, 102.06)];
+out.lift_set = await call('log_set', { exercise: 'Bench press', reps: 6, weight_kg: 106.6, felt: 'solid' });
+out.lift_end = await call('end_session', {});
 
 console.log('SCENARIOS ' + JSON.stringify(out));

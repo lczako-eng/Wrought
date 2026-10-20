@@ -3689,6 +3689,70 @@ test was reading the time of day. The scenarios now run on a fixed clock
 reproduces both failures. **A test that passes in the afternoon and fails in
 the morning is testing the clock.**
 
+### Options that know them, and a workout that comes back coached
+
+`optionsFor()` in `lib/nutrition.js` + `options` on `whats_next`;
+`nextTimeRead()` in `lib/training.js` + `next_time` on `log` and
+`end_session`. The founder, the afternoon the better-meal line shipped: *"you
+have a sweet tooth — give you other options. You can even ask you to take a
+picture of your fridge. It should know you personally, so it can come up with
+better options if you want something salty or whatever. Same with your
+workout strategies — it should be giving you advice, not just putting it in."*
+
+**Knowing somebody personally is the record, not a guess.** `whats_next`
+used to hand ChatGPT the day's numbers and nothing about the person; the
+memory it held went only to a server-side model that runs without a key.
+Now the reply carries three things the server can stand behind:
+
+- **What they are after, read off their words** (`cravingFrom`: sweet,
+  salty, crunchy, creamy, filling). Nothing guessed; no craving named means
+  one clause asking, never a questionnaire.
+- **Their own foods that fit it and scored well** (`ownOptions`): two months
+  of their own rows, one entry per food, scored 7 or more, best fit first.
+  Only these carry scores, because only these have figures on a row.
+- **Their tastes** (`known`): `dietary` and the remembered facts that are
+  about food. A remembered instruction about LOGGING ("always log my snacks
+  to Wrought") is not a taste and is left out, and there is a test.
+
+The connected model, which can see a photograph of the fridge and this
+server never does, names the ideas — and from a fridge, cupboard or menu
+photo, only what is in it. **A craving is answered with a better version of
+it, never with nothing**: no "just have water", no "wait it out", never a
+smaller amount framed as discipline. A taste they mention goes to
+`remember` (category preference) so the options are theirs next time.
+**Under a care flag**: things to eat only — anything of theirs that fits,
+no score, no calorie figure, nothing lighter, never "instead".
+
+**A workout comes back coached.** `log` (a workout told afterwards) and
+`end_session` now say, per lift, how today went against the last earlier
+day it was done and what to do next time — in the line the model relays,
+not only in a field, and in their own unit (the founder loads in pounds, so
+a step is a pair of 2.5s, never 5.5 lb).
+
+- **The load rules are the product's own.** With a planned target it is
+  `progressionCall`'s double progression. With no target, the honest call is
+  the first half of it: same weight, one more rep. A weight moves on its own
+  only when the effort was reported with room left (12+ at RPE 8 or under);
+  12+ with nothing reported is "again, or the smallest step if that last rep
+  was clean" — the decision stays theirs. A test asserts no lift is given
+  more weight with no effort and no target.
+- **Under last time is a fact, never explained or scolded**; a lift with no
+  history is "the baseline". Timed work is not a lift. Four lifts are said;
+  the rest are pointed at, never dropped silently.
+- **A quiet capture is never coached**, and **under a care flag nothing is
+  added** — the comparison stands, the call is "the same again".
+
+**Three faults the new scenarios walked into, all older than this change:**
+an auto-started session read *"set 2 of null, null reps"* between sets;
+`swap_exercise` on an open slot read *"1 set of null"*; and
+`energyBalance`'s sentence called a day with nothing eaten *"Roughly 0 in …
+around 2,490 down on the day"* — at the close of every morning session, the
+nothing-eaten-is-not-a-deficit rule the receipt and the day read already
+kept. The full run found Siri saying the same sentence aloud
+(`spokenBrief`), fixed the same way. The simulator's text scan now flags *"of null"*, a null before *reps*
+or *sets*, and *"Roughly 0 in"*; against the old code the smoke run alone
+found them 43, 37 and 32 times.
+
 ### A food confirmed with no figure — estimated before the reply, never confirmed as complete
 
 6 October: *"Logged in Wrought — Costco restaurant sausage at 3:17 PM"* with
@@ -6676,7 +6740,7 @@ self-reporting scale removes the most-abandoned manual entry), then Strava.
 
 ## Conventions
 
-- `npm test` runs `test/harness.mjs` — 904 offline tests, no network, no database.
+- `npm test` runs `test/harness.mjs` — 909 offline tests, no network, no database.
   Run it before every push. It covers the JSON-RPC envelope (which fails as an
   uninformative "could not connect" inside ChatGPT) and all the arithmetic
   (which fails as a confidently wrong number in somebody's verdict).

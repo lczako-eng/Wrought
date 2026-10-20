@@ -457,3 +457,111 @@ export function mealScores(rows = [], { flags = null } = {}) {
     };
   });
 }
+
+// ── What to have right now — options that know the person ───────────────────
+// The founder, the same afternoon: "so I can give you other suggestions — you
+// have a sweet tooth, give you other options. You can even take a picture of
+// your fridge. It should know you personally, so it can come up with better
+// options if you want something salty or whatever."
+//
+// Knowing somebody personally is the RECORD, not a guess: the foods they
+// actually log, what each of them scored, and what they have told the
+// assistant about their tastes. So the server hands over three things it can
+// stand behind — what they are after (read off their words), their OWN foods
+// that fit it and scored well, and what is remembered about how they eat —
+// and the connected model, which can see a photograph of the fridge and this
+// server never does, names the ideas. Nothing here prices an idea: only their
+// own logged foods carry a score, because only those have figures on a row.
+//
+// A craving is answered with a better version of it, never with nothing.
+// Under a care flag the options are only ever things to eat: no score, no
+// figure, nothing lighter, nothing "instead".
+
+const CRAVING_WORDS = {
+  sweet: /\bsweet|sugar|dessert|chocolate|candy|candies|cake|cookie|biscuit|ice[- ]?cream|treat|pudding/i,
+  salty: /\bsalt|savou?ry|chips|crisps|pretzel|popcorn/i,
+  crunchy: /crunch|\bcrisp(y)?\b/i,
+  creamy: /cream(y)?\b|chees(e|y)/i,
+  filling: /starv|filling|\bfull\b|really hungry|so hungry|famished|proper meal|something big/i,
+};
+
+/** What they are after, read off their own words — never guessed. Pure. */
+export function cravingFrom(text = '') {
+  const t = String(text || '');
+  return Object.keys(CRAVING_WORDS).filter(k => CRAVING_WORDS[k].test(t));
+}
+
+const FOOD_FITS = {
+  sweet: /chocolate|yog(h)?urt|berr|fruit|apple|banana|grape|mango|orange|pear|peach|honey|ice ?cream|cookie|cake|muffin|smoothie|pudding|protein bar|granola|\bdates?\b|jam|pancake|waffle|oat|cereal|frozen yog/i,
+  salty: /chip|crisp|pretzel|popcorn|\bnuts?\b|almond|peanut|cashew|pistachio|cheese|pickle|jerky|olive|cracker|pita|salted|seaweed|edamame|\beggs?\b|hot ?dog|sausage|bacon|ham\b|soup|ramen|fries/i,
+  crunchy: /chip|crisp|pretzel|popcorn|\bnuts?\b|almond|peanut|cracker|apple|carrot|celery|granola|toast|pita|rice cake/i,
+  creamy: /yog(h)?urt|cheese|cream|hummus|avocado|peanut butter|smoothie|pudding|cottage|skyr|shake/i,
+};
+
+const nameKey = s => String(s || '').toLowerCase().replace(/[^a-z ]+/g, ' ').replace(/\s+/g, ' ').trim();
+
+/**
+ * Their own foods that fit what they are after. Unflagged: scored 7 or more,
+ * the craving's fit first, then the score, then how often they have it.
+ * Flagged: anything they eat that fits, by how often — no score, no figure.
+ * Pure. @param rows food/drink events {summary, detail, local_date}
+ */
+export function ownOptions(rows = [], { want = [], flagged = false, limit = 3 } = {}) {
+  const seen = new Map();
+  for (const r of rows) {
+    if (!r || (r.event_type !== 'food' && r.event_type !== 'drink')) continue;
+    const d = r.detail && typeof r.detail === 'object' ? r.detail : {};
+    const name = String(r.summary || '').trim();
+    const key = nameKey(name);
+    if (!key) continue;
+    const m = mealScore({ ...d, categories: d.categories }, { drink: r.event_type === 'drink' });
+    const p = SCORE_FIG(d.protein_g);
+    const prev = seen.get(key);
+    if (!prev) {
+      seen.set(key, { name, times: 1, last: r.local_date || null, score: m.score, kcal: SCORE_FIG(d.calories), protein_g: p });
+    } else {
+      prev.times += 1;
+      if (m.score != null && (prev.score == null || m.score > prev.score)) prev.score = m.score;
+      if (r.local_date && (!prev.last || r.local_date > prev.last)) { prev.name = name; prev.last = r.local_date; prev.kcal = SCORE_FIG(d.calories); prev.protein_g = p; }
+    }
+  }
+  const fits = o => want.filter(w => (w === 'filling' ? (o.protein_g ?? 0) >= 20 : FOOD_FITS[w]?.test(o.name))).length;
+  const pool = [...seen.values()].filter(o => (flagged ? true : o.score != null && o.score >= 7) && (!want.length || fits(o) > 0));
+  pool.sort((a, b) => fits(b) - fits(a)
+    || (flagged ? 0 : (b.score ?? 0) - (a.score ?? 0))
+    || b.times - a.times
+    || String(b.last || '').localeCompare(String(a.last || '')));
+  return pool.slice(0, limit).map(o => flagged
+    ? { name: o.name, times: o.times, last: o.last }
+    : { name: o.name, score: o.score, times: o.times, last: o.last, kcal: o.kcal });
+}
+
+// A taste, not a standing instruction: "I have a sweet tooth" is known, while
+// "always log my food to Wrought" is about the record and is left out.
+const TASTE = /\b(sweet|salt|snack|crav|hate|love|dislike|can'?t stand|allerg|intoleran|lactose|gluten|vegan|vegetarian|spicy|dairy|fish|meat|takeaway|cook)/i;
+const NOT_TASTE = /\blog(s|ged|ging)?\b|wrought|\btotals?\b/i;
+
+/**
+ * The whole options read for "what can I have": what they are after, their
+ * own foods that fit, and what is remembered about their tastes. Pure.
+ */
+export function optionsFor({ text = '', rows = [], memory = [], dietary = [], flagged = false } = {}) {
+  const want = cravingFrom(text);
+  const yours = ownOptions(rows, { want, flagged });
+  const known = [
+    ...(Array.isArray(dietary) && dietary.length ? [`Does not eat: ${dietary.join(', ')}`] : []),
+    ...memory.filter(m => m && m.fact && !NOT_TASTE.test(m.fact) && (m.category === 'food' || TASTE.test(m.fact))).map(m => m.fact),
+  ].slice(0, 6);
+  const list = yours.map(o => (flagged || o.score == null ? o.name : `${o.name} (${o.score}/10)`)).join('; ');
+  return {
+    want, yours, known, additions_only: flagged,
+    say: yours.length
+      ? `${want.length ? `For something ${want.join(' and ')}, from` : 'From'} what you already eat${flagged ? '' : ' that scored well'}: ${list}.`
+      : null,
+    fridge: 'With a photo of their fridge, cupboard or a menu, choose only from what is in it — this server never sees the photo, and naming what is not there is a guess.',
+  };
+}
+
+export const OPTIONS_NOTE = 'OPTIONS FOR RIGHT NOW: give two or three named options for what they want, in a short paragraph and in the coach\'s register — first anything in options.yours (their own food that scored well — say its score), then ideas of your own that fit options.want and everything in options.known (their tastes, what they do not eat). With a photo of their fridge, cupboard or a menu, choose ONLY from what is in it. Any calories for an idea of yours are "roughly"; never a meal score of your own — only options.yours carries scores. A craving is answered with a better version of it, never with nothing: never "just have water", "wait it out" or "brush your teeth" as the answer, and never a smaller amount framed as discipline. Nothing want-shaped in their words? One clause asking sweet or salty is fine — never a questionnaire. A taste they tell you — a sweet tooth, loves salty, hates fish, lactose — goes to remember (category preference) so the options are theirs next time.';
+
+export const OPTIONS_FLAG_NOTE = 'OPTIONS, UNDER A CARE FLAG: name two or three things to eat that answer what they want — from options.yours first, then ideas that fit options.want and options.known; with a photo of their fridge, only what is in it. Options only: no score, no calorie figure, nothing lighter, never "instead", never a reason to wait or to have less. A taste they tell you goes to remember (category preference).';

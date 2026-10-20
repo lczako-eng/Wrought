@@ -47,7 +47,7 @@ import { preflight } from './lib/preflight.js';
 import { finaliseSession, closeStaleSessions, recordSet, foldIntoSession } from './lib/session.js';
 import { effortFromWords, wordsForRecord, beforeSet, afterSet, methodsFor } from './lib/coach.js';
 import { PROVIDERS, providerSummary, recommendRoute, liveConnections } from './lib/providers.js';
-import { nutritionTotals, composition, macroMatrix, yearOverYear, mealScores, mealScoreNote } from './lib/nutrition.js';
+import { nutritionTotals, composition, macroMatrix, yearOverYear, mealScores, mealScoreNote, optionsFor, OPTIONS_NOTE, OPTIONS_FLAG_NOTE } from './lib/nutrition.js';
 import {
   exerciseKey, lastPerformance, progressionCall, TIERS,
   restingBurn, energyBalance, planFromRoutine, sessionTotals, earnedRoom,
@@ -55,7 +55,7 @@ import {
   normaliseMovement, readMovement, syncSetsFromWorkouts,
   ACTIVITY,
   targetOptions, goalsToSet,
-  PACES, PUSH, sessionsCanCarryAim, sessionWorth,
+  PACES, PUSH, sessionsCanCarryAim, sessionWorth, nextTimeRead, NEXT_TIME_NOTE,
 } from './lib/training.js';
 import { PROGRAMMES, GOALS, MOVEMENTS, movementsFor, pickProgramme, buildProgramme, buildBlock, blockPosition, BLOCK_LENGTHS } from './lib/library.js';
 import { FOCUSES, FOCUS_NAMES, focusFrom, designSession, designQuestions, designNote, STYLES, styleFrom, stylesList, recommendStyles, creditedName, shelfSay } from './lib/design.js';
@@ -211,7 +211,7 @@ HOW PEOPLE ACTUALLY ASK. Nobody says "call the brief tool". They say one of a hu
 "what should I be running", "give me a plan", "what am I doing for the next two months", "I need a programme to follow" mean start_block; "what am I doing today", "what week am I on", "how far through am I" mean block_status.
 
   brief — "how am I doing", "how'd I do", "how was today", "what's the damage", "read me back", "give me the verdict", "the honest version", "morning", "night", "bedtime", "hit me", "am I on track", "how's the week", "recap", "the score", "how bad was it", "gym bro", "hey gym bro", "jim bro", "hey jim bro", "broski", "broheim", "coach", "hey coach", "trainer", "give it to me straight", "don't sugarcoat it", "roast me", "be honest with me", "did I train today". THE CONVERSATION IS NOT THE RECORD: even when the whole workout was discussed in this very chat, answer these from the tool — what the server holds is what actually counts, and reciting the chat back hides exactly the entries that failed to land.
-  whats_next — "what should I eat", "what now", "can I have a snack", "I'm hungry", "is there room", "should I train", "what do I need", "how much protein left", "am I allowed", "talk me out of it", "it's late and I'm at the fridge"
+  whats_next — "what should I eat", "what now", "can I have a snack", "I'm hungry", "is there room", "should I train", "what do I need", "how much protein left", "am I allowed", "talk me out of it", "it's late and I'm at the fridge", "I want something sweet", "craving something salty", "I've got a sweet tooth", "what can I snack on", "what can I make with this" (with a photo of the fridge or cupboard). Pass what they said as context — the craving is read off it. options carries their OWN foods that fit and scored well, and what is remembered about their tastes; you name the ideas, and from a fridge photo only what is in it.
   progress — "am I actually progressing", "show me the trend", "how's the month", "is it working", "what's moving", "charts", "the numbers", "am I wasting my time"
   suggest_workout / programmes — "what should I train", "give me a workout", "I want to do a workout", "I wanna do a workout", "let's do a workout", "I want to train", "can we work out", "what's today", "programme me", "build me something", "I've got 40 minutes", "what am I neglecting", "proper programme", "what should I be running"
   start_session — "let's go", "starting now", "at the gym", "I'm going to the gym", "heading to the gym", "gym in ten", "leg day", "chest day", "I'm at the rack", "warmed up"
@@ -582,11 +582,11 @@ const TOOLS = [
   {
     name: 'whats_next',
     title: 'What to do right now — eat, train, or stop',
-    description: 'The right-now answer. Returns where they are against today\'s targets (macros remaining, protein gap), whether their eating window is open and exactly how long is left or until it opens, whether they have trained today, and a concrete recommendation. Use for "what should I eat", "can I have a snack", "should I train today", "I\'m hungry", or anything asked at 10pm about the fridge.',
+    description: 'The right-now answer. Returns where they are against today\'s targets (macros remaining, protein gap), whether their eating window is open and exactly how long is left or until it opens, whether they have trained today, options for what to eat that come from THEIR OWN record and tastes, and a concrete recommendation. Use for "what should I eat", "can I have a snack", "I want something sweet", "craving salty", "what can I make from my fridge", "should I train today", "I\'m hungry", or anything asked at 10pm about the fridge.',
     inputSchema: {
       type: 'object',
       properties: {
-        context: { type: 'string', description: 'Optional. Anything they said about the situation — "at a restaurant", "only have 20 minutes", "starving", "nothing in the house".' },
+        context: { type: 'string', description: 'Optional. Anything they said about the situation, in their words — "want something sweet", "craving salty", "at a restaurant", "only have 20 minutes", "starving", "nothing in the house", and what a photo of their fridge shows.' },
       },
     },
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: false },
@@ -1617,6 +1617,24 @@ function itemNumbers(detail = {}) {
 
 // ── Tools: logging ──────────────────────────────────────────────────────────
 
+// The sets a workout just put on the record, and the last earlier time each
+// of those lifts was done — what next_time is computed from. Two reads; the
+// second needs the keys the first found. Never allowed to cost the write.
+async function liftHistory(userId, { eventIds = null, sessionRows = null } = {}) {
+  const cols = 'exercise, exercise_key, reps, weight_kg, rpe, local_date';
+  let now = sessionRows;
+  if (!now) {
+    const { data } = await supabase.from('wrought_sets').select(cols).eq('user_id', userId).in('event_id', eventIds);
+    now = data || [];
+  }
+  if (!now.length) return null;
+  const keys = [...new Set(now.map(s => s.exercise_key || exerciseKey(s.exercise)).filter(Boolean))];
+  const first = now.map(s => String(s.local_date)).sort()[0];
+  const { data: before } = await supabase.from('wrought_sets').select(cols).eq('user_id', userId)
+    .in('exercise_key', keys).lt('local_date', first).order('logged_at', { ascending: false }).limit(300);
+  return { now, before: before || [] };
+}
+
 async function log(args, user) {
   const text = String(args.text || '').trim();
   if (!text) return { error: 'Nothing to log — pass the user\'s words as text.' };
@@ -1707,13 +1725,23 @@ async function log(args, user) {
   // after it, and caught: a failure here never costs the write its
   // confirmation. A quiet capture stays quiet — no read, no card, no nudge.
   const wantRead = !args.quiet && (askedForDay || written.length > 0);
-  const [cardRead, nr] = await Promise.all([
+  // A WORKOUT COMES BACK COACHED. The lifts it put on the record, against the
+  // last time each was done — read beside the day, never on a quiet capture.
+  const liftIds = written.filter(e => e.event_type === 'workout' && Array.isArray(e.detail?.exercises) && e.detail.exercises.length).map(e => e.id);
+  const [cardRead, nr, lifted] = await Promise.all([
     wantRead ? fullDayRead(user.id, profile, localDateFor(profile.timezone), { day }).catch(() => null) : null,
     // Preemptive, on the surface that fires most often. A quiet capture stays
     // quiet — somebody mid-way through a tax question who mentioned ten
     // push-ups did not open a conversation about their training week.
     args.quiet ? null : nudgeFor(user.id, profile, { day }),
+    !args.quiet && liftIds.length && !bridged.error && !bridged.skipped
+      ? liftHistory(user.id, { eventIds: liftIds }).catch(() => null) : null,
   ]);
+  // The flags the card read found; a read that failed leaves them unknown,
+  // and unknown means no advice — the meal score's rule.
+  const nextTime = lifted && cardRead
+    ? nextTimeRead(lifted.now, lifted.before, { tier: profile.tier || 'intermediate', units: profile.units, flagged: (cardRead.flags || []).length > 0 })
+    : null;
   const fullRead = askedForDay ? cardRead : null;
   const left = fullRead?.left || (wroteFood && !args.quiet
     ? (cardRead ? cardRead.left : await leftFor(user.id, profile, localDateFor(profile.timezone), { day }).catch(() => null)) : null);
@@ -1797,6 +1825,9 @@ async function log(args, user) {
     // THE MEAL SCORE — what is in the plate, out of ten, computed from the
     // stored row; never on a quiet capture and never under a care flag.
     ...(scores ? { meal_score: scores, meal_score_note: mealScoreNote(scores) } : {}),
+    // THE WORKOUT, COACHED — each lift against last time and the call for
+    // next time, computed from their own sets.
+    ...(nextTime ? { next_time: nextTime, next_time_note: NEXT_TIME_NOTE } : {}),
     ...(vo2Kept && !vo2Kept.error ? { vo2_kept: {
       value: vo2Kept.value, unit: 'ml/kg/min', date: vo2Kept.date,
       say: `Kept as a VO2 max reading: ${vo2Kept.value} ml/kg/min.`,
@@ -1889,6 +1920,8 @@ async function log(args, user) {
             // card's Left line carries it with that caveat.
             (left?.short && !left.withheld && !fullRead && !day.food.meals_uncounted ? ` ${left.short}` : ''))
         : null,
+      // The workout, coached: in the line the model relays, not only a field.
+      nextTime ? nextTime.say : null,
       workLike.length && !args.quiet ? `Check: ${workLike.map(e => `"${e.summary}"`).join(' and ')} reads as work${workAs === 'as a note' ? ' and went in as a note, which burns nothing' : ' rather than training'} — if it was a shift, say how many hours on task and it moves to work, priced from the hours.` : null,
       fullRead ? `\n${fullRead.read.say}` : null,
     ].filter(Boolean).join(' ') || 'Nothing was written.',
@@ -4013,8 +4046,21 @@ async function whatsNext(args, user) {
   // so the same account could be flagged by the brief and clear here — on the
   // one computation that outranks everything else. Nothing else in this
   // function reads the range, so it is simply widened.
-  const range = await rangeFacts(user.id, profile, addDays(today, -(CARE_WINDOW_DAYS - 1)), today);
+  // Read beside it: two months of what they actually eat, for options that
+  // know them — their own foods, scored off their own rows.
+  const [range, eaten] = await Promise.all([
+    rangeFacts(user.id, profile, addDays(today, -(CARE_WINDOW_DAYS - 1)), today),
+    supabase.from('wrought_events').select('summary, detail, event_type, local_date')
+      .eq('user_id', user.id).in('event_type', ['food', 'drink'])
+      .gte('local_date', addDays(today, -59)).order('local_date', { ascending: false }).limit(400)
+      .then(r => r.data || [], () => []),
+  ]);
   const flags = careFlags(range, profile, { openDate: today });
+  // OPTIONS THAT KNOW THEM. "You have a sweet tooth — give you other options
+  // … it should know you personally." What they are after, their own foods
+  // that fit it, what is remembered about their tastes; the model names the
+  // ideas and reads the fridge photo. Things to eat only, under a flag.
+  const options = optionsFor({ text: args.context || '', rows: eaten, memory, dietary: profile.dietary, flagged: flags.length > 0 });
   // UNDER A FLAG, NO FIGURE OF WHAT IS LEFT. "303 kcal left" said to somebody
   // whose intake tripped the low-intake flag is a number about how much more
   // they are allowed — exactly what earnedRoom refuses under a flag, and what
@@ -4061,6 +4107,7 @@ Answer in 2-4 short sentences: what to do right now and why, in their units. If 
   return {
     situation,
     recommendation,
+    options,
     // "I'm hungry" is an unprompted read: under a flag it carries not even
     // the held target — only an explicit read says it is withheld and why.
     ...(left && !left.withheld ? { left_today: left } : {}),
@@ -4070,10 +4117,12 @@ Answer in 2-4 short sentences: what to do right now and why, in their units. If 
       wStatus?.say,
       proteinLeft != null && !flags.length ? `${proteinLeft}g of protein left to hit today.` : null,
       (!left?.withheld && left?.short) || (caloriesLeft != null && !flags.length ? (caloriesLeft < 0 ? `${Math.abs(caloriesLeft).toLocaleString('en-US')} kcal over target.` : `${caloriesLeft.toLocaleString('en-US')} kcal left.`) : null),
+      options.say,
       day.training.sessions ? 'Already trained today.' : 'Nothing trained yet today.',
     ].filter(Boolean).join(' '),
     note: (flags.length ? 'Care flags are up — they lead; follow their guidance exactly and quote no figure of what is left to eat. ' : '') +
-      'Numbers here are computed — relay them. Food totals are estimates, so say "roughly".',
+      'Numbers here are computed — relay them. Food totals are estimates, so say "roughly". ' +
+      (flags.length ? OPTIONS_FLAG_NOTE : OPTIONS_NOTE),
     next_actions: ['log once they eat', 'suggest_workout if they have not trained', 'set_eating_window if late eating keeps happening and they have no window'],
   };
 }
@@ -4877,7 +4926,9 @@ async function logSet(args, user) {
     // How far through, computed here so the conversation and the Trainer
     // screen can never quote two different percentages at the same moment.
     progress: sessionProgress(plan, sofar || []),
-    say: `${moreSetsHere ? 'Logged' : `${current.name} done`}. Rest ${nextExercise.rest_s}s, then ${nextExercise.name} set ${setNo} of ${nextExercise.sets}, ${nextExercise.reps} reps. ${load.say}`,
+    // An open slot (a session opened by its first set) has no planned count
+    // or reps — "set 2 of null, null reps" was read out to somebody at a rack.
+    say: `${moreSetsHere ? 'Logged' : `${current.name} done`}. Rest ${nextExercise.rest_s}s, then ${nextExercise.name} set ${setNo}${nextExercise.sets != null ? ` of ${nextExercise.sets}` : ''}${nextExercise.reps != null ? `, ${nextExercise.reps} reps` : ''}. ${load.say}`,
     note: (autoStarted ? 'A workout was opened automatically because they just started reporting sets — mention it in half a clause at most ("got you, workout started") and never as a correction. ' : '') + 'One or two lines only — they are standing in a gym holding a phone, not reading a report. THE LOAD IN up_next IS COMPUTED FROM THE SET THEY JUST DID — say it as given and never work out an adjustment yourself. Ask for the RPE or just "how did that feel" when they have not said: without it the weight can only ever hold, because reps alone cannot tell a comfortable eight from a grinding one. The so_far numbers are there for the rest gap: offer them if they ask or if the moment fits, never after every single set. The percentage in progress is computed — say it, never work one out yourself, and only when they ask or a milestone lands.',
     next_actions: ['log_set for the next set', 'end_session if they stop early'],
   };
@@ -5146,7 +5197,11 @@ async function swapExercise(args, user) {
     load,
     cue: swapped.cue,
     alternatives: options.slice(0, 4).map(m => m.name),
-    say: `${current.name} is out — ${swapped.name} instead, ${remaining} set${remaining === 1 ? '' : 's'} of ${swapped.reps}. ${load.say}`,
+    // An open slot has no planned count, and a swap may carry no reps:
+    // neither is read out as "1 set of null".
+    say: `${current.name} is out — ${swapped.name} instead${current.sets != null
+      ? `, ${remaining} set${remaining === 1 ? '' : 's'}${swapped.reps != null ? ` of ${swapped.reps}` : ''}`
+      : swapped.reps != null ? `, ${swapped.reps} reps` : ''}. ${load.say}`,
     note: 'The load call is from the NEW movement\'s own history — never carry the old weight across. If the reason was pain rather than a queue, put it in remember (category health) as well.',
     next_actions: ['log_set when they finish a set', 'swap_exercise again if that one is also taken'],
   };
@@ -5353,11 +5408,18 @@ async function endSession(args, user) {
   // the only place this server can plant the next one, and a rest day the
   // rhythm calls for is part of that plan, not a gap in it.
   const coachTomorrow = coachDay({ profile, flags: endFlags, days: range.days, today: addDays(today, 1) });
+  // EACH LIFT, COACHED: against the last time it was done, and the call for
+  // next time off this session's own plan. Nothing added under a flag.
+  const lifted = await liftHistory(user.id, { sessionRows: rows.map(r => ({ ...r, local_date: session.local_date || today })) }).catch(() => null);
+  const nextTime = lifted ? nextTimeRead(lifted.now, lifted.before, {
+    plan: session.plan, tier: profile.tier || 'intermediate', units: profile.units, flagged: endFlags.length > 0,
+  }) : null;
 
   return {
     session: session.name,
     minutes, ...totals, muscles,
     beat_last_time: beats,
+    ...(nextTime ? { next_time: nextTime } : {}),
     // Planned against done, the same numbers now filed on the workout event —
     // "if I only do half of them, you'll know that, or half of one of them."
     ...(done.completion ? { completion: done.completion } : {}),
@@ -5384,11 +5446,12 @@ async function endSession(args, user) {
                : 'some sets left on the table'}.`
            : '') +
          (beats.length ? ` Up on last time: ${beats.join('; ')}.` : '') +
+         (nextTime ? ` ${nextTime.say}` : '') +
          ` ${worth.say}` +
          ` ${balance.say}` +
          (week ? ` ${week.say}` : '') +
          (nextWorkout?.say ? ` ${nextWorkout.say}` : ''),
-    note: 'SAY WHAT THE SESSION WAS WORTH from `calories` — its own figure, labelled estimated or measured — and THEN how the day counts it. Never answer "how many calories" with the day\'s total or with "the watch\'s figure is the training component": that is the day\'s arithmetic, not the session\'s, and never a figure of your own. If work_split is there, give the two numbers SEPARATELY — lifting volume and cardio minutes are different statistics and a blended total describes neither. If effort is there, it is a TRAINING statistic and nothing more: never read a heart rate as a sign of anything, never compare it to anybody else, and say the caveat once — a wrist moves with grip and cold hands as well as effort. State completion as a FACT, never a scolding — a half-done plan recorded honestly beats a finished one invented, and the skipped list is information about the plan, not the person. Lead with anything in beat_last_time — that is the only part of a session summary anyone actually cares about. OFFER THE COOLDOWN in one short line, with the holds named, and say they can skip it in the same breath — this is where static stretching belongs and the reason none of it was in the warm-up. Never insist and never repeat it: the record of the workout matters more than the stretching does, and a cool-down that becomes a chore is how somebody stops closing sessions. Close with next_workout: naming the next session at the end of this one is the only prompt this server can ever give.' +
+    note: 'SAY WHAT THE SESSION WAS WORTH from `calories` — its own figure, labelled estimated or measured — and THEN how the day counts it. Never answer "how many calories" with the day\'s total or with "the watch\'s figure is the training component": that is the day\'s arithmetic, not the session\'s, and never a figure of your own. If work_split is there, give the two numbers SEPARATELY — lifting volume and cardio minutes are different statistics and a blended total describes neither. If effort is there, it is a TRAINING statistic and nothing more: never read a heart rate as a sign of anything, never compare it to anybody else, and say the caveat once — a wrist moves with grip and cold hands as well as effort. State completion as a FACT, never a scolding — a half-done plan recorded honestly beats a finished one invented, and the skipped list is information about the plan, not the person. Lead with anything in beat_last_time — that is the only part of a session summary anyone actually cares about. OFFER THE COOLDOWN in one short line, with the holds named, and say they can skip it in the same breath — this is where static stretching belongs and the reason none of it was in the warm-up. Never insist and never repeat it: the record of the workout matters more than the stretching does, and a cool-down that becomes a chore is how somebody stops closing sessions. Close with next_workout: naming the next session at the end of this one is the only prompt this server can ever give. ' + (nextTime ? NEXT_TIME_NOTE : '') +
       (coachTomorrow ? ` After next_workout, say coach_tomorrow.say in one clause, in its register; if its state is rest, next_workout is the session after the rest. Never add a session for tomorrow beyond their week.` : ''),
     next_actions: ['log what they eat next', 'brief tonight for the full read'],
   };
