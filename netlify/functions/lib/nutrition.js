@@ -274,7 +274,7 @@ export function yearOverYear(events, { today }) {
 // this product never gives. And the person: it rates what is in the food,
 // never somebody for eating it, and it never calls food good or bad.
 // A figure not on the row is not a zero: the score waits for it, and says
-// which. Under a care flag there is no score at all — rating food is coaching.
+// which. Under a care flag the score is softened, never hidden (below).
 
 const SCORE_FIG = v => (v == null || v === '' || !Number.isFinite(Number(v)) ? null : Number(v));
 
@@ -290,7 +290,7 @@ export const MEAL_SCORE_GUIDES = [
  * waiting for. Pure.
  * @param {{calories, protein_g, sugar_g, fibre_g, sat_fat_g, categories?}} e
  */
-export function mealScore(e = {}) {
+export function mealScore(e = {}, { drink = false } = {}) {
   const kcal = SCORE_FIG(e.calories);
   const p = SCORE_FIG(e.protein_g), fi = SCORE_FIG(e.fibre_g), su = SCORE_FIG(e.sugar_g), sf = SCORE_FIG(e.sat_fat_g);
   const needs = [
@@ -345,32 +345,93 @@ export function mealScore(e = {}) {
     saturated: 'a leaner swap — leaner meat, or a side that is not fried, buttered or cheese-heavy',
   };
   const toLift = gap && gap.points < gap.of ? LIFT[gap.key] : null;
+  const better = betterVersion({ score, parts }, { drink });
   return {
     score, out_of: 10, parts,
     lifted_by: lifted, held_back_by: held,
     to_lift: toLift,
+    better,
     say: `${score}/10 on what is in it.`
       + (lifted.length ? ` Strong: ${lifted.join('; ')}.` : '')
       + (held.length ? ` Holding it back: ${held.join('; ')}.` : '')
-      + (toLift ? ` To lift it next time: ${toLift}.` : ' Nothing to lift — full marks on every part.'),
+      + (better ? ` ${better.say}` : ' Nothing to lift — full marks on every part.'),
     basis: 'Wrought\'s meal score: protein, fibre, sugar and saturated fat against published guides, worked out from the estimated figures on the row. It rates what is in the food — never the amount, never the person.',
   };
 }
 
+// ── A better version of the same meal ────────────────────────────────────────
+// The founder, under a 6/10 shepherd's pie: "you should be using AI for
+// similar foods that they could recommend that would be far better." The
+// split is this file's oldest one. The SERVER says which part of the plate is
+// holding the score back and what a better version could reach; the
+// CONNECTED MODEL, which saw the meal and this server never does, names the
+// version — "the same pie with lean turkey mince and peas through the
+// filling". The score of the alternative is never the model's: it is "up to"
+// what the missing points allow, computed here, and the model quotes it.
+//
+// Never a smaller plate and never "less": every line is something put in,
+// put alongside, or a version of the same thing made another way. Two lines
+// at most, and one for a drink — "more fibre" beside a cola is not a better
+// cola. UNDER A CARE FLAG ONLY ADDITIONS ARE OFFERED. A swap (the sugary
+// part, a leaner version) takes calories away, which is the one direction a
+// low-intake flag exists to stop; something put alongside the same meal goes
+// the other way. A flagged meal whose only gaps are swaps gets no line at all.
+
+const BETTER = {
+  sugar: { mode: 'swap', what: 'the sugary part swapped', eg: 'unsweetened, water or a diet drink, or fruit in place of a sweet' },
+  saturated: { mode: 'swap', what: 'the same thing made leaner', eg: 'leaner mince or poultry, baked rather than fried, a topping or side that is not buttery or cheese-heavy' },
+  fibre: { mode: 'add', what: 'more fibre through it', eg: 'vegetables or beans in it or alongside, or wholegrain in place of white',
+    flagged: { what: 'vegetables, beans or fruit with it', eg: null } },
+  protein: { mode: 'add', what: 'more protein in it or alongside', eg: 'eggs, chicken, fish, Greek yogurt, beans or lentils',
+    flagged: { what: 'some protein with it', eg: 'eggs, chicken, fish, Greek yogurt or beans' } },
+};
+const BETTER_ORDER = ['sugar', 'saturated', 'fibre', 'protein'];
+
+/**
+ * The better version of a scored meal: which parts, in order, what each is
+ * worth and the score it could reach. Additions only under a flag; one line
+ * for a drink; null at full marks or with nothing it may say. Pure.
+ */
+export function betterVersion(m, { flagged = false, drink = false } = {}) {
+  if (!m || m.score == null || !Array.isArray(m.parts)) return null;
+  const allowed = x => !flagged || BETTER[x.key].mode === 'add';
+  const ranked = m.parts
+    .filter(x => x.points < x.of && BETTER[x.key])
+    .sort((a, b) => ((b.of - b.points) / b.of) - ((a.of - a.points) / a.of)
+      || BETTER_ORDER.indexOf(a.key) - BETTER_ORDER.indexOf(b.key));
+  // A drink is judged by its own top gap only: a cola whose problem is its
+  // sugar is not made better by vegetables beside it, flag or no flag.
+  const gaps = drink ? ranked.slice(0, 1).filter(allowed) : ranked.filter(allowed).slice(0, 2);
+  if (!gaps.length) return null;
+  let at = m.score;
+  const lifts = gaps.map(x => {
+    const b = flagged ? BETTER[x.key].flagged : BETTER[x.key];
+    at = Math.min(10, at + (x.of - x.points));
+    return { part: x.key, mode: BETTER[x.key].mode, what: b.what, eg: b.eg, worth: x.of - x.points, up_to: at };
+  });
+  const lines = lifts.map((l, i) => `${l.what}${i ? ' as well' : ''}${l.eg ? ` (${l.eg})` : ''} — up to ${l.up_to}/10`);
+  return {
+    lifts, up_to: at, additions_only: flagged,
+    say: `${flagged ? 'Added alongside the same meal' : 'A better version next time'}: ${lines.join('; ')}.`,
+  };
+}
+
 /** What the model is told to do with a meal score — one sentence, kept with the scores. */
-export const MEAL_SCORE_NOTE = 'RATE THE MEAL AS meal_score SAYS, in one or two lines and in the coach\'s register: the score out of 10, what made it strong, and the one thing in to_lift. Never a score of your own, never "good food" or "bad food", and never a word about the amount eaten or about their body — it rates what is in the food. A meal with no score yet names the figures it needs: estimate them (numbers, never ranges) and send them with structure_entries by id in this same turn; that reply carries the score.';
+export const MEAL_SCORE_NOTE = 'RATE THE MEAL AS meal_score SAYS, in one or two lines and in the coach\'s register: the score out of 10, what made it strong and what is holding it back. Then ONE line from better: name one or two versions of WHAT THEY ACTUALLY ATE made the better way — you saw the meal, so be specific ("the same pie with lean turkey mince and peas through the filling"), a similar dish they would actually want rather than a lecture — each with the score better gives it ("up to 8/10"). Never a score or a figure of your own for the alternative, never a smaller plate, never "less", never calories saved — an option for next time, said once; and never "good food" or "bad food", and never a word about the amount eaten or about their body — it rates what is in the food. A meal with no score yet names the figures it needs: estimate them (numbers, never ranges) and send them with structure_entries by id in this same turn; that reply carries the score.';
 
 /**
  * Under a care flag the score is SOFTENED, never hidden. Silence here was
  * the first version, and the founder's own record showed what it costs: a
  * low-intake flag stands on his account, so he would have seen no score at
  * all — and a model asked "rate my meal" with nothing in front of it invents
- * one, with free advice attached. What a flag stops is the PUSH: so the score
- * and what is strong stand, and nothing that would lift it is said — every
- * swap a meal score suggests (the sugary part, the saturated fat) takes
- * calories away, which is the one direction a low-intake flag exists to stop.
+ * one, with free advice attached. What a flag stops is the push towards
+ * LESS: so the score and what is strong stand, nothing holding it back is
+ * listed, and no swap is offered — every swap (the sugary part, a leaner
+ * version) takes calories away, the one direction a low-intake flag exists
+ * to stop. Something ADDED alongside the same meal goes the other way, so
+ * that, and only that, is the better version a flagged meal is given.
  */
-export const MEAL_SCORE_FLAG_NOTE = 'A CARE FLAG STANDS, so say ONLY the score out of 10 and what made it strong, as meal_score says — no swap, no advice, nothing to lift, nothing about cutting, replacing or skipping anything, never "good food" or "bad food", never a word about the amount or their body. A meal with no score yet names the figures it needs: estimate them and send them with structure_entries by id in this same turn.';
+export const MEAL_SCORE_FLAG_NOTE = 'A CARE FLAG STANDS, so say the score out of 10 and what made it strong, as meal_score says — and, only if better is there, ONE line naming something they could ADD alongside the same meal, specific to what they ate ("peas or a side salad with the pie"), with the score better gives it. Only additions: never a swap, never "in place of", never leaner or lighter, never anything to cut or skip, never a calorie figure; never "good food" or "bad food", never a word about the amount or their body. A meal with no score yet names the figures it needs: estimate them and send them with structure_entries by id in this same turn.';
 
 /** The note that goes with a set of scores — the softened one under a flag. */
 export const mealScoreNote = scores => (Array.isArray(scores) && scores.some(x => x.softened) ? MEAL_SCORE_FLAG_NOTE : MEAL_SCORE_NOTE);
@@ -384,12 +445,15 @@ export function mealScores(rows = [], { flags = null } = {}) {
   const flagged = flags.length > 0;
   return food.map(r => {
     const d = r.detail && typeof r.detail === 'object' ? r.detail : r;
-    const m = mealScore({ ...d, categories: d.categories });
+    const drink = r.type === 'drink' || r.event_type === 'drink';
+    const m = mealScore({ ...d, categories: d.categories }, { drink });
     if (!flagged || m.score == null) return { id: r.id ?? null, summary: r.summary ?? null, ...m };
+    const better = betterVersion(m, { flagged: true, drink });
     return {
       id: r.id ?? null, summary: r.summary ?? null, ...m,
-      held_back_by: [], to_lift: null, softened: true,
-      say: `${m.score}/10 on what is in it.` + (m.lifted_by.length ? ` Strong: ${m.lifted_by.join('; ')}.` : ''),
+      held_back_by: [], to_lift: null, better, softened: true,
+      say: `${m.score}/10 on what is in it.` + (m.lifted_by.length ? ` Strong: ${m.lifted_by.join('; ')}.` : '')
+        + (better ? ` ${better.say}` : ''),
     };
   });
 }

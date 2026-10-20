@@ -5,6 +5,19 @@
 // and the card its _meta carries. The harness spawns this and asserts on it,
 // because these replies cannot be built without a database and a source grep
 // cannot tell a working reply from a broken one.
+// A FIXED CLOCK. These replies quote times of day ("at 3:17pm", "Today so
+// far: 570 kcal"), and a stated time more than half an hour ahead of now is
+// filed as last night — so on the real clock the 3:17pm sausage passed after
+// 3:47pm in Toronto and failed every morning, a test that read the time of
+// day rather than the code. The clock starts at 5:30pm Toronto on a fixed
+// Wednesday and runs forward from there, so every time_hint here is past.
+const PINNED = Date.parse('2026-10-07T21:30:00Z');
+const RealDate = Date, realNow = RealDate.now.bind(RealDate), started = realNow();
+globalThis.Date = class extends RealDate {
+  constructor(...a) { if (a.length) super(...a); else super(PINNED + (realNow() - started)); }
+  static now() { return PINNED + (realNow() - started); }
+};
+
 process.env.SUPABASE_URL = 'http://fakedb.invalid';
 process.env.SUPABASE_SERVICE_ROLE_KEY = 'fake';
 delete process.env.OPENAI_API_KEY;

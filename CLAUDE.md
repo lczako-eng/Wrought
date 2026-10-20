@@ -3555,10 +3555,11 @@ points).
   items, none reviewed. So the low-intake flag stands, and he would have seen
   no score at all. A model asked "rate my meal" with nothing in front of it
   invents one, advice included. Under a flag the score and what is strong
-  stand, and nothing that would lift it is said. Every swap a meal score
-  suggests (the sugary part, the saturated fat) takes calories away, the one
-  direction that flag exists to stop. `MEAL_SCORE_FLAG_NOTE` says so to the
-  model. A flag state nobody read gives no score, and a quiet capture never
+  stand, and no swap is offered. Every swap a meal score suggests (the
+  sugary part, the saturated fat) takes calories away, the one direction
+  that flag exists to stop; something added alongside goes the other way and
+  is still said (see *A better version of the same meal*).
+  `MEAL_SCORE_FLAG_NOTE` says so to the model. A flag state nobody read gives no score, and a quiet capture never
   reads the flags. His lunch today scores 9/10 off the row ChatGPT wrote.
 
 **The fitness card places VO2 max against the FRIEND registry** (Kaminsky et
@@ -3634,6 +3635,59 @@ never reads the flags and the score refuses without them. It is closed twice.
 **Not on the dashboard yet.** Both are tool answers with no panel — this file's
 most repeated shape. The fitness read belongs beside the athlete panel, and the
 day's items could carry their score. Next, if he wants them on the website.
+
+### A better version of the same meal — the server names the part, the model names the food
+
+`betterVersion()` in `lib/nutrition.js` + `better` on every meal score. The
+founder, under his 20 October shepherd's pie at 6/10: *"you should be using AI
+for similar foods that they could recommend that would be far better."* The
+score said what was holding the plate back and stopped. A person wants the
+next plate, not the arithmetic of this one.
+
+**The split is the oldest one in this file.** The server cannot see the meal
+and the model cannot be trusted with a number. So the server says which part
+is furthest from its guide and what fixing it is worth, and the connected
+model, which saw the plate, names the actual food. For his pie: *"the same
+thing made leaner — up to 8/10; more fibre through it as well — up to 9/10"*.
+ChatGPT turns that into *"the same pie with lean turkey mince and peas through
+the filling"*.
+
+- **The score of the alternative is never the model's.** `up_to` is the meal's
+  score plus the points that part is missing, capped at 10, computed here. The
+  model quotes it as "up to" and never scores its own suggestion. A test
+  recomputes every `up_to` from the parts.
+- **Never a smaller plate, never "less", never calories saved.** Every line is
+  something put in, put alongside, or the same dish made another way. A test
+  greps the reply and the block for *less, smaller, portion, cut, skip, fewer,
+  calories saved*, the body and good/bad food.
+- **Two lines at most, one for a drink.** More than two is a lecture. A
+  cola's problem is its sugar, and vegetables beside it do not make it a better
+  cola. A drink is judged by its own top gap only.
+- **Under a care flag, additions only.** The softened score used to say
+  nothing that would lift it, because every lift it had was a swap and a swap
+  takes calories away. An addition alongside the same meal goes the other way,
+  so a flagged meal gets that and only that: *"Added alongside the same meal:
+  vegetables, beans or fruit with it — up to 7/10"*. Never a swap, never "in
+  place of", never leaner or lighter. A flagged meal whose only gaps are swaps
+  gets no line at all. The founder's own record still carries the low-intake
+  flag, which is why his screenshot showed the score and the strong part and
+  nothing else. This keeps the doctrine's reason (no push towards less) while
+  dropping the blanket silence, which hid the feature from the person who
+  asked for it. It is the *softens, never hides* rule from the shelf's
+  *For you* dots and the meal score itself, applied one step further.
+- **It reaches him without a Refresh.** `better` rides on the `log`,
+  `structure_entries` and `get_day` RESULTS, never a new tool. The phrasebook
+  adds *"what would be better", "a healthier version", "what could I have
+  had"*.
+
+**And two tests had been failing every morning.** The 3:17pm sausage scenario
+ran on the real clock. After #170, a stated time more than half an hour ahead
+of now is filed as last night, so before 3:47pm Toronto the sausage landed
+under yesterday and *"Today so far"* was missing. The rule was right and the
+test was reading the time of day. The scenarios now run on a fixed clock
+(5:30pm Toronto on a fixed Wednesday, moving forward), and pinning it to 9am
+reproduces both failures. **A test that passes in the afternoon and fails in
+the morning is testing the clock.**
 
 ### A food confirmed with no figure — estimated before the reply, never confirmed as complete
 
@@ -6622,7 +6676,7 @@ self-reporting scale removes the most-abandoned manual entry), then Strava.
 
 ## Conventions
 
-- `npm test` runs `test/harness.mjs` — 903 offline tests, no network, no database.
+- `npm test` runs `test/harness.mjs` — 904 offline tests, no network, no database.
   Run it before every push. It covers the JSON-RPC envelope (which fails as an
   uninformative "could not connect" inside ChatGPT) and all the arithmetic
   (which fails as a confidently wrong number in somebody's verdict).

@@ -19444,7 +19444,7 @@ await test('a meal score rates the food, never the amount or the person, and nev
   assert.match(NUT.MEAL_SCORE_NOTE, /never a word about the amount eaten or about their body/);
 });
 
-await test('a care flag softens the meal score — the score and what is strong stand, nothing that would lift it is said', () => {
+await test('a care flag softens the meal score — the score and what is strong stand, no swap and nothing holding it back is said', () => {
   const rows = [
     { id: 'a', type: 'food', summary: 'wrap', calories: 600, protein_g: 40, fibre_g: 8, sugar_g: 10, sat_fat_g: 5 },
     { id: 'b', type: 'drink', summary: 'cola', calories: 140, protein_g: 0, fibre_g: 0, sugar_g: 39, sat_fat_g: 0 },
@@ -19457,15 +19457,64 @@ await test('a care flag softens the meal score — the score and what is strong 
     assert.equal(x.softened, true);
     assert.equal(x.to_lift, null, 'a swap was offered under a low-intake flag');
     assert.deepEqual(x.held_back_by, []);
-    assert.ok(!/To lift|Holding it back|swap|leaner|diet drink/i.test(x.say), `advice under a flag: ${x.say}`);
+    assert.ok(!/To lift|Holding it back|swap|leaner|lighter|diet drink|in place of|instead/i.test(x.say), `a swap under a flag: ${x.say}`);
+    assert.ok(!x.better || x.better.lifts.every(l => l.mode === 'add'), 'a flagged better version offered a swap');
   }
   assert.equal(NUT.mealScoreNote(soft), NUT.MEAL_SCORE_FLAG_NOTE);
   assert.equal(NUT.mealScoreNote(plain), NUT.MEAL_SCORE_NOTE);
-  assert.match(NUT.MEAL_SCORE_FLAG_NOTE, /no swap, no advice/);
+  assert.match(NUT.MEAL_SCORE_FLAG_NOTE, /ADD alongside the same meal/);
+  assert.match(NUT.MEAL_SCORE_FLAG_NOTE, /never a swap, never "in place of", never leaner or lighter/);
   // A flag state nobody read is not "no flag".
   assert.equal(NUT.mealScores(rows, { flags: null }), null);
   assert.equal(NUT.mealScores(rows, {}), null);
   assert.equal(NUT.mealScores([{ id: 'w', type: 'workout' }], { flags: [] }), null, 'only food and drink are scored');
+});
+
+await test('a better version of the same meal: the server names the part and the score, the model names the food', () => {
+  // The founder's own lunch, off the row ChatGPT wrote on 20 October.
+  const pie = { calories: 480, protein_g: 24, carbs_g: 43, fat_g: 23, sugar_g: 7, fibre_g: 5, sat_fat_g: 9 };
+  const m = NUT.mealScore(pie);
+  assert.equal(m.score, 6);
+  assert.deepEqual(m.better.lifts.map(l => [l.part, l.worth, l.up_to]), [['saturated', 2, 8], ['fibre', 1, 9]],
+    'the better version is aimed at the parts furthest from their guides, each with the score it could reach');
+  assert.equal(m.better.up_to, 9);
+  assert.match(m.say, /A better version next time: the same thing made leaner \(.+\) — up to 8\/10; more fibre through it as well \(.+\) — up to 9\/10\.$/);
+  // Every up_to is the score plus the points actually missing, never past ten.
+  for (const c of [pie, { calories: 140, protein_g: 0, fibre_g: 0, sugar_g: 39, sat_fat_g: 0 }, { calories: 300, protein_g: 4, fibre_g: 1, sugar_g: 2, sat_fat_g: 3 }]) {
+    const r = NUT.mealScore(c);
+    let at = r.score;
+    for (const l of r.better.lifts) {
+      at += r.parts.find(x => x.key === l.part).of - r.parts.find(x => x.key === l.part).points;
+      assert.equal(l.up_to, Math.min(10, at), 'an up_to that is not the score plus the missing points is a score the server never computed');
+    }
+    assert.ok(r.better.lifts.length <= 2, 'more than two lines is a lecture');
+  }
+  // Full marks has nothing to offer.
+  const full = NUT.mealScore({ calories: 500, protein_g: 40, fibre_g: 9, sugar_g: 5, sat_fat_g: 3 });
+  assert.equal(full.score, 10);
+  assert.equal(full.better, null);
+  assert.match(full.say, /Nothing to lift/);
+  // A drink gets its own top gap only: a cola is not made better by vegetables beside it.
+  const cola = { id: 'c', type: 'drink', summary: 'cola', calories: 140, protein_g: 0, fibre_g: 0, sugar_g: 39, sat_fat_g: 0 };
+  const [plainCola] = NUT.mealScores([cola], { flags: [] });
+  assert.deepEqual(plainCola.better.lifts.map(l => l.part), ['sugar']);
+  const [flagCola] = NUT.mealScores([cola], { flags: [{ flag: 'very_low_intake' }] });
+  assert.equal(flagCola.better, null, 'a flagged drink whose gap is a swap was offered something to add beside it');
+  // Under a flag: additions only, and the pie still gets one.
+  const [flagPie] = NUT.mealScores([{ id: 'p', type: 'food', summary: 'shepherd\'s pie', ...pie }], { flags: [{ flag: 'very_low_intake' }] });
+  assert.equal(flagPie.better.additions_only, true);
+  assert.deepEqual(flagPie.better.lifts.map(l => [l.part, l.mode, l.up_to]), [['fibre', 'add', 7], ['protein', 'add', 8]]);
+  assert.match(flagPie.say, /Added alongside the same meal: vegetables, beans or fruit with it — up to 7\/10; some protein with it as well/);
+  // Never less, never smaller, never calories saved, never the body — plain or flagged.
+  for (const r of [m, plainCola, flagPie]) {
+    const words = [r.say, r.better ? JSON.stringify(r.better) : ''].join(' ');
+    assert.ok(!/\bless\b|\bsmaller\b|\bportion\b|\bcut\b|\bskip\b|calories saved|\bfewer\b|\b(good|bad|junk) food\b|\bweight\b|\bbody\b/i.test(words), `judgement or less in "${words}"`);
+  }
+  // The model is told to name the food and quote the server's score — never its own.
+  assert.match(NUT.MEAL_SCORE_NOTE, /name one or two versions of WHAT THEY ACTUALLY ATE/);
+  assert.match(NUT.MEAL_SCORE_NOTE, /Never a score or a figure of your own for the alternative, never a smaller plate, never "less"/);
+  assert.match(SERVER_INSTRUCTIONS, /"what would be better", "a healthier version"/);
+  assert.match(SERVER_INSTRUCTIONS, /Under a care flag better holds only things to ADD alongside, never a swap\./);
 });
 
 await test('the meal score rides the log reply and the day, never a quiet capture, and softens on a flagged account', () => {
@@ -19479,6 +19528,9 @@ await test('the meal score rides the log reply and the day, never a quiet captur
   // Under a flag it is softened, on the log reply and the day alike.
   assert.equal(S.score_flag.body.meal_score?.[0]?.softened, true, 'a flagged account was given no score, or the full advice');
   assert.equal(S.score_flag.body.meal_score[0].to_lift, null);
+  assert.ok(S.score_log.body.meal_score[0].better, 'the log reply carried no better version');
+  assert.ok((S.score_flag.body.meal_score[0].better?.lifts || []).every(l => l.mode === 'add'), 'a flagged log reply offered a swap');
+  assert.ok(S.score_day.body.meal_scores[0].better, 'get_day carried no better version');
   assert.equal(S.score_flag.body.meal_score_note, NUT.MEAL_SCORE_FLAG_NOTE);
   assert.equal(S.score_day_flag.body.meal_scores?.[0]?.softened, true);
   assert.equal(S.score_day_flag.body.meal_score_note, NUT.MEAL_SCORE_FLAG_NOTE);
