@@ -1455,10 +1455,60 @@ Rules:
 // insertEvents is the gate that matters — it validates the type, truncates the
 // summary and insists detail is an object — so this only has to decide whether
 // there is anything usable here at all, or whether to fall back to parsing.
+/**
+ * A value a model sent as JSON TEXT, read as the object it meant. Tool
+ * arguments arrive from a language model, and a nested array or object is
+ * sometimes serialised once more on the way — `events: "[{…}]"`. Treating that
+ * string as "no events" is how a named breakfast was filed as a bare note on
+ * 27 October. Anything that is not JSON text is returned as it came.
+ */
+export function parseIfJson(v) {
+  if (typeof v !== 'string') return v;
+  const t = v.trim();
+  if (!(t.startsWith('{') || t.startsWith('['))) return v;
+  try { return JSON.parse(t); } catch { return v; }
+}
+
+// How a model names a type when it does not use ours. "meal", "breakfast" and
+// "nutrition" are food; "exercise" and "session" are a workout; "weigh-in" is
+// a weight. Anything unknown is null, never a guess: the caller files it as a
+// note AND SAYS SO, with the door to fix it. Work is deliberately not mapped —
+// a shift goes through log_activity, which prices it; filed through here it
+// would be an activity worth nothing.
+const TYPE_WORDS = [
+  ['food', /^(foods?|meals?|breakfast|lunch|dinner|supper|brunch|snacks?|nutrition(al)?(_entry|_log)?|food_(intake|log|entry)|intake|eat|eating|ate|calories|macros|diet)$/],
+  ['drink', /^(drinks?|beverages?|coffee|water|alcohol|hydration|fluids?)$/],
+  ['workout', /^(workouts?|exercises?|training|train|sessions?|gym|lifts?|lifting|runs?|running|cardio|strength|sports?|walks?|walking|hikes?|hiking|swim|swimming|cycling|ride)$/],
+  ['weight', /^(weigh|weigh_?in|body_?weight|scale)$/],
+  ['measurement', /^(measurements?|measure|waist|body_measurement)$/],
+  ['sleep', /^(slept|nap|sleeping)$/],
+  ['symptom', /^(symptoms|pain|ache|injury|illness|sick)$/],
+  ['mood', /^(moods?|feelings?)$/],
+  ['supplement', /^(supplements|vitamins?|medication|meds|pills?)$/],
+  ['fast', /^(fasting|fasted)$/],
+  ['note', /^(notes|memo|comment|other|general)$/],
+];
+
+/** The canonical event type for what a model sent, or null when it is not one Wrought knows. Pure. */
+export function normaliseEventType(t) {
+  if (t == null) return null;
+  const s = String(t).trim().toLowerCase().replace(/[\s-]+/g, '_');
+  if (!s) return null;
+  if (VALID_TYPES.has(s)) return s;
+  for (const [type, re] of TYPE_WORDS) if (re.test(s)) return type;
+  return null;
+}
+
 export function eventsFromClient(raw) {
-  if (!Array.isArray(raw)) return null;
-  const usable = raw
-    .filter(e => e && typeof e === 'object' && (e.event_type || e.summary))
+  let list = parseIfJson(raw);
+  // One event sent bare, or the array wrapped once more as {events: […]}.
+  if (list && typeof list === 'object' && !Array.isArray(list)) {
+    list = Array.isArray(list.events) ? list.events : [list];
+  }
+  if (!Array.isArray(list)) return null;
+  const usable = list
+    .map(e => parseIfJson(e))
+    .filter(e => e && typeof e === 'object' && !Array.isArray(e) && (e.event_type || e.type || e.summary))
     // A CLIENT MAY NOT DATE ITS OWN EVENTS. eventTimestamp honours an explicit
     // occurred_at because the SERVER's own callers (finaliseSession, the
     // bridge) genuinely know when a thing happened — but these objects come
@@ -1466,7 +1516,17 @@ export function eventsFromClient(raw) {
     // files dinner on the wrong local day while everything looks logged. The
     // connector logs in real time; "at 9:30" travels as time_hint, which is
     // anchored in the user's own zone. Strip the field rather than trust it.
-    .map(({ occurred_at, local_date, ...e }) => e);
+    .map(({ occurred_at, local_date, type, ...e }) => {
+      const sent = e.event_type ?? type ?? null;
+      const detail = parseIfJson(e.detail);
+      return {
+        ...e,
+        // A type we know, in our spelling; an unknown one travels as sent so
+        // insertEvents can file it as a note and keep what was meant.
+        event_type: normaliseEventType(sent) || sent,
+        detail: detail && typeof detail === 'object' && !Array.isArray(detail) ? detail : {},
+      };
+    });
   return usable.length ? usable : null;
 }
 
@@ -1822,13 +1882,19 @@ export async function insertEvents(userId, profile, parsedEvents, { source = 'ag
 
   const rows = parsedEvents.map(e => {
     const occurredAt = eventTimestamp(e, profile, now);
+    // A type Wrought does not know is filed as a note — and the row KEEPS
+    // what was sent, so the reply can say "went in as a note" with the
+    // reason rather than the entry quietly counting for nothing.
+    const canon = normaliseEventType(e.event_type);
+    const detail = e.detail && typeof e.detail === 'object' ? e.detail : {};
+    const sent = e.event_type == null ? '' : String(e.event_type).trim();
     return {
       user_id: userId,
-      event_type: VALID_TYPES.has(e.event_type) ? e.event_type : 'note',
+      event_type: canon || 'note',
       occurred_at: occurredAt.toISOString(),
       local_date: localDateFor(profile.timezone, occurredAt) || today,
       summary: String(e.summary || '').slice(0, 500) || 'logged',
-      detail: e.detail && typeof e.detail === 'object' ? e.detail : {},
+      detail: canon || !sent || sent.toLowerCase() === 'note' ? detail : { ...detail, _sent_type: sent.slice(0, 40) },
       estimated: !!e.estimated,
       source,
       raw_input: rawInput,

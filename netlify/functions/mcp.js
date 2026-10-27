@@ -21,7 +21,7 @@ import {
   sayWeight, sayWeightDelta, sayLength, lbToKg, inToCm, kgToLb,
   getProfile, getMemory, getGoals, getWindow, windowStatus,
   dayFacts, rangeFacts, summariseRange, scoreGoals, careFlags, CARE_WINDOW_DAYS, lastDays,
-  parseLog, eventsFromClient, needsMacros, macrosMissing, needsDuration, matchEntries, duplicateItems, setupNeeded, insertEvents, eventTimestamp, writeVerdict, rememberFact,
+  parseLog, eventsFromClient, parseIfJson, normaliseEventType, needsMacros, macrosMissing, needsDuration, matchEntries, duplicateItems, setupNeeded, insertEvents, eventTimestamp, writeVerdict, rememberFact,
   fastLength, fastingSummary, macroLine, itemFigures, clock12, validTimezone,
 } from './lib/wrought.js';
 import { createHash } from 'node:crypto';
@@ -504,7 +504,7 @@ const TOOLS = [
             type: 'object',
             properties: {
               event_type: { type: 'string', enum: ['food','drink','workout','weight','measurement','sleep','symptom','mood','supplement','note','fast'],
-                            description: 'WORK IS NEVER A workout AND NEVER A note. A shift, a job, a day on site, a house move, hours in a garden — those go to log_activity instead, NOT through here; a note is never priced, so hours of work filed as one burn nothing. Filing a shift as a session is not a labelling nicety: a session is capped by what the watch measured for the whole day, because a watch already counts workouts, so six hours of physical work filed as training came back worth 498 kcal instead of 2,400. It also lands in the weekly training count, which makes the one number the whole plan rests on meaningless.' },
+                            description: 'food for ANY meal, snack or dish — "meal", "breakfast", "nutrition" are not types, and an entry sent with one is filed as a note that counts for nothing. WORK IS NEVER A workout AND NEVER A note. A shift, a job, a day on site, a house move, hours in a garden — those go to log_activity instead, NOT through here; a note is never priced, so hours of work filed as one burn nothing. Filing a shift as a session is not a labelling nicety: a session is capped by what the watch measured for the whole day, because a watch already counts workouts, so six hours of physical work filed as training came back worth 498 kcal instead of 2,400. It also lands in the weekly training count, which makes the one number the whole plan rests on meaningless.' },
               summary:    { type: 'string', description: 'A short natural sentence in the user\'s own register — "two eggs and black coffee". This is what gets read back to them.' },
               detail: {
                 type: 'object',
@@ -1007,7 +1007,7 @@ const TOOLS = [
   {
     name: 'structure_entries',
     title: 'Fill in entries by id — dictated sentences and missing macros',
-    description: 'Fills in entries BY ID: the ones spoken to Siri that landed with no macros on them, and any entry a log reply names under macros_missing (calories but no protein, carbs or fat — send only the missing figures). For Siri entries: the phone has no model behind it — a dictated sentence is stored word for word and counts for nothing in any total until something reads it. You are that something. brief returns these as voice_pending with their ids and exactly what was said; read each one and send back your reading. Do it in the same turn, without asking permission, and mention it in one short clause at most. Same rules as everywhere: estimate what was actually named, leave a vague mention null rather than padding it into a specific one.',
+    description: 'Fills in entries BY ID: any entry a log reply names under estimate_now — a named food with no figure, or one that went in as a bare NOTE because no structured reading reached the server (send event_type, summary and detail to make it the food or workout it was) — the ones spoken to Siri that landed with no macros on them, and any entry under macros_missing (calories but no protein, carbs or fat — send only the missing figures). For Siri entries: the phone has no model behind it — a dictated sentence is stored word for word and counts for nothing in any total until something reads it. You are that something. brief returns these as voice_pending with their ids and exactly what was said; read each one and send back your reading. Do it in the same turn, without asking permission, and mention it in one short clause at most. Same rules as everywhere: estimate what was actually named, leave a vague mention null rather than padding it into a specific one.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -1017,7 +1017,7 @@ const TOOLS = [
           items: {
             type: 'object',
             properties: {
-              id:         { type: 'string', description: 'The id from voice_pending or macros_missing. Required — this updates that exact entry rather than creating a new one.' },
+              id:         { type: 'string', description: 'The id from recorded, estimate_now, macros_missing or voice_pending on the reply that named the entry. Required — this updates that exact entry rather than creating a new one.' },
               event_type: { type: 'string', enum: ['food','drink','workout','weight','measurement','sleep','symptom','mood','supplement','note','fast'] },
               summary:    { type: 'string', description: 'The entry as it should read in the log — short, and faithful to what they said.' },
               detail:     { type: 'object', description: 'Calories and macros for food, minutes and muscles for training, and so on — the same shape log.events uses. Leave a figure out entirely rather than guessing it.' },
@@ -1594,6 +1594,9 @@ function dayTotal(day) {
 // gap dropped. Now the clock leads, on the same 12-hour clock the card uses,
 // and the gap is its own clause.
 function itemSay(e, at = '') {
+  // A note nobody meant as one carries no figures in the line: "420 kcal" on
+  // an entry the next sentence says counts for nothing reads as counted.
+  if (e.event_type === 'note' && e.detail?._sent_type) return e.summary;
   const nums = itemNumbers(e.detail || {});
   const food = e.event_type === 'food' || e.event_type === 'drink';
   const when = at ? ` at ${at}` : '';
@@ -1697,6 +1700,21 @@ async function log(args, user) {
   const bridged = written.length ? await syncSetsFromWorkouts(user.id, written) : {};
 
   const hungry = needsMacros(written, toWrite);
+  // A ROW NOBODY MEANT AS A NOTE. Either no structured reading reached the
+  // door (none sent, or sent in a shape it could not read, with no parser key
+  // on the server) or the type sent is not one Wrought knows — and on
+  // 27 October a two-egg omelet went in that way, counted for nothing, and the
+  // model told the founder the fix was "blocked". The entry is still written
+  // (never drop input), but it is said FIRST, by id, with the door to fix it —
+  // the same slot as a named food with no figure, because it is the same
+  // failure: an entry that looks logged and counts for nothing.
+  const unstructured = written.filter(e => e.event_type === 'note' && (structuredBy === 'none' || e.detail?._sent_type))
+    .map(e => ({
+      id: e.id, summary: e.summary, filed_as: 'note',
+      why: e.detail?._sent_type
+        ? `sent as event_type "${e.detail._sent_type}", which is not a type Wrought knows`
+        : 'no structured reading arrived with the words, and this server has no parser of its own',
+    }));
   // Calories and nothing else — the rest asked for by id, never left.
   const partial = macrosMissing(written);
   const untimed = needsDuration(written, toWrite);
@@ -1787,12 +1805,15 @@ async function log(args, user) {
     // structure_entries by id, never amend_last: that reaches only the newest
     // row, its plain merge lets an echoed null erase a figure, and it drops
     // the estimated label.
-    ...(hungry.length ? {
+    ...(hungry.length || unstructured.length ? {
       estimate_now: {
-        why: 'A named food went in with no calorie figure, so it counts for NOTHING in today\'s total.',
+        why: (unstructured.length
+          ? `${unstructured.length === 1 ? 'An entry' : 'Entries'} went in as a bare NOTE — not food, not training — and counts for NOTHING in any total until it is structured by id${hungry.length ? '; and a named food went in with no calorie figure' : ''}.`
+          : 'A named food went in with no calorie figure, so it counts for NOTHING in today\'s total.'),
         call: 'structure_entries',
-        entries: hungry.map(h => ({ id: h.id, summary: h.summary })),
-        send: 'detail with calories, protein_g, carbs_g, fat_g (and sugar_g, fibre_g, sat_fat_g if you can) as NUMBERS — one figure each, never a range, "~" or a string — and estimated: true',
+        entries: [...unstructured, ...hungry.map(h => ({ id: h.id, summary: h.summary }))],
+        send: (unstructured.length ? 'event_type — food, drink, workout, weight, sleep, symptom, mood, supplement; never "meal", "breakfast" or "nutrition", those are not types — summary, and ' : '')
+          + 'detail with calories, protein_g, carbs_g, fat_g (and sugar_g, fibre_g, sat_fat_g if you can) as NUMBERS — one figure each, never a range, "~" or a string — and estimated: true',
         when: args.quiet
           ? 'now, silently: pass quiet: true and say nothing about it'
           : 'now, in this same turn, BEFORE you reply; then confirm with "Logged in Wrought:" and the item exactly as structure_entries\' say reads it',
@@ -1914,6 +1935,9 @@ async function log(args, user) {
           // and a food with no figure said to count for nothing.
           : `Logged in Wrought (${written.length} thing${written.length === 1 ? '' : 's'}): ${written.map(e => itemSay(e, isFood(e) && e.occurred_at ? clock12(clockString(localMinutesFor(profile.timezone, new Date(e.occurred_at)))) : '')).join('; ')}.` +
             (hungry.length ? ` ${hungry.length === 1 ? 'That item counts' : 'Those items count'} for nothing in today's total until ${hungry.length === 1 ? 'it has' : 'they have'} a calorie figure.` : '') +
+            // Said in the line the model relays, so a note filed by accident
+            // is never confirmed as a logged meal.
+            (unstructured.length ? ` ${unstructured.map(u => `"${u.summary}"`).join(' and ')} went in as a NOTE, not as food or training — ${unstructured[0].why} — so it counts for nothing in today's total until it is structured.` : '') +
             (day.food.meals ? ` Today so far: ${day.food.say.replace(/\.$/, '')}.` : '') +
             // What is left is withheld while anything is uncounted: the
             // figure would be too high by the item nobody has priced. The
@@ -1938,7 +1962,8 @@ async function log(args, user) {
     ...(bridged.error ? { sets_error: bridged.error } : {}),
     ...(bridged.skipped ? { sets_skipped: bridged.skipped, sets_note: bridged.say } : {}),
     ...(bridged.deduped ? { sets_deduped: true } : {}),
-    note: (hungry.length ? 'ESTIMATE_NOW FIRST: you named the food, so estimate it — call structure_entries with the ids in estimate_now before replying. Never confirm a food with no figure as if it were complete; if the food was never named ("had lunch"), say plainly it is not counted yet. ' : '') +
+    note: (unstructured.length ? `STRUCTURE FIRST: ${unstructured.map(u => `"${u.summary}"`).join(' and ')} went in as a bare NOTE (${unstructured[0].why}) and counts for nothing. Call structure_entries NOW with the id in estimate_now, event_type (food, drink, workout… — never "meal", "breakfast" or "nutrition"), summary and detail with the numbers, BEFORE you reply — never amend_last, and never confirm it as logged food or training until that reply is in front of you. ` : '') +
+      (hungry.length ? 'ESTIMATE_NOW FIRST: you named the food, so estimate it — call structure_entries with the ids in estimate_now before replying. Never confirm a food with no figure as if it were complete; if the food was never named ("had lunch"), say plainly it is not counted yet. ' : '') +
       (written.length ? 'OPEN WITH "Logged in Wrought" — say the phrase exactly, then each item with ALL its numbers exactly as `say` reads them: calories, protein, carbs (sugar, fibre), fat (saturated), and the time. ' + (cardRead
       ? 'Then the day: ' + DAY_CARD_NOTE + 'day_card IS the day broken down — never also read day_total.breakdown or the day in prose. '
       : 'Then the day broken down the same way — day_total.breakdown is every item of the day with its numbers and the total underneath; read it out, never only a calorie figure. ') + 'Those three words are the receipt: the person uses them to tell a write that landed from food you merely acknowledged. Never say "logged" or "saved" about food without "in Wrought", and never say "Logged in Wrought" unless this reply is in front of you. ' : '') +
@@ -2188,12 +2213,30 @@ async function amendLast(args, user) {
     movedTo = { at: clockString(localMinutesFor(profile.timezone, moved)), date: timePatch.local_date };
   }
 
+  // A TYPE THE DATABASE WOULD REFUSE IS NEVER WRITTEN. "nutritional" is food
+  // and is read as food; a word Wrought cannot place keeps the entry's type
+  // and SAYS so — the check constraint rejecting the row came back to the
+  // model as "the update was blocked", and a blocked correction on a note that
+  // should have been breakfast is the vacuum failure in a new place. Work
+  // stays off this door: a shift is priced by log_activity alone.
+  const canon = normaliseEventType(first.event_type);
+  const nextType = canon && canon !== 'activity' ? canon : prev.event_type;
+  const typeNote = nextType !== first.event_type && first.event_type
+    ? `"${first.event_type}" is not a type Wrought files${canon === 'activity' ? ' through here — a shift goes through log_activity' : ''}, so the entry stays a ${prev.event_type}.`
+    : null;
+  first.event_type = nextType;
+  const firstDetail = parseIfJson(first.detail);
+  first.detail = firstDetail && typeof firstDetail === 'object' && !Array.isArray(firstDetail) ? firstDetail : {};
+  // Once the entry is what it was meant to be, the record of the mistyping goes.
+  const mergedDetail = { ...(prev.detail || {}), ...first.detail };
+  if (nextType !== 'note') delete mergedDetail._sent_type;
+
   const { error } = await supabase.from('wrought_events').update({
     event_type: first.event_type,
     summary: String(first.summary || prev.summary).slice(0, 500),
     // Merge rather than replace: a detail that arrives later must never wipe
     // something already known.
-    detail: { ...(prev.detail || {}), ...(first.detail || {}) },
+    detail: mergedDetail,
     // An amend that says nothing about estimation keeps the row's label: an
     // estimate does not become a measurement by being corrected.
     estimated: first.estimated != null ? !!first.estimated : prev.estimated,
@@ -2213,7 +2256,7 @@ async function amendLast(args, user) {
   const bridged = await syncSetsFromWorkouts(user.id, [{
     id: prev.id, event_type: first.event_type, local_date: prev.local_date,
     occurred_at: prev.occurred_at,
-    detail: { ...(prev.detail || {}), ...(first.detail || {}) },
+    detail: mergedDetail,
   }]);
 
   // The day AFTER the change. Without this the model has just written an
@@ -2246,6 +2289,7 @@ async function amendLast(args, user) {
       : undefined,
     // The clock moved, read back off the stored row's own day.
     ...(movedTo ? { moved_to: movedTo } : {}),
+    ...(typeNote ? { type_note: typeNote } : {}),
     ...(bridged.error ? { sets_error: bridged.error } : {}),
     ...(bridged.skipped ? { sets_skipped: bridged.skipped, sets_note: bridged.say } : {}),
     day_total: dayTotal(dayNow),
@@ -2261,7 +2305,10 @@ async function amendLast(args, user) {
     say: `Updated: "${prev.summary}" is now "${first.summary}"` +
       (movedTo ? ` — filed at ${movedTo.at}${movedTo.date !== today ? ` on ${movedTo.date}` : ''}` : '') +
       (entry && (entry.calories != null || amendedFood) ? ` — ${itemFigures(entry, { food: amendedFood })}${entry.calories != null ? ' for that one' : ''}` : '') +
-      `. Today so far: ${dayNow.food.say.replace(/\.$/, '')}.`,
+      `. Today so far: ${dayNow.food.say.replace(/\.$/, '')}.` +
+      // A type it could not place is said, never silently kept — "blocked"
+      // was the model's word for an update the database refused.
+      (typeNote ? ` ${typeNote} Send food, drink, workout, weight, sleep, symptom, mood or supplement to change it.` : ''),
     note: 'One entry, not two. Acknowledge briefly and move on. Give the ITEM\'s own calories and the DAY total in the same breath — "that bun is about 330, which puts you at 1,840 for the day" — never the item alone and never the total alone. If they asked what they are at today, the headline is day_total (the WHOLE day, with its items listed under it); the entry you just amended is one line of it. ' + (cardRead ? DAY_CARD_NOTE : ''),
     next_actions: ['brief later for the day\'s read'],
   };
@@ -3301,9 +3348,6 @@ async function logActivity(args, user) {
   };
 }
 
-const VALID_EVENT_TYPES = new Set(
-  ['food','drink','workout','weight','measurement','sleep','symptom','mood','supplement','note','fast']);
-
 // Later detail over earlier, key by key — except that a null or empty value
 // never overwrites a figure already on the row.
 export function keepKnown(prev = {}, incoming = {}) {
@@ -3317,8 +3361,12 @@ export function keepKnown(prev = {}, incoming = {}) {
 }
 
 async function structureEntries(args, user) {
-  const list = Array.isArray(args.entries) ? args.entries.filter(e => e && e.id) : [];
-  if (!list.length) return { error: 'Pass the entries to fill in, each with the id from voice_pending.' };
+  // Entries, and each entry's detail, may arrive as JSON text — read as sent.
+  const raw = parseIfJson(args.entries);
+  const list = (Array.isArray(raw) ? raw : raw && typeof raw === 'object' ? [raw] : [])
+    .map(e => parseIfJson(e)).filter(e => e && typeof e === 'object' && e.id)
+    .map(e => { const d = parseIfJson(e.detail); return { ...e, detail: d && typeof d === 'object' && !Array.isArray(d) ? d : undefined }; });
+  if (!list.length) return { error: 'Pass entries, each with the id of the entry to fill in — from recorded, estimate_now, macros_missing or voice_pending on the reply that named it.' };
 
   const ids = [...new Set(list.map(e => String(e.id)))];
   const { data: owned } = await supabase.from('wrought_events')
@@ -3333,15 +3381,22 @@ async function structureEntries(args, user) {
     const prev = byId.get(String(e.id));
     if (!prev) { skipped.push({ id: e.id, why: 'not found on this account' }); continue; }
 
-    const type = e.event_type && VALID_EVENT_TYPES.has(e.event_type) ? e.event_type : prev.event_type;
+    // "nutritional" is food; a word Wrought cannot place keeps the entry's
+    // type rather than hitting the database's check constraint. Work stays
+    // off this door — a shift is priced by log_activity alone.
+    const canon = normaliseEventType(e.event_type);
+    const type = canon && canon !== 'activity' ? canon : prev.event_type;
+    // Merge, never replace — the same rule amend_last runs on. A reading that
+    // arrives later must not wipe something already known about the entry,
+    // and a null is not a reading: a model sent here to add the protein to
+    // a 500-kcal hot dog that echoes `calories: null` must not erase the 500.
+    const detail = keepKnown(prev.detail, e.detail);
+    // Once the entry is what it was meant to be, the record of the mistyping goes.
+    if (type !== 'note') delete detail._sent_type;
     const { error } = await supabase.from('wrought_events').update({
       event_type: type,
       summary: String(e.summary || prev.summary).slice(0, 500),
-      // Merge, never replace — the same rule amend_last runs on. A reading that
-      // arrives later must not wipe something already known about the entry,
-      // and a null is not a reading: a model sent here to add the protein to
-      // a 500-kcal hot dog that echoes `calories: null` must not erase the 500.
-      detail: keepKnown(prev.detail, e.detail),
+      detail,
       estimated: e.estimated != null ? !!e.estimated : true,
     }).eq('id', prev.id).eq('user_id', user.id);
 

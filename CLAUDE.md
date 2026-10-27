@@ -3753,6 +3753,85 @@ kept. The full run found Siri saying the same sentence aloud
 or *sets*, and *"Roughly 0 in"*; against the old code the smoke run alone
 found them 43, 37 and 32 times.
 
+### "Saved as a note … the update was blocked" — food that reached the door in a shape it did not read
+
+`parseIfJson()` / `normaliseEventType()` in `lib/wrought.js` + `unstructured`
+on `log` + the type guard on `amend_last` and `structure_entries`. 27 October,
+5:14pm: *"Broski, I had an omelet with two eggs today, little bit of cheese,
+little milk obviously, and two pieces sourdough toast, small. Add it to my
+route"* came back *"Logged in Wrought … One issue: Wrought saved this as a
+note rather than a nutritional entry, so the calories and macros have not been
+added to your daily totals. I attempted to correct it, but the update was
+blocked."* The founder: *"You're supposed to show me everything. Fix."*
+
+**The row could not be read** — the Supabase connector refused every query
+this session (*"You do not have permission to perform this action"*), and
+Netlify's request log carries no function output — so the fix closes every
+way the code could have done it rather than the one it did. Three, and the
+code allowed all three silently:
+
+- **`events` sent as JSON TEXT.** A model serialises a nested array once more
+  on the way out (`events: "[{…}]"`); `eventsFromClient` saw a string, said
+  "no events", and with no `OPENAI_API_KEY` `parseLog`'s fallback filed the
+  words as ONE NOTE. `structured_by: 'none'`, nothing said.
+- **A type Wrought does not know.** *"nutritional entry"* is the model's own
+  phrase; an `event_type` of `nutrition`, `meal` or `breakfast` is not in the
+  enum, and `insertEvents` silently rewrote anything unknown to `note` — the
+  shift-as-note bug's mechanism, one type along. The row kept its 420 kcal in
+  `detail` and counted for nothing.
+- **The correction hit the check constraint.** `amend_last` wrote
+  `first.event_type` to the row unvalidated, so `nutrition` went straight to
+  Postgres, which refused it, and the tool answered `{ error }` — *"the update
+  was blocked"*, in as many words. `structure_entries` kept the old type on an
+  unknown one and said nothing, which reads the same way.
+
+Now:
+
+- **JSON text is read as what it meant**, on `events`, `event`, `entries` and
+  every `detail` — and a bare object, or `{events:[…]}` wrapped once more, is
+  taken too. A client may still not date its own events.
+- **A type named the model's way is ours**: meal, breakfast, nutrition, intake
+  → food; beverage → drink; exercise, session, run → workout; weigh-in →
+  weight. **Work is deliberately not mapped**: a shift goes through
+  `log_activity`, which prices it; filed through `log` as an activity it would
+  be worth nothing.
+- **A type it cannot place is a note that SAYS so.** The row keeps
+  `detail._sent_type`; the reply carries the entry under `estimate_now` —
+  the first key, the slot a named food with no figure already uses, because it
+  is the same failure — with `filed_as: 'note'`, the reason, and `send` naming
+  `event_type` first; the `say` line reads *"went in as a NOTE, not as food or
+  training — sent as event_type "breakfast_log", which is not a type Wrought
+  knows — so it counts for nothing until it is structured"*, with no calorie
+  figure on the line (a figure on an entry the next sentence says counts for
+  nothing reads as counted); the note opens `STRUCTURE FIRST` and says
+  `structure_entries`, never `amend_last`. No events and no parser is the same
+  note with its own reason.
+- **`amend_last` and `structure_entries` never write a type the database
+  refuses.** An unknown word keeps the entry's type and `type_note` says which
+  word and what to send instead; `_sent_type` is dropped the moment the entry
+  is what it was meant to be. The error on `structure_entries` names where an
+  id comes from (`recorded`, `estimate_now`, `macros_missing`,
+  `voice_pending`), not only Siri's list.
+- **The schema says it where the model reads**: `event_type`'s description
+  opens with *food for ANY meal, snack or dish — "meal", "breakfast",
+  "nutrition" are not types*, and `structure_entries` says it takes a bare
+  note.
+
+Run through the real handlers on the fake database: events as text, as
+`nutrition`, as `breakfast_log` then fixed by `structure_entries` with its
+entries AND detail as text, no events at all then `amend_last` with the event
+as text and `nutritional` as the type, `gibberish` and `work` through
+`amend_last`. Five mutations each fail the new tests. **A door that files what
+it could not read as a note, and says nothing, is the claimed-save failure
+with a row behind it** — the write exists and the person is told it landed,
+and the day is short an omelet.
+
+**Seen in the same log**: at 21:12:56Z the founder's ChatGPT fetched a 95KB
+reply from `/mcp` — `tools/list`, the first since 6 October. His ChatGPT
+re-read the tool list that afternoon without a Refresh being pressed; the
+card still did not draw on his phone, which fits OpenAI's note that app cards
+are not on mobile.
+
 ### A food confirmed with no figure — estimated before the reply, never confirmed as complete
 
 6 October: *"Logged in Wrought — Costco restaurant sausage at 3:17 PM"* with
@@ -6740,7 +6819,7 @@ self-reporting scale removes the most-abandoned manual entry), then Strava.
 
 ## Conventions
 
-- `npm test` runs `test/harness.mjs` — 909 offline tests, no network, no database.
+- `npm test` runs `test/harness.mjs` — 912 offline tests, no network, no database.
   Run it before every push. It covers the JSON-RPC envelope (which fails as an
   uninformative "could not connect" inside ChatGPT) and all the arithmetic
   (which fails as a confidently wrong number in somebody's verdict).
