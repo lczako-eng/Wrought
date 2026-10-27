@@ -4942,7 +4942,7 @@ await test('a note that reads as a shift is said with its fix, and calories with
   assert.match(lg, /a note is never priced, so those hours burn NOTHING/);
   assert.match(lg, /a range like "4–5 hours" is asked, never averaged/);
   const se = mcp.slice(mcp.indexOf('async function structureEntries('), mcp.indexOf('async function structureEntries(') + 2500);
-  assert.match(se, /detail: keepKnown\(prev\.detail, e\.detail\)/);
+  assert.match(se, /keepKnown\(prev\.detail, e\.detail\)/);
   // The set bridge gets the SAME merge as the row, or an echoed exercises:null
   // keeps the exercises on the row and rebuilds the set record from none.
   const seFull = mcp.slice(mcp.indexOf('async function structureEntries('), mcp.indexOf('async function undoLast('));
@@ -4988,7 +4988,7 @@ await test('every item carries all of its numbers, and the day is broken down th
   // with no figure in its own words before the macro line — same renderer.
   // (Through itemFigures, which is macroLine for any item with a figure and
   // leads with the gap in words for a food without one — pin the chain.)
-  assert.match(mcp, /function itemSay\(e, at = ''\) \{[\s\S]{0,500}itemFigures\(nums, \{ food \}\)/, 'the log confirmation does not carry the macros');
+  assert.match(mcp, /function itemSay\(e, at = ''\) \{[\s\S]{0,900}itemFigures\(nums, \{ food \}\)/, 'the log confirmation does not carry the macros');
   const wrSrc = readFileSync(new URL('../netlify/functions/lib/wrought.js', import.meta.url), 'utf8');
   assert.match(wrSrc, /export function itemFigures\([\s\S]{0,600}return macroLine\(x\);\n\}/, 'itemFigures is not macroLine for a counted item');
   const dt = mcp.slice(mcp.indexOf('function dayTotal('), mcp.indexOf('function itemSay('));
@@ -5801,7 +5801,10 @@ await test('every door a workout enters through feeds the bridge', () => {
   assert.match(logFn, /syncSetsFromWorkouts\(user\.id, written\)/, 'log does not feed the set record');
   const structFn = mcp.slice(mcp.indexOf('async function structureEntries('), mcp.indexOf('async function undoLast(') > 0 ? mcp.indexOf('async function undoLast(') : mcp.indexOf('async function structureEntries(') + 4000);
   assert.match(structFn, /syncSetsFromWorkouts/, 'a dictated workout never reaches the set record');
-  const amendFn = mcp.slice(mcp.indexOf('async function amendLast('), mcp.indexOf('async function amendLast(') + 5000);
+  // The whole function, to the next one — a slice of N characters named a
+  // length the function could not outlive.
+  const amendStart = mcp.indexOf('async function amendLast(');
+  const amendFn = mcp.slice(amendStart, mcp.indexOf('\nasync function ', amendStart + 1));
   assert.match(amendFn, /syncSetsFromWorkouts/, 'an amended workout does not re-derive its sets');
   // And insertEvents hands back the detail the bridge needs.
   const w = readFileSync(new URL('../netlify/functions/lib/wrought.js', import.meta.url), 'utf8');
@@ -19680,6 +19683,94 @@ await test('a logged workout and a closed session come back coached; a quiet cap
   const spoken = spokenBrief({ balance: { known: true, calories_in: 0, calories_out: 1358, net: -1358, active_source: 'device' } });
   assert.ok(!/Roughly 0 in|down/.test(spoken), spoken);
   assert.match(spoken, /Nothing with calories in it is logged yet, so there's no in-versus-out — about 1358 out\./);
+});
+
+// ── Food that reached the door in a shape it did not read ─────────────────
+// 27 October: "omelet with two eggs … add it to my route" came back "saved
+// as a note rather than a nutritional entry … I attempted to correct it, but
+// the update was blocked." Every way the code could do that, closed, and the
+// reply now names the entry, the reason and the door.
+const WR = await import('../netlify/functions/lib/wrought.js');
+
+await test('a type a model names its own way is read as ours; one it cannot place is null, never a guess', () => {
+  for (const [sent, want] of [['Meal', 'food'], ['breakfast', 'food'], ['Nutrition', 'food'], ['nutritional', 'food'], ['Food Intake', 'food'],
+    ['beverage', 'drink'], ['exercise', 'workout'], ['session', 'workout'], ['weigh-in', 'weight'], ['Weight', 'weight'],
+    ['activity', 'activity'], ['note', 'note'], ['gibberish', null], ['work', null], ['shift', null], ['', null], [null, null]]) {
+    assert.equal(WR.normaliseEventType(sent), want, `${JSON.stringify(sent)} → ${want}`);
+  }
+  // Work is never mapped: a shift priced by nothing is worse than a note that says so.
+  assert.equal(WR.normaliseEventType('job'), null);
+});
+
+await test('events sent as JSON text, a bare object, or {events: […]} are read as the events they are', () => {
+  const one = { event_type: 'meal', summary: 'omelet', detail: '{"calories":420}', estimated: true };
+  assert.deepEqual(WR.eventsFromClient(JSON.stringify([one])), [{ event_type: 'food', summary: 'omelet', detail: { calories: 420 }, estimated: true }]);
+  assert.deepEqual(WR.eventsFromClient(one), [{ event_type: 'food', summary: 'omelet', detail: { calories: 420 }, estimated: true }]);
+  assert.deepEqual(WR.eventsFromClient(JSON.stringify({ events: [one] }))[0].event_type, 'food');
+  assert.deepEqual(WR.eventsFromClient([JSON.stringify(one)])[0].detail, { calories: 420 });
+  // An unknown type travels as sent, so the row can say what was meant.
+  assert.equal(WR.eventsFromClient([{ type: 'breakfast_log', summary: 'x' }])[0].event_type, 'breakfast_log');
+  // Still never a date of its own, and nothing usable is still nothing.
+  assert.equal(WR.eventsFromClient([{ event_type: 'food', summary: 'x', occurred_at: '2020-01-01T00:00:00Z', local_date: '2020-01-01' }])[0].occurred_at, undefined);
+  assert.equal(WR.eventsFromClient('not json'), null);
+  assert.equal(WR.eventsFromClient(null), null);
+  assert.equal(WR.eventsFromClient([]), null);
+  assert.equal(WR.parseIfJson(' {"a":1} ').a, 1);
+  assert.equal(WR.parseIfJson('{bad'), '{bad');
+  assert.equal(WR.parseIfJson(5), 5);
+});
+
+await test('food that arrives in a shape the door did not read is never silently a note, and the fix is never blocked', () => {
+  const S = WCARD.scenarios();
+  // events as JSON text: read, filed as food, confirmed with its figures.
+  assert.equal(S.str_events.body.structured_by, 'client');
+  assert.deepEqual(S.str_events.rows.map(r => [r.event_type, r.detail.calories]), [['food', 420]]);
+  assert.match(S.str_events.body.say, /^🟧 Logged in Wrought \(1 thing\): two-egg omelet .* at 8:10am — 420 kcal/);
+  assert.equal(S.str_events.body.estimate_now, undefined);
+  // "nutrition" is food.
+  assert.deepEqual(S.meal_type.rows.map(r => [r.event_type, r.detail.calories, r.detail._sent_type]), [['food', 420, undefined]]);
+  assert.equal(S.meal_type.body.estimate_now, undefined);
+  // A type Wrought cannot place: a note that SAYS so, first key, with the door.
+  const odd = S.odd_type;
+  assert.deepEqual(odd.rows.map(r => [r.event_type, r.detail._sent_type]), [['note', 'breakfast_log']]);
+  assert.equal(odd.keys[0], 'estimate_now', 'the fix is not the first thing the model reads');
+  assert.equal(odd.body.estimate_now.call, 'structure_entries');
+  assert.deepEqual(odd.body.estimate_now.entries.map(e => [e.id, e.filed_as]), [[odd.body.recorded[0].id, 'note']]);
+  assert.match(odd.body.estimate_now.entries[0].why, /sent as event_type "breakfast_log"/);
+  assert.match(odd.body.estimate_now.send, /^event_type — food, drink, workout/);
+  assert.match(odd.body.say, /went in as a NOTE, not as food or training — sent as event_type "breakfast_log".*counts for nothing in today's total until it is structured\.$/);
+  assert.ok(!/420 kcal/.test(odd.body.say.split(' went in as a NOTE')[0]), 'a note that counts for nothing was read out with a calorie figure');
+  assert.match(odd.body.note, /^STRUCTURE FIRST: .*never amend_last/);
+  // …and structure_entries, with entries AND detail as JSON text, makes it the food it was.
+  const fixed = S.odd_fixed;
+  assert.equal(fixed.body.updated, 1);
+  assert.deepEqual(fixed.rows.map(r => [r.event_type, r.detail.calories, r.detail._sent_type]), [['food', 420, undefined]], 'the mistyping is not forgotten once the entry is food');
+  assert.match(fixed.body.say, /^🟧 Filled in 1 thing: two-egg omelet and toast at 8:10am — 420 kcal/);
+  // No events and no parser key: a note, said so, with the door.
+  const none = S.no_events;
+  assert.equal(none.body.structured_by, 'none');
+  assert.equal(none.keys[0], 'estimate_now');
+  assert.match(none.body.estimate_now.entries[0].why, /no structured reading arrived/);
+  assert.match(none.body.say, /went in as a NOTE, not as food or training — no structured reading arrived/);
+  // amend_last with the event as JSON text and "nutritional" as the type: food, no error.
+  const am = S.no_events_amend;
+  assert.equal(am.body.error, undefined);
+  assert.equal(am.body.type, 'food');
+  assert.deepEqual(am.rows.map(r => [r.event_type, r.detail.calories, r.detail._sent_type]), [['food', 420, undefined]]);
+  // A type the database would refuse is never written: the entry keeps its type and the reply says so.
+  const bad = S.amend_bad_type;
+  assert.equal(bad.body.error, undefined, 'the update was "blocked"');
+  assert.ok(WR.VALID_TYPES.has(bad.rows[0].event_type), `a type the check constraint refuses was written: ${bad.rows[0].event_type}`);
+  assert.match(bad.body.type_note, /"gibberish" is not a type Wrought files, so the entry stays a note\./);
+  assert.match(bad.body.say, /"gibberish" is not a type Wrought files/);
+  assert.ok(WR.VALID_TYPES.has(S.amend_work_type.rows[0].event_type));
+  assert.equal(S.amend_work_type.rows[0].event_type, 'note', 'work was filed as an unpriced activity through amend_last');
+  // The schema says it where the model reads it.
+  const logTool = TOOLS.find(t => t.name === 'log');
+  assert.match(logTool.inputSchema.properties.events.items.properties.event_type.description, /"meal", "breakfast", "nutrition" are not types/);
+  const se = TOOLS.find(t => t.name === 'structure_entries');
+  assert.match(se.description, /went in as a bare NOTE/);
+  assert.match(se.inputSchema.properties.entries.items.properties.id.description, /recorded, estimate_now, macros_missing or voice_pending/);
 });
 
 await test('VO2 max is placed against the FRIEND reference for age and sex, and never guessed', () => {

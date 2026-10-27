@@ -246,4 +246,33 @@ F.tables.wrought_sets = [priorSet('p1', 7, 'Bench press', 6, 102.06)];
 out.lift_set = await call('log_set', { exercise: 'Bench press', reps: 6, weight_kg: 106.6, felt: 'solid' });
 out.lift_end = await call('end_session', {});
 
+// FOOD THAT REACHED THE DOOR IN A SHAPE IT DID NOT READ — never silently a note.
+// 27 October: a two-egg omelet went in as a note, and the correction was
+// "blocked" by the database refusing a type. Every way that can happen:
+const omelet = (extra = {}) => ({ ...food('two-egg omelet with cheese and two small slices of sourdough toast', { calories: 420, protein_g: 22, carbs_g: 32, fat_g: 22, sugar_g: 3, fibre_g: 2, sat_fat_g: 9 }, { time_hint: '08:10' }), ...extra });
+const rows = () => JSON.parse(JSON.stringify(F.tables.wrought_events.filter(e => e.event_type !== 'weight')));
+reset([weigh()]);
+out.str_events = await call('log', { text: 'omelet with two eggs and toast', events: JSON.stringify([omelet()]) });
+out.str_events.rows = rows();
+reset([weigh()]);
+out.meal_type = await call('log', { text: 'omelet and toast', events: [omelet({ event_type: 'nutrition' })] });
+out.meal_type.rows = rows();
+reset([weigh()]);
+out.odd_type = await call('log', { text: 'omelet and toast', events: [omelet({ event_type: 'breakfast_log' })] });
+out.odd_type.rows = rows();
+out.odd_fixed = await call('structure_entries', { entries: JSON.stringify([{ id: out.odd_type.body.recorded?.[0]?.id, event_type: 'food', summary: 'two-egg omelet and toast', detail: JSON.stringify({ calories: 420, protein_g: 22, carbs_g: 32, fat_g: 22 }), estimated: true }]) });
+out.odd_fixed.rows = rows();
+// No events at all, and no parser key on the server.
+reset([weigh()]);
+out.no_events = await call('log', { text: 'omelet with two eggs, cheese, two small slices of sourdough toast' });
+out.no_events.rows = rows();
+out.no_events_amend = await call('amend_last', { text: 'about 420 calories', event: JSON.stringify({ event_type: 'nutritional', summary: 'two-egg omelet with cheese and toast', detail: { calories: 420, protein_g: 22, carbs_g: 32, fat_g: 22 }, estimated: true }) });
+out.no_events_amend.rows = rows();
+reset([weigh()]);
+out.no_events2 = await call('log', { text: 'had an omelet' });
+out.amend_bad_type = await call('amend_last', { text: 'omelet', event: { event_type: 'gibberish', summary: 'omelet', detail: { calories: 300 } } });
+out.amend_bad_type.rows = rows();
+out.amend_work_type = await call('amend_last', { text: 'actually that was work', event: { event_type: 'work', summary: 'shift' } });
+out.amend_work_type.rows = rows();
+
 console.log('SCENARIOS ' + JSON.stringify(out));
