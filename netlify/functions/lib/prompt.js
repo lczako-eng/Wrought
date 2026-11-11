@@ -171,7 +171,13 @@ export function nextNudge({
  */
 export function nudgeNote(nudge, push) {
   if (!nudge) {
-    return 'Nothing to raise unprompted. Answer what they asked and stop — a coach who finds something to say every single time is one people stop listening to.';
+    // "Answer what they asked and stop" stood here, as the FIRST thing a model
+    // read on every log reply with no nudge — directly above the meal score.
+    // It was written about unprompted coaching and reads as "keep the reply
+    // short", an instruction to drop exactly the parts the person asked to
+    // keep. Found on 10 November, reading a log reply the way a model does.
+    // It says what it is about now.
+    return 'No nudge: add no coaching of your own about their week, goals or training — a coach who finds something to say every single time is one people stop listening to. That is about extras ONLY. What this reply itself carries is still shown whole, every time: the say line (each item, its numbers, its meal score) and day_card.';
   }
   const level = push || 'normal';
   return `Raise this ONCE, in ONE short line, AFTER answering what they actually asked — never instead of it, and never as an opener. ` +

@@ -3832,6 +3832,92 @@ re-read the tool list that afternoon without a Refresh being pressed; the
 card still did not draw on his phone, which fits OpenAI's note that app cards
 are not on mobile.
 
+### The reply that never came from Wrought — no score, because nobody was asked for one
+
+10 November, 7:53pm. A ChatGPT reply: the toast's own line (*300 calories ·
+10 g protein · …*), then *"Today's food log — November 10"*, *ESTIMATED INTAKE
+TODAY · 1,050 calories*, a Food / Calories table with each item's time, a
+total. The founder, typing under it: *"Whatever happened to all the macros and
+all the score you gave it before? Why do you keep losing that?"* And to me:
+*"Find out why keeps doing that, and it doesn't ever remember the right
+pathway."*
+
+**The request log answered it, and it was read forty minutes late.** Netlify's
+log for 7:14–8:14pm holds two scheduled briefs, a crawler and a bot. **Not one
+request to `/mcp`, no function invoked but `brief-nightly`, no `openai-mcp`
+user agent.** ChatGPT never called Wrought for either meal. It wrote the log
+itself, in the layout it had seen Wrought send — and left out the one thing it
+cannot write: only the server computes a meal score, and the server was never
+asked. Neither meal was on the record.
+
+- **"It lost the score" is first a question of whether Wrought was asked.**
+  The same rule as *"it looks unchanged" is a report about delivery*: read the
+  request log before the code. The first forty minutes went into the reply's
+  code, and found real faults (below), none of which made this reply.
+- **Netlify's request log now keeps ONE HOUR**, not a day — the query's own
+  `from` is clamped to it. A screenshot more than an hour old cannot be
+  checked this way, so the log is read first, at once.
+- **The Supabase connector refused every query** (*"You do not have
+  permission"*), as on 27 October. The rows could not be read or repaired
+  from here; the founder was given the sentence that files them.
+
+**What was ours anyway, found by reading a log reply the way a model does** —
+nine kilobytes, seventeen keys, six separate notes:
+
+- **The score lived in a key of its own.** `say` (the line relayed) and
+  `day_card` (the layout shown) carried neither it nor a pointer to it, so
+  showing it was a choice made again on every reply. It rides both now:
+  `mealScoreSay()` puts *"Meal score: 5/10 on what is in it…"* in the line —
+  the item, its score, then the day — and **every item on the day card carries
+  its score in a Score column**, computed by the same `mealScore` the log
+  scores with (`scoreOf` in `dayread.js`), so one meal can never have two. No
+  item scored, no column; a food still waiting for a figure is a blank cell
+  and a caption naming what it needs. On the drawn card the score opens with
+  the row's macros, under the same tap.
+- **`amend_last` never scored a meal at all.** Calories first and the macros a
+  moment later by amend came back with no score and a note saying
+  *"Acknowledge briefly and move on"*; `structure_entries` said *"One short
+  clause at most"* beside *"THIS is the confirmation"*. Three doors, three
+  replies for one toast. All three now give the same score sentence and the
+  same card (tested by running each), and the housekeeping sentence is kept
+  for what it was written about: dictation tidied up later.
+- **The first sentence on every log reply said to stop.** `nudge_note` with no
+  nudge read *"Answer what they asked and stop"* — written about unprompted
+  coaching, read as *keep the reply short*, and placed directly above the
+  score. It says what it is about now, and that what the reply carries is
+  still shown whole.
+- **What the reply is made of comes first.** `say` and `day_card` were the
+  fourteenth and twelfth keys. `replyOrder()` leads every reply that carries
+  the day with `estimate_now` (when something must happen first), the line,
+  then the card — the same order whichever tool answered.
+
+**And the order that rides out one turn ahead** (`OWN_CALL`, the playbook's
+mechanism). Nothing of ours is read in a turn with no tool call — except what
+an earlier reply in the same chat left behind. So every reply that carries the
+day now says: each later food gets its own call; *"Logged in Wrought"*, the
+square, a filed time, a day table, a total and a meal score are only ever
+shown from a Wrought reply received in that turn; and a turn that cannot call
+opens with *"This is NOT in Wrought yet — the connector did not answer in
+this chat."* It only helps a chat that already holds a Wrought reply. **A
+fresh chat that never calls is still out of reach from here.**
+
+**The tell, for the person.** A real reply opens with the orange square and
+*Logged in Wrought*, and a food with its figures carries a meal score in the
+line and in the table. A food log with a table and no score did not come from
+Wrought.
+
+**Found by the simulator on the way out, and older than this change:**
+`calibrate_lift` took a rep count of any size, so a trillion reps came back
+as an estimated max of 3.3e22 kg. `baselineFromClaim` refuses a claim past a
+tonne or a hundred reps as a mishearing, and a target outside 1–50 falls back
+to eight (`targetRepsOf`).
+
+**One change was taken back before it shipped.** Protein, carbs and fat were
+moved from the bold line he approved on 8 October into a small table, on the
+theory that a restyle drops a line and keeps a table. The request log then
+showed there had been no restyle — no Wrought reply to restyle. **A layout he
+approved is not changed on a guess**, and the line is back.
+
 ### A food confirmed with no figure — estimated before the reply, never confirmed as complete
 
 6 October: *"Logged in Wrought — Costco restaurant sausage at 3:17 PM"* with
@@ -6819,7 +6905,7 @@ self-reporting scale removes the most-abandoned manual entry), then Strava.
 
 ## Conventions
 
-- `npm test` runs `test/harness.mjs` — 912 offline tests, no network, no database.
+- `npm test` runs `test/harness.mjs` — 918 offline tests, no network, no database.
   Run it before every push. It covers the JSON-RPC envelope (which fails as an
   uninformative "could not connect" inside ChatGPT) and all the arithmetic
   (which fails as a confidently wrong number in somebody's verdict).

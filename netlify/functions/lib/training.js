@@ -1820,12 +1820,34 @@ export function targetOptions({ profile = {}, weightKg = null } = {}) {
 // set is named a calibration rather than a prescription, and what they then
 // actually lift becomes the history everything after is computed from. The
 // claim never enters the log as if it were performance.
+/** A rep target a set is actually prescribed at (1–50), or null. Pure. */
+export function targetRepsOf(v) {
+  const r = Math.round(Number(v));
+  return Number.isFinite(r) && r >= 1 && r <= 50 ? r : null;
+}
+
 export function baselineFromClaim({ claimed_kg, claimed_reps = null, kind = 'working', target_reps = 8, tier = 'intermediate' } = {}) {
   const w = Number(claimed_kg);
   if (!Number.isFinite(w) || w <= 0) {
     return { verdict: 'refuse', weight_kg: null,
              say: 'That claim did not include a usable weight. Ask what they usually lift for a set, or start light and let the bar decide.' };
   }
+
+  // A CLAIM NO SET WAS EVER DONE AT IS A MISHEARING, NOT A LOAD. The scenario
+  // simulator sent a trillion reps and got back an estimated max of 3.3e22 kg
+  // and a start weight to match — dictation makes the same shape of mistake
+  // ("one fifty" for 150, heard as 1,050). Past a tonne on the bar, or a
+  // hundred reps in a set, the claim is asked again rather than programmed.
+  if (w > 1000) {
+    return { verdict: 'refuse', weight_kg: null,
+             say: 'That is more weight than any lift is loaded with, so it reads as a mishearing. Ask again what they usually lift for a set.' };
+  }
+  if (Number(claimed_reps) > 100) {
+    return { verdict: 'refuse', weight_kg: null,
+             say: 'That is more reps than a set is done for, so it reads as a mishearing. Ask again how many they usually get.' };
+  }
+  // …and a target outside what a set is prescribed at falls back to eight.
+  target_reps = targetRepsOf(target_reps) ?? 8;
 
   // Epley in both directions: claimed set → estimated 1RM → working weight at
   // the target reps. A claimed max (kind 'max') is already a 1RM claim.

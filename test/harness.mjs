@@ -3942,6 +3942,35 @@ await test('a beginner claim gets held back further, and nonsense is refused', (
   assert.equal(baselineFromClaim({ claimed_kg: 2, claimed_reps: 8 }).verdict, 'refuse');
 });
 
+await test('a claim no set was ever done at is a mishearing: asked again, never programmed', async () => {
+  // Found by the scenario simulator: a trillion reps came back as an
+  // estimated max of 3.3e22 kg and a start weight to match.
+  const { targetRepsOf } = await import('../netlify/functions/lib/training.js');
+  const heavy = baselineFromClaim({ claimed_kg: 1e9, claimed_reps: 5 });
+  assert.equal(heavy.verdict, 'refuse');
+  assert.equal(heavy.weight_kg, null);
+  assert.match(heavy.say, /reads as a mishearing\. Ask again what they usually lift/);
+  const many = baselineFromClaim({ claimed_kg: 80, claimed_reps: 1e12 });
+  assert.equal(many.verdict, 'refuse');
+  assert.match(many.say, /more reps than a set is done for/);
+  // A target no set is prescribed at falls back to eight — the same answer
+  // as no target at all — and no figure in the reply runs away.
+  const wild = baselineFromClaim({ claimed_kg: 80, claimed_reps: 8, target_reps: 1e12 });
+  assert.deepEqual(wild, baselineFromClaim({ claimed_kg: 80, claimed_reps: 8, target_reps: 8 }));
+  for (const c of [wild, baselineFromClaim({ claimed_kg: 999, claimed_reps: 100, target_reps: -3 })]) {
+    assert.ok(!/e\+\d/.test(JSON.stringify(c)), `a figure ran away: ${JSON.stringify(c)}`);
+    assert.ok(c.weight_kg == null || c.weight_kg <= 1000 * (1 + 100 / 30));
+  }
+  // The honest heavy end still works: a 400 kg leg press for 10 is a claim.
+  assert.equal(baselineFromClaim({ claimed_kg: 400, claimed_reps: 10, target_reps: 10 }).verdict, 'calibration');
+  assert.deepEqual([8, '12', 1, 50, 0, 51, -3, 1e12, 'lots', null].map(targetRepsOf), [8, 12, 1, 50, null, null, null, null, null, null]);
+  // …and the tool passes its own target through the same door.
+  const fn = decomment(readFileSync(new URL('../netlify/functions/mcp.js', import.meta.url), 'utf8'));
+  const cal = fn.slice(fn.indexOf('async function calibrateLift('), fn.indexOf('async function endSession('));
+  assert.ok(!/args\.target_reps \|\|/.test(cal), 'calibrate_lift takes a target of any size');
+  assert.match(cal, /targetRepsOf\(args\.target_reps\)/);
+});
+
 await test('the record always beats the memory', () => {
   // calibrate_lift refuses to let a claim override logged history — a
   // remembered 100 must never outrank a performed 85.
@@ -8677,7 +8706,13 @@ await test('no nudge is a legitimate answer, and it is the common one', () => {
   // listening to.
   assert.equal(nextNudge({ push: 'normal', trainingWeek: WEEK(4, 4, 3), plan: PLAN_SET }), null);
   assert.equal(nextNudge({}), null, 'a nudge fired with nothing to go on');
-  assert.match(nudgeNote(null), /Answer what they asked and stop/);
+  // The no-nudge note is about EXTRAS, and says so. It used to read "Answer
+  // what they asked and stop" — the first thing a model read on a log reply,
+  // directly above the meal score: an instruction to drop what the person
+  // asked to keep.
+  assert.match(nudgeNote(null), /add no coaching of your own/);
+  assert.doesNotMatch(nudgeNote(null), /\band stop\b|keep it short|nothing more/i, 'the no-nudge note reads as "cut the reply short"');
+  assert.match(nudgeNote(null), /still shown whole, every time: the say line \(each item, its numbers, its meal score\) and day_card/);
 });
 
 await test('a win is raised at every level, chasing is not', () => {
@@ -16062,8 +16097,13 @@ await test('the day card is the layout the founder asked to keep — the food ta
   // No dash is drawn for a missing macro any more, so none is explained.
   assert.ok(!/— means|\| — \|/.test(card), card);
   // No item carries sugar, fibre or saturated fat, and the day's zeros are
-  // not figures: nothing about them is printed.
-  assert.ok(!/sugar|fibre|saturated|\| 0g \|/i.test(card), `a zero that was never there:\n${card}`);
+  // not figures: no FIGURE of them is printed. (Naming them as what a meal
+  // score is waiting for is not a figure.)
+  assert.ok(!/\b(sugar|fibre|saturated fat) \d|\| 0g \|/i.test(card), `a zero that was never there:\n${card}`);
+  // …and with no item scored there is no Score column — a column of blanks
+  // says nothing — while the caption says what a score is waiting for.
+  assert.ok(!/\| Score \|/.test(card), card);
+  assert.match(card, /No meal score yet for 3 items: each needs protein, fibre, sugar, saturated fat on it\./);
   // Captions are their own paragraphs — never run together by a renderer.
   assert.ok(!/carry them\.\n[A-Z]/.test(card));
   // The burn rows are the receipt's own counted lines, in order, and sum.
@@ -16086,7 +16126,7 @@ await test('the day card is the layout the founder asked to keep — the food ta
   // Sugar etc only when an item carries it, and said to be partial when not all do.
   const sugary = dayCard(read({ log: [item('08:00', 'yoghurt', 150, { protein_g: 10, carbs_g: 12, fat_g: 4, sugar_g: 9 }), item('09:00', 'toast', 200)], bal: { activeCalories: 400 } }));
   assert.match(sugary, /^Sugar 9g \(only the items that carry it\)\.$/m, sugary);
-  assert.ok(!/fibre|saturated/.test(sugary), sugary);
+  assert.ok(!/\b(fibre|saturated fat) \d/i.test(sugary), `a figure no item carries:\n${sugary}`);
 
   // ── A meal with no calories is not a zero-calorie meal ──────────────────
   const lunch = dayCard(read({ log: [item('12:30', 'had lunch', null)], bal: { activeCalories: 400 } }));
@@ -17717,7 +17757,9 @@ await test('the proof rides every tool reply, first, in the same round trip', ()
   // is awaited under, the stamp reads that value and nothing else.
   const factsVar = /const (\w+) = await connP;/.exec(call.slice(implAt, stampAt))?.[1];
   assert.ok(factsVar, 'the check is not awaited between the tool and the stamp');
-  assert.ok(call.slice(stampAt).startsWith(`stampConnected(out, connectedAccountsBlock(authUser, ${factsVar}, { linkId }))`), 'the stamp does not read the check that was started');
+  // (What it stamps ONTO is not this test's business — the reply is put in
+  // its reading order first — only that the block is built from that check.)
+  assert.match(call.slice(stampAt), new RegExp(`^stampConnected\\([^;]*?, connectedAccountsBlock\\(authUser, ${factsVar}, \\{ linkId \\}\\)\\);`), 'the stamp does not read the check that was started');
   assert.match(call, /text: JSON\.stringify\(body, null, 2\)/, 'the stamped body is not what goes out');
   assert.match(mcp, /const out = await impl\(params\.arguments \|\| \{\}, authUser\);\s*if \(out && typeof out === 'object' && !Array\.isArray\(out\) && out\.account === undefined\) \{\s*out\.account = authUser\?\.email \|\| null;/);
   const prof = call.slice(call.indexOf('if (params.name === PROFILE_TOOL)'), call.indexOf('if (!supabase) return rpcError'));
@@ -19538,6 +19580,234 @@ await test('the meal score rides the log reply and the day, never a quiet captur
   assert.equal(S.score_day_flag.body.meal_scores?.[0]?.softened, true);
   assert.equal(S.score_day_flag.body.meal_score_note, NUT.MEAL_SCORE_FLAG_NOTE);
   assert.match(SERVER_INSTRUCTIONS, /meal_score \(on the log reply\) \/ meal_scores \(on get_day\) — "rate my meal"/);
+});
+
+// ── The score and the macros ride what the reply is made of ────────────────
+// The founder, 10 November, under a toast that came back with every figure and
+// no score: "Whatever happened to all the macros and all the score you gave it
+// before? Why do you keep losing that? … it doesn't ever remember the right
+// pathway." That reply was ChatGPT's own — the request log held no call to
+// Wrought — but a real log reply, read the way a model reads it, had the
+// weakness he described: the score in a key of its own, behind a note that
+// opened "Answer what they asked and stop", while the say line and the day
+// card (the two things a model shows) carried neither. And a meal given its
+// macros a moment later by amend_last got no score at all.
+
+await test('the meal score is one sentence for the line the model relays, off the scores as computed', () => {
+  const one = NUT.mealScores([{ id: 1, type: 'food', summary: 'toast', calories: 300, protein_g: 10, carbs_g: 43, fat_g: 10, sugar_g: 5, fibre_g: 2, sat_fat_g: 4 }], { flags: [] });
+  assert.equal(NUT.mealScoreSay(one), `Meal score: ${one[0].say}`, 'one scored food does not get its whole reading');
+  assert.match(NUT.mealScoreSay(one), /^Meal score: 5\/10 on what is in it\./);
+  // Several: each with its own score, short — never one figure for the lot.
+  const two = NUT.mealScores([
+    { id: 1, type: 'food', summary: 'pad thai', calories: 750, protein_g: 35, carbs_g: 90, fat_g: 28, sugar_g: 14, fibre_g: 5, sat_fat_g: 6 },
+    { id: 2, type: 'food', summary: 'toast', calories: 300, protein_g: 10, carbs_g: 43, fat_g: 10, sugar_g: 5, fibre_g: 2, sat_fat_g: 4 },
+  ], { flags: [] });
+  assert.equal(NUT.mealScoreSay(two), 'Meal scores: pad thai 7/10; toast 5/10.');
+  // One scored beside one still waiting: the scored one is named.
+  const mixed = NUT.mealScores([
+    { id: 1, type: 'food', summary: 'pad thai', calories: 750 },
+    { id: 2, type: 'food', summary: 'toast', calories: 300, protein_g: 10, carbs_g: 43, fat_g: 10, sugar_g: 5, fibre_g: 2, sat_fat_g: 4 },
+  ], { flags: [] });
+  assert.match(NUT.mealScoreSay(mixed), /^Meal score for toast: 5\/10/);
+  // Nothing scored, nothing read, nothing sent: no sentence — never a score
+  // of the function's own.
+  assert.equal(NUT.mealScoreSay(NUT.mealScores([{ id: 1, type: 'food', summary: 'lunch', calories: 500 }], { flags: [] })), null);
+  assert.equal(NUT.mealScoreSay(null), null);
+  assert.equal(NUT.mealScoreSay(NUT.mealScores([{ id: 1, type: 'food', summary: 'x', calories: 300, protein_g: 10, sugar_g: 5, fibre_g: 2, sat_fat_g: 4 }], { flags: null })), null, 'a flag state nobody read gave a score');
+  // Under a flag the sentence is the softened reading: nothing holding it
+  // back, no swap.
+  const soft = NUT.mealScoreSay(NUT.mealScores([{ id: 1, type: 'food', summary: 'toast', calories: 300, protein_g: 10, carbs_g: 43, fat_g: 10, sugar_g: 5, fibre_g: 2, sat_fat_g: 4 }], { flags: [{ kind: 'low_intake' }] }));
+  assert.match(soft, /^Meal score: 5\/10 on what is in it\. Strong: /);
+  assert.ok(!/Holding it back|leaner|swap|in place of|\bless\b/i.test(soft), `a flagged score sentence pushed towards less: ${soft}`);
+});
+
+await test('every item on the day card carries its meal score — the same function, a column of the table, and a blank is explained', () => {
+  const { dayReadout, dayCard, dayModel, dayView } = WCARD.DR;
+  const log = [
+    { id: 'a', type: 'food', at: '16:50', summary: 'Chicken and tofu Pad Thai', calories: 750, protein_g: 35, carbs_g: 90, fat_g: 28, sugar_g: 14, fibre_g: 5, sat_fat_g: 6, estimated: true },
+    { id: 'b', type: 'food', at: '17:30', summary: 'toast with Cheez Whiz', calories: 300, protein_g: 10, carbs_g: 43, fat_g: 10, sugar_g: 5, fibre_g: 2, sat_fat_g: 4, estimated: true },
+    { id: 'c', type: 'food', at: '18:00', summary: 'a sausage roll', calories: 330, estimated: true },
+    { id: 'd', type: 'drink', at: '18:05', summary: 'black coffee', calories: 5, protein_g: 0, carbs_g: 0, fat_g: 0, sugar_g: 0, fibre_g: 0, sat_fat_g: 0, estimated: true },
+    { id: 'e', type: 'food', at: '18:10', summary: 'had a snack', calories: null, estimated: true },
+  ];
+  const day = { date: '2026-11-10', logged: true, log,
+    food: { calories: 1385, protein_g: 45, carbs_g: 133, fat_g: 38, sugar_g: 19, fibre_g: 7, sat_fat_g: 10, meals: 5, meals_uncounted: 1, estimated: true },
+    training: {}, activity: {}, device: {} };
+  const read = dayReadout({ day, date: '2026-11-10', today: '2026-11-10', flags: [] });
+  // THE SAME FUNCTION the log reply scores with — one meal can never have two scores.
+  for (const [i, e] of log.entries()) {
+    assert.equal(read.in.items[i].score, NUT.mealScore(e, { drink: e.type === 'drink' }).score ?? null, `${e.summary}: the card's score is not mealScore's`);
+  }
+  assert.deepEqual(read.in.items.map(it => it.score), [7, 5, null, null, null]);
+  // Waiting for figures: said. Too small to score, or no calories at all
+  // (already said to count for nothing): not also listed as waiting.
+  assert.deepEqual(read.in.items.map(it => it.score_needs), [null, null, ['protein', 'fibre', 'sugar', 'saturated fat'], null, null]);
+  // …and on the whole-day read's own item lines.
+  assert.match(read.say, /Chicken and tofu Pad Thai — 750 kcal .* · meal score 7\/10$/m);
+  assert.ok(!/a sausage roll — .*meal score/.test(read.say));
+
+  const card = dayCard(read);
+  const lines = card.split('\n');
+  assert.ok(lines.includes('| Food | Calories | Score |'), card);
+  assert.ok(lines.includes('|---|---:|---:|'), card);
+  assert.ok(lines.includes('| Chicken and tofu Pad Thai (4:50pm) | 750 | 7/10 |'), card);
+  assert.ok(lines.includes('| toast with Cheez Whiz (5:30pm) | 300 | 5/10 |'), card);
+  // A blank, never a dash and never a zero.
+  assert.ok(lines.includes('| a sausage roll (6:00pm) | 330 | |'), card);
+  assert.ok(lines.includes('| had a snack (6:10pm) | not counted yet | |'), card);
+  assert.ok(!/\| 0\/10 \||\| — \|/.test(card), card);
+  // Every row of the table has the same number of cells — a ragged table is
+  // one a renderer draws as text.
+  const tableAt = lines.indexOf('| Food | Calories | Score |');
+  const table = lines.slice(tableAt, lines.findIndex((l, i) => i > tableAt && l === ''));
+  assert.ok(table.length === log.length + 3 && table.every(r => r.split('|').length === 5), `a ragged table:\n${table.join('\n')}`);
+  assert.match(card, /^No meal score yet for a sausage roll: it needs protein, fibre, sugar, saturated fat on it\.$/m);
+  // Protein, carbs and fat straight under the total, as the layout he kept.
+  const totalAt = lines.findIndex(l => l.startsWith('| **Total**'));
+  assert.equal(lines[totalAt + 2], '**Protein** 45 g · **Carbs** 133 g · **Fat** 38 g', card);
+
+  // The model's own strings: the markdown is printed from them.
+  const m = dayModel(read);
+  assert.deepEqual(m.food.items.map(x => x.score), ['7/10', '5/10', null, null, null]);
+  assert.equal(m.food.scored, true);
+  // On the drawn card the score opens with the row's macros, under the same tap.
+  const v = dayView(read);
+  assert.match(v.intake.rows.find(r => r.what === 'Chicken and tofu Pad Thai').macros, / · meal score 7\/10$/);
+  assert.ok(!/meal score/.test(v.intake.rows.find(r => r.what === 'black coffee').macros || ''));
+
+  // No item scored: no Score column at all — a column of blanks says nothing.
+  const bare = dayCard(dayReadout({ day: { ...day, log: [log[2]], food: { calories: 330, meals: 1, meals_uncounted: 0 } }, date: '2026-11-10', today: '2026-11-10', flags: [] }));
+  assert.ok(bare.includes('| Food | Calories |\n|---|---:|\n'), bare);
+  assert.ok(!/Score \|/.test(bare), bare);
+  // The note names the column and the table as parts that are never left out.
+  assert.match(WCARD.DR.DAY_CARD_NOTE, /the Score column and the protein, carbs and fat line are never the part left out/);
+  // dayread scores with nutrition's function and no arithmetic of its own.
+  const src = decomment(readFileSync(new URL('../netlify/functions/lib/dayread.js', import.meta.url), 'utf8'));
+  assert.match(src, /import \{ mealScore \} from '\.\/nutrition\.js'/);
+  assert.match(src, /mealScore\(e, \{ drink: e\.type === 'drink' \}\)/);
+});
+
+await test('the same toast comes back the same way whichever door its figures came through', () => {
+  const S = WCARD.scenarios();
+  const ROW = /^\| Two slices sourdough toast with Cheez Whiz \(\d+:\d\d[ap]m\) \| 300 \| 5\/10 \|$/m;
+  for (const k of ['path_one', 'path_amend', 'path_fill']) {
+    const b = S[k]?.body;
+    assert.ok(b, `${k}: no reply`);
+    // The score is computed on every door — amend_last never used to.
+    assert.equal(b.meal_score?.[0]?.score, 5, `${k}: no meal score on the reply`);
+    // …said in the line the model relays, as the score's own reading, after
+    // the item and before the day.
+    assert.ok(b.say.includes(`Meal score: ${b.meal_score[0].say}`), `${k}: the say line does not carry the score:\n${b.say}`);
+    assert.ok(b.say.indexOf('Meal score:') > b.say.indexOf('10g fat (4g saturated)') && b.say.indexOf('Meal score:') < b.say.indexOf('Today so far:'), `${k}: the score is not between the item and the day`);
+    // …and in the day's own table, with the day's macros as a table under it.
+    assert.match(b.day_card, /^\| Food \| Calories \| Score \|$/m, `${k}: no Score column`);
+    assert.match(b.day_card, ROW, `${k}: the toast's row does not carry its score:\n${b.day_card}`);
+    assert.match(b.day_card, /^\| Chicken and tofu Pad Thai \(4:50pm\) \| 750 \| 7\/10 \|$/m, `${k}: the earlier meal lost its score`);
+    assert.match(b.day_card, /^\*\*Protein\*\* 45 g · \*\*Carbs\*\* 133 g · \*\*Fat\*\* 38 g$/m, `${k}: the day's protein, carbs and fat are not under the table`);
+    // What the reply is made of comes first, in the same order on every door.
+    assert.deepEqual(S[k].keys.slice(0, 2), ['say', 'day_card'], `${k}: the reply does not lead with what is shown`);
+    assert.match(b.note, /its meal score as say gives it \("Meal score: …"\)/, `${k}: the note does not ask for the score`);
+  }
+  // One score for one meal, whichever way it arrived.
+  assert.equal(S.path_one.body.meal_score[0].say, S.path_amend.body.meal_score[0].say);
+  assert.equal(S.path_one.body.meal_score[0].say, S.path_fill.body.meal_score[0].say);
+  assert.equal(S.path_one.body.day_card, S.path_fill.body.day_card, 'two doors drew two different days');
+  assert.equal(S.path_one.body.day_card, S.path_amend.body.day_card, 'two doors drew two different days');
+
+  // Before the macros arrive: no score claimed, the cell is blank, and the
+  // caption says what it is waiting for.
+  const before = S.path_amend_log.body;
+  assert.ok(!/Meal score/.test(before.say), before.say);
+  assert.match(before.day_card, /^\| Two slices sourdough toast with Cheez Whiz \(\d+:\d\d[ap]m\) \| 300 \| \|$/m, before.day_card);
+  assert.match(before.day_card, /^No meal score yet for Two slices sourdough toast with Cheez Whiz: it needs protein, fibre, sugar, saturated fat on it\.$/m);
+
+  // The notes no longer argue with themselves. A fill or an amend of food from
+  // this conversation IS the confirmation — never "one short clause at most",
+  // never "acknowledge briefly and move on" as the only instruction.
+  assert.match(S.path_amend.body.note, /^One entry, not two\. If this filled in the figures of a food logged in this same turn, THIS is the confirmation/);
+  assert.ok(!/One short clause at most/.test(S.path_fill.body.note), 'a fill of today\'s food is told to be one short clause');
+  // …while dictation tidied up later is still housekeeping.
+  assert.match(S.past_fill.body.note, /Housekeeping, not an event\. One short clause at most/);
+  // The first sentence a model reads no longer says to stop.
+  for (const k of ['path_one', 'path_fill_log']) {
+    assert.ok(!/and stop\b/.test(S[k].body.nudge_note || ''), `${k}: the no-nudge note still says to stop`);
+  }
+
+  // The day, asked for: every item's score, in the read and in the table.
+  assert.match(S.path_day.body.say, /Two slices sourdough toast with Cheez Whiz — 300 kcal .* · meal score 5\/10$/m);
+  assert.match(S.path_day.body.day_card, ROW);
+  assert.deepEqual(S.path_day.keys.slice(0, 2), ['say', 'day_card']);
+
+  // Under a care flag: the softened reading — the score and what is strong,
+  // additions only — in the line and the same number in the table.
+  const fl = S.path_flag.body;
+  assert.match(fl.say, /Meal score: 5\/10 on what is in it\. Strong: .*Added alongside the same meal: /);
+  assert.ok(!/Holding it back|A better version next time|leaner|in place of/.test(fl.say), `a flagged reply pushed towards less:\n${fl.say}`);
+  assert.match(fl.day_card, ROW);
+  // A quiet capture: the item, and nothing else — no score, no day.
+  assert.ok(!/Meal score/.test(S.path_quiet.body.say), S.path_quiet.body.say);
+  assert.equal(S.path_quiet.body.day_card, undefined);
+  // Two meals in one call: each with its own score, short.
+  assert.match(S.path_two.body.say, /Meal scores: Chicken and tofu Pad Thai 7\/10; Two slices sourdough toast with Cheez Whiz 5\/10\. Today so far:/);
+  // estimate_now still leads when something must happen before the reply.
+  assert.deepEqual(S.nofig.keys.slice(0, 3), ['estimate_now', 'say', 'day_card']);
+  assert.equal(S.nofig_link.keys[0], 'connected_accounts');
+});
+
+await test('a later turn that cannot call Wrought may not rebuild Wrought\'s reply: the order rides out on every reply that carries the day', async () => {
+  const { MARK } = await import('../netlify/functions/lib/mark.js');
+  // 10 November, 7:50pm: "Today's food log — November 10", a Food / Calories
+  // table with times and a total, and not one request from ChatGPT in the
+  // server's log for that hour. Nothing of ours is read in a turn with no
+  // tool call — except what an earlier reply in the same chat left behind.
+  const { OWN_CALL } = WCARD.MCP;
+  assert.match(OWN_CALL, /^STANDING ORDER FOR EVERY LATER TURN IN THIS CHAT: each food, drink, workout or weight they mention gets its OWN Wrought call in that turn\./);
+  // Everything a person could mistake for a receipt is named as Wrought's alone…
+  for (const part of ['"Logged in Wrought"', MARK, 'a time something was filed at', 'a day table', 'a day total', 'a meal score']) {
+    assert.ok(OWN_CALL.includes(part), `the order does not name ${part}`);
+  }
+  assert.match(OWN_CALL, /only ever shown from a Wrought reply received in THAT turn: never rebuilt from this reply, from memory or from the conversation/);
+  // …and a turn that cannot call says so in words nobody reads as a save.
+  assert.match(OWN_CALL, /open with exactly: "This is NOT in Wrought yet — the connector did not answer in this chat\."/);
+  assert.match(OWN_CALL, /no table, no day total, no score, no orange square — and log it the moment a call works/);
+  // It never tells the model to stay silent about the food or to refuse an estimate.
+  assert.ok(!/say nothing|do not estimate|refuse/i.test(OWN_CALL));
+  // On every reply a chat is likely to continue from: each write door, the
+  // day asked for, and the brief a notification tap opens.
+  const S = WCARD.scenarios();
+  for (const k of ['path_one', 'path_amend', 'path_fill', 'path_day', 'path_flag']) {
+    assert.ok(String(S[k].body.playbook || '').startsWith(OWN_CALL), `${k}: the reply does not carry the order`);
+  }
+  // A quiet fill stays quiet.
+  assert.equal(S.quiet_fill.body.playbook, undefined);
+  const src = decomment(readFileSync(new URL('../netlify/functions/mcp.js', import.meta.url), 'utf8'));
+  assert.ok((src.match(/playbook: OWN_CALL/g) || []).length >= 4, 'the order rides fewer doors than log, amend_last, get_day and brief');
+  // The gym order still rides beside it on log and brief.
+  assert.match(S.path_one.body.playbook, /STANDING ORDER: if they now say they are going to, at, or heading to the gym/);
+});
+
+await test('what the reply is made of comes first: the line, then the card — on the tools that carry the day, and nothing is lost', () => {
+  const { replyOrder, CARD_TOOLS } = WCARD.MCP;
+  const sym = Symbol('view');
+  const out = { nudge_note: 'n', meal_score: [1], day_total: {}, day_card: 'CARD', say: 'SAY', note: 'N', [sym]: { v: 1 } };
+  for (const name of CARD_TOOLS) {
+    const led = replyOrder(name, out);
+    assert.deepEqual(Object.keys(led), ['say', 'day_card', 'nudge_note', 'meal_score', 'day_total', 'note'], `${name}: not led by what is shown`);
+    assert.equal(led[sym], out[sym], `${name}: the card's view did not travel with the reply`);
+    for (const k of Object.keys(out)) assert.equal(led[k], out[k], `${name}: ${k} changed`);
+  }
+  assert.deepEqual(Object.keys(replyOrder('log', { estimate_now: {}, x: 1, say: 's', day_card: 'c' })).slice(0, 3), ['estimate_now', 'say', 'day_card']);
+  // A reply with no card: the line still leads. One with no line is left alone.
+  assert.deepEqual(Object.keys(replyOrder('log', { x: 1, say: 's' })), ['say', 'x']);
+  const noSay = { x: 1, error: 'e' };
+  assert.equal(replyOrder('log', noSay), noSay);
+  // Not on a tool that does not carry the day, and never on a non-object.
+  const other = { x: 1, say: 's' };
+  assert.equal(replyOrder('my_plan', other), other);
+  assert.equal(replyOrder('log', null), null);
+  // …and it is applied to what goes out, before the account stamp.
+  const mcp = decomment(readFileSync(new URL('../netlify/functions/mcp.js', import.meta.url), 'utf8'));
+  assert.match(mcp, /stampConnected\(replyOrder\(params\.name, out\), /);
 });
 
 // ── Options that know them, and a workout that comes back coached ──────────

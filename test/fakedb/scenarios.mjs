@@ -275,4 +275,29 @@ out.amend_bad_type.rows = rows();
 out.amend_work_type = await call('amend_last', { text: 'actually that was work', event: { event_type: 'work', summary: 'shift' } });
 out.amend_work_type.rows = rows();
 
+// THE SAME REPLY WHICHEVER DOOR THE FIGURES CAME THROUGH — 10 November: a
+// toast logged with every figure came back with no meal score in the reply.
+// One call with everything; calories first and the macros by amend_last;
+// calories first and the macros by structure_entries. Same toast, same day.
+const toastFull = { calories: 300, protein_g: 10, carbs_g: 43, fat_g: 10, sugar_g: 5, fibre_g: 2, sat_fat_g: 4 };
+const toastRest = { protein_g: 10, carbs_g: 43, fat_g: 10, sugar_g: 5, fibre_g: 2, sat_fat_g: 4 };
+const TOAST = 'Two slices sourdough toast with Cheez Whiz';
+const padThai = () => ev('p1', today, 'food', 'Chicken and tofu Pad Thai', { calories: 750, protein_g: 35, carbs_g: 90, fat_g: 28, sugar_g: 14, fibre_g: 5, sat_fat_g: 6 }, { hh: '20:50' });
+reset([weigh(), padThai()]);
+out.path_one = await call('log', { text: TOAST, events: [food(TOAST, toastFull)] });
+reset([weigh(), padThai()]);
+out.path_amend_log = await call('log', { text: TOAST, events: [food(TOAST, { calories: 300 })] });
+out.path_amend = await call('amend_last', { text: 'with its macros', event: { event_type: 'food', summary: TOAST, detail: toastRest } });
+reset([weigh(), padThai()]);
+out.path_fill_log = await call('log', { text: TOAST, events: [food(TOAST, { calories: 300 })] });
+const fillId = out.path_fill_log.body?.recorded?.[0]?.id ?? null;
+out.path_fill = fillId == null ? null : await call('structure_entries', { entries: [{ id: fillId, detail: toastRest, estimated: true }] });
+out.path_day = await call('get_day', {});
+reset([weigh(), ...thin(), padThai()]);
+out.path_flag = await call('log', { text: TOAST, events: [food(TOAST, toastFull)] });
+reset([weigh(), padThai()]);
+out.path_quiet = await call('log', { quiet: true, text: TOAST, events: [food(TOAST, toastFull)] });
+reset([weigh()]);
+out.path_two = await call('log', { text: 'pad thai and toast', events: [food('Chicken and tofu Pad Thai', { calories: 750, protein_g: 35, carbs_g: 90, fat_g: 28, sugar_g: 14, fibre_g: 5, sat_fat_g: 6 }), food(TOAST, toastFull)] });
+
 console.log('SCENARIOS ' + JSON.stringify(out));
