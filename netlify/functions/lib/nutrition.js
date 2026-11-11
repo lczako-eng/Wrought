@@ -417,7 +417,7 @@ export function betterVersion(m, { flagged = false, drink = false } = {}) {
 }
 
 /** What the model is told to do with a meal score — one sentence, kept with the scores. */
-export const MEAL_SCORE_NOTE = 'RATE THE MEAL AS meal_score SAYS, in one or two lines and in the coach\'s register: the score out of 10, what made it strong and what is holding it back. Then ONE line from better: name one or two versions of WHAT THEY ACTUALLY ATE made the better way — you saw the meal, so be specific ("the same pie with lean turkey mince and peas through the filling"), a similar dish they would actually want rather than a lecture — each with the score better gives it ("up to 8/10"). Never a score or a figure of your own for the alternative, never a smaller plate, never "less", never calories saved — an option for next time, said once; and never "good food" or "bad food", and never a word about the amount eaten or about their body — it rates what is in the food. A meal with no score yet names the figures it needs: estimate them (numbers, never ranges) and send them with structure_entries by id in this same turn; that reply carries the score.';
+export const MEAL_SCORE_NOTE = 'THE MEAL SCORE GOES IN EVERY REPLY THAT CARRIES ONE — it is already in say ("Meal score: …") and in day_card\'s Score column: keep both, never drop it to keep the reply short. RATE THE MEAL AS meal_score SAYS, in one or two lines and in the coach\'s register: the score out of 10, what made it strong and what is holding it back. Then ONE line from better: name one or two versions of WHAT THEY ACTUALLY ATE made the better way — you saw the meal, so be specific ("the same pie with lean turkey mince and peas through the filling"), a similar dish they would actually want rather than a lecture — each with the score better gives it ("up to 8/10"). Never a score or a figure of your own for the alternative, never a smaller plate, never "less", never calories saved — an option for next time, said once; and never "good food" or "bad food", and never a word about the amount eaten or about their body — it rates what is in the food. A meal with no score yet names the figures it needs: estimate them (numbers, never ranges) and send them with structure_entries by id in this same turn; that reply carries the score.';
 
 /**
  * Under a care flag the score is SOFTENED, never hidden. Silence here was
@@ -431,10 +431,36 @@ export const MEAL_SCORE_NOTE = 'RATE THE MEAL AS meal_score SAYS, in one or two 
  * to stop. Something ADDED alongside the same meal goes the other way, so
  * that, and only that, is the better version a flagged meal is given.
  */
-export const MEAL_SCORE_FLAG_NOTE = 'A CARE FLAG STANDS, so say the score out of 10 and what made it strong, as meal_score says — and, only if better is there, ONE line naming something they could ADD alongside the same meal, specific to what they ate ("peas or a side salad with the pie"), with the score better gives it. Only additions: never a swap, never "in place of", never leaner or lighter, never anything to cut or skip, never a calorie figure; never "good food" or "bad food", never a word about the amount or their body. A meal with no score yet names the figures it needs: estimate them and send them with structure_entries by id in this same turn.';
+export const MEAL_SCORE_FLAG_NOTE = 'THE MEAL SCORE GOES IN EVERY REPLY THAT CARRIES ONE — it is already in say ("Meal score: …") and in day_card\'s Score column: keep both, never drop it to keep the reply short. A CARE FLAG STANDS, so say the score out of 10 and what made it strong, as meal_score says — and, only if better is there, ONE line naming something they could ADD alongside the same meal, specific to what they ate ("peas or a side salad with the pie"), with the score better gives it. Only additions: never a swap, never "in place of", never leaner or lighter, never anything to cut or skip, never a calorie figure; never "good food" or "bad food", never a word about the amount or their body. A meal with no score yet names the figures it needs: estimate them and send them with structure_entries by id in this same turn.';
 
 /** The note that goes with a set of scores — the softened one under a flag. */
 export const mealScoreNote = scores => (Array.isArray(scores) && scores.some(x => x.softened) ? MEAL_SCORE_FLAG_NOTE : MEAL_SCORE_NOTE);
+
+/**
+ * The meal score as ONE sentence for the line the model relays (`say`).
+ *
+ * The founder, 10 November: "Whatever happened to all the macros and all the
+ * score you gave it before? Why do you keep losing that?" That reply turned
+ * out not to be Wrought's at all (the request log held no call), but reading
+ * a real one the way a model does showed the weakness he was describing: the
+ * score sat in a side key (`meal_score`) that neither the confirmation line
+ * nor the day table carried, so showing it was a choice the model made again
+ * on every reply. A figure that must be in the reply rides in the two things
+ * the reply is made of. Pure.
+ *
+ * One scored food: its whole reading. Several: each with its score, short —
+ * the readings stay in `meal_score`. A food still waiting for a figure is
+ * not said here; the day table's caption names what it needs.
+ */
+export function mealScoreSay(scores) {
+  const all = Array.isArray(scores) ? scores.filter(Boolean) : [];
+  const scored = all.filter(x => x.score != null && typeof x.say === 'string');
+  if (!scored.length) return null;
+  if (scored.length === 1) {
+    return `Meal score${all.length > 1 && scored[0].summary ? ` for ${scored[0].summary}` : ''}: ${scored[0].say}`;
+  }
+  return `Meal scores: ${scored.map(x => `${x.summary || 'item'} ${x.score}/10`).join('; ')}.`;
+}
 
 /** The scores for the food and drink rows just written or read. A flag softens them; a flag state nobody read gives none. */
 export function mealScores(rows = [], { flags = null } = {}) {

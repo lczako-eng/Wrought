@@ -26,7 +26,7 @@ import {
 } from './lib/wrought.js';
 import { createHash } from 'node:crypto';
 import { profileIdFor, connectionFacts, connectedAccountsBlock, stampConnected } from './lib/connections.js';
-import { markReply } from './lib/mark.js';
+import { markReply, MARK } from './lib/mark.js';
 import { allowed } from './lib/membership.js';
 import { pendingVoice } from './lib/voice.js';
 import { activityBurn, EFFORTS, shiftsIn } from './lib/activity.js';
@@ -47,11 +47,11 @@ import { preflight } from './lib/preflight.js';
 import { finaliseSession, closeStaleSessions, recordSet, foldIntoSession } from './lib/session.js';
 import { effortFromWords, wordsForRecord, beforeSet, afterSet, methodsFor } from './lib/coach.js';
 import { PROVIDERS, providerSummary, recommendRoute, liveConnections } from './lib/providers.js';
-import { nutritionTotals, composition, macroMatrix, yearOverYear, mealScores, mealScoreNote, optionsFor, OPTIONS_NOTE, OPTIONS_FLAG_NOTE } from './lib/nutrition.js';
+import { nutritionTotals, composition, macroMatrix, yearOverYear, mealScores, mealScoreNote, mealScoreSay, optionsFor, OPTIONS_NOTE, OPTIONS_FLAG_NOTE } from './lib/nutrition.js';
 import {
   exerciseKey, lastPerformance, progressionCall, TIERS,
   restingBurn, energyBalance, planFromRoutine, sessionTotals, earnedRoom,
-  orderPlan, orderInsight, deviceMatrix, weekdayPattern, weekSoFar, weekTargets, goalCall, baselineFromClaim, readiness, nextSetLoad, rekeySets, resyncMuscles,
+  orderPlan, orderInsight, deviceMatrix, weekdayPattern, weekSoFar, weekTargets, goalCall, baselineFromClaim, targetRepsOf, readiness, nextSetLoad, rekeySets, resyncMuscles,
   normaliseMovement, readMovement, syncSetsFromWorkouts,
   ACTIVITY,
   targetOptions, goalsToSet,
@@ -105,6 +105,20 @@ const CORS = {
 // at all: "needs to be more aggressive as to log everything into Wrought."
 // A model that asks "want me to log that?" has already decided the default is
 // not to — and on a phone, mid-sentence, the answer never comes.
+// THE REPLY THAT NEVER CAME FROM WROUGHT. 10 November, 7:50pm: a Pad Thai and a
+// toast came back as "Today's food log — November 10", a Food / Calories
+// table with each item's time and a total — and the server's request log for
+// that hour holds no call from ChatGPT at all. It had written the log itself,
+// in the layout it had seen Wrought send. The founder's question was why the
+// score was gone: only Wrought computes one, and Wrought was never asked.
+//
+// Nothing of ours is read in a turn where no tool is called — except what an
+// EARLIER reply in the same chat left behind. So the order rides out on every
+// reply that carries the day, one turn ahead of the moment it is needed (the
+// playbook's mechanism): the layout is Wrought's alone, and a turn that cannot
+// call Wrought says so in words the person cannot mistake for a receipt.
+export const OWN_CALL = `STANDING ORDER FOR EVERY LATER TURN IN THIS CHAT: each food, drink, workout or weight they mention gets its OWN Wrought call in that turn. What this reply is made of belongs to Wrought alone — "Logged in Wrought", the ${MARK}, a time something was filed at, a day table, a day total, a meal score — and is only ever shown from a Wrought reply received in THAT turn: never rebuilt from this reply, from memory or from the conversation. If you cannot call Wrought, open with exactly: "This is NOT in Wrought yet — the connector did not answer in this chat." Then your own estimate, said as an estimate: no table, no day total, no score, no orange square — and log it the moment a call works.`;
+
 const LOG_FIRST = 'LOG FIRST, ANSWER SECOND: the moment a message mentions anything eaten or drunk, a workout, a shift of work or a weight — in passing, mid-question, in a list, in a photo — call log (or log_activity for work) BEFORE writing the reply. Never ask whether to log it, never wait to be asked, never recite food back in prose without the call in the same turn; an unsure amount is passed as null, never a reason to hold back.';
 
 const READ_TOOLS = new Set(['get_day', 'brief', 'energy_balance', 'whats_next', 'my_plan', 'get_profile', 'progress', 'nutrition', 'fitness_check']);
@@ -1371,6 +1385,28 @@ export const CARD_TOOLS = new Set(TOOLS.filter(t => t._meta?.ui?.resourceUri).ma
 // …and the ones among them that write, whose failure is "NOT SAVED".
 const CARD_WRITES = new Set(['log', 'log_activity', 'amend_last', 'structure_entries']);
 
+/**
+ * WHAT THE REPLY IS MADE OF COMES FIRST — pure.
+ *
+ * A reply that carries the day is two things to show: the `say` line and
+ * `day_card`. Read the way a model reads it (10 November), they were the
+ * fourteenth and twelfth keys of a log reply, behind three notes, two copies
+ * of the day's totals and the meal score's whole working — what the person
+ * sees was assembled, by the model, from the middle of nine kilobytes. They
+ * lead now, on every tool that carries the day, in the same order
+ * whichever tool answered: the one thing that must happen BEFORE the reply
+ * (estimate_now) first, then the line, then the card. Nothing is added or
+ * removed; the card's own view (a Symbol key) travels with the copy.
+ */
+const LEAD_KEYS = ['estimate_now', 'say', 'day_card'];
+export function replyOrder(name, out) {
+  if (!CARD_TOOLS.has(name) || !out || typeof out !== 'object' || Array.isArray(out)) return out;
+  if (typeof out.say !== 'string') return out;
+  const first = {};
+  for (const k of LEAD_KEYS) if (out[k] !== undefined) first[k] = out[k];
+  return Object.assign(first, out);
+}
+
 // THE PICTURE IS OFF UNLESS IT IS SWITCHED ON. From 11 to 14 October every
 // ChatGPT log carried its card as a picture and a note saying to show it in
 // place of the table — and not one of those pictures was ever fetched
@@ -1776,6 +1812,7 @@ async function log(args, user) {
   // Scored off the rows as stored, with the flags the card read found; a read
   // that failed leaves the flags unknown, and unknown means no score.
   const scores = !args.quiet && wroteFood ? mealScores(written, { flags: cardRead ? (cardRead.flags || []) : null }) : null;
+  const scoreSay = mealScoreSay(scores);
   // A VO2 MAX SAID IN SO MANY WORDS IS KEPT. "My watch says my VO2 max is
   // 31.4" lands here, through the tool every ChatGPT already has — not every
   // one has fitness_check, and a new tool reaches nobody without a Refresh.
@@ -1938,6 +1975,10 @@ async function log(args, user) {
             // Said in the line the model relays, so a note filed by accident
             // is never confirmed as a logged meal.
             (unstructured.length ? ` ${unstructured.map(u => `"${u.summary}"`).join(' and ')} went in as a NOTE, not as food or training — ${unstructured[0].why} — so it counts for nothing in today's total until it is structured.` : '') +
+            // THE MEAL SCORE, in the line the model relays — the item, its
+            // score, then the day. In a key of its own, showing it was the
+            // model's choice on every reply.
+            (scoreSay ? ` ${scoreSay}` : '') +
             (day.food.meals ? ` Today so far: ${day.food.say.replace(/\.$/, '')}.` : '') +
             // What is left is withheld while anything is uncounted: the
             // figure would be too high by the item nobody has priced. The
@@ -1964,7 +2005,7 @@ async function log(args, user) {
     ...(bridged.deduped ? { sets_deduped: true } : {}),
     note: (unstructured.length ? `STRUCTURE FIRST: ${unstructured.map(u => `"${u.summary}"`).join(' and ')} went in as a bare NOTE (${unstructured[0].why}) and counts for nothing. Call structure_entries NOW with the id in estimate_now, event_type (food, drink, workout… — never "meal", "breakfast" or "nutrition"), summary and detail with the numbers, BEFORE you reply — never amend_last, and never confirm it as logged food or training until that reply is in front of you. ` : '') +
       (hungry.length ? 'ESTIMATE_NOW FIRST: you named the food, so estimate it — call structure_entries with the ids in estimate_now before replying. Never confirm a food with no figure as if it were complete; if the food was never named ("had lunch"), say plainly it is not counted yet. ' : '') +
-      (written.length ? 'OPEN WITH "Logged in Wrought" — say the phrase exactly, then each item with ALL its numbers exactly as `say` reads them: calories, protein, carbs (sugar, fibre), fat (saturated), and the time. ' + (cardRead
+      (written.length ? 'OPEN WITH "Logged in Wrought" — say the phrase exactly, then each item with ALL its numbers exactly as `say` reads them: calories, protein, carbs (sugar, fibre), fat (saturated), and the time' + (scoreSay ? ', then its meal score as say gives it ("Meal score: …") — every time, never left out' : '') + '. ' + (cardRead
       ? 'Then the day: ' + DAY_CARD_NOTE + 'day_card IS the day broken down — never also read day_total.breakdown or the day in prose. '
       : 'Then the day broken down the same way — day_total.breakdown is every item of the day with its numbers and the total underneath; read it out, never only a calorie figure. ') + 'Those three words are the receipt: the person uses them to tell a write that landed from food you merely acknowledged. Never say "logged" or "saved" about food without "in Wrought", and never say "Logged in Wrought" unless this reply is in front of you. ' : '') +
       (cardRead && !written.length ? DAY_CARD_NOTE : '') +
@@ -1990,7 +2031,7 @@ async function log(args, user) {
     // has to ride OUT on this response, one turn ahead of the moment it is
     // needed. It is the same playbook line the sheet carries; this is the
     // braces to that belt.
-    playbook: 'STANDING ORDER: if they now say they are going to, at, or heading to the gym — or name a workout — call suggest_workout or start_session IN THAT TURN. Encouragement without the tool call loses the session: no readiness check, no plan, no checklist. "Crush it" is not a substitute for starting the workout.',
+    playbook: OWN_CALL + ' STANDING ORDER: if they now say they are going to, at, or heading to the gym — or name a workout — call suggest_workout or start_session IN THAT TURN. Encouragement without the tool call loses the session: no readiness check, no plan, no checklist. "Crush it" is not a substitute for starting the workout.',
     next_actions: ['undo_last if anything came back wrong', 'brief for the day\'s read', 'whats_next if they are deciding what to eat'],
   };
 }
@@ -2274,6 +2315,15 @@ async function amendLast(args, user) {
   // the record now holds.
   const entry = (dayNow.log || []).find(e => String(e.id) === String(prev.id)) || null;
   const amendedFood = first.event_type === 'food' || first.event_type === 'drink';
+  // THE SAME REPLY WHICHEVER DOOR THE FIGURES CAME THROUGH. A meal logged with
+  // its calories and given its macros a moment later by amend_last got no
+  // meal score at all — this door never computed one — and a note saying
+  // "acknowledge briefly and move on". So the same toast came back with a
+  // score when one call carried everything and without one when two did,
+  // which from the outside is the assistant "losing" it. Scored here exactly
+  // as log and structure_entries score it, off the row as re-read.
+  const scores = entry && amendedFood && cardRead ? mealScores([entry], { flags: cardRead.flags || [] }) : null;
+  const scoreSay = mealScoreSay(scores);
 
   return {
     amended: true,
@@ -2290,6 +2340,7 @@ async function amendLast(args, user) {
     // The clock moved, read back off the stored row's own day.
     ...(movedTo ? { moved_to: movedTo } : {}),
     ...(typeNote ? { type_note: typeNote } : {}),
+    ...(scores ? { meal_score: scores, meal_score_note: mealScoreNote(scores) } : {}),
     ...(bridged.error ? { sets_error: bridged.error } : {}),
     ...(bridged.skipped ? { sets_skipped: bridged.skipped, sets_note: bridged.say } : {}),
     day_total: dayTotal(dayNow),
@@ -2305,11 +2356,14 @@ async function amendLast(args, user) {
     say: `Updated: "${prev.summary}" is now "${first.summary}"` +
       (movedTo ? ` — filed at ${movedTo.at}${movedTo.date !== today ? ` on ${movedTo.date}` : ''}` : '') +
       (entry && (entry.calories != null || amendedFood) ? ` — ${itemFigures(entry, { food: amendedFood })}${entry.calories != null ? ' for that one' : ''}` : '') +
-      `. Today so far: ${dayNow.food.say.replace(/\.$/, '')}.` +
+      `.${scoreSay ? ` ${scoreSay}` : ''} Today so far: ${dayNow.food.say.replace(/\.$/, '')}.` +
       // A type it could not place is said, never silently kept — "blocked"
       // was the model's word for an update the database refused.
       (typeNote ? ` ${typeNote} Send food, drink, workout, weight, sleep, symptom, mood or supplement to change it.` : ''),
-    note: 'One entry, not two. Acknowledge briefly and move on. Give the ITEM\'s own calories and the DAY total in the same breath — "that bun is about 330, which puts you at 1,840 for the day" — never the item alone and never the total alone. If they asked what they are at today, the headline is day_total (the WHOLE day, with its items listed under it); the entry you just amended is one line of it. ' + (cardRead ? DAY_CARD_NOTE : ''),
+    note: 'One entry, not two. ' + (scoreSay
+      ? 'If this filled in the figures of a food logged in this same turn, THIS is the confirmation: open with "Logged in Wrought:", then the item exactly as say reads it — its time and all its numbers — then its meal score as say gives it ("Meal score: …"), every time, then the day. Otherwise acknowledge briefly and move on. '
+      : 'Acknowledge briefly and move on. ') + 'Give the ITEM\'s own calories and the DAY total in the same breath — "that bun is about 330, which puts you at 1,840 for the day" — never the item alone and never the total alone. If they asked what they are at today, the headline is day_total (the WHOLE day, with its items listed under it); the entry you just amended is one line of it. ' + (cardRead ? DAY_CARD_NOTE : ''),
+    playbook: OWN_CALL,
     next_actions: ['brief later for the day\'s read'],
   };
 }
@@ -3465,13 +3519,6 @@ async function structureEntries(args, user) {
   // says so first, in words — then the day. A QUIET fill (a capture made in
   // passing, inside somebody else's conversation) carries the item alone: no
   // day, no totals, the same as the quiet log it is finishing.
-  const say = updated.length
-    ? `Filled in ${updated.length} thing${updated.length === 1 ? '' : 's'}${voice ? ' you told the phone' : ''}: ${withNumbers.map(u => `${u.now}${u.at ? ` at ${clock12(u.at)}` : ''}${u.date ? ` on ${dayName(u.date)}` : ''}${isFoodRow(u) || u.calories != null ? ` — ${itemFigures(u, { food: isFoodRow(u) })}` : ''}`).join('; ')}.` +
-      (touchesToday && !args.quiet ? ` Today so far: ${dayNow.food.say.replace(/\.$/, '')}.` : '')
-    : 'Nothing was filled in.';
-  // A named food that is STILL without a figure — words like "~400" sent again
-  // — is chased again, by id, exactly as log chases it. Off the stored merge.
-  const stillHungry = needsMacros(updated.map(u => ({ id: u.id, event_type: u.type, summary: u.now, detail: merged.get(String(u.id))?.detail || {} })));
   // A meal whose figures just arrived gets its score here — the reply a
   // log's "no score yet" sent the model to. Today's, never quiet, never
   // under a care flag (cardRead is only read for exactly that case).
@@ -3480,7 +3527,16 @@ async function structureEntries(args, user) {
     sugar_g: u.sugar_g, fibre_g: u.fibre_g, sat_fat_g: u.sat_fat_g,
     categories: merged.get(String(u.id))?.detail?.categories,
   })), { flags: cardRead.flags || [] }) : null;
-
+  // …and says it in the line the model relays: the item, its score, the day.
+  const scoreSay = mealScoreSay(scores);
+  const say = updated.length
+    ? `Filled in ${updated.length} thing${updated.length === 1 ? '' : 's'}${voice ? ' you told the phone' : ''}: ${withNumbers.map(u => `${u.now}${u.at ? ` at ${clock12(u.at)}` : ''}${u.date ? ` on ${dayName(u.date)}` : ''}${isFoodRow(u) || u.calories != null ? ` — ${itemFigures(u, { food: isFoodRow(u) })}` : ''}`).join('; ')}.` +
+      (scoreSay ? ` ${scoreSay}` : '') +
+      (touchesToday && !args.quiet ? ` Today so far: ${dayNow.food.say.replace(/\.$/, '')}.` : '')
+    : 'Nothing was filled in.';
+  // A named food that is STILL without a figure — words like "~400" sent again
+  // — is chased again, by id, exactly as log chases it. Off the stored merge.
+  const stillHungry = needsMacros(updated.map(u => ({ id: u.id, event_type: u.type, summary: u.now, detail: merged.get(String(u.id))?.detail || {} })));
   return {
     ...(stillHungry.length ? {
       estimate_now: {
@@ -3512,9 +3568,14 @@ async function structureEntries(args, user) {
         // Quiet: the same rule as the quiet log it finishes — no confirmation
         // recital, no totals, straight back to what they were talking about.
         : args.quiet ? 'Caught in passing: the figures are in. Say nothing about it, or a short clause at most, and return immediately to what they were actually talking about — no totals, no follow-up questions, no coaching. '
-        : 'If this filled in food logged in this same turn, THIS is the confirmation: open with "Logged in Wrought:" then each item exactly as say reads it — its time and all its numbers — then the day. ') +
-      (args.quiet ? '' : 'Housekeeping, not an event. One short clause at most — they already know what they said, and reciting it back at length makes dictating feel like it costs something. Then carry on with whatever they actually asked. ') +
+        : 'If this filled in food logged in this same turn, THIS is the confirmation: open with "Logged in Wrought:" then each item exactly as say reads it — its time and all its numbers' + (scoreSay ? ', then its meal score as say gives it ("Meal score: …"), every time' : '') + ' — then the day. ') +
+      // "One short clause at most" is for DICTATION being tidied up later —
+      // old entries the phone heard, or another day's. On food from this
+      // conversation it argued with the sentence before it (show the item,
+      // its numbers and the day), and a model handed both picks one.
+      (args.quiet || (touchesToday && !voice) ? '' : 'Housekeeping, not an event. One short clause at most — they already know what they said, and reciting it back at length makes dictating feel like it costs something. Then carry on with whatever they actually asked. ') +
       (cardRead ? 'If this filled in food logged in this conversation, day_card here is the day with those figures in it: ' + DAY_CARD_NOTE : ''),
+    ...(args.quiet ? {} : { playbook: OWN_CALL }),
     next_actions: ['brief for the day\'s read now that it counts'],
   };
 }
@@ -3808,7 +3869,7 @@ async function brief(args, user) {
         (coach ? ' If coach_day is present, follow coach_day.note: its one line, once, in its register, after the facts.' : '') +
         (paused ? ' A care flag stands today, so the coach is paused: no coach line; if they ask where it went, say coach_paused.say.' : '')) +
       (wholeDay ? ' ' + DAY_CARD_NOTE + (flags.length ? 'The flag still leads; the day comes after it.' : 'With no written verdict, the day leads.') : ''),
-    playbook: 'STANDING ORDER: if they now say they are going to, at, or heading to the gym — or name a workout — call suggest_workout or start_session IN THAT TURN. Encouragement without the tool call loses the session.',
+    playbook: OWN_CALL + ' STANDING ORDER: if they now say they are going to, at, or heading to the gym — or name a workout — call suggest_workout or start_session IN THAT TURN. Encouragement without the tool call loses the session.',
     next_actions: ['progress for the trend and the training matrix', 'whats_next for the immediate move', 'suggest_workout if they are training today'],
   };
 }
@@ -3914,6 +3975,7 @@ async function getDay(args, user) {
       : '') + (targets
       ? 'No daily calorie target is set. If they ask what they are allowed, quote the COMPUTED figures in no_target_set exactly — never a number of your own and never a range you rounded to. '
       : '') + DAY_CARD_NOTE + 'Under it, from day_read.say, whatever day_card does not already show — never its figures twice. Reading day_read: ' + full.read.note,
+    playbook: OWN_CALL,
     next_actions: day.logged ? ['brief for the verdict', 'undo_last if something is wrong'] : ['log to fill it in'],
   };
 }
@@ -5275,7 +5337,7 @@ async function calibrateLift(args, user) {
   // — a remembered number must never override what actually happened.
   const last = await lastPerformance(user.id, key);
   if (last && last.top_weight_kg != null) {
-    const call = progressionCall({ last, targetReps: args.target_reps || parseInt(String(last.top_reps), 10) || 8, tier: profile.training_age === 'beginner' ? 'beginner' : 'intermediate', key });
+    const call = progressionCall({ last, targetReps: targetRepsOf(args.target_reps) || parseInt(String(last.top_reps), 10) || 8, tier: profile.training_age === 'beginner' ? 'beginner' : 'intermediate', key });
     return {
       verdict: 'history_wins',
       progression: call,
@@ -5285,7 +5347,7 @@ async function calibrateLift(args, user) {
   }
 
   // Target reps: the live session's prescription if this lift is on it.
-  let targetReps = args.target_reps || null;
+  let targetReps = targetRepsOf(args.target_reps);
   if (!targetReps) {
     const { data: session } = await supabase.from('wrought_sessions')
       .select('plan, cursor_index').eq('user_id', user.id).eq('status', 'active').maybeSingle();
@@ -7224,7 +7286,7 @@ export async function handleRpc(msg, authUser) {
         // surface that reaches the model without a Refresh. A read is exactly
         // where it is seen: ChatGPT fans reads out across every connection.
         const facts = await connP;
-        let body = stampConnected(out, connectedAccountsBlock(authUser, facts, { linkId }));
+        let body = stampConnected(replyOrder(params.name, out), connectedAccountsBlock(authUser, facts, { linkId }));
         // THE CARD AS A PICTURE, for ChatGPT — only when switched on (see
         // picturesOn: four pictures sent, none ever drawn). When on, a reply
         // that carries the day carries a link to that day's card drawn as a

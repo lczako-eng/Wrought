@@ -23,6 +23,7 @@
 import { outSay, burnSpan, netCaveat } from './receipt.js';
 import { macroLine, macroSplit, clock12 } from './wrought.js';
 import { writtenFlag } from './voice.js';
+import { mealScore } from './nutrition.js';
 
 // A missing figure is null, never a zero: Number(null) is 0, and a meal
 // stored with no calories must not read as a zero-calorie meal.
@@ -47,6 +48,15 @@ export function roomless(scored = [], flags = []) {
   if (!flags?.length) return scored || [];
   return (scored || []).map(g => (g && g.metric === 'calories' && g.direction === 'at_most' ? { ...g, gap: null } : g));
 }
+
+// One item's meal score for the day's own table: the number, or the figures
+// it is waiting for. An item with no calories is already said to count for
+// nothing, so it is not also listed as waiting for a score.
+const scoreOf = e => {
+  const m = mealScore(e, { drink: e.type === 'drink' });
+  const waiting = m.score == null && Array.isArray(m.needs) ? m.needs.filter(x => x !== 'calories') : [];
+  return { score: m.score ?? null, score_needs: waiting.length && n(e.calories) != null ? waiting : null };
+};
 
 export function dayReadout({ day = null, balance = null, receipt = null, scored = [], week = null, date = null, today = null, flags = [], left = null } = {}) {
   if (!day) return null;
@@ -84,6 +94,12 @@ export function dayReadout({ day = null, balance = null, receipt = null, scored 
       protein_g: e.protein_g ?? null, carbs_g: e.carbs_g ?? null, fat_g: e.fat_g ?? null,
       sugar_g: e.sugar_g ?? null, fibre_g: e.fibre_g ?? null, sat_fat_g: e.sat_fat_g ?? null,
       estimated: e.estimated,
+      // EACH ITEM'S MEAL SCORE, off the same figures and the same function
+      // the log reply scores with — so the day table and the confirmation can
+      // never give one meal two scores. The number is the same with or
+      // without a care flag (a flag softens what is SAID about it, in
+      // meal_score); a figure the row lacks is no score, and says which.
+      ...scoreOf(e),
     })),
     without_calories: n(day.food?.meals_uncounted) || 0,
   };
@@ -92,7 +108,7 @@ export function dayReadout({ day = null, balance = null, receipt = null, scored 
     : !counted
       ? `IN — ${food.length} thing${food.length === 1 ? '' : 's'} logged, no calories on ${food.length === 1 ? 'it' : 'any of them'} yet — the total is unknown rather than zero`
       : `IN — ${macroLine({ ...inn, calories: inn.total })}${day.food?.estimated ? ' (estimated)' : ''}`);
-  for (const it of inn.items) lines.push(`  ${it.at ? `${it.at} ` : ''}${it.what} — ${macroLine(it)}`);
+  for (const it of inn.items) lines.push(`  ${it.at ? `${it.at} ` : ''}${it.what} — ${macroLine(it)}${it.score != null ? ` · meal score ${it.score}/10` : ''}`);
   if (inn.without_calories && counted) lines.push(`  (${inn.without_calories} with no calories, so the real intake is higher)`);
 
   // ── TRAINED / WORKED — off the receipt's own itemisation, never re-priced ──
@@ -351,12 +367,19 @@ export function dayModel(read, { explicit = false } = {}) {
   // under a tap.
   const food = {
     title: partial ? 'Estimated food intake · today so far' : `Estimated food intake · ${dayName(read.date)}`,
-    head: { what: 'Food', kcal: 'Calories' },
+    head: { what: 'Food', kcal: 'Calories', score: 'Score' },
     items: items.map(it => ({
       id: it.id ?? null, what: it.what, at: it.at ? clock(it.at) : '',
       kcal: n(it.calories) == null ? null : money(it.calories),
       protein: grams(it.protein_g), carbs: grams(it.carbs_g), fat: grams(it.fat_g),
+      score: n(it.score) == null ? null : `${n(it.score)}/10`,
     })),
+    // THE SCORE IS A COLUMN OF THE TABLE — every item's, every time the day
+    // is shown. It used to live only in a key of its own (`meal_score`), so
+    // whether it appeared was a choice the model made again on each reply,
+    // and an earlier meal's score was gone from every reply after its own.
+    // Only when some item has one — a column of blanks says nothing.
+    scored: items.some(it => n(it.score) != null),
     counted,
     headline: counted ? { figure: money(inn.total), unit: 'calories' } : null,
     total: {
@@ -395,6 +418,16 @@ export function dayModel(read, { explicit = false } = {}) {
       .map(([k, label]) => `${label} ${money(inn[k])}g${items.every(it => n(it[k]) != null) ? '' : ' (only the items that carry it)'}`);
     if (extra.length) caption(`${extra.join(' · ').replace(/^./, c => c.toUpperCase())}.`);
     if (inn.without_calories) caption(`${inn.without_calories} item${inn.without_calories === 1 ? ' has' : 's have'} no calories on ${inn.without_calories === 1 ? 'it' : 'them'} yet, so the real total is higher.`);
+    // A meal with no score says which figures it is waiting for — a blank
+    // beside a food that plainly has calories otherwise reads as a score
+    // somebody forgot, which is the complaint this column answers.
+    const waiting = items.filter(it => Array.isArray(it.score_needs) && it.score_needs.length);
+    if (waiting.length === 1) caption(`No meal score yet for ${waiting[0].what}: it needs ${waiting[0].score_needs.join(', ')} on it.`);
+    else if (waiting.length) {
+      // Named in one fixed order, whichever item happened to come first.
+      const all = new Set(waiting.flatMap(it => it.score_needs));
+      caption(`No meal score yet for ${waiting.length} items: each needs ${['protein', 'fibre', 'sugar', 'saturated fat'].filter(k => all.has(k)).join(', ')} on it.`);
+    }
   }
 
   // ── The energy balance ──────────────────────────────────────────────────
@@ -499,11 +532,14 @@ export function dayMarkdown(m) {
   out.push(`**${m.food.title}**`, '');
   if (m.food.items.length) {
     if (m.food.headline) out.push(`### ${m.food.headline.figure} ${m.food.headline.unit}`, '');
-    out.push(`| ${m.food.head.what} | ${m.food.head.kcal} |`, '|---|---:|');
+    // Food, Calories — and Score when any item has one. An item without a
+    // score is a blank cell, explained by the caption under the table.
+    const sc = !!m.food.scored;
+    out.push(`| ${m.food.head.what} | ${m.food.head.kcal} |${sc ? ` ${m.food.head.score} |` : ''}`, sc ? '|---|---:|---:|' : '|---|---:|');
     for (const it of m.food.items) {
-      out.push(`| ${cell(`${it.what}${it.at ? ` (${it.at})` : ''}`)} | ${it.kcal == null ? 'not counted yet' : it.kcal} |`);
+      out.push(`| ${cell(`${it.what}${it.at ? ` (${it.at})` : ''}`)} | ${it.kcal == null ? 'not counted yet' : it.kcal} |${sc ? (it.score ? ` ${it.score} |` : ' |') : ''}`);
     }
-    out.push(`| **Total** | **${m.food.total.kcal ?? 'not counted yet'}** |`, '');
+    out.push(`| **Total** | **${m.food.total.kcal ?? 'not counted yet'}** |${sc ? ' |' : ''}`, '');
     if (m.food.macros.length) out.push(m.food.macros.map(x => `**${x.label}** ${x.value} ${x.unit}`).join(' · '), '');
     for (const c of m.food.captions) out.push(c, '');
   } else {
@@ -620,7 +656,8 @@ function viewOf(m, read, { explicit = false, badge = null, fresh = [], just = nu
       id: it.id == null ? null : String(it.id), at: it.at, what: it.what,
       kcal: it.kcal ?? 'not counted yet', uncounted: it.kcal == null,
       protein: it.protein, carbs: it.carbs, fat: it.fat,
-      macros: anyMacro ? macroLine({ ...r, calories: null }) : null,
+      // …and the item's meal score with them, under the same tap.
+      macros: anyMacro ? [macroLine({ ...r, calories: null }), it.score ? `meal score ${it.score}` : null].filter(Boolean).join(' · ') : null,
       fresh: isFresh, folded: fold,
     };
   });
@@ -752,7 +789,7 @@ export function burnPhrase(read) {
 // only when the host has said so — skipping the table on a guess leaves
 // somebody with neither. Where the panel IS drawn, pasting the table under it
 // shows every figure twice, which is the cheaper of the two failures.
-export const DAY_CARD_NOTE = 'SHOW day_card EXACTLY AS WRITTEN — it is the layout the person asked to keep: the day\'s calories as the headline, the Food / Calories table with each item and the total, the protein, carbs and fat line, then the energy balance. Put it after your first line, as markdown, unchanged: never rebuild it, reorder it, drop a row, add a row or a figure of your own, or turn any number into a range. If more than one reply this turn carries a day_card for the same day, show only the LATEST one, once. ONE EXCEPTION: if the host has told you that Wrought\'s own card was drawn for THIS reply (Wrought\'s own panel with this day on it), that panel is the layout — do not paste day_card under it as well; give the reply\'s say line (on a write it opens "Logged in Wrought") and then only what the panel does not show, never a figure that differs from it. If you were not told, no panel was drawn: show day_card. ';
+export const DAY_CARD_NOTE = 'SHOW day_card EXACTLY AS WRITTEN — it is the layout the person asked to keep: the day\'s calories as the headline, the Food / Calories table with each item, its meal score and the total, the protein, carbs and fat line, then the energy balance. Put it after your first line, as markdown, unchanged: never rebuild it, reorder it, drop a row, add a row or a figure of your own, or turn any number into a range. The same parts in the same order on every reply: the Score column and the protein, carbs and fat line are never the part left out. If more than one reply this turn carries a day_card for the same day, show only the LATEST one, once. ONE EXCEPTION: if the host has told you that Wrought\'s own card was drawn for THIS reply (Wrought\'s own panel with this day on it), that panel is the layout — do not paste day_card under it as well; give the reply\'s say line (on a write it opens "Logged in Wrought") and then only what the panel does not show, never a figure that differs from it. If you were not told, no panel was drawn: show day_card. ';
 
 /**
  * The instruction that replaces DAY_CARD_NOTE when a reply carries the day
