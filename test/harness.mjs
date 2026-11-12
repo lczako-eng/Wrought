@@ -13525,7 +13525,7 @@ await test('the routing habit installs itself, with consent, identically everywh
   const m = src.match(/const ROUTING_HABIT =\n([\s\S]*?);/);
   assert.ok(m, 'the page lost its copy of the habit');
   const pageHabit = m[1].match(/'([^']*)'/g).map(x => x.slice(1, -1)).join('')
-    .replace(/\\u2019/g, '\u2019').replace(/\\u2014/g, '\u2014');
+    .replace(/\\u([0-9a-f]{4})/gi, (_, h) => String.fromCharCode(parseInt(h, 16)));
   assert.equal(pageHabit, ROUTING_HABIT, 'the page and the connector teach different habits');
 
   // Both app surfaces carry the tap — the setup panel and the durable home on
@@ -13541,6 +13541,61 @@ await test('the routing habit installs itself, with consent, identically everywh
   assert.match(offer, /never re-offer after a no/, 'a no is not final');
   assert.match(offer, /never claim it is saved if your[\s\S]{0,12}memory is off/, 'a failed save can read as success');
   assert.match(offer, /their choice about\n    \/\/ their own assistant/, 'consent is not named as the point');
+});
+
+await test('a reply with no Wrought call may not wear Wrought\'s receipt: the rule rides the saved habit and the first message of every opened chat', async () => {
+  // 12 November, 5:19pm: "✅ Logged in Wrought — November 12, 2026. Both
+  // entries were recorded at 5:02 PM", a Food / Calories table and a total —
+  // and not one request from ChatGPT in the server's log for that hour. The
+  // three words built to be the receipt were written by the model unaided.
+  // What it did not forge was the orange square, and that is how the founder
+  // caught it: "No symbol." Nothing a tool result says is read in a turn with
+  // no tool call; its memory and the person's own opening message are.
+  const { ROUTING_HABIT } = await import('../netlify/functions/lib/wrought.js');
+  const { MARK } = await import('../netlify/functions/lib/mark.js');
+  const MORN = await import('../netlify/functions/lib/morning.js');
+  // The habit says WHEN the words may be said…
+  assert.match(ROUTING_HABIT, /Only say "Logged in Wrought" when a Wrought tool ran in that same reply/);
+  // …what a real answer looks like, so its absence is readable…
+  assert.match(ROUTING_HABIT, /its answer opens with an orange square, so show that line as sent/);
+  // …and what a reply with no call opens with, and may not show.
+  assert.match(ROUTING_HABIT, /If no Wrought tool ran, open with "NOT in Wrought yet" and show no orange square, no tick, no food table and no daily total/);
+  // Still short enough to hand over as one link.
+  assert.ok(encodeURIComponent(ROUTING_HABIT).length < 2000, 'the habit no longer fits a link');
+  // The rule comes BEFORE the long account paragraph: a memory is stored as a
+  // summary, and what a summary keeps is the front.
+  assert.ok(ROUTING_HABIT.indexOf('NOT in Wrought yet') < ROUTING_HABIT.indexOf('more than one connected Wrought account'), 'the receipt rule sits behind the account paragraph');
+  // The square is named in words, never as the character: it is Wrought's to
+  // send, and a memory or an opener holding the character can type it.
+  assert.ok(!ROUTING_HABIT.includes(MARK), 'the saved habit carries the square itself');
+  assert.ok(!MORN.REST_OF_CHAT.includes(MARK), 'the opener carries the square itself');
+  // It never tells the model to refuse the food or to stay quiet about it.
+  assert.ok(!/say nothing|do not estimate|refuse/i.test(ROUTING_HABIT + MORN.REST_OF_CHAT));
+
+  // EVERY SCHEDULED TAP OPENS A CHAT THAT ALREADY HOLDS THE RULE, as the
+  // person's own first message — morning, midday and evening alike.
+  const opener = which => decodeURIComponent(new URLSearchParams(MORN.morningLink('chatgpt', which).split('?')[1]).get('q'));
+  for (const which of ['morning', 'midday', 'evening']) {
+    const o = opener(which);
+    assert.ok(o.endsWith(MORN.REST_OF_CHAT), `the ${which} opener does not end with the rule for the rest of the chat`);
+    assert.match(o, /anything I eat, drink, train or weigh goes through Wrought's log tool in that same reply/);
+    assert.match(o, /Only say it is "Logged in Wrought" when Wrought's own answer is in front of you \(it opens with an orange square\)/);
+    assert.match(o, /If you did not call Wrought, open with "NOT in Wrought yet" and show no table, total or tick\./);
+    // Still no figure in a pre-written prompt.
+    assert.ok(!/\d/.test(o), `the ${which} opener carries a number`);
+    // The same words to Claude.
+    assert.equal(decodeURIComponent(new URLSearchParams(MORN.morningLink('claude', which).split('?')[1]).get('q')), o);
+  }
+  // The dashboard destination carries no prompt at all.
+  assert.equal(MORN.morningLink('app'), '/app.html');
+  // …and the longest scheduled push still fits one web-push record with a
+  // long body: a payload that does not fit is a notification that never lands.
+  const biggest = JSON.stringify({ title: 'WROUGHT · MORNING BRIEF · REVIEW', body: 'x'.repeat(400), tag: 'wrought-morning-2026-11-12', url: MORN.morningLink('chatgpt') });
+  assert.ok(Buffer.byteLength(biggest) < 3000, `the morning push is ${Buffer.byteLength(biggest)} bytes — past what one record safely carries`);
+  // The order a real reply leaves behind says the same words, so a chat that
+  // holds a Wrought reply and one that holds only the opener agree.
+  const { OWN_CALL } = await import('../netlify/functions/mcp.js');
+  assert.match(OWN_CALL, /NOT in Wrought yet/);
 });
 
 await test('every standing choice has a home where it pops up again', () => {
@@ -17875,7 +17930,7 @@ await test('the fork defence survives, as a receipt', async () => {
   assert.ok(!/my one Wrought account|all (?:write|log) to (?:one|my) account/.test(ROUTING_HABIT));
   const m = page('app.html').match(/const ROUTING_HABIT =\n([\s\S]*?);/);
   const pageHabit = m[1].match(/'([^']*)'/g).map(x => x.slice(1, -1)).join('')
-    .replace(/\\u2019/g, '’').replace(/\\u2014/g, '—');
+    .replace(/\\u([0-9a-f]{4})/gi, (_, h) => String.fromCharCode(parseInt(h, 16)));
   assert.equal(pageHabit, ROUTING_HABIT, 'the page and the connector teach different habits');
   assert.ok(encodeURIComponent(ROUTING_HABIT).length < 2000);
   const { GPT_INSTRUCTIONS } = await import('../netlify/functions/lib/gpt_instructions.js');

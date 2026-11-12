@@ -1999,7 +1999,9 @@ confirmation that worked: *"for the lack of confusion, let's say logged in
 Wrought."* After a month of replies saying *"logged"* about food that lived
 only in the conversation, the word on its own tells the person nothing. A
 model can write *"logged"* unaided; it can only relay `say`'s line after a
-write actually landed. So `log`'s confirmation opens with **Logged in
+write actually landed (true the day it was written; on 12 November it wrote
+the three words unaided — see *"Logged in Wrought", with nothing logged*).
+So `log`'s confirmation opens with **Logged in
 Wrought** (quiet and normal alike), the note and the tool description say
 to repeat the phrase exactly and never to use *"logged"* or *"saved"* about
 food without it, and never to say it without the reply in front of the
@@ -3917,6 +3919,52 @@ moved from the bold line he approved on 8 October into a small table, on the
 theory that a restyle drops a line and keeps a table. The request log then
 showed there had been no restyle — no Wrought reply to restyle. **A layout he
 approved is not changed on a guess**, and the line is back.
+
+### "Logged in Wrought", with nothing logged — the receipt was forged, the square was not
+
+12 November, 5:19pm. ChatGPT: *"Memory updated. … ✅ **Logged in Wrought —
+November 12, 2026.** Both entries were recorded at 5:02 PM"*, a Food /
+Calories table (toast 155, hamburger 450, total 605), *"Today's estimated
+macros"*, and *"meal score when available"*. The founder: *"No symbol should
+be automatic."*
+
+**The log was read inside two minutes this time, and it is current to the
+minute** (a crawler's 22:20:54Z request was already in it). From 4:21 to
+5:21pm: two scheduled briefs, a crawler, a bot. **Not one request to `/mcp`,
+`/actions` or `/oauth`.** Nothing was logged at 5:02pm or at 5:19. The live
+endpoint was then called from the session and is healthy: `initialize` 200,
+`tools/list` 60 tools and none malformed, a call with no token 401.
+
+- **The three words can be forged, and were.** This file said a model *"can
+  only relay THIS line after a write actually landed"*. After weeks of
+  seeing it, ChatGPT wrote *"Logged in Wrought"* unaided, with a date, a
+  filed time and a tick. The phrase is a convention, not a proof.
+- **What it did not forge is how he caught it.** No orange square, no meal
+  score, no Score column — *"No symbol"*. The square is automatic on every
+  reply Wrought sends and cannot be on one Wrought never sent. That is the
+  answer to *"should be automatic"*, and it is not a fix: the missing call is
+  ChatGPT's.
+- **"Memory updated" is the useful line in the screenshot.** His ChatGPT's
+  memory works, in the very chat that skipped the tool — and memory is the one
+  text of ours in front of the model in a turn where it calls nothing. So
+  `ROUTING_HABIT` now carries the receipt rule, ahead of the account paragraph
+  (a memory is stored as a summary, and a summary keeps the front): only say
+  *"Logged in Wrought"* when a Wrought tool ran in that same reply; with no
+  tool run, open with *"NOT in Wrought yet"* and show no square, tick, table
+  or total. Under the 2,000-character link cap, with 33 to spare.
+- **Every scheduled tap opens a chat that already holds the rule.**
+  `REST_OF_CHAT` ends the morning, midday and evening openers — the person's
+  own first message, which is read in every later turn of that chat whether
+  or not a tool is called. No figure in it, like the rest of the opener.
+- **The square is named in words in both, never as the character.** It is
+  Wrought's to send; a memory or an opener that holds the character can type
+  it, and then the one mark that was not forged is forgeable too.
+
+**What could not be done from here.** Why ChatGPT skipped the call is inside
+ChatGPT — the per-chat switch, or a tool list it did not surface. And the
+Supabase connector refused every query for the third session running, so
+nothing has been read off the record since 27 October and the meals of 10 and
+12 November could not be filed by hand.
 
 ### A food confirmed with no figure — estimated before the reply, never confirmed as complete
 
@@ -6905,7 +6953,7 @@ self-reporting scale removes the most-abandoned manual entry), then Strava.
 
 ## Conventions
 
-- `npm test` runs `test/harness.mjs` — 918 offline tests, no network, no database.
+- `npm test` runs `test/harness.mjs` — 919 offline tests, no network, no database.
   Run it before every push. It covers the JSON-RPC envelope (which fails as an
   uninformative "could not connect" inside ChatGPT) and all the arithmetic
   (which fails as a confidently wrong number in somebody's verdict).
