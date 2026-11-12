@@ -451,6 +451,20 @@ export function morningBrief({
  * the assistant gets the words and has no tools; the opener names Wrought so
  * the failure at least reads as "turn the connector on" rather than nonsense.
  */
+// THE RULE FOR THE REST OF THE CHAT, in the person's own first message. The tap
+// opens a new conversation and people go on telling it their food there all
+// day — and twice in three days (10 and 12 November) a later reply in such a
+// chat was a Wrought-shaped food log with no call to Wrought behind it, the
+// second one headed "Logged in Wrought". Nothing a tool result says is read in
+// a turn with no tool call; the person's own opening message is. No figure in
+// it, like the rest of the opener, and the square in words, never the
+// character — it is Wrought's to send.
+export const REST_OF_CHAT =
+  ' For the rest of this chat: anything I eat, drink, train or weigh goes through Wrought\'s log tool in that ' +
+  'same reply. Only say it is "Logged in Wrought" when Wrought\'s own answer is in front of you (it opens with ' +
+  'an orange square) and show that line as sent. If you did not call Wrought, open with "NOT in Wrought yet" ' +
+  'and show no table, total or tick.';
+
 const OPENERS = {
   morning:
     'Gym bro — morning. Using the Wrought connector, give me my morning brief: yesterday\'s computed ' +
@@ -532,7 +546,7 @@ export function pickDue(routines = []) {
 }
 
 export function morningLink(opens, which = 'morning') {
-  return bridge(opens, OPENERS[which] || OPENERS.morning, which);
+  return bridge(opens, (OPENERS[which] || OPENERS.morning) + REST_OF_CHAT, which);
 }
 
 /**

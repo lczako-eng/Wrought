@@ -1995,11 +1995,28 @@ export const SET_TARGETS_URL = 'https://wrought.fit/app.html#targets';
 // one-word consent, and the playbook stops depending on a settings screen
 // nobody opens. One constant, because the app's one-tap link and the
 // connector's offer must install the identical habit.
+//
+// …AND IT CARRIES THE RECEIPT RULE, because this is the one text of ours that
+// is in front of the model in a turn where it calls nothing. 12 November,
+// 5:19pm: "✅ Logged in Wrought — November 12, 2026. Both entries were
+// recorded at 5:02 PM", a Food / Calories table and a total — with not one
+// request from ChatGPT in the server's log for that hour, and "Memory
+// updated" at the top of the same reply. The three words built to be the
+// receipt were written by the model unaided; what it did not forge was the
+// orange square, which is how the founder caught it ("No symbol"). So the
+// habit says when those words may be said, and what a reply with no Wrought
+// call opens with instead. The square is named in words here and never as
+// the character: it is Wrought's to send, and a memory holding the character
+// is a memory that can type it.
 export const ROUTING_HABIT =
   'Please remember this permanently, for all our future chats: anything I say about food, drink, ' +
   'training, weight, sleep, my gym, or my goals goes through the Wrought connector\u2019s tools \u2014 ' +
   'log it or look it up there, never answer it from memory or the conversation. Log it before you answer, ' +
-  'and never ask me whether to. If I say I\u2019m going ' +
+  'and never ask me whether to. ' +
+  'Only say "Logged in Wrought" when a Wrought tool ran in that same reply: its answer opens with an orange ' +
+  'square, so show that line as sent. If no Wrought tool ran, open with "NOT in Wrought yet" and show no ' +
+  'orange square, no tick, no food table and no daily total. ' +
+  'If I say I\u2019m going ' +
   'to the gym or name a workout, call Wrought\u2019s suggest_workout or start_session immediately. ' +
   'Numbers about my calories, targets, or weights only ever come from Wrought\u2019s tools. ' +
   'If ChatGPT offers more than one connected Wrought account, Wrought\u2019s own replies say whether they are one record ' +
