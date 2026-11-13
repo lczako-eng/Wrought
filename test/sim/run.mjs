@@ -44,6 +44,7 @@ console.error = (...a) => serverErrors.push('error: ' + a.map(x => (x && x.stack
 const { F, PERSONAS, HISTORIES, world, snapshotOf, addDays, localDate } = await import('./world.mjs');
 const W = await import('../../netlify/functions/lib/wrought.js');
 const MCP = await import('../../netlify/functions/mcp.js');
+const { MARK_IMAGE, afterImage } = await import('../../netlify/functions/lib/mark.js');
 const load = async f => (await import(`../../netlify/functions/${f}.js`)).handler;
 const H = {
   mcp: MCP.handler,
@@ -152,12 +153,21 @@ async function rpc(ctx, caller, name, args = {}, opts = {}) {
   if (card) { R.cardViews += 1; for (const s of strings(card)) scanText(s, `${where} [card]`, echo); }
   // The orange square: on every reply through an AI door that has a say line,
   // and never on the drawn card, which carries the W tile instead.
-  if (out && typeof out.say === 'string' && out.say.trim() && !out.say.startsWith('🟧 ')) issue('mark', `${name}: a reply through an AI door opens without the orange square`, where);
+  if (out && typeof out.say === 'string' && out.say.trim() && !afterImage(out.say).startsWith('🟧 ')) issue('mark', `${name}: a reply through an AI door opens without the orange square`, where);
+  // The W image: one line ahead of the square, for ChatGPT and for nobody else
+  // (Claude draws the real card and does not show a remote picture).
+  if (out && typeof out.say === 'string' && out.say.trim()) {
+    const has = out.say.startsWith(`${MARK_IMAGE}\n\n🟧 `);
+    if (/chatgpt/.test(caller) && !has) issue('mark image', `${name}: a ChatGPT reply opens without the W image line`, where);
+    if (!/chatgpt/.test(caller) && out.say.includes('wrought-mark')) issue('mark image leak', `${name}: the W image went to a caller that is not ChatGPT`, where);
+    if (out.say.split(MARK_IMAGE).length > 2) issue('mark image', `${name}: the W image is on the line twice`, where);
+  }
+  if (card && strings(card).some(s => String(s).includes('wrought-mark'))) issue('mark image leak', `${name}: the drawn card carries the W image link`, where);
   if (card && strings(card).some(s => String(s).includes('🟧'))) issue('mark leak', `${name}: the drawn card carries the orange square`, where);
   if (out && out.error && typeof out.error === 'string' && !(out.say || out.message || out.note || /\s/.test(out.error.trim()))) {
     issue('a refusal with no words', `${name}: error "${out.error}" with no say/message/note`, where);
   }
-  if (out && /^(🟧 )?Logged in Wrought/.test(out.say || '') && out.count === 0) issue('claimed a write', `${name}: says "Logged in Wrought" with nothing written`, where);
+  if (out && /^(🟧 )?Logged in Wrought/.test(afterImage(out.say || '')) && out.count === 0) issue('claimed a write', `${name}: says "Logged in Wrought" with nothing written`, where);
   if ((text || '').length > 80000) issue('heavy reply', `${name}: ${Math.round(text.length / 1000)}KB of text for the model`, where);
   if (out && out.card_image && !/chatgpt/.test(caller)) issue('picture leak', `${name}: card_image sent to a non-ChatGPT caller`, where);
   // Any view the reply carries can be drawn as the picture: it must draw.
@@ -190,7 +200,7 @@ async function rest(handler, ctx, { method = 'GET', query = null, body = undefin
   const isText = typeof res?.body === 'string' && !res.isBase64Encoded;
   if (isText) { try { json = JSON.parse(res.body); } catch { json = null; } scanText(res.body, where, ev.body || ''); }
   // The website, the phone and Siri never carry the orange square: it is the AI doors' mark alone.
-  if (isText && res.body.includes('🟧')) issue('mark leak', 'a website, phone or Siri reply carries the orange square', where);
+  if (isText && (res.body.includes('🟧') || res.body.includes('wrought-mark'))) issue('mark leak', 'a website, phone or Siri reply carries the orange square or the W image', where);
   return { status: res?.statusCode, json, raw: res };
 }
 
@@ -238,7 +248,7 @@ async function jFirstContact(ctx, c) {
 async function jFoodDay(ctx, c, flagged) {
   const seeded = new Set((F.tables.wrought_events || []).map(e => e.id));
   const b = await rpc(ctx, c, 'log', { text: 'two eggs and toast for breakfast', events: [full('two eggs and toast', 380, 20, 30, 18, 3, 2, 6)] });
-  expect(/^🟧 Logged in Wrought/.test(b.out?.say || ''), 'logging', 'a written meal is not confirmed with "🟧 Logged in Wrought"');
+  expect(/^🟧 Logged in Wrought/.test(afterImage(b.out?.say || '')), 'logging', 'a written meal is not confirmed with "🟧 Logged in Wrought"');
   expect(b.out?.recorded?.length === 1, 'logging', 'one meal sent, not one recorded');
   if (b.out?.recorded?.[0]) expect(b.out.recorded[0].at, 'logging', 'the confirmation does not say the time back');
   if (flagged) {
@@ -662,7 +672,7 @@ for (const [label, redirect, confidential] of [
     expect(ex.status === 200 && ex.json?.access_token, 'sign-in', `code exchange answered ${ex.status} ${ex.json?.error || ''}`);
     const again = await rest(H.token, null, { method: 'POST', token: null, headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: form({ grant_type: 'authorization_code', code: auth.json?.code, redirect_uri: redirect, client_id, code_verifier: verifier, client_secret }) });
     expect(again.status === 400, 'sign-in', `a code redeemed twice answered ${again.status}`);
-    const call = await rpc(ctx, 'x', 'get_profile', {}, { token: ex.json?.access_token });
+    const call = await rpc(ctx, /openai|chatgpt/i.test(redirect) ? 'chatgpt_fresh' : 'x', 'get_profile', {}, { token: ex.json?.access_token });
     expect(call.out?.account, 'sign-in', 'the freshly issued token could not call a tool');
     const ref = await rest(H.token, null, { method: 'POST', token: null, headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: form({ grant_type: 'refresh_token', refresh_token: ex.json?.refresh_token, client_id, ...(confidential ? { client_secret } : {}) }) });
     expect(ref.status === 200 && ref.json?.access_token, 'sign-in', `refresh answered ${ref.status}`);
@@ -889,7 +899,7 @@ await scenario('actions', 'every operation answers', async () => {
     expect(r.statusCode === 200, 'actions', `${pth} answered ${r.statusCode}`);
     scanText(r.body, `actions ${pth}`);
     // The custom GPT is an AI door: its replies carry the orange square too.
-    try { const o = JSON.parse(r.body); if (o && typeof o.say === 'string' && o.say.trim() && !o.say.startsWith('🟧 ')) issue('mark', `actions ${pth}: a GPT reply opens without the orange square`, `actions ${pth}`); } catch {}
+    try { const o = JSON.parse(r.body); if (o && typeof o.say === 'string' && o.say.trim() && !afterImage(o.say).startsWith('🟧 ')) issue('mark', `actions ${pth}: a GPT reply opens without the orange square`, `actions ${pth}`); } catch {}
   }
 });
 

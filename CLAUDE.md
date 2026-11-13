@@ -3966,6 +3966,86 @@ Supabase connector refused every query for the third session running, so
 nothing has been read off the record since 27 October and the meals of 10 and
 12 November could not be filed by hand.
 
+### "This should be in this prompt" — the rule in the connector's own text, and the W as a picture line
+
+13 November, the morning after the forged receipt. The founder: *"I
+shouldn't have to connect myself and teach it. This should be on here. This
+should be in this prompt. Secondly, I need the full symbol, not just an
+orange block."* Both halves were right.
+
+**The rule for a turn with no call was in two places, and neither was the
+connector.** `OWN_CALL` rides tool RESULTS, so it reaches only a chat that
+already holds a Wrought reply. `ROUTING_HABIT` is a link he has to tap. The
+text a model holds whenever the connector is switched on, call or no call,
+is the instruction sheet and the tool descriptions, and *"NOT in Wrought
+yet"* was in neither.
+
+- **`RECEIPT_RULE` is one constant, on the sheet, on `log` and on
+  `get_day`.** *"Logged in Wrought"*, the W, the orange square, a filed
+  time, a day table, a day total and a meal score exist only in a Wrought
+  reply received in this turn; with no tool run, the reply opens *"This is
+  NOT in Wrought yet"* and gives an estimate as an estimate. It is the
+  sheet's third paragraph, ahead of the capture rule, and says it is the
+  connector's own so nobody has to teach it.
+- **The `log` description had been handing the receipt over.** Its second
+  sentence read *CONFIRM WITH THE WORDS "Logged in Wrought"*: an instruction
+  to SAY the phrase, in text a model reads without calling anything. On
+  12 November ChatGPT said it. It now reads *Its reply opens "Logged in
+  Wrought": relay that line as sent*, and the first 300 characters (all a
+  custom GPT's Action keeps) end *With no reply from this tool in this turn,
+  open with "NOT in Wrought yet" instead.* **A phrase that is a receipt is
+  described as something received.**
+- **The square and the picture are named in words before a call.** No tool
+  description, sheet or `serverInfo` line holds the character or the
+  picture's address: text that holds either can type it. A test reads all
+  of them.
+- **`serverInfo.description`** says what the connector is for and that
+  nothing is logged unless a tool ran: the one line a client may show its
+  model before any tool is loaded.
+- **It reaches his ChatGPT when ChatGPT next loads Wrought's tool list.**
+  Nothing sent from here forces that. It did reload on its own on
+  27 October.
+
+**The W is a picture line, as a trial that replaces nothing.** No character
+is the W. `public/wrought-mark.png` is a 600×112 banner (the tile, the word
+in the slab, the forge rule, white paper) and a ChatGPT reply's `say` now
+opens with it as a markdown image on a line of its own, then the square.
+
+- **Why try again after four pictures were never fetched.** Those REPLACED
+  the table, so a model that dropped the picture left him with neither.
+  This replaces nothing: the square still opens the line under it and the
+  table is untouched. A chat that drops the image shows what it showed
+  yesterday.
+- **One fixed address, no id and no query.** An address that changes per
+  reply is the shape of a link that carries data out, and the likeliest to
+  be refused. It also means the request log (one hour) is the only server
+  proof; **a screenshot from his phone is the proof that counts.**
+- **ChatGPT only**, at all three exits (the reply, the failure, the
+  suspended account). Claude draws the real card and does not show a remote
+  picture. `WROUGHT_MARK_IMAGE=off` takes it out with no deploy of code.
+- **A wide, short banner on purpose.** A host that scales a picture to its
+  column would fill the screen with a square tile. A test holds the width
+  to at least five times the height.
+- **The simulator pinned the start of the line**, as the square's entry
+  warned. Its checks read the line through `afterImage()` now, and it found
+  one real gap on the first run: a suspended ChatGPT reply carried no W,
+  because that exit returns before the client is known. One remembered read
+  of the client's registration, on that branch only.
+- **The connector's own icon was already right.** `serverInfo.icons` serves
+  the W at 512, 192 and 32 and every address answers. Whether ChatGPT shows
+  it on its tool-call line for a custom connector is ChatGPT's.
+
+**The Supabase connector is signed in to the wrong organisation.**
+`list_projects` answers now and lists two projects, *Rooted* and
+*lczako-eng's Project*; Wrought's database (`qcjczeialvzkxmozsmwc`, which
+`/config.js` still serves) is not among them, which is why every query has
+been refused since 27 October. Reconnecting Supabase with the organisation
+that holds Wrought selected is the founder's. Until then the meals of 10 and
+12 November stay unfiled.
+
+**A process fault, mine.** `git checkout` on one file to undo one edit undid
+eleven. Undo an edit by reversing the edit.
+
 ### A food confirmed with no figure — estimated before the reply, never confirmed as complete
 
 6 October: *"Logged in Wrought — Costco restaurant sausage at 3:17 PM"* with
@@ -6953,7 +7033,7 @@ self-reporting scale removes the most-abandoned manual entry), then Strava.
 
 ## Conventions
 
-- `npm test` runs `test/harness.mjs` — 919 offline tests, no network, no database.
+- `npm test` runs `test/harness.mjs` — 921 offline tests, no network, no database.
   Run it before every push. It covers the JSON-RPC envelope (which fails as an
   uninformative "could not connect" inside ChatGPT) and all the arithmetic
   (which fails as a confidently wrong number in somebody's verdict).

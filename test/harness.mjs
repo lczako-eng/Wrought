@@ -5058,7 +5058,10 @@ await test('"Logged in Wrought" — the confirmation names where the record is, 
   assert.match(lg, /OPEN WITH "Logged in Wrought"/);
   assert.match(lg, /never say "Logged in Wrought" unless this reply is in front of you/);
   const tool = mcp.slice(mcp.indexOf("name: 'log',"), mcp.indexOf("name: 'log_activity'"));
-  assert.match(tool, /CONFIRM WITH THE WORDS "Logged in Wrought"/, 'the rule is not on the tool description');
+  // The phrase is RELAYED, never composed: "CONFIRM WITH THE WORDS" handed a
+  // model that never called the tool the exact words to write (12 November).
+  assert.match(tool, /Its reply opens "Logged in Wrought": relay that line as sent/, 'the rule is not on the tool description');
+  assert.ok(!/CONFIRM WITH THE WORDS/.test(tool), 'the description tells the model to SAY the receipt rather than relay it');
   const { GPT_INSTRUCTIONS } = await import('../netlify/functions/lib/gpt_instructions.js');
   assert.match(GPT_INSTRUCTIONS, /confirmed with the exact words "Logged in Wrought"/);
   assert.ok(GPT_INSTRUCTIONS.length <= 8000, `the GPT sheet is ${GPT_INSTRUCTIONS.length} chars`);
@@ -6059,7 +6062,7 @@ await test('a missing meal is a missing ENTRY, never a missing sum', () => {
   // AND IT RIDES ON THE TOOLS, not only the sheet — the surface every client
   // demonstrably reads.
   const log = TOOLS.find(t => t.name === 'log').description;
-  assert.match(log, /the moment food is MENTIONED/);
+  assert.match(log, /the moment food, drink, training or a weight is MENTIONED/);
   assert.match(log, /the next thing you do is call this, never arithmetic/);
   // THE ESTIMATE-WITHOUT-LOGGING LOOPHOLE, closed. "Small goulash ~250, two
   // sourdough ~260, running total ~510" written in prose with nothing logged,
@@ -15428,7 +15431,7 @@ await test('several connectors named Wrought never stop a log, and every write n
   const { openapi } = await import('../netlify/functions/actions.js');
   const logOp = Object.values(openapi().paths).map(p => p.post).find(o => o?.operationId === 'log');
   assert.ok(logOp, 'the Action for log moved and this test can no longer see it');
-  assert.match(logOp.description, /CONFIRM WITH THE WORDS "Logged in Wrought"/, 'the duplicates rule pushed the receipt out of the Action');
+  assert.match(logOp.description, /Its reply opens "Logged in Wrought": relay that line as sent/, 'the duplicates rule pushed the receipt out of the Action');
   const logDesc = cut(TOOLS.find(t => t.name === 'log').description);
   assert.ok(logDesc.indexOf('WHICH ACCOUNT') > logDesc.indexOf('then each item with its calories and time'));
   assert.match(TOOLS.find(t => t.name === 'get_profile').description, /this reply's connected_accounts line says which record they write to/);
@@ -17910,7 +17913,7 @@ await test('nothing the model reads before a write names the fear', async () => 
   }
   const { openapi } = await import('../netlify/functions/actions.js');
   const logOp = Object.values(openapi().paths).map(p => p.post).find(o => o?.operationId === 'log');
-  assert.match(logOp.description, /CONFIRM WITH THE WORDS "Logged in Wrought"/);
+  assert.match(logOp.description, /Its reply opens "Logged in Wrought": relay that line as sent/);
   // A custom GPT has no account picker: the sentence is noise there, and at
   // 300 characters it was cut off mid-sentence on log_weight.
   for (const op of Object.values(openapi().paths).map(p => p.post)) {
@@ -19364,7 +19367,7 @@ await test('by default ChatGPT gets the table, never a picture: four were sent a
   assert.equal(r.rows, 0, 'a picture row was written with the switch off');
   assert.equal(typeof r.body.day_card, 'string', 'the table is missing');
   assert.ok(r.body.note.includes(DAY_CARD_NOTE), 'the note does not say to show the table');
-  assert.match(r.body.say, /^🟧 Logged in Wrought/);
+  assert.match((await import('../netlify/functions/lib/mark.js')).afterImage(r.body.say), /^🟧 Logged in Wrought/);
   // The fitness card likewise stays the table.
   const f = S.gpt_default_fit;
   assert.equal(f.body.card_image, undefined);
@@ -19374,6 +19377,119 @@ await test('by default ChatGPT gets the table, never a picture: four were sent a
   assert.ok(!f.body.note.includes(FITN.FITNESS_PICTURE_NOTE));
   // The gate reads the switch, so turning it on is the only way back to pictures.
   assert.match(decomment(PIC.read('netlify/functions/mcp.js')), /facts\?\.chatgpt && picturesOn\(\) \? pictureSlot\(/);
+});
+
+await test('the receipt rule is in the connector\'s own prompt: the sheet, log and get_day carry it, and nobody has to teach it', async () => {
+  // 13 November, the day after ChatGPT wrote "Logged in Wrought" over two
+  // meals it never sent: "I shouldn't have to connect myself and teach it.
+  // This should be on here. This should be in this prompt." Until then the
+  // rule for a turn with NO call rode only on tool results and on a habit he
+  // had to save himself.
+  const M = WCARD.MCP;
+  const { RECEIPT_RULE, SERVER_INSTRUCTIONS, SERVER_DESCRIPTION, TOOLS, handleRpc } = M;
+  for (const part of ['"Logged in Wrought"', 'Wrought\'s W and its orange square', 'the time something was filed at', 'a day table', 'a day total', 'a meal score']) {
+    assert.ok(RECEIPT_RULE.includes(part), `the rule does not name ${part} as Wrought's`);
+  }
+  assert.match(RECEIPT_RULE, /exist only in a Wrought reply received in THIS turn, and are never written from memory, from an earlier reply or from this description/);
+  assert.match(RECEIPT_RULE, /If no Wrought tool ran in this turn, open with exactly "This is NOT in Wrought yet"/);
+  assert.match(RECEIPT_RULE, /no table, no total, no score, no tick — then log it the moment a call works/);
+  // It never silences the model about the food or forbids an estimate.
+  assert.match(RECEIPT_RULE, /give your own estimate as an estimate/);
+  assert.ok(!/say nothing|do not estimate|refuse/i.test(RECEIPT_RULE));
+  // The sheet: near the top, ahead of the capture rule, and said to be the connector's own.
+  const at = SERVER_INSTRUCTIONS.indexOf(RECEIPT_RULE);
+  assert.ok(at > -1 && at < 1500, `the rule is ${at} characters into the sheet`);
+  assert.ok(at < SERVER_INSTRUCTIONS.indexOf('LOG FIRST, ANSWER SECOND — AND NEVER ASK'), 'the rule sits below the capture rule');
+  assert.match(SERVER_INSTRUCTIONS, /This rule is the connector's own, so nobody has to teach it to you/);
+  // The two descriptions a model holds whenever the connector is on.
+  const desc = n => TOOLS.find(t => t.name === n).description;
+  for (const n of ['log', 'get_day']) assert.ok(desc(n).includes(RECEIPT_RULE), `${n} does not carry the rule`);
+  // The receipt is RELAYED: the description never hands the phrase over as something to say.
+  assert.match(desc('log'), /^THE main tool: call it the moment food, drink, training or a weight is MENTIONED, never only when asked\. Its reply opens "Logged in Wrought": relay that line as sent/);
+  assert.ok(!/CONFIRM WITH THE WORDS/.test(desc('log')));
+  // The custom GPT's Action is cut at 300 characters: both halves survive the cut.
+  const { openapi } = await import('../netlify/functions/actions.js');
+  const logOp = Object.values(openapi().paths).map(p => p.post).find(o => o?.operationId === 'log');
+  assert.ok(logOp.description.length <= 300);
+  assert.match(logOp.description, /relay that line as sent/);
+  assert.match(logOp.description, /With no reply from this tool in this turn, open with "NOT in Wrought yet" instead\./);
+  const { GPT_INSTRUCTIONS } = await import('../netlify/functions/lib/gpt_instructions.js');
+  assert.match(GPT_INSTRUCTIONS, /No Action reply in this turn: open with "NOT in Wrought yet" — no table, total, score or tick\./);
+  assert.ok(GPT_INSTRUCTIONS.length <= 8000, `the GPT sheet is ${GPT_INSTRUCTIONS.length} chars`);
+  // The square and the W picture are named in words everywhere a model reads
+  // BEFORE a call: text that holds the character or the address can type it.
+  const { MARK, MARK_IMAGE_URL } = await import('../netlify/functions/lib/mark.js');
+  const before = [SERVER_INSTRUCTIONS, SERVER_DESCRIPTION, GPT_INSTRUCTIONS, JSON.stringify(TOOLS)];
+  for (const t of before) {
+    assert.ok(!t.includes(MARK), 'text read before a call holds the orange square itself');
+    assert.ok(!t.includes(MARK_IMAGE_URL) && !t.includes('wrought-mark'), 'text read before a call holds the W picture\'s address');
+  }
+  // …and the connector says what it is for in the one line a client may show before any tool loads.
+  const init = await handleRpc({ id: 1, method: 'initialize', params: { protocolVersion: '2025-11-25' } }, null);
+  assert.equal(init.result.serverInfo.description, SERVER_DESCRIPTION);
+  assert.match(SERVER_DESCRIPTION, /Call its log tool the moment food, drink, training, work or a weight is mentioned/);
+  assert.match(SERVER_DESCRIPTION, /nothing is logged unless a tool ran/);
+  assert.ok(SERVER_DESCRIPTION.length <= 300);
+});
+
+await test('the W itself leads a ChatGPT reply — one picture line ahead of the square, replacing nothing, for ChatGPT alone', async () => {
+  // "I need the full symbol, not just an orange block." No character is the
+  // W, so a chat's own text can only carry it as a picture. Four card pictures
+  // went to ChatGPT in October and none was fetched; this one REPLACES
+  // nothing, so a chat that drops it shows exactly what it showed before.
+  const MK = await import('../netlify/functions/lib/mark.js');
+  const { MARK, MARK_NOTE, MARK_IMAGE, MARK_IMAGE_URL, MARK_IMAGE_NOTE, markReply, markImageOn, afterImage } = MK;
+  // One fixed address: no query, no id — an address that changes per reply is the shape of a link that carries data out.
+  assert.equal(MARK_IMAGE_URL, 'https://wrought.fit/wrought-mark.png');
+  assert.equal(MARK_IMAGE, `![Wrought](${MARK_IMAGE_URL})`);
+  const orig = { say: 'Logged in Wrought (1 thing): toast', note: 'Show day_card.', day_card: '### 300 calories' };
+  const m = markReply(orig, { image: true });
+  assert.equal(m.say, `${MARK_IMAGE}\n\n${MARK} Logged in Wrought (1 thing): toast`, 'the picture is not a line of its own ahead of the square');
+  assert.equal(orig.say, 'Logged in Wrought (1 thing): toast', 'the tool object was changed — the drawn card is built from it');
+  assert.equal(m.day_card, orig.day_card, 'the table was touched');
+  assert.ok(m.note.startsWith('Show day_card.') && m.note.endsWith(MARK_IMAGE_NOTE) && !m.note.includes(MARK_NOTE), 'the note does not ask for the picture, or asks twice');
+  assert.match(MARK_IMAGE_NOTE, /write that markdown out exactly, on a line of its own, never as a link and never in a code block/);
+  assert.match(MARK_IMAGE_NOTE, /Never put either on anything Wrought did not send\./);
+  assert.deepEqual(markReply(m, { image: true }), m, 'marking twice put a second picture or square on');
+  assert.equal(markReply(m).say, `${MARK} Logged in Wrought (1 thing): toast`, 'without the picture the line still opens with the square, once');
+  assert.equal(afterImage(m.say), `${MARK} Logged in Wrought (1 thing): toast`);
+  assert.equal(afterImage('plain'), 'plain');
+  for (const bare of [null, [], 'text', { error: 'x' }, { say: '' }]) assert.deepEqual(markReply(bare, { image: true }), bare);
+  // On unless switched off — and off is one variable, no deploy of code.
+  assert.equal(markImageOn({}), true);
+  assert.equal(markImageOn({ WROUGHT_MARK_IMAGE: ' OFF ' }), false);
+  assert.equal(markImageOn({ WROUGHT_MARK_IMAGE: 'on' }), true);
+  // The picture exists, is a PNG, and is a short wide banner: a host that
+  // scales a picture to its column must not fill the screen with a logo.
+  const fsm = await import('node:fs');
+  const png = fsm.readFileSync(new URL('../public/wrought-mark.png', import.meta.url));
+  assert.equal(png.subarray(0, 8).toString('hex'), '89504e470d0a1a0a', 'not a PNG');
+  const w = png.readUInt32BE(16), h = png.readUInt32BE(20);
+  assert.ok(w >= 480 && w <= 800 && w >= 5 * h, `the banner is ${w}×${h}`);
+  assert.ok(png.length < 40000, `the banner is ${png.length} bytes`);
+  // Through the real handler: ChatGPT gets the line, Claude and a plain token never do,
+  // and what the reply carried before is all still there.
+  const S = WCARD.scenarios();
+  const g = S.gpt_default_log.body;
+  assert.ok(g.say.startsWith(`${MARK_IMAGE}\n\n${MARK} Logged in Wrought`), 'a ChatGPT log does not open with the W picture and then the square');
+  assert.equal(g.say.split(MARK_IMAGE).length, 2, 'the picture is on the line twice');
+  assert.equal(typeof g.day_card, 'string', 'the table went when the picture came');
+  assert.ok(!g.day_card.includes('wrought-mark'), 'the table carries a second picture');
+  assert.ok(g.note.includes(MARK_IMAGE_NOTE));
+  assert.ok(!JSON.stringify(S.gpt_default_log.card || {}).includes('wrought-mark'), 'the drawn card carries the picture link — it has the W tile');
+  for (const k of ['pic_claude', 'sausage']) {
+    assert.ok(!JSON.stringify(S[k].body).includes('wrought-mark'), `${k}: the W picture went to a caller that is not ChatGPT`);
+    assert.ok(S[k].body.say.startsWith(`${MARK} `));
+  }
+  // The three exits each ask which client it is; nothing else in the product names the address.
+  const src = decomment(PIC.read('netlify/functions/mcp.js'));
+  assert.equal((src.match(/image: Boolean\(\w+\?\.chatgpt\) && markImageOn\(\)/g) || []).length, 3, 'an exit marks without asking which client it is');
+  const files = [
+    ...fsm.readdirSync(new URL('../netlify/functions/', import.meta.url)).filter(f => f.endsWith('.js')).map(f => `netlify/functions/${f}`),
+    ...fsm.readdirSync(new URL('../netlify/functions/lib/', import.meta.url)).filter(f => f.endsWith('.js')).map(f => `netlify/functions/lib/${f}`),
+    ...fsm.readdirSync(new URL('../public/', import.meta.url)).filter(f => /\.(html|js|json)$/.test(f)).map(f => `public/${f}`),
+  ];
+  assert.deepEqual(files.filter(f => PIC.read(f).includes('wrought-mark')), ['netlify/functions/lib/mark.js'], 'the W picture is named outside lib/mark.js');
 });
 
 await test('the orange square opens every AI reply, once, and never reaches the card, the website, the phone or Siri', async () => {
@@ -19394,8 +19510,9 @@ await test('the orange square opens every AI reply, once, and never reaches the 
   // Through the real handler: ChatGPT and Claude alike, and never in the card.
   const S = WCARD.scenarios();
   for (const k of ['gpt_default_log', 'pic_claude', 'sausage']) {
-    assert.ok(S[k].body.say.startsWith('🟧 Logged in Wrought'), `${k}: the reply does not open with the square`);
-    assert.ok(S[k].body.note.includes(MARK_NOTE), `${k}: the note does not ask for the square`);
+    // ChatGPT's reply has the W image on a line of its own ahead of the square.
+    assert.ok(MK.afterImage(S[k].body.say).startsWith('🟧 Logged in Wrought'), `${k}: the reply does not open with the square`);
+    assert.ok(S[k].body.note.includes(k === 'gpt_default_log' ? MK.MARK_IMAGE_NOTE : MARK_NOTE), `${k}: the note does not ask for the mark`);
   }
   const card = JSON.stringify(S.gpt_default_log.card || {});
   assert.ok(S.gpt_default_log.card, 'the scenario carried no drawn card to check');
@@ -19405,9 +19522,9 @@ await test('the orange square opens every AI reply, once, and never reaches the 
   // exits — the reply, the failure, the suspended account — and nothing else
   // in the product names the square.
   const src = decomment(PIC.read('netlify/functions/mcp.js'));
-  assert.match(src, /body = markReply\(body\);\s*return rpcResult/);
+  assert.match(src, /body = markReply\(body, \{ image: [^}]*chatgpt[^}]*\}\);\s*return rpcResult/);
   assert.match(src, /JSON\.stringify\(markReply\(\{\s*error: 'tool_failed'/);
-  assert.match(src, /JSON\.stringify\(markReply\(\{ error: gate\.error, say: gate\.message \}\)\)/);
+  assert.match(src, /JSON\.stringify\(markReply\(\{ error: gate\.error, say: gate\.message \}, \{ image: [^}]*chatgpt[^}]*\}\)\)/);
   const fsm = await import('node:fs');
   const files = [
     ...fsm.readdirSync(new URL('../netlify/functions/', import.meta.url)).filter(f => f.endsWith('.js')).map(f => `netlify/functions/${f}`),
@@ -19818,13 +19935,13 @@ await test('a later turn that cannot call Wrought may not rebuild Wrought\'s rep
   const { OWN_CALL } = WCARD.MCP;
   assert.match(OWN_CALL, /^STANDING ORDER FOR EVERY LATER TURN IN THIS CHAT: each food, drink, workout or weight they mention gets its OWN Wrought call in that turn\./);
   // Everything a person could mistake for a receipt is named as Wrought's alone…
-  for (const part of ['"Logged in Wrought"', MARK, 'a time something was filed at', 'a day table', 'a day total', 'a meal score']) {
+  for (const part of ['"Logged in Wrought"', MARK, 'Wrought\'s W image', 'a time something was filed at', 'a day table', 'a day total', 'a meal score']) {
     assert.ok(OWN_CALL.includes(part), `the order does not name ${part}`);
   }
   assert.match(OWN_CALL, /only ever shown from a Wrought reply received in THAT turn: never rebuilt from this reply, from memory or from the conversation/);
   // …and a turn that cannot call says so in words nobody reads as a save.
   assert.match(OWN_CALL, /open with exactly: "This is NOT in Wrought yet — the connector did not answer in this chat\."/);
-  assert.match(OWN_CALL, /no table, no day total, no score, no orange square — and log it the moment a call works/);
+  assert.match(OWN_CALL, /no table, no day total, no score, no orange square, no W image — and log it the moment a call works/);
   // It never tells the model to stay silent about the food or to refuse an estimate.
   assert.ok(!/say nothing|do not estimate|refuse/i.test(OWN_CALL));
   // On every reply a chat is likely to continue from: each write door, the
