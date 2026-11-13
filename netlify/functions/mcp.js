@@ -25,8 +25,8 @@ import {
   fastLength, fastingSummary, macroLine, itemFigures, clock12, validTimezone,
 } from './lib/wrought.js';
 import { createHash } from 'node:crypto';
-import { profileIdFor, connectionFacts, connectedAccountsBlock, stampConnected } from './lib/connections.js';
-import { markReply, MARK } from './lib/mark.js';
+import { profileIdFor, connectionFacts, connectorTopology, connectedAccountsBlock, stampConnected } from './lib/connections.js';
+import { markReply, MARK, markImageOn } from './lib/mark.js';
 import { allowed } from './lib/membership.js';
 import { pendingVoice } from './lib/voice.js';
 import { activityBurn, EFFORTS, shiftsIn } from './lib/activity.js';
@@ -79,6 +79,8 @@ import { validatePlan, totalSeconds, workoutLink } from '../../public/workout-cl
 const PROTOCOL_VERSIONS = ['2025-11-25', '2025-06-18', '2025-03-26'];
 const PROTOCOL_VERSION = '2025-06-18';
 
+export const SERVER_DESCRIPTION = 'The user\'s training and nutrition memory. Call its log tool the moment food, drink, training, work or a weight is mentioned, and get_day for where the day stands. Every figure is computed here and relayed; nothing is logged unless a tool ran.';
+
 const CORS = {
   'Access-Control-Allow-Origin':  '*',
   'Access-Control-Allow-Methods': 'GET, POST, DELETE, OPTIONS',
@@ -117,7 +119,19 @@ const CORS = {
 // reply that carries the day, one turn ahead of the moment it is needed (the
 // playbook's mechanism): the layout is Wrought's alone, and a turn that cannot
 // call Wrought says so in words the person cannot mistake for a receipt.
-export const OWN_CALL = `STANDING ORDER FOR EVERY LATER TURN IN THIS CHAT: each food, drink, workout or weight they mention gets its OWN Wrought call in that turn. What this reply is made of belongs to Wrought alone — "Logged in Wrought", the ${MARK}, a time something was filed at, a day table, a day total, a meal score — and is only ever shown from a Wrought reply received in THAT turn: never rebuilt from this reply, from memory or from the conversation. If you cannot call Wrought, open with exactly: "This is NOT in Wrought yet — the connector did not answer in this chat." Then your own estimate, said as an estimate: no table, no day total, no score, no orange square — and log it the moment a call works.`;
+export const OWN_CALL = `STANDING ORDER FOR EVERY LATER TURN IN THIS CHAT: each food, drink, workout or weight they mention gets its OWN Wrought call in that turn. What this reply is made of belongs to Wrought alone — "Logged in Wrought", the ${MARK}, Wrought's W image, a time something was filed at, a day table, a day total, a meal score — and is only ever shown from a Wrought reply received in THAT turn: never rebuilt from this reply, from memory or from the conversation. If you cannot call Wrought, open with exactly: "This is NOT in Wrought yet — the connector did not answer in this chat." Then your own estimate, said as an estimate: no table, no day total, no score, no orange square, no W image — and log it the moment a call works.`;
+
+// NO CALL, NO RECEIPT — in the connector's own prompt (13 November). The
+// founder, the day after ChatGPT wrote "Logged in Wrought" over two meals it
+// never sent: "I shouldn't have to connect myself and teach it. This should be
+// on here. This should be in this prompt." Until now the rule for a turn with
+// no call rode only on tool RESULTS (OWN_CALL) and on a habit he had to save
+// himself. It is on the instruction sheet, on log and on get_day now — the
+// text a model holds whenever the connector is on, call or no call.
+//
+// The square is named in words, never as the character: a description that
+// holds the character hands a model the one mark it has not forged.
+export const RECEIPT_RULE = 'NO CALL, NO RECEIPT: "Logged in Wrought", Wrought\'s W and its orange square, the time something was filed at, a day table, a day total and a meal score are Wrought\'s to send — they exist only in a Wrought reply received in THIS turn, and are never written from memory, from an earlier reply or from this description. If no Wrought tool ran in this turn, open with exactly "This is NOT in Wrought yet" and give your own estimate as an estimate: no table, no total, no score, no tick — then log it the moment a call works.';
 
 const LOG_FIRST = 'LOG FIRST, ANSWER SECOND: the moment a message mentions anything eaten or drunk, a workout, a shift of work or a weight — in passing, mid-question, in a list, in a photo — call log (or log_activity for work) BEFORE writing the reply. Never ask whether to log it, never wait to be asked, never recite food back in prose without the call in the same turn; an unsure amount is passed as null, never a reason to hold back.';
 
@@ -128,6 +142,8 @@ const WHICH_ACCOUNT = 'WHICH ACCOUNT: when ChatGPT offers a choice of connected 
 const SERVER_INSTRUCTIONS = `WROUGHT is the user's training and nutrition memory — the thing that remembers what they ate, what they lifted and what the scale said, so they never have to explain themselves twice.
 
 HOW TO USE THIS SERVER (works on any model, including small fast ones): every number in every response is already computed server-side — totals, averages, trends, streaks, goal scores, time remaining. Relay them, never recompute them, never do arithmetic of your own. Every response carries a "say" string written for reading aloud and a "next_actions" list naming the exact tools to offer next. Follow next_actions rather than improvising.
+
+${RECEIPT_RULE} This rule is the connector's own, so nobody has to teach it to you: it holds in every chat this connector is on, whether or not a memory says so.
 
 LOG FIRST, ANSWER SECOND — AND NEVER ASK. The moment a message mentions food, drink, a workout, a shift of work or a weight, the log call comes BEFORE the reply is written, in the same turn: never "want me to log that?", never "I'll add that", never a list of what they ate written back in prose with no call behind it. An unsure amount is logged with the number null — a vague entry on the record beats a precise one in the chat. If the tools were missing earlier in the conversation, everything said since is flushed in one call the moment they answer. This is the founder's instruction in as many words: "more aggressive as to log everything into Wrought."
 
@@ -506,7 +522,7 @@ const TOOLS = [
   {
     name: 'log',
     title: 'Log anything, in plain words',
-    description: 'THE main tool, and the one that must fire the moment food is MENTIONED — not when they ask for it to be saved. CONFIRM WITH THE WORDS "Logged in Wrought" — the reply\'s `say` opens with them; repeat them exactly, then each item with its calories and time. ' + WHICH_ACCOUNT + ' ' + LOG_FIRST + ' Never say "logged" or "saved" about food without "in Wrought", and never say "Logged in Wrought" without this tool\'s reply in front of you: the phrase is how the person tells a write that landed from food you only acknowledged. A meal acknowledged in conversation and never written is the commonest way a day ends up short: the record is right, the recital is wrong, and nobody finds out until the total looks small.IF YOU ESTIMATE A MEAL\'S CALORIES IN YOUR REPLY, OR WRITE A "TODAY SO FAR" TOTAL, YOU MUST HAVE CALLED THIS IN THE SAME TURN: the estimate you wrote in prose but did not log lives only in the chat and vanishes with the tab, and "Did you log it?" then answers "only when you asked" — the exact failure this tool exists to prevent. Never quote a meal figure or a running total without logging first; the running total comes only from this tool\'s day_total, never from arithmetic in your head. If you find yourself saying "you\'re right, I missed that", the next thing you do is call this, never arithmetic. Records whatever the user said about their day — food, training, weight, measurements, sleep, mood, supplements. Pass their words AND your structured reading of them; both are required. "Two eggs and black coffee, pushed 40 minutes upper body, 182 on the scale" becomes three separate entries with macros estimated and the weight converted. Pass their words VERBATIM; do not tidy, summarise or ask for detail first. Use this for every log unless the user is giving only a weight or only a measurement, which have their own tools. IF THIS CONNECTOR WAS UNAVAILABLE EARLIER IN THE CONVERSATION, everything discussed since is unlogged: flush it all in ONE call the moment you can, with a time_hint on each item so breakfast lands at breakfast rather than the whole day landing at the catch-up minute. "Recorded in this chat" is the opposite of logged.',
+    description: 'THE main tool: call it the moment food, drink, training or a weight is MENTIONED, never only when asked. Its reply opens "Logged in Wrought": relay that line as sent, then each item with calories and time. With no reply from this tool in this turn, open with "NOT in Wrought yet" instead. ' + WHICH_ACCOUNT + ' ' + LOG_FIRST + ' Never say "logged" or "saved" about food without "in Wrought". ' + RECEIPT_RULE + ' A meal acknowledged in conversation and never written is the commonest way a day ends up short: the record is right, the recital is wrong, and nobody finds out until the total looks small.IF YOU ESTIMATE A MEAL\'S CALORIES IN YOUR REPLY, OR WRITE A "TODAY SO FAR" TOTAL, YOU MUST HAVE CALLED THIS IN THE SAME TURN: the estimate you wrote in prose but did not log lives only in the chat and vanishes with the tab, and "Did you log it?" then answers "only when you asked" — the exact failure this tool exists to prevent. Never quote a meal figure or a running total without logging first; the running total comes only from this tool\'s day_total, never from arithmetic in your head. If you find yourself saying "you\'re right, I missed that", the next thing you do is call this, never arithmetic. Records whatever the user said about their day — food, training, weight, measurements, sleep, mood, supplements. Pass their words AND your structured reading of them; both are required. "Two eggs and black coffee, pushed 40 minutes upper body, 182 on the scale" becomes three separate entries with macros estimated and the weight converted. Pass their words VERBATIM; do not tidy, summarise or ask for detail first. Use this for every log unless the user is giving only a weight or only a measurement, which have their own tools. IF THIS CONNECTOR WAS UNAVAILABLE EARLIER IN THE CONVERSATION, everything discussed since is unlogged: flush it all in ONE call the moment you can, with a time_hint on each item so breakfast lands at breakfast rather than the whole day landing at the catch-up minute. "Recorded in this chat" is the opposite of logged.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -806,7 +822,7 @@ const TOOLS = [
   {
     name: 'get_day',
     title: 'The whole day, read out',
-    description: 'THE WHOLE DAY in one read: every item eaten with its own calories and time, the session and what it was worth, the work and what it was worth, the steps and the watch\'s active energy, the burn added up, the net with its sign, each goal with its percentage, and where the training week stands. "Where am I at", "daily totals", "give me everything", "how am I doing today", "what did I do today", "where do I stand", "break it down", "are they logged", "what did I eat today", "what\'s my calories", "how much have I burned", "what did my work burn", "how much should I eat today" all land here — show day_card exactly as written (the food table, then the energy balance), then day_read.say LINE BY LINE for the rest, never just a food total. Watch figures carry the time the phone sent them; say it. Every line is ONE computed figure, never a range. If the user names something that is not among the items, it was never logged: call log for it and read this again rather than adding it up in prose. ' + WHICH_ACCOUNT,
+    description: 'THE WHOLE DAY in one read: every item eaten with its own calories and time, the session and what it was worth, the work and what it was worth, the steps and the watch\'s active energy, the burn added up, the net with its sign, each goal with its percentage, and where the training week stands. "Where am I at", "daily totals", "give me everything", "how am I doing today", "what did I do today", "where do I stand", "break it down", "are they logged", "what did I eat today", "what\'s my calories", "how much have I burned", "what did my work burn", "how much should I eat today" all land here — show day_card exactly as written (the food table, then the energy balance), then day_read.say LINE BY LINE for the rest, never just a food total. Watch figures carry the time the phone sent them; say it. Every line is ONE computed figure, never a range. If the user names something that is not among the items, it was never logged: call log for it and read this again rather than adding it up in prose. ' + RECEIPT_RULE + ' ' + WHICH_ACCOUNT,
     inputSchema: {
       type: 'object',
       properties: { date: { type: 'string', description: 'YYYY-MM-DD. Defaults to today.' } },
@@ -7204,6 +7220,9 @@ export async function handleRpc(msg, authUser) {
         serverInfo: {
           name: 'wrought',
           title: 'WROUGHT — training and nutrition memory',
+          // The one line a client may show its model before any tool is
+          // loaded: what this is, and that it is CALLED, not remembered.
+          description: SERVER_DESCRIPTION,
           version: '1.0.0',
           websiteUrl: 'https://wrought.fit',
           icons: [
@@ -7251,8 +7270,13 @@ export async function handleRpc(msg, authUser) {
       // because being cut off is exactly when somebody needs to hear that.
       const gate = await allowed(authUser.id, 'mcp');
       if (!gate.ok) {
+        // Which client this is, so a suspended reply carries the same mark as
+        // any other: one remembered read of the client's own registration,
+        // only on this branch — the record check below never runs for it.
+        const gateTopo = authUser?.via?.kind === 'oauth' && authUser.via.client_id
+          ? await connectorTopology(supabase, authUser.via.client_id).catch(() => null) : null;
         return rpcResult(id, {
-          content: [{ type: 'text', text: JSON.stringify(markReply({ error: gate.error, say: gate.message })) }],
+          content: [{ type: 'text', text: JSON.stringify(markReply({ error: gate.error, say: gate.message }, { image: Boolean(gateTopo?.chatgpt) && markImageOn() })) }],
           isError: true,
           ...resultMeta(params.name, { error: gate.error, say: gate.message }, authUser),
         });
@@ -7303,7 +7327,7 @@ export async function handleRpc(msg, authUser) {
         // THE ORANGE SQUARE opens the say line of every reply through an AI
         // door (lib/mark.js) — on a copy, so the drawn card built from `out`
         // never picks it up.
-        body = markReply(body);
+        body = markReply(body, { image: Boolean(facts?.chatgpt) && markImageOn() });
         // The text the model reads is exactly as it was; Wrought's card rides
         // in the result's _meta, which the card reads and the model does not.
         return rpcResult(id, {
@@ -7324,6 +7348,7 @@ export async function handleRpc(msg, authUser) {
         const failSay = writing
           ? `That did not save — ${err.message}`
           : `WROUGHT could not answer that — ${err.message}`;
+        const failFacts = await connP;
         return rpcResult(id, {
           content: [{ type: 'text', text: JSON.stringify(markReply({
             error: 'tool_failed',
@@ -7333,7 +7358,7 @@ export async function handleRpc(msg, authUser) {
             note: writing
               ? 'NOTHING WAS WRITTEN. Try the same call once more before saying anything; these are usually momentary. If it fails again, tell the user IN FULL what they said is not saved and repeat the detail back so they still have it, and give them the reason above rather than "it is erroring" — a reason can be acted on and an outage cannot.'
               : 'Say what failed and why, in the words above. Never present a failed read as a real answer, and never substitute a number from your own memory of this conversation.',
-          })) }],
+          }, { image: Boolean(failFacts?.chatgpt) && markImageOn() })) }],
           isError: true,
           ...resultMeta(params.name, { error: 'tool_failed', say: failSay }, authUser),
         });

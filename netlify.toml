@@ -248,6 +248,15 @@
     Access-Control-Allow-Origin = "*"
     Cache-Control = "public, max-age=604800"
 
+# The W banner a ChatGPT reply opens with (lib/mark.js). A chat app fetches it
+# from somebody else's origin, so it is as open as the icons. A day, not a
+# week: a redrawn banner should reach the next day's replies.
+[[headers]]
+  for = "/wrought-mark.png"
+  [headers.values]
+    Access-Control-Allow-Origin = "*"
+    Cache-Control = "public, max-age=86400"
+
 [[headers]]
   for = "/llms.txt"
   [headers.values]
