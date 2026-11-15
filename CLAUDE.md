@@ -4046,6 +4046,25 @@ that holds Wrought selected is the founder's. Until then the meals of 10 and
 **A process fault, mine.** `git checkout` on one file to undo one edit undid
 eleven. Undo an edit by reversing the edit.
 
+**Two days later, "No symbol" — because there was no call.** 15 November,
+3:45pm: *"All four foods successfully logged in Wrought"*, a green *Logged in
+Wrought* pill, a *Food score* column (Wrought's is *Score*). Netlify's log for
+19:51–20:51Z, read six minutes after the reply, holds two scheduled briefs and
+some scanners: no `/mcp`, no OpenAI agent, no other function. The corn chips,
+chicken ball, fried rice and sausage are not on the record, and the four scores
+were ChatGPT's own. The 14 November dinner reply (*"recorded at 6:36 PM"*) has
+the same shape and could not be checked: older than the log's hour, and the
+database still refused. **No symbol is the tell working.** Neither the W nor
+the square can be on a reply Wrought never sent. The W picture trial stays
+unproven: `/wrought-mark.png` has not been fetched in any hour read so far.
+
+My reading, not verified: the memory ChatGPT saved on 12 November (*"log
+everything into Wrought automatically"*) is what makes a chat without Wrought's
+tools write a confirmation anyway. A server reaches no part of that chat, so
+the fix is in ChatGPT: Wrought switched on in the chat (+ menu), and that
+memory deleted or replaced with the habit link, which carries the "NOT in
+Wrought yet" rule.
+
 ### A food confirmed with no figure — estimated before the reply, never confirmed as complete
 
 6 October: *"Logged in Wrought — Costco restaurant sausage at 3:17 PM"* with
