@@ -134,8 +134,8 @@ export const handler = async (event) => {
     const proofOf = new Map(many.map((c, i) => [c.client_id, proofs[i] || null]));
 
     // SEVERAL CONNECTIONS IN ONE ASSISTANT. Said off the connections in use,
-    // naming the one path he can see (Settings → Plugins → Wrought →
-    // Connection). "Every one signs in to this record" only when the server
+    // naming the one path he can see (Settings → Customize ChatGPT →
+    // Plugins → Wrought → Connection). "Every one signs in to this record" only when the server
     // just proved it; otherwise the page says only what it knows.
     let copiesNoteText = null;
     for (const c of many) {

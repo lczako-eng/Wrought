@@ -17950,7 +17950,7 @@ await test('the Account panel counts what ChatGPT holds and names the path he ca
   assert.match(proven, /Wrought has seen 3 ChatGPT connections in use recently/);
   assert.ok(!/ChatGPT has \d/.test(proven), 'the count is stated as what ChatGPT holds');
   assert.match(proven, /keeps counting here until it lapses — up to about five weeks — so if that page already lists one account, you are done/);
-  assert.match(proven, /Settings → Plugins → Wrought → Connection/);
+  assert.match(proven, /Settings → Customize ChatGPT → Plugins → Wrought → Connection/);
   assert.match(proven, /keep one account and disconnect the others/);
   assert.match(proven, /Refresh/);
   assert.match(proven, /Never uninstall Wrought/);
@@ -17963,7 +17963,7 @@ await test('the Account panel counts what ChatGPT holds and names the path he ca
     assert.match(n, /Any other Wrought showing there is a separate sign-in this page cannot see/);
     assert.ok(!/every one signs in to this record/.test(n), `an unproven note claims every connection: ${n}`);
   }
-  assert.match(unproven[0], /Settings → Plugins → Wrought → Connection/);
+  assert.match(unproven[0], /Settings → Customize ChatGPT → Plugins → Wrought → Connection/);
   for (const n of [proven, ...unproven]) {
     assert.ok(!/delete (?:two|the other) Wroughts?|remove Wrought\b/.test(n), `the note tells him to remove Wrought: ${n}`);
   }
@@ -18043,7 +18043,7 @@ await test('every request leaves a trace of what was asked, never what was said'
 
 await test('connect.html names the path he can see', () => {
   const src = page('connect.html');
-  assert.match(src, /Settings → Plugins → Wrought → <em>Connection<\/em>/);
+  assert.match(src, /Settings → Customize ChatGPT → Plugins → Wrought → <em>Connection<\/em>/);
   assert.match(src, /keep one account and disconnect the others/);
   assert.match(src, /Never uninstall Wrought/);
   assert.match(src, /Already listed\? Reconnect that one instead of adding it again/);
