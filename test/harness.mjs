@@ -19379,6 +19379,50 @@ await test('by default ChatGPT gets the table, never a picture: four were sent a
   assert.match(decomment(PIC.read('netlify/functions/mcp.js')), /facts\?\.chatgpt && picturesOn\(\) \? pictureSlot\(/);
 });
 
+await test('food from earlier today with no figure is asked for by id on every later reply, not reported as "not calculated" and left', async () => {
+  // 17 November, 11:05pm: four foods from earlier in the day sat on the record
+  // with no calories, the McDonald's logged then came back as "545 so far",
+  // and ChatGPT read the four back as "not calculated yet" and stopped. The
+  // estimate_now ask only ever covered what THAT call wrote.
+  const { uncountedFood } = await import('../netlify/functions/lib/wrought.js');
+  const log = [
+    { id: 'a', type: 'food', at: '11:10', summary: "Miss Vickie's chips", calories: null },
+    { id: 'b', type: 'food', summary: 'had lunch', calories: null },
+    { id: 'c', type: 'food', summary: 'McDouble', calories: 545 },
+    { id: 'd', type: 'note', summary: 'felt tired', calories: null },
+    { id: 'e', type: 'drink', summary: 'black coffee', calories: '~5' },
+  ];
+  assert.deepEqual(uncountedFood(log).map(r => r.id), ['a', 'e'], 'a mealtime with no food named, a counted food or a note was chased, or words read as a figure');
+  assert.deepEqual(uncountedFood(log, ['a']).map(r => r.id), ['e']);
+  assert.equal(uncountedFood(log)[0].at, '11:10');
+  assert.deepEqual(uncountedFood(null), []);
+  const S = WCARD.scenarios();
+  const ids = r => (r.body.estimate_now?.entries || []).map(e => e.id);
+  // The log that wrote something complete still asks for the earlier two, first.
+  const L = S.behind_log;
+  assert.equal(L.keys[0], 'estimate_now', 'the ask is not the first key');
+  assert.deepEqual(ids(L), ['k1', 'k2'], 'the earlier food was not asked for, or a mealtime / yesterday was');
+  assert.ok(L.body.estimate_now.entries.every(e => e.earlier === true));
+  assert.match(L.body.note, /^ESTIMATE_NOW FIRST: .*EVERY id in estimate_now \(earlier ones included\) before replying/);
+  assert.match(L.body.estimate_now.when, /what this call wrote is already confirmed above/);
+  assert.match((await import('../netlify/functions/lib/mark.js')).afterImage(L.body.say), /^🟧 Logged in Wrought \(1 thing\): McDouble/);
+  // With a food of its own still to estimate, the earlier ones ride the same ask.
+  const H = S.behind_log_hungry;
+  assert.equal(ids(H).length, 3);
+  assert.deepEqual(ids(H).slice(1), ['k1', 'k2']);
+  assert.match(H.body.estimate_now.why, /Also from earlier today with no calorie figure: "Miss Vickie's salt and vinegar chips", "Steak and baked potato"/);
+  // A quiet capture is never sent off to fix the rest of the day.
+  assert.equal(S.behind_quiet.body.estimate_now, undefined);
+  // get_day asks too — today only — and stops asking once they are filled.
+  const D = S.behind_day;
+  assert.equal(D.keys[0], 'estimate_now');
+  assert.deepEqual(ids(D), ['k1', 'k2']);
+  assert.match(D.body.note, /^ESTIMATE_NOW FIRST: .*Never report a named food as "not calculated yet" and stop there/);
+  assert.equal(S.behind_yday.body.estimate_now, undefined, 'a past day is chased');
+  assert.equal(S.behind_day2.body.estimate_now, undefined, 'the ask outlived the fill');
+  assert.match(S.behind_day2.body.say, /1,180 kcal/);
+});
+
 await test('the receipt rule is in the connector\'s own prompt: the sheet, log and get_day carry it, and nobody has to teach it', async () => {
   // 13 November, the day after ChatGPT wrote "Logged in Wrought" over two
   // meals it never sent: "I shouldn't have to connect myself and teach it.
