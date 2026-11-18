@@ -1540,7 +1540,9 @@ const GENERIC_FOOD = new Set([
 ]);
 
 const named = s => {
-  const t = String(s || '').trim().toLowerCase().replace(/^(a|an|some|the)\s+/, '');
+  const t = String(s || '').trim().toLowerCase()
+    .replace(/^(?:i\s+)?(?:had|ate|eaten|eating)\s+/, '')
+    .replace(/^(a|an|some|the|my)\s+/, '');
   return t.length > 1 && !GENERIC_FOOD.has(t);
 };
 
@@ -1567,6 +1569,23 @@ export function needsMacros(written = [], events = []) {
     if (isNamed) out.push({ id: row.id, summary: row.summary });
   });
   return out;
+}
+
+// FOOD ALREADY ON TODAY'S RECORD WITH NO FIGURE — whoever wrote it. The
+// founder, 17 November, 11:05pm: four foods from earlier in the day sat on the
+// record with no calories, the McDonald's he logged then came back as "545
+// so far", and ChatGPT reported the four as "not calculated yet" and stopped.
+// `needsMacros` only ever chased the rows written in THAT call, so a food that
+// went in earlier (an earlier chat, the website's box, a catch-up) was never
+// asked for again. This reads the day's own log, so every later reply can.
+// `except` is the ids the caller already chases. Pure.
+export function uncountedFood(dayLog = [], except = []) {
+  const skip = new Set((except || []).map(String));
+  const rows = (Array.isArray(dayLog) ? dayLog : [])
+    .filter(e => e && e.id != null && !skip.has(String(e.id)))
+    .map(e => ({ id: e.id, event_type: e.type ?? e.event_type, summary: e.summary, detail: { calories: e.calories ?? e.detail?.calories } }));
+  const at = new Map((Array.isArray(dayLog) ? dayLog : []).map(e => [String(e?.id), e?.at || null]));
+  return needsMacros(rows).map(r => ({ ...r, at: at.get(String(r.id)) || null }));
 }
 
 // A named food with a calorie figure and NOTHING ELSE. `needsMacros` stops at

@@ -4065,6 +4065,39 @@ the fix is in ChatGPT: Wrought switched on in the chat (+ menu), and that
 memory deleted or replaced with the habit link, which carries the "NOT in
 Wrought yet" rule.
 
+### 17 November — Wrought answered, and ChatGPT still wrote its own reply
+
+11:05pm: *"✅ Yes, Marcus. Your McDouble, fries, and two McNuggets have been
+added… Added: 545 calories. Your earlier four food items are also logged, but
+their calories haven't been calculated yet."* The founder: *"Still not doing
+it, still not orange, and I had stuff from earlier today but not adding."*
+
+**This time the call happened, and the log was read a minute after it.**
+Nineteen requests to `/mcp` between 04:04:24 and 04:04:40Z, all
+`openai-mcp/1.0.0`, all to `wrought.netlify.app/mcp`. By response size: a
+`server/discover` (400, as designed) and an `initialize` (96.7KB) per
+connection, three identical ~34.9KB reads fanned out across his three
+connections, then one ~19KB `log`. **No `tools/list`**, so ChatGPT is still on
+its frozen tool list and the receipt rule in the descriptions has not reached
+it. **No `resources/read`**, so no Wrought card. **No `/wrought-mark.png`.**
+
+- **The square and the W were in `say`, and the model left both out.** It
+  rewrote the reply in its own style, with a ✅ and a grey box of its own.
+  Nothing a server sends forces a character or a picture into ChatGPT's
+  reply. Wrought's own card is the only frame Wrought controls, and it needs
+  ChatGPT to load the current tool list (Refresh on chatgpt.com in a web
+  browser; Safari on the phone counts).
+- **The earlier foods were ours.** `estimate_now` only ever covered what THAT
+  call wrote, so food already on today's record with no figure was read back
+  as "not calculated yet" and never asked for again. `uncountedFood()` in
+  `lib/wrought.js` reads the day's own log: `log` (not a quiet capture) and
+  `get_day` (today only) now put every named food with no figure into
+  `estimate_now` by id, first key, and the note opens `ESTIMATE_NOW FIRST`.
+  It arrives on the next call, with no Refresh. *"Had lunch"* is no longer
+  read as a named food: `named()` strips a leading *had / ate*.
+- Still unknown: where the four came from (an earlier chat, the website's
+  box, or Siri). The database is still out of reach from here.
+
 ### A food confirmed with no figure — estimated before the reply, never confirmed as complete
 
 6 October: *"Logged in Wrought — Costco restaurant sausage at 3:17 PM"* with
@@ -7052,7 +7085,7 @@ self-reporting scale removes the most-abandoned manual entry), then Strava.
 
 ## Conventions
 
-- `npm test` runs `test/harness.mjs` — 921 offline tests, no network, no database.
+- `npm test` runs `test/harness.mjs` — 922 offline tests, no network, no database.
   Run it before every push. It covers the JSON-RPC envelope (which fails as an
   uninformative "could not connect" inside ChatGPT) and all the arithmetic
   (which fails as a confidently wrong number in somebody's verdict).

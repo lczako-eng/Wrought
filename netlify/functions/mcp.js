@@ -21,7 +21,7 @@ import {
   sayWeight, sayWeightDelta, sayLength, lbToKg, inToCm, kgToLb,
   getProfile, getMemory, getGoals, getWindow, windowStatus,
   dayFacts, rangeFacts, summariseRange, scoreGoals, careFlags, CARE_WINDOW_DAYS, lastDays,
-  parseLog, eventsFromClient, parseIfJson, normaliseEventType, needsMacros, macrosMissing, needsDuration, matchEntries, duplicateItems, setupNeeded, insertEvents, eventTimestamp, writeVerdict, rememberFact,
+  parseLog, eventsFromClient, parseIfJson, normaliseEventType, needsMacros, uncountedFood, macrosMissing, needsDuration, matchEntries, duplicateItems, setupNeeded, insertEvents, eventTimestamp, writeVerdict, rememberFact,
   fastLength, fastingSummary, macroLine, itemFigures, clock12, validTimezone,
 } from './lib/wrought.js';
 import { createHash } from 'node:crypto';
@@ -1037,7 +1037,7 @@ const TOOLS = [
   {
     name: 'structure_entries',
     title: 'Fill in entries by id — dictated sentences and missing macros',
-    description: 'Fills in entries BY ID: any entry a log reply names under estimate_now — a named food with no figure, or one that went in as a bare NOTE because no structured reading reached the server (send event_type, summary and detail to make it the food or workout it was) — the ones spoken to Siri that landed with no macros on them, and any entry under macros_missing (calories but no protein, carbs or fat — send only the missing figures). For Siri entries: the phone has no model behind it — a dictated sentence is stored word for word and counts for nothing in any total until something reads it. You are that something. brief returns these as voice_pending with their ids and exactly what was said; read each one and send back your reading. Do it in the same turn, without asking permission, and mention it in one short clause at most. Same rules as everywhere: estimate what was actually named, leave a vague mention null rather than padding it into a specific one.',
+    description: 'Fills in entries BY ID: any entry a log or get_day reply names under estimate_now — a named food with no figure, or one that went in as a bare NOTE because no structured reading reached the server (send event_type, summary and detail to make it the food or workout it was) — the ones spoken to Siri that landed with no macros on them, and any entry under macros_missing (calories but no protein, carbs or fat — send only the missing figures). For Siri entries: the phone has no model behind it — a dictated sentence is stored word for word and counts for nothing in any total until something reads it. You are that something. brief returns these as voice_pending with their ids and exactly what was said; read each one and send back your reading. Do it in the same turn, without asking permission, and mention it in one short clause at most. Same rules as everywhere: estimate what was actually named, leave a vague mention null rather than padding it into a specific one.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -1773,6 +1773,10 @@ async function log(args, user) {
 
   const kinds = [...new Set(written.map(e => e.event_type))];
   const day = await dayFacts(user.id, profile, localDateFor(profile.timezone));
+  // Food from EARLIER today with no figure — an earlier chat, the website's
+  // box, a catch-up. Chased on every reply that is not a quiet capture, beside
+  // what this call wrote, because nobody else will ever ask for it again.
+  const behind = args.quiet ? [] : uncountedFood(day?.log, [...hungry, ...unstructured].map(h => h.id));
 
   // "WHERE AM I AT TODAY?" RIDING ON THE SAME SENTENCE AS THE LOG. The reply
   // used to carry the food total and a note pointing at another tool, and the
@@ -1858,18 +1862,23 @@ async function log(args, user) {
     // structure_entries by id, never amend_last: that reaches only the newest
     // row, its plain merge lets an echoed null erase a figure, and it drops
     // the estimated label.
-    ...(hungry.length || unstructured.length ? {
+    ...(hungry.length || unstructured.length || behind.length ? {
       estimate_now: {
-        why: (unstructured.length
+        why: (behind.length && !hungry.length && !unstructured.length
+          ? `${behind.length === 1 ? 'A food' : `${behind.length} foods`} from earlier today ${behind.length === 1 ? 'is' : 'are'} on the record with no calorie figure, so ${behind.length === 1 ? 'it counts' : 'they count'} for NOTHING in today's total.`
+          : unstructured.length
           ? `${unstructured.length === 1 ? 'An entry' : 'Entries'} went in as a bare NOTE — not food, not training — and counts for NOTHING in any total until it is structured by id${hungry.length ? '; and a named food went in with no calorie figure' : ''}.`
-          : 'A named food went in with no calorie figure, so it counts for NOTHING in today\'s total.'),
+          : 'A named food went in with no calorie figure, so it counts for NOTHING in today\'s total.')
+          + (behind.length && (hungry.length || unstructured.length) ? ` Also from earlier today with no calorie figure: ${behind.map(b => `"${b.summary}"`).join(', ')} — estimate those too, from their names.` : ''),
         call: 'structure_entries',
-        entries: [...unstructured, ...hungry.map(h => ({ id: h.id, summary: h.summary }))],
+        entries: [...unstructured, ...hungry.map(h => ({ id: h.id, summary: h.summary })), ...behind.map(b => ({ id: b.id, summary: b.summary, earlier: true, ...(b.at ? { at: b.at } : {}) }))],
         send: (unstructured.length ? 'event_type — food, drink, workout, weight, sleep, symptom, mood, supplement; never "meal", "breakfast" or "nutrition", those are not types — summary, and ' : '')
           + 'detail with calories, protein_g, carbs_g, fat_g (and sugar_g, fibre_g, sat_fat_g if you can) as NUMBERS — one figure each, never a range, "~" or a string — and estimated: true',
         when: args.quiet
           ? 'now, silently: pass quiet: true and say nothing about it'
-          : 'now, in this same turn, BEFORE you reply; then confirm with "Logged in Wrought:" and the item exactly as structure_entries\' say reads it',
+          : hungry.length || unstructured.length
+          ? 'now, in this same turn, BEFORE you reply; then confirm with "Logged in Wrought:" and the item exactly as structure_entries\' say reads it'
+          : 'now, in this same turn, BEFORE you reply — what this call wrote is already confirmed above; show the day from structure_entries\' reply, which counts the earlier food',
       },
     } : {}),
     ...(degraded ? { not_counted_yet: degraded } : {}),
@@ -2020,7 +2029,7 @@ async function log(args, user) {
     ...(bridged.skipped ? { sets_skipped: bridged.skipped, sets_note: bridged.say } : {}),
     ...(bridged.deduped ? { sets_deduped: true } : {}),
     note: (unstructured.length ? `STRUCTURE FIRST: ${unstructured.map(u => `"${u.summary}"`).join(' and ')} went in as a bare NOTE (${unstructured[0].why}) and counts for nothing. Call structure_entries NOW with the id in estimate_now, event_type (food, drink, workout… — never "meal", "breakfast" or "nutrition"), summary and detail with the numbers, BEFORE you reply — never amend_last, and never confirm it as logged food or training until that reply is in front of you. ` : '') +
-      (hungry.length ? 'ESTIMATE_NOW FIRST: you named the food, so estimate it — call structure_entries with the ids in estimate_now before replying. Never confirm a food with no figure as if it were complete; if the food was never named ("had lunch"), say plainly it is not counted yet. ' : '') +
+      (hungry.length || behind.length ? 'ESTIMATE_NOW FIRST: the food is named, so estimate it — call structure_entries with EVERY id in estimate_now (earlier ones included) before replying, so the day\'s total counts them. Never confirm a food with no figure as if it were complete; if the food was never named ("had lunch"), say plainly it is not counted yet. ' : '') +
       (written.length ? 'OPEN WITH "Logged in Wrought" — say the phrase exactly, then each item with ALL its numbers exactly as `say` reads them: calories, protein, carbs (sugar, fibre), fat (saturated), and the time' + (scoreSay ? ', then its meal score as say gives it ("Meal score: …") — every time, never left out' : '') + '. ' + (cardRead
       ? 'Then the day: ' + DAY_CARD_NOTE + 'day_card IS the day broken down — never also read day_total.breakdown or the day in prose. '
       : 'Then the day broken down the same way — day_total.breakdown is every item of the day with its numbers and the total underneath; read it out, never only a calorie figure. ') + 'Those three words are the receipt: the person uses them to tell a write that landed from food you merely acknowledged. Never say "logged" or "saved" about food without "in Wrought", and never say "Logged in Wrought" unless this reply is in front of you. ' : '') +
@@ -3963,7 +3972,21 @@ async function getDay(args, user) {
   // "Is this good food?" asked after the fact lands here: every food on the
   // day with its score, off the stored rows — none under a care flag.
   const scores = mealScores(day.log || [], { flags: full.flags });
+  // TODAY'S FOOD WITH NO FIGURE is estimated before the reply, here too: "four
+  // earlier items saved but no calorie estimates" was read back to the founder
+  // and left there (17 November). Today only — an old day is asked about, not
+  // chased.
+  const behind = date === localDateFor(profile.timezone) ? uncountedFood(day.log) : [];
   return {
+    ...(behind.length ? {
+      estimate_now: {
+        why: `${behind.length === 1 ? 'A food' : `${behind.length} foods`} on today's record ${behind.length === 1 ? 'has' : 'have'} no calorie figure, so ${behind.length === 1 ? 'it counts' : 'they count'} for NOTHING in today's total.`,
+        call: 'structure_entries',
+        entries: behind.map(b => ({ id: b.id, summary: b.summary, ...(b.at ? { at: b.at } : {}) })),
+        send: 'detail with calories, protein_g, carbs_g, fat_g (and sugar_g, fibre_g, sat_fat_g if you can) as NUMBERS — one figure each, never a range, "~" or a string — and estimated: true',
+        when: 'now, in this same turn, BEFORE you reply; then read the day again with get_day so the total counts them',
+      },
+    } : {}),
     ...day,
     ...(targets ? { no_target_set: targets } : {}),
     ...(scores ? { meal_scores: scores, meal_score_note: mealScoreNote(scores) } : {}),
@@ -3986,7 +4009,9 @@ async function getDay(args, user) {
     // "How much have I got left" — the target less what is eaten, the target
     // priced off basal, the burn beside it. Withheld (and said) under a flag.
     ...(full.left ? { left_today: full.left } : {}),
-    note: (full.flags.length
+    note: (behind.length
+      ? 'ESTIMATE_NOW FIRST: the food is named, so estimate it — call structure_entries with every id in estimate_now, then get_day again, BEFORE replying. Never report a named food as "not calculated yet" and stop there. '
+      : '') + (full.flags.length
       ? 'Care flags are up — they lead, and their guidance is followed exactly: quote no figure of what is left to eat and coach nothing down. The day itself is factual record and may be read after the flag. '
       : '') + (targets
       ? 'No daily calorie target is set. If they ask what they are allowed, quote the COMPUTED figures in no_target_set exactly — never a number of your own and never a range you rounded to. '

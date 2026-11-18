@@ -300,4 +300,32 @@ out.path_quiet = await call('log', { quiet: true, text: TOAST, events: [food(TOA
 reset([weigh()]);
 out.path_two = await call('log', { text: 'pad thai and toast', events: [food('Chicken and tofu Pad Thai', { calories: 750, protein_g: 35, carbs_g: 90, fat_g: 28, sugar_g: 14, fibre_g: 5, sat_fat_g: 6 }), food(TOAST, toastFull)] });
 
+// FOOD FROM EARLIER TODAY WITH NO FIGURE — 17 November, 11:05pm: four foods
+// sat on the record with no calories, the McDonald's logged then came back as
+// "545 so far", and ChatGPT reported the four as "not calculated yet" and
+// stopped. Every later reply now asks for them by id.
+const behindRows = () => [
+  weigh(),
+  ev('k1', today, 'food', "Miss Vickie's salt and vinegar chips", {}, { hh: '15:10' }),
+  ev('k2', today, 'food', 'Steak and baked potato', { calories: null }, { hh: '17:00' }),
+  ev('k3', today, 'food', 'lunch', {}, { hh: '16:30' }),
+  ev('k4', yday, 'food', 'Homemade pizza slice', {}, { hh: '16:00' }),
+];
+const MCD = 'McDouble, fries and two McNuggets';
+const mcd = { calories: 545, protein_g: 27, carbs_g: 46, fat_g: 28, sugar_g: 6, fibre_g: 4, sat_fat_g: 9 };
+reset(behindRows());
+out.behind_log = await call('log', { text: MCD, events: [food(MCD, mcd)] });
+reset(behindRows());
+out.behind_log_hungry = await call('log', { text: 'a cheeseburger', events: [food('Cheeseburger', {})] });
+reset(behindRows());
+out.behind_quiet = await call('log', { quiet: true, text: MCD, events: [food(MCD, mcd)] });
+reset(behindRows());
+out.behind_day = await call('get_day', {});
+out.behind_yday = await call('get_day', { date: yday });
+out.behind_fill = await call('structure_entries', { entries: [
+  { id: 'k1', detail: { calories: 280, protein_g: 3, carbs_g: 30, fat_g: 17, sugar_g: 1, fibre_g: 2, sat_fat_g: 2 }, estimated: true },
+  { id: 'k2', detail: { calories: 900, protein_g: 60, carbs_g: 55, fat_g: 48, sugar_g: 4, fibre_g: 6, sat_fat_g: 18 }, estimated: true },
+] });
+out.behind_day2 = await call('get_day', {});
+
 console.log('SCENARIOS ' + JSON.stringify(out));
